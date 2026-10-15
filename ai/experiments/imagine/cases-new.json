@@ -8,13 +8,38 @@
 			"mode": "new",
 			"prompt": "roll a bowling ball into 10 pins, i want a strike",
 			"expect": {
-				"must_types": ["bowling-ball", "bowling-pin"],
-				"not_missing": ["bowling ball", "pin", "bowling pin"],
-				"counts": [{ "of": "bowling-pin", "eq": 10 }],
+				"must_types": [
+					"bowling-ball",
+					"bowling-pin"
+				],
+				"not_missing": [
+					"bowling ball",
+					"pin",
+					"bowling pin"
+				],
+				"counts": [
+					{
+						"of": "bowling-pin",
+						"eq": 10
+					}
+				],
 				"outcomes": [
-					{ "kind": "hits", "a": "bowling-ball", "b": "bowling-pin" },
-					{ "kind": "topples", "of": "bowling-pin", "min_fraction": 0.5 },
-					{ "kind": "topples", "of": "bowling-pin", "min_fraction": 0.9, "soft": true }
+					{
+						"kind": "hits",
+						"a": "bowling-ball",
+						"b": "bowling-pin"
+					},
+					{
+						"kind": "topples",
+						"of": "bowling-pin",
+						"min_fraction": 0.5
+					},
+					{
+						"kind": "topples",
+						"of": "bowling-pin",
+						"min_fraction": 0.9,
+						"soft": true
+					}
 				],
 				"rubric": "Ten bowling pins standing (in one plane they form a row or a tight group), a bowling ball that really rolls into them (pushed down a ramp or given a slope), and most or all pins fall. Nothing else needed."
 			}
@@ -26,12 +51,33 @@
 			"mode": "new",
 			"prompt": "superball bouncing down a flight of stairs",
 			"expect": {
-				"must_types": ["superball", "staircase"],
-				"not_missing": ["superball", "stairs", "staircase"],
-				"relations": [{ "rel": "height_above_table", "a": "superball", "min": 0.12 }],
+				"must_types": [
+					"superball",
+					"staircase"
+				],
+				"not_missing": [
+					"superball",
+					"stairs",
+					"staircase"
+				],
+				"relations": [
+					{
+						"rel": "height_above_table",
+						"a": "superball",
+						"min": 0.12
+					}
+				],
 				"outcomes": [
-					{ "kind": "hits", "a": "superball", "b": "staircase" },
-					{ "kind": "descends", "of": "superball", "min_m": 0.1 }
+					{
+						"kind": "hits",
+						"a": "superball",
+						"b": "staircase"
+					},
+					{
+						"kind": "descends",
+						"of": "superball",
+						"min_m": 0.1
+					}
 				],
 				"rubric": "A staircase and a superball that starts at or above its top step and bounces down the steps (several bounces on steps), ending lower than it started."
 			}
@@ -43,10 +89,26 @@
 			"mode": "new",
 			"prompt": "newtons cradle with 5 balls - pull one back and let it go",
 			"expect": {
-				"must_types": ["newtons-cradle"],
-				"not_missing": ["newton", "cradle"],
-				"counts": [{ "of": "newtons-cradle", "eq": 5 }],
-				"outcomes": [{ "kind": "swings", "of": "newtons-cradle", "min_deg": 10 }],
+				"must_types": [
+					"newtons-cradle"
+				],
+				"not_missing": [
+					"newton",
+					"cradle"
+				],
+				"counts": [
+					{
+						"of": "newtons-cradle",
+						"eq": 5
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "swings",
+						"of": "newtons-cradle",
+						"min_deg": 10
+					}
+				],
 				"rubric": "A Newton's cradle with exactly five balls, one end ball pulled back so that when released it strikes the row and the ball at the other end swings out."
 			}
 		},
@@ -57,15 +119,38 @@
 			"mode": "new",
 			"prompt": "Drop an egg onto a pillow from about half a meter up.",
 			"expect": {
-				"must_types": ["egg", "pillow"],
-				"not_missing": ["egg", "pillow"],
+				"must_types": [
+					"egg",
+					"pillow"
+				],
+				"not_missing": [
+					"egg",
+					"pillow"
+				],
 				"relations": [
-					{ "rel": "over", "a": "egg", "b": "pillow" },
-					{ "rel": "height_above_table", "a": "egg", "min": 0.3, "max": 0.75 }
+					{
+						"rel": "over",
+						"a": "egg",
+						"b": "pillow"
+					},
+					{
+						"rel": "height_above_table",
+						"a": "egg",
+						"min": 0.3,
+						"max": 0.75
+					}
 				],
 				"outcomes": [
-					{ "kind": "hits", "a": "egg", "b": "pillow" },
-					{ "kind": "lands_on", "of": "egg", "on": "pillow" }
+					{
+						"kind": "hits",
+						"a": "egg",
+						"b": "pillow"
+					},
+					{
+						"kind": "lands_on",
+						"of": "egg",
+						"on": "pillow"
+					}
 				],
 				"rubric": "A pillow on the table and an egg held about 0.5 m above it (above the table or the pillow), released so it falls straight onto the pillow and ends on it."
 			}
@@ -77,13 +162,39 @@
 			"mode": "new",
 			"prompt": "A toy car races down a steep ramp, flies over a gap and lands on a second ramp.",
 			"expect": {
-				"must_types": ["@toy_car", "@ramp"],
-				"not_missing": ["car", "ramp"],
-				"counts": [{ "of": "@ramp", "min": 2 }],
-				"relations": [{ "rel": "angled", "a": "@ramp", "min_deg": 10 }],
+				"must_types": [
+					"@toy_car",
+					"@ramp"
+				],
+				"not_missing": [
+					"car",
+					"ramp"
+				],
+				"counts": [
+					{
+						"of": "@ramp",
+						"min": 2
+					}
+				],
+				"relations": [
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"min_deg": 10
+					}
+				],
 				"outcomes": [
-					{ "kind": "moves", "of": "@toy_car", "min_m": 0.6 },
-					{ "kind": "lands_on", "of": "@toy_car", "on": "@ramp", "soft": true }
+					{
+						"kind": "moves",
+						"of": "@toy_car",
+						"min_m": 0.6
+					},
+					{
+						"kind": "lands_on",
+						"of": "@toy_car",
+						"on": "@ramp",
+						"soft": true
+					}
 				],
 				"rubric": "A steep first ramp with a toy car at its top, a clear gap, and a second ramp beyond it (a landing ramp). The car leaves the first ramp, flies over the gap through the air and comes down on the second ramp."
 			}
@@ -95,12 +206,47 @@
 			"mode": "new",
 			"prompt": "Use a lever to flip a coin into a cup.",
 			"expect": {
-				"must_types": ["@lever", ["coin-flat", "coin-edge"], "@cup"],
-				"not_missing": ["lever", "coin", "cup"],
-				"relations": [{ "rel": "on", "a": ["coin-flat", "coin-edge"], "b": "@lever", "soft": true }],
+				"must_types": [
+					"@lever",
+					[
+						"coin-flat",
+						"coin-edge"
+					],
+					"@cup"
+				],
+				"not_missing": [
+					"lever",
+					"coin",
+					"cup"
+				],
+				"relations": [
+					{
+						"rel": "on",
+						"a": [
+							"coin-flat",
+							"coin-edge"
+						],
+						"b": "@lever",
+						"soft": true
+					}
+				],
 				"outcomes": [
-					{ "kind": "rises", "of": ["coin-flat", "coin-edge"], "min_m": 0.05 },
-					{ "kind": "in", "item": ["coin-flat", "coin-edge"], "container": "@cup" }
+					{
+						"kind": "rises",
+						"of": [
+							"coin-flat",
+							"coin-edge"
+						],
+						"min_m": 0.05
+					},
+					{
+						"kind": "in",
+						"item": [
+							"coin-flat",
+							"coin-edge"
+						],
+						"container": "@cup"
+					}
 				],
 				"rubric": "A lever or seesaw with a coin on one end; something (a dropped weight, a ball) strikes the other end, the coin is flipped up through the air and lands inside a cup."
 			}
@@ -112,16 +258,46 @@
 			"mode": "new",
 			"prompt": "a desk fan blows a ping pong ball off the top of a stack of books",
 			"expect": {
-				"must_types": ["fan", "ping-pong-ball", "@book"],
-				"not_missing": ["fan", "ping pong", "ping-pong", "book"],
-				"counts": [{ "of": "@book", "min": 2 }],
+				"must_types": [
+					"fan",
+					"ping-pong-ball",
+					"@book"
+				],
+				"not_missing": [
+					"fan",
+					"ping pong",
+					"ping-pong",
+					"book"
+				],
+				"counts": [
+					{
+						"of": "@book",
+						"min": 2
+					}
+				],
 				"relations": [
-					{ "rel": "stack", "a": "@book", "min": 2 },
-					{ "rel": "on", "a": "ping-pong-ball", "b": "@book" }
+					{
+						"rel": "stack",
+						"a": "@book",
+						"min": 2
+					},
+					{
+						"rel": "on",
+						"a": "ping-pong-ball",
+						"b": "@book"
+					}
 				],
 				"outcomes": [
-					{ "kind": "leaves", "of": "ping-pong-ball", "from": "@book" },
-					{ "kind": "moves", "of": "ping-pong-ball", "min_m": 0.1 }
+					{
+						"kind": "leaves",
+						"of": "ping-pong-ball",
+						"from": "@book"
+					},
+					{
+						"kind": "moves",
+						"of": "ping-pong-ball",
+						"min_m": 0.1
+					}
 				],
 				"rubric": "A stack of at least two books with a ping-pong ball on top, and a desk fan aimed at the ball at its height; the air pushes the ball off the stack."
 			}
@@ -133,16 +309,47 @@
 			"mode": "new",
 			"prompt": "Build a marble run: the marble zigzags down three ramps and drops into a bucket at the bottom.",
 			"expect": {
-				"must_types": ["glass-marble", "@ramp", "bucket"],
-				"not_missing": ["marble", "ramp", "bucket"],
-				"counts": [{ "of": "@ramp", "min": 3 }],
+				"must_types": [
+					"glass-marble",
+					"@ramp",
+					"bucket"
+				],
+				"not_missing": [
+					"marble",
+					"ramp",
+					"bucket"
+				],
+				"counts": [
+					{
+						"of": "@ramp",
+						"min": 3
+					}
+				],
 				"relations": [
-					{ "rel": "angled", "a": "@ramp", "sign": "down_right", "min_deg": 3 },
-					{ "rel": "angled", "a": "@ramp", "sign": "down_left", "min_deg": 3 }
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"sign": "down_right",
+						"min_deg": 3
+					},
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"sign": "down_left",
+						"min_deg": 3
+					}
 				],
 				"outcomes": [
-					{ "kind": "hits", "a": "glass-marble", "b": "@ramp" },
-					{ "kind": "in", "item": "glass-marble", "container": "bucket" }
+					{
+						"kind": "hits",
+						"a": "glass-marble",
+						"b": "@ramp"
+					},
+					{
+						"kind": "in",
+						"item": "glass-marble",
+						"container": "bucket"
+					}
 				],
 				"rubric": "Three ramps stacked as a zig-zag (alternating slope directions, each one catching the marble from the one above), the marble starting at the top, running down all three in turn and finally dropping into a bucket."
 			}
@@ -154,13 +361,49 @@
 			"mode": "new",
 			"prompt": "A pendulum knocks over a line of dominoes, and the last domino bumps a toy car so it rolls away down a ramp.",
 			"expect": {
-				"must_types": ["@pendulum", "@domino", "@toy_car", "@ramp"],
-				"not_missing": ["pendulum", "domino", "car", "ramp"],
+				"must_types": [
+					"@pendulum",
+					"@domino",
+					"@toy_car",
+					"@ramp"
+				],
+				"not_missing": [
+					"pendulum",
+					"domino",
+					"car",
+					"ramp"
+				],
 				"outcomes": [
-					{ "kind": "hits", "a": "@pendulum", "b": "@domino" },
-					{ "kind": "topples", "of": "@domino", "min_fraction": 0.8 },
-					{ "kind": "moves", "of": "@toy_car", "min_m": 0.2 },
-					{ "kind": "sequence", "steps": [{ "kind": "hits", "a": "@pendulum", "b": "@domino" }, { "kind": "moves", "of": "@toy_car", "min_m": 0.02 }] }
+					{
+						"kind": "hits",
+						"a": "@pendulum",
+						"b": "@domino"
+					},
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					},
+					{
+						"kind": "moves",
+						"of": "@toy_car",
+						"min_m": 0.2
+					},
+					{
+						"kind": "sequence",
+						"steps": [
+							{
+								"kind": "hits",
+								"a": "@pendulum",
+								"b": "@domino"
+							},
+							{
+								"kind": "moves",
+								"of": "@toy_car",
+								"min_m": 0.02
+							}
+						]
+					}
 				],
 				"rubric": "A pendulum swings into the first domino of a row; the row falls in turn; the last domino nudges a toy car waiting at the top edge of a ramp, and the car rolls down the ramp. The car only moves because the dominoes reach it."
 			}
@@ -172,18 +415,126 @@
 			"mode": "new",
 			"prompt": "desk chain reaction: a tennis ball rolls down a ruler propped on a book, knocks over a row of 6 dominoes, the last domino pushes a toy car, and the car crashes into a stack of plastic cups",
 			"expect": {
-				"must_types": ["tennis-ball", "ruler", "@book", "@domino", "@toy_car", "plastic-cup"],
-				"not_missing": ["tennis ball", "ruler", "book", "domino", "car", "cup", "plastic cup"],
-				"counts": [{ "of": "@domino", "eq": 6 }, { "of": "plastic-cup", "min": 2 }],
-				"relations": [{ "rel": "on", "a": "ruler", "b": "@book", "soft": true }, { "rel": "stack", "a": "plastic-cup", "min": 2, "soft": true }],
-				"outcomes": [
-					{ "kind": "hits", "a": "tennis-ball", "b": "@domino" },
-					{ "kind": "topples", "of": "@domino", "min_fraction": 0.8 },
-					{ "kind": "moves", "of": "@toy_car", "min_m": 0.05 },
-					{ "kind": "hits", "a": "@toy_car", "b": "plastic-cup" },
-					{ "kind": "sequence", "steps": [{ "kind": "hits", "a": "tennis-ball", "b": "@domino" }, { "kind": "moves", "of": "@toy_car", "min_m": 0.02 }, { "kind": "hits", "a": "@toy_car", "b": "plastic-cup" }], "soft": true }
+				"must_types": [
+					"tennis-ball",
+					"ruler",
+					"@book",
+					"@domino",
+					"@toy_car"
 				],
-				"rubric": "A ruler leaning from a book down to the table as a ramp with a tennis ball at its top; six dominoes in a row at its foot; a toy car right after the last domino; a stack of plastic cups further on. Ball rolls, dominoes fall, the last pushes the car, the car hits the cups, in that order."
+				"not_missing": [
+					"tennis ball",
+					"ruler",
+					"book",
+					"domino",
+					"car"
+				],
+				"may_missing": [
+					{
+						"what": "plastic cups that can be knocked over (the library's plastic cup is fixed in place)",
+						"match": [
+							"cup",
+							"cups",
+							"plastic cup"
+						]
+					}
+				],
+				"counts": [
+					{
+						"of": "@domino",
+						"eq": 6
+					}
+				],
+				"relations": [
+					{
+						"rel": "on",
+						"a": "ruler",
+						"b": "@book",
+						"soft": true
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "tennis-ball",
+						"b": "@domino"
+					},
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					},
+					{
+						"kind": "moves",
+						"of": "@toy_car",
+						"min_m": 0.05
+					},
+					{
+						"kind": "hits",
+						"a": "@toy_car",
+						"b": [
+							"plastic-cup",
+							"foam-block",
+							"cardboard-box",
+							"wooden-block",
+							"lego-brick",
+							"tissue-box",
+							"cereal-box",
+							"toilet-paper-roll",
+							"paper-towel-roll",
+							"cardboard-tube",
+							"soda-can",
+							"water-bottle",
+							"coffee-mug",
+							"bowling-pin",
+							"candle",
+							"rubiks-cube",
+							"die",
+							"sponge"
+						]
+					},
+					{
+						"kind": "sequence",
+						"steps": [
+							{
+								"kind": "hits",
+								"a": "tennis-ball",
+								"b": "@domino"
+							},
+							{
+								"kind": "moves",
+								"of": "@toy_car",
+								"min_m": 0.02
+							},
+							{
+								"kind": "hits",
+								"a": "@toy_car",
+								"b": [
+									"plastic-cup",
+									"foam-block",
+									"cardboard-box",
+									"wooden-block",
+									"lego-brick",
+									"tissue-box",
+									"cereal-box",
+									"toilet-paper-roll",
+									"paper-towel-roll",
+									"cardboard-tube",
+									"soda-can",
+									"water-bottle",
+									"coffee-mug",
+									"bowling-pin",
+									"candle",
+									"rubiks-cube",
+									"die",
+									"sponge"
+								]
+							}
+						],
+						"soft": true
+					}
+				],
+				"rubric": "A ruler leaning from a book down to the table as a ramp with a tennis ball at its top; six dominoes in a row at its foot; a toy car right after the last domino; a stack of cups further on. The library's plastic cup is fixed in place, so a good answer says so honestly and stacks light stand-ins (foam blocks, small boxes) that the car can knock over, or uses fixed cups as the target and says they will not fall. Ball rolls, dominoes fall, the last pushes the car, the car hits the stack, in that order."
 			}
 		},
 		{
@@ -193,12 +544,35 @@
 			"mode": "new",
 			"prompt": "rubber duck slides down an icy ramp into a bucket",
 			"expect": {
-				"must_types": ["rubber-duck", "ice-sheet", "bucket"],
-				"not_missing": ["duck", "ice", "ramp", "bucket"],
-				"relations": [{ "rel": "angled", "a": "ice-sheet", "min_deg": 5 }],
+				"must_types": [
+					"rubber-duck",
+					"ice-sheet",
+					"bucket"
+				],
+				"not_missing": [
+					"duck",
+					"ice",
+					"ramp",
+					"bucket"
+				],
+				"relations": [
+					{
+						"rel": "angled",
+						"a": "ice-sheet",
+						"min_deg": 5
+					}
+				],
 				"outcomes": [
-					{ "kind": "moves", "of": "rubber-duck", "min_m": 0.1 },
-					{ "kind": "in", "item": "rubber-duck", "container": "bucket" }
+					{
+						"kind": "moves",
+						"of": "rubber-duck",
+						"min_m": 0.1
+					},
+					{
+						"kind": "in",
+						"item": "rubber-duck",
+						"container": "bucket"
+					}
 				],
 				"rubric": "An ice sheet propped up as a ramp, a rubber duck at its top, and a bucket placed so the duck slides down the ice and drops into the bucket."
 			}
@@ -210,15 +584,72 @@
 			"mode": "new",
 			"prompt": "Make a 5-step chain reaction: a steel ball rolls down a ramp, knocks over some dominoes, the last domino pushes a golf ball off a ledge onto a seesaw, and the seesaw flings a ping pong ball into a cup.",
 			"expect": {
-				"must_types": ["steel-ball", "@ramp", "@domino", "golf-ball", "@lever", "ping-pong-ball", "@cup"],
-				"not_missing": ["steel ball", "ramp", "domino", "golf ball", "seesaw", "ping pong", "ping-pong", "cup"],
+				"must_types": [
+					"steel-ball",
+					"@ramp",
+					"@domino",
+					"golf-ball",
+					"@lever",
+					"ping-pong-ball",
+					"@cup"
+				],
+				"not_missing": [
+					"steel ball",
+					"ramp",
+					"domino",
+					"golf ball",
+					"seesaw",
+					"ping pong",
+					"ping-pong",
+					"cup"
+				],
 				"outcomes": [
-					{ "kind": "hits", "a": "steel-ball", "b": "@domino" },
-					{ "kind": "topples", "of": "@domino", "min_fraction": 0.8 },
-					{ "kind": "hits", "a": "golf-ball", "b": "@lever" },
-					{ "kind": "rises", "of": "ping-pong-ball", "min_m": 0.05 },
-					{ "kind": "in", "item": "ping-pong-ball", "container": "@cup" },
-					{ "kind": "sequence", "steps": [{ "kind": "hits", "a": "steel-ball", "b": "@domino" }, { "kind": "moves", "of": "golf-ball", "min_m": 0.02 }, { "kind": "moves", "of": "ping-pong-ball", "min_m": 0.02 }], "soft": true }
+					{
+						"kind": "hits",
+						"a": "steel-ball",
+						"b": "@domino"
+					},
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					},
+					{
+						"kind": "hits",
+						"a": "golf-ball",
+						"b": "@lever"
+					},
+					{
+						"kind": "rises",
+						"of": "ping-pong-ball",
+						"min_m": 0.05
+					},
+					{
+						"kind": "in",
+						"item": "ping-pong-ball",
+						"container": "@cup"
+					},
+					{
+						"kind": "sequence",
+						"steps": [
+							{
+								"kind": "hits",
+								"a": "steel-ball",
+								"b": "@domino"
+							},
+							{
+								"kind": "moves",
+								"of": "golf-ball",
+								"min_m": 0.02
+							},
+							{
+								"kind": "moves",
+								"of": "ping-pong-ball",
+								"min_m": 0.02
+							}
+						],
+						"soft": true
+					}
 				],
 				"rubric": "Five stages in order: steel ball down a ramp -> domino row falls -> last domino pushes a golf ball off a raised ledge -> the golf ball lands on the raised end of a seesaw -> the seesaw flings a ping-pong ball, which lands in a cup. Each stage only fires because of the one before."
 			}
@@ -230,18 +661,98 @@
 			"mode": "new",
 			"prompt": "For my physics class I need a 6-stage Rube Goldberg machine: a pendulum swings into a ball, the ball rolls down a ramp, it knocks over a row of dominoes, the last domino pushes a toy car down a second ramp, and the car smashes into a tower of 3 wooden blocks.",
 			"expect": {
-				"must_types": ["@pendulum", "@ball", "@ramp", "@domino", "@toy_car", "wooden-block"],
-				"not_missing": ["pendulum", "ball", "ramp", "domino", "car", "block", "wooden block"],
-				"counts": [{ "of": "@ramp", "min": 2 }, { "of": "wooden-block", "eq": 3 }],
-				"relations": [{ "rel": "stack", "a": "wooden-block", "min": 3 }],
+				"must_types": [
+					"@pendulum",
+					"@ball",
+					"@ramp",
+					"@domino",
+					"@toy_car",
+					"wooden-block"
+				],
+				"not_missing": [
+					"pendulum",
+					"ball",
+					"ramp",
+					"domino",
+					"car",
+					"block",
+					"wooden block"
+				],
+				"counts": [
+					{
+						"of": "@ramp",
+						"min": 2
+					},
+					{
+						"of": "wooden-block",
+						"eq": 3
+					}
+				],
+				"relations": [
+					{
+						"rel": "stack",
+						"a": "wooden-block",
+						"min": 3
+					}
+				],
 				"outcomes": [
-					{ "kind": "hits", "a": "@pendulum", "b": "@ball" },
-					{ "kind": "topples", "of": "@domino", "min_fraction": 0.8 },
-					{ "kind": "moves", "of": "@toy_car", "min_m": 0.1 },
-					{ "kind": "hits", "a": "@toy_car", "b": "wooden-block" },
-					{ "kind": "displaced", "of": "wooden-block", "min_fraction": 0.34, "min_m": 0.03 },
-					{ "kind": "chain_events", "min": 5, "soft": true },
-					{ "kind": "sequence", "steps": [{ "kind": "hits", "a": "@pendulum", "b": "@ball" }, { "kind": "hits", "a": "@ball", "b": "@domino" }, { "kind": "moves", "of": "@toy_car", "min_m": 0.02 }, { "kind": "hits", "a": "@toy_car", "b": "wooden-block" }], "soft": true }
+					{
+						"kind": "hits",
+						"a": "@pendulum",
+						"b": "@ball"
+					},
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					},
+					{
+						"kind": "moves",
+						"of": "@toy_car",
+						"min_m": 0.1
+					},
+					{
+						"kind": "hits",
+						"a": "@toy_car",
+						"b": "wooden-block"
+					},
+					{
+						"kind": "displaced",
+						"of": "wooden-block",
+						"min_fraction": 0.34,
+						"min_m": 0.03
+					},
+					{
+						"kind": "chain_events",
+						"min": 5,
+						"soft": true
+					},
+					{
+						"kind": "sequence",
+						"steps": [
+							{
+								"kind": "hits",
+								"a": "@pendulum",
+								"b": "@ball"
+							},
+							{
+								"kind": "hits",
+								"a": "@ball",
+								"b": "@domino"
+							},
+							{
+								"kind": "moves",
+								"of": "@toy_car",
+								"min_m": 0.02
+							},
+							{
+								"kind": "hits",
+								"a": "@toy_car",
+								"b": "wooden-block"
+							}
+						],
+						"soft": true
+					}
 				],
 				"rubric": "Six stages left to right, each triggering the next: pendulum hits a ball; ball rolls down a ramp; ball knocks over a domino row; last domino pushes a toy car down a second ramp; the car hits a tower of exactly three stacked wooden blocks and knocks it down. Clear and readable for a class."
 			}
@@ -253,17 +764,91 @@
 			"mode": "new",
 			"prompt": "kitchen table contraption with six steps: an orange rolls down a cutting board, hits a row of 5 dominoes, the last domino knocks a marble off a book, the marble rolls down a ruler, bumps a toy car, and the car rolls into a cereal box and knocks it over",
 			"expect": {
-				"must_types": ["orange", "cutting-board", "@domino", "glass-marble", "@book", "ruler", "@toy_car", "cereal-box"],
-				"not_missing": ["orange", "cutting board", "domino", "marble", "book", "ruler", "car", "cereal"],
-				"counts": [{ "of": "@domino", "eq": 5 }],
+				"must_types": [
+					"orange",
+					"cutting-board",
+					"@domino",
+					"glass-marble",
+					"@book",
+					"ruler",
+					"@toy_car",
+					"cereal-box"
+				],
+				"not_missing": [
+					"orange",
+					"cutting board",
+					"domino",
+					"marble",
+					"book",
+					"ruler",
+					"car",
+					"cereal"
+				],
+				"counts": [
+					{
+						"of": "@domino",
+						"eq": 5
+					}
+				],
 				"outcomes": [
-					{ "kind": "hits", "a": "orange", "b": "@domino" },
-					{ "kind": "topples", "of": "@domino", "min_fraction": 0.8 },
-					{ "kind": "leaves", "of": "glass-marble", "from": "@book" },
-					{ "kind": "hits", "a": "glass-marble", "b": "@toy_car", "soft": true },
-					{ "kind": "hits", "a": "@toy_car", "b": "cereal-box" },
-					{ "kind": "topples", "of": "cereal-box", "min_fraction": 1, "soft": true },
-					{ "kind": "sequence", "steps": [{ "kind": "hits", "a": "orange", "b": "@domino" }, { "kind": "moves", "of": "glass-marble", "min_m": 0.02 }, { "kind": "moves", "of": "@toy_car", "min_m": 0.02 }, { "kind": "hits", "a": "@toy_car", "b": "cereal-box" }], "soft": true }
+					{
+						"kind": "hits",
+						"a": "orange",
+						"b": "@domino"
+					},
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					},
+					{
+						"kind": "leaves",
+						"of": "glass-marble",
+						"from": "@book"
+					},
+					{
+						"kind": "hits",
+						"a": "glass-marble",
+						"b": "@toy_car",
+						"soft": true
+					},
+					{
+						"kind": "hits",
+						"a": "@toy_car",
+						"b": "cereal-box"
+					},
+					{
+						"kind": "topples",
+						"of": "cereal-box",
+						"min_fraction": 1,
+						"soft": true
+					},
+					{
+						"kind": "sequence",
+						"steps": [
+							{
+								"kind": "hits",
+								"a": "orange",
+								"b": "@domino"
+							},
+							{
+								"kind": "moves",
+								"of": "glass-marble",
+								"min_m": 0.02
+							},
+							{
+								"kind": "moves",
+								"of": "@toy_car",
+								"min_m": 0.02
+							},
+							{
+								"kind": "hits",
+								"a": "@toy_car",
+								"b": "cereal-box"
+							}
+						],
+						"soft": true
+					}
 				],
 				"rubric": "Six stages in order: orange rolls down a propped cutting board -> five dominoes fall -> the last knocks a marble off a book -> the marble rolls down a ruler ramp -> it bumps a toy car -> the car rolls into a standing cereal box and tips it over. Honest about anything the physics cannot do (e.g. a 5 g marble barely moving a car) and adapted so the chain still works."
 			}
@@ -275,11 +860,28 @@
 			"mode": "new",
 			"prompt": "make a mini golf hole where the ball goes down a ramp, over a little hill and into the cup",
 			"expect": {
-				"must_types": ["golf-ball", "@ramp", "@cup"],
-				"not_missing": ["golf ball", "ball", "ramp", "cup"],
+				"must_types": [
+					"golf-ball",
+					"@ramp",
+					"@cup"
+				],
+				"not_missing": [
+					"golf ball",
+					"ball",
+					"ramp",
+					"cup"
+				],
 				"outcomes": [
-					{ "kind": "moves", "of": "golf-ball", "min_m": 0.3 },
-					{ "kind": "in", "item": "golf-ball", "container": "@cup" }
+					{
+						"kind": "moves",
+						"of": "golf-ball",
+						"min_m": 0.3
+					},
+					{
+						"kind": "in",
+						"item": "golf-ball",
+						"container": "@cup"
+					}
 				],
 				"rubric": "A golf ball at the top of a ramp, a small hump or hill after it (a wedge, a curved or bent ramp, a small block under a plank), and a cup the ball ends up inside. The ball really goes over the hill and into the cup."
 			}

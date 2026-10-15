@@ -1,12 +1,12 @@
 // Builds the static site a host serves (Vercel: vercel.json "outputDirectory": "dist"): ONLY what the app loads at run time, copied out of web/,
 // then checked so that a deploy cannot ship a page that 404s on its own imports, calls another origin, or carries a secret.
 //   node tools/build-static.mjs --regen     (npm run build:static; Vercel's buildCommand) first regenerates the generated files in web/
-//                                            (npm run build:engine, vendor:three, vendor:media, gen:scenarios: `npm ci` first), then builds dist/.
+//                                            (npm run build:engine, vendor:three, vendor:media, vendor:clerk, gen:scenarios: `npm ci` first), then builds dist/.
 //                                            An engine bundle (web/sim/engine-worker.js, engine-math.js) that comes out different from the copy that
 //                                            was uploaded FAILS the build: the uploaded one is the one the parity tools checked (--allow-engine-drift
 //                                            ships the fresh build anyway). Other generated files that differ are a warning.
 //   node tools/build-static.mjs             (npm run build:static:nogen) builds dist/ from web/ as it is; the generated files must be up to date
-//                                            (vendor:three:check, vendor:media:check, gen:scenarios:check, and the engine bundle rebuilt from its
+//                                            (vendor:three:check, vendor:media:check, vendor:clerk:check, gen:scenarios:check, and the engine bundle rebuilt from its
 //                                            current sources in a scratch folder must be byte-identical to web/sim's). Writes nothing in the project
 //                                            outside dist/ (and its marker file, .dist.build-static beside it).
 //   node tools/build-static.mjs --serve-only [port]   (npm run preview:static) serves an existing dist/ at http://127.0.0.1:<port>/ with vercel.json's
@@ -35,7 +35,10 @@
 //   browser asks for it (no extension guessing; bare names only through the importmap: "three", "three/addons/…", "mediabunny"; module workers
 //   have no importmap, so no bare names in a worker); template imports (`./models/${g}.js`) match files, and every name of a string list in the
 //   same file that fits the template does; no import or link to another origin; the scenario list matches web/scenarios; nothing from outside web/;
-//   no .env/key files, and (when TRUEFOUNDRY_API_KEY is set in this process, as it may be in Vercel's build) no shipped file containing its value.
+//   no .env/key files, and (when TRUEFOUNDRY_API_KEY is set in this process, as it may be in Vercel's build) no shipped file containing its value;
+//   the same for the accounts' server secrets (CLERK_SECRET_KEY, DATABASE_URL, ...: docs/ACCOUNTS.md), and no Clerk secret key or database URL
+//   with a password in any shipped text file. --vercel-check also checks the scenes function (api/scenes/index.mjs: its rewrites, its files, the
+//   Neon driver in it) and calls it with no keys (/api/scenes/me -> {accounts: null, storage: false}).
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import fs from "node:fs"
@@ -235,6 +238,91 @@ await gw.close()
 console.log("RESULT " + JSON.stringify(out))
 `
 
+// The scenes function (docs/ACCOUNTS.md), called as deployed with no keys at all: GET /api/scenes/me answers {accounts: null, storage: false},
+// GET /api/scenes 503 not_configured, and with a DATABASE_URL that leads nowhere the Neon driver loads from the function's own node_modules
+// (the request then fails as "unavailable", with no host or connection string in the answer).
+const CALL_SCENES = `import { Readable } from "node:stream"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
+const [fn] = process.argv.slice(2)
+const { handle } = await import(pathToFileURL(join(fn, "api", "scenes", "index.mjs")).href)
+const { getDb } = await import(pathToFileURL(join(fn, "api", "_lib", "db.mjs")).href)
+function call(url, env) {
+	const req = Readable.from([])
+	const u = new URL(url, "http://x")
+	Object.assign(req, { method: "GET", url: u.pathname + u.search, query: Object.fromEntries(u.searchParams), headers: {} })
+	return new Promise((resolve) => {
+		const res = { statusCode: 200, headers: {}, writableEnded: false, setHeader(k, v) { this.headers[k.toLowerCase()] = v }, end(t) { this.writableEnded = true; let json = null; try { json = JSON.parse(String(t)) } catch {} resolve({ status: this.statusCode, json, text: String(t ?? "") }) } }
+		handle(req, res, { env })
+	})
+}
+const out = {}
+const me = await call("/api/scenes/me", {})
+out.me = { status: me.status, json: me.json }
+const list = await call("/api/scenes", {})
+out.list = { status: list.status, code: list.json?.code ?? null }
+const logs = []
+const log = console.log
+console.log = (...a) => logs.push(a.join(" "))
+const url = "postgres://check:not-a-password@127.0.0.1:9/none"
+let dbAnswer = null
+try { await getDb({ DATABASE_URL: url }) } catch (e) { dbAnswer = { status: e.status, code: e.code, message: e.message } }
+console.log = log
+out.db = { answer: dbAnswer, driverLoaded: logs.some((l) => l.includes('"db_schema"')), driverMissing: logs.some((l) => l.includes('"db_client"')), leaked: JSON.stringify(dbAnswer).includes("not-a-password") || logs.some((l) => l.includes("not-a-password")) }
+console.log("RESULT " + JSON.stringify(out))
+`
+async function scenesCheck({ output, cfg, up, files, tmp, problems, say, run, posix, chmodTree }) {
+	const fnRoot = path.join(output, "functions")
+	const made = listFiles(fnRoot).filter((f) => path.basename(f) === ".vc-config.json").map((f) => posix(path.relative(fnRoot, path.dirname(f))))
+	const extra = made.filter((f) => !["api/ai/[step].func", "api/scenes/index.func"].includes(f))
+	if (extra.length) problems.push(`vercel build made functions that should not exist: ${extra.join(", ")} (only api/ai/[step] and api/scenes/index; api/_lib/ holds modules, not functions)`)
+	const rewrites = (cfg.routes ?? []).filter((r) => typeof r.src === "string" && r.src.startsWith("^/api/scenes(") && /^\/api\/scenes\?id=\$1(&part=\$2)?$/.test(String(r.dest ?? "")))
+	if (rewrites.length < 2) problems.push(".vercel/output/config.json lacks the rewrites of /api/scenes/:id and /api/scenes/:id/:part to the scenes function (vercel.json rewrites)")
+	const funcDir = path.join(fnRoot, "api", "scenes", "index.func")
+	if (!fs.existsSync(path.join(funcDir, ".vc-config.json"))) return void problems.push("there is no function at .vercel/output/functions/api/scenes/index.func")
+	const vc = JSON.parse(fs.readFileSync(path.join(funcDir, ".vc-config.json"), "utf8"))
+	const want = JSON.parse(fs.readFileSync(path.join(up, "vercel.json"), "utf8")).functions?.["api/scenes/*.mjs"] ?? {}
+	if (!/^nodejs\d+\.x$/.test(vc.runtime ?? "")) problems.push(`the scenes function's runtime is ${vc.runtime}`)
+	if (vc.handler !== "api/scenes/index.mjs") problems.push(`the scenes function's handler is ${vc.handler}`)
+	if (want.maxDuration !== undefined && vc.maxDuration !== want.maxDuration) problems.push(`the scenes function's maxDuration is ${vc.maxDuration}; vercel.json says ${want.maxDuration}`)
+	const fn = path.join(tmp, "scenes-function")
+	fs.cpSync(funcDir, fn, { recursive: true, filter: (s) => path.basename(s) !== ".vc-config.json" })
+	for (const [dest, src] of Object.entries(vc.filePathMap ?? {})) {
+		const from = path.resolve(up, src)
+		if (!from.startsWith(up + path.sep) || !fs.existsSync(from)) {
+			problems.push(`the scenes function's filePathMap names ${src}, which is not in the upload`)
+			continue
+		}
+		fs.mkdirSync(path.dirname(path.join(fn, dest)), { recursive: true })
+		fs.copyFileSync(from, path.join(fn, dest))
+	}
+	const fnFiles = listFiles(fn).map((f) => posix(path.relative(fn, f)))
+	const inFn = new Set(fnFiles)
+	for (const f of files) if (f.startsWith("web/sim/") && /\.(m?js|json)$/.test(f) && !inFn.has(f)) problems.push(`the scenes function lacks ${f} (vercel.json functions["api/scenes/*.mjs"].includeFiles)`)
+	for (const need of ["api/_lib/auth.mjs", "api/_lib/db.mjs", "node_modules/@neondatabase/serverless/index.mjs"]) if (!inFn.has(need)) problems.push(`the scenes function lacks ${need}`)
+	const unwanted = fnFiles.filter((f) => /\.map$/.test(f) || /(^|\/)\.env/.test(f) || /\.(pem|key|p12)$/i.test(f) || f.startsWith("web/account/"))
+	if (unwanted.length) problems.push(`the scenes function holds files it must not: ${unwanted.slice(0, 6).join(", ")}`)
+	const bytes = fnFiles.reduce((n, f) => n + fs.statSync(path.join(fn, f)).size, 0)
+	say(`scenes function: ${vc.runtime}, maxDuration ${vc.maxDuration} s, ${fnFiles.length} files, ${(bytes / 1048576).toFixed(1)} MB; rewrites: ${rewrites.length}; functions built: ${made.join(", ")}`)
+	chmodTree(fn, true)
+	try {
+		const script = path.join(tmp, "call-scenes.mjs")
+		fs.writeFileSync(script, CALL_SCENES)
+		const r = run(process.execPath, [script, fn], { cwd: fn, env: { PATH: process.env.PATH ?? "", HOME: tmp, TMPDIR: tmp, NODE_ENV: "production" }, timeout: 60000 })
+		const line = (r.stdout ?? "").split("\n").find((l) => l.startsWith("RESULT "))
+		if (r.status !== 0 || !line) return void problems.push(`calling the built scenes function failed (exit ${r.status ?? r.signal}): ${(r.stderr || r.stdout || "").trim().split("\n").slice(-4).join(" / ") || "no output"}`)
+		const got = JSON.parse(line.slice("RESULT ".length))
+		if (got.me.status !== 200 || got.me.json?.accounts !== null || got.me.json?.storage !== false) problems.push(`GET /api/scenes/me with no keys answered ${got.me.status} ${JSON.stringify(got.me.json)}, not {accounts: null, storage: false}`)
+		if (got.list.status !== 503 || got.list.code !== "not_configured") problems.push(`GET /api/scenes with no keys answered ${got.list.status} ${got.list.code}, not 503 not_configured`)
+		if (!got.db.driverLoaded || got.db.driverMissing) problems.push("the scenes function could not load the Neon driver (@neondatabase/serverless) from its own files")
+		if (got.db.answer?.code !== "unavailable") problems.push(`a database that can't be reached answered ${JSON.stringify(got.db.answer)}, not 503 unavailable`)
+		if (got.db.leaked) problems.push("a database error leaked the connection string")
+		say(`scenes function called with no keys: /api/scenes/me ${got.me.status} ${JSON.stringify(got.me.json)}, /api/scenes ${got.list.status} ${got.list.code}; the Neon driver loads from the function, and an unreachable database answers "${got.db.answer?.code}" with nothing of its address`)
+	} finally {
+		chmodTree(fn, false)
+	}
+}
+
 /** 0 when the upload builds with `vercel build` and its AI function answers as it should, else 1 (each problem printed). */
 async function vercelCheck() {
 	const say = (m) => console.log(`build-static: ${m}`)
@@ -277,14 +365,14 @@ async function vercelCheck() {
 			fs.copyFileSync(src, path.join(up, f))
 		}
 		say(`upload (.vercelignore): ${files.length} files, ${(bytes / 1048576).toFixed(1)} MB`)
-		for (const need of ["package.json", "package-lock.json", "vercel.json", "api/ai/[step].mjs", "tools/build-static.mjs", "web/index.html"]) if (!files.includes(need)) problems.push(`the upload has no ${need}`)
+		for (const need of ["package.json", "package-lock.json", "vercel.json", "api/ai/[step].mjs", "api/scenes/index.mjs", "tools/build-static.mjs", "web/index.html"]) if (!files.includes(need)) problems.push(`the upload has no ${need}`)
 		if (problems.length) return 1
 
 		// 2. vercel build in the copy, with a throwaway local project id (nothing is linked or created on Vercel), without the AI key in its environment
 		fs.mkdirSync(path.join(up, ".vercel"))
 		fs.writeFileSync(path.join(up, ".vercel", "project.json"), JSON.stringify({ projectId: "prj_buildstaticvercelcheck", orgId: "team_buildstaticvercelcheck", settings: { framework: null } }))
 		const env = { ...process.env, VERCEL_TELEMETRY_DISABLED: "1" }
-		for (const k of Object.keys(env)) if (/^(TRUEFOUNDRY_|AI_)/.test(k)) delete env[k]
+		for (const k of Object.keys(env)) if (/^(TRUEFOUNDRY_|AI_|CLERK_|NEXT_PUBLIC_CLERK_|DATABASE_|POSTGRES_|PG[A-Z]+$)/.test(k)) delete env[k]
 		say(`vercel build in ${up} (npm ci, then npm run build:static):`)
 		const vb = spawnSync("vercel", ["build", "--yes"], { cwd: up, stdio: "inherit", env })
 		if (vb.status !== 0) {
@@ -332,6 +420,7 @@ async function vercelCheck() {
 		for (const f of files) if ((f.startsWith("ai/") || (f.startsWith("web/sim/") && /\.(m?js|json)$/.test(f))) && !inFn.has(f)) problems.push(`the function lacks ${f} (vercel.json functions["api/ai/*.mjs"].includeFiles)`)
 		const unwanted = fnFiles.filter((f) => /\.map$/.test(f) || /(^|\/)\.env/.test(f) || /\.(pem|key|p12)$/i.test(f))
 		if (unwanted.length) problems.push(`the function holds files it must not: ${unwanted.join(", ")}`)
+		for (const need of ["api/_lib/ai-gate.mjs", "node_modules/@neondatabase/serverless/index.mjs"]) if (!inFn.has(need)) problems.push(`the function lacks ${need} (the accounts' AI limits: docs/ACCOUNTS.md §6)`)
 		const fnBytes = fnFiles.reduce((n, f) => n + fs.statSync(path.join(fn, f)).size, 0)
 		say(`function: ${vc.runtime}, maxDuration ${vc.maxDuration} s, supportsCancellation ${!!vc.supportsCancellation}, ${fnFiles.length} files, ${(fnBytes / 1048576).toFixed(1)} MB`)
 		chmodTree(fn, true)
@@ -365,6 +454,7 @@ async function vercelCheck() {
 		if (got.gateway.requests < 1 || !got.gateway.withKey) problems.push(`the gateway got ${got.gateway.requests} requests${got.gateway.withKey ? "" : ", not all with the key"}`)
 		if (!(got.run.frames > 0) || got.run.goal !== true) problems.push(`the function's engine ran the starter to ${got.run.frames} frames, goal ${got.run.goal}`)
 		say(`function called: GET ${got.get}, unknown step ${got.unknown}, edit of the starter ${got.edit.status} through ${got.edit.model} in ${got.edit.ms} ms (gateway: ${got.gateway.requests} request${got.gateway.requests === 1 ? "" : "s"}), no key in any answer; its engine ran the starter: ${got.run.frames} frames, goal ${got.run.goal ? "met" : "NOT met"}`)
+		await scenesCheck({ output, cfg, up, files, tmp, problems, say, run, posix, chmodTree })
 		return problems.length ? 1 : 0
 	} catch (e) {
 		problems.push(`the check itself failed: ${e?.stack ?? e}`)
@@ -381,7 +471,7 @@ if (opt.vercelCheck) process.exit(await vercelCheck())
 
 if (opt.build && opt.regen) {
 	const before = fingerprint()
-	for (const s of ["build:engine", "vendor:three", "vendor:media", "gen:scenarios"]) if (!npmRun(s)) fail(`npm run ${s} failed`)
+	for (const s of ["build:engine", "vendor:three", "vendor:media", "vendor:clerk", "gen:scenarios"]) if (!npmRun(s)) fail(`npm run ${s} failed`)
 	const after = fingerprint()
 	for (const g of GENERATED) {
 		const engine = ENGINE.includes(g)
@@ -392,7 +482,7 @@ if (opt.build && opt.regen) {
 		else warnings.push(`${g} came out different from the copy that was uploaded: the deploy has the fresh build; regenerate and check it locally (npm run ${engine ? "build:engine, then the parity tools" : g.includes("vendor") ? "vendor:three / vendor:media" : "gen:scenarios"})`)
 	}
 } else if (opt.build) {
-	for (const s of ["vendor:three:check", "vendor:media:check", "gen:scenarios:check"]) if (!npmRun(s)) errors.push(`npm run ${s} failed (its message is above): a generated file in web/ is out of date (run it without :check), or the script could not read what the app imports`)
+	for (const s of ["vendor:three:check", "vendor:media:check", "vendor:clerk:check", "gen:scenarios:check"]) if (!npmRun(s)) errors.push(`npm run ${s} failed (its message is above): a generated file in web/ is out of date (run it without :check), or the script could not read what the app imports`)
 	// the engine bundle has no --check of its own: rebuild it from the current sources in a scratch folder and compare the bytes
 	const e = engineAsBuiltNow()
 	if (e.error) errors.push(`the engine bundle could not be rebuilt for comparison (tools/build-engine.mjs: ${e.error})`)
@@ -773,6 +863,8 @@ for (const f of htmlFiles()) {
 	const all = listFiles(out)
 	const FORBIDDEN_PART = new Set(["research", "machines", "snapshots", "tooling", "dev", "node_modules", "__pycache__", "test", "tests", ".vercel", ".git", ".cache"])
 	const key = process.env.TRUEFOUNDRY_API_KEY && process.env.TRUEFOUNDRY_API_KEY.length >= 8 ? Buffer.from(process.env.TRUEFOUNDRY_API_KEY) : null
+	// (the accounts' server-side secrets too, when the build can see them: docs/ACCOUNTS.md; the publishable key is public by design)
+	const serverSecrets = ["CLERK_SECRET_KEY", "DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "POSTGRES_PASSWORD", "PGPASSWORD", "AI_SESSION_SECRET"].filter((k) => (process.env[k] ?? "").length >= 8).map((k) => [k, Buffer.from(process.env[k])])
 	for (const f of all) {
 		const r = path.relative(out, f).split(path.sep)
 		const name = r.at(-1)
@@ -780,10 +872,13 @@ for (const f of htmlFiles()) {
 		if (name.startsWith(".") || /\.(env|pem|key|p12|py|pyc|ts|log|md)$/i.test(name) && !LICENCE.test(name)) errors.push(`${rel(f)}: this kind of file never ships`)
 		const bytes = fs.readFileSync(f)
 		if (key && bytes.includes(key)) errors.push(`${rel(f)} contains the value of TRUEFOUNDRY_API_KEY`)
+		for (const [k, v] of serverSecrets) if (bytes.includes(v)) errors.push(`${rel(f)} contains the value of ${k}`)
 		if (/\.(m?js|css|html|json|map|txt|svg)$/.test(name)) {
 			const text = bytes.toString("utf8")
 			if (/TRUEFOUNDRY_API_KEY\s*["']?\s*[=:]\s*["'][^"'\s]{12,}["']/.test(text)) errors.push(`${rel(f)} seems to hold an API key value (TRUEFOUNDRY_API_KEY = "...")`)
 			if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) errors.push(`${rel(f)} holds a private key`)
+			if (/\bsk_(?:live|test)_[A-Za-z0-9]{20,}/.test(text)) errors.push(`${rel(f)} seems to hold a Clerk secret key (sk_...)`)
+			if (/\bpostgres(?:ql)?:\/\/[^\s"'`:@/]+:[^\s"'`@/]+@/.test(text)) errors.push(`${rel(f)} seems to hold a database connection string with a password`)
 		}
 	}
 }

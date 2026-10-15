@@ -334,6 +334,8 @@ export type Joint =
 			readonly compressOnly?: boolean
 			readonly coils?: number
 			readonly coilRadius?: number
+			/** The spring's own mass, kg: a third of it moves with a body it pushes from a fixed end (Rayleigh), half each between two moving ones. */
+			readonly mass?: number
 	  }
 	/**
 	 * A rope: slack until taut, never longer than `length`. One drawn as a chain (`render.style: "chain"`) or flagged `collide`

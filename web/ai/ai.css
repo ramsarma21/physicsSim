@@ -467,6 +467,15 @@ dialog.np-dialog { --ui-w: 640px; }
 .ai-sugg span { overflow: hidden; text-overflow: ellipsis; }
 .ai-sugg.fix { background: color-mix(in srgb, var(--ok) 10%, var(--card)); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
 .ai-sugg.fix .ai-ic { color: var(--ok); }
+/* the checked fix: the reply's own offer ("Want me to …?"), one click away */
+.ai-sugg.go { color: var(--card); font-weight: 600; background: var(--ok); border-color: color-mix(in srgb, var(--ok) 80%, #000); box-shadow: 0 1px 6px color-mix(in srgb, var(--ok) 30%, transparent); }
+.ai-sugg.go .ai-ic { color: var(--card); }
+.ai-sugg.go:hover { border-color: color-mix(in srgb, var(--ok) 60%, #000); filter: brightness(1.05); }
+.ai-checked { color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.ai-fixline { display: flex; align-items: center; gap: 8px; margin: -2px 0 10px; font-size: 13px; color: var(--ink-2); }
+.ai-fixline .ai-spin { width: 14px; height: 14px; flex: none; }
+.ai-fixline-n { color: var(--ink-3); font-size: 12px; }
+.ai-tag-fix { color: var(--ok); }
 .ai-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; padding-top: 8px; border-top: 1px solid var(--line); }
 .ai-link-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 3px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
 .ai-link-btn:hover { color: var(--ink); }

@@ -125,4 +125,41 @@ export function repairAccepted(before, after, k) {
 	return okNow || closer || after.f.stagesOk > before.f.stagesOk
 }
 
+/**
+ * v3 (r1 showed 4 of 10 repairs rejected only because the fix left one thing passing through another, although more checks passed): a repair
+ * that makes more checks pass is kept even with ONE new pass-through, and that pass-through then gets its own small fix (fixOverlaps).
+ * -> {ok, overlapFix: bool}
+ */
+export function repairVerdict(before, after, k) {
+	if (!after?.ok) return { ok: false }
+	for (let j = 0; j < k; j++)
+		if (before.stages[j].check && before.stages[j].res?.ok === true) {
+			const same = after.stages.find((s) => s.label === before.stages[j].label)
+			if (same && same.res?.ok !== true) return { ok: false }
+		}
+	const dBad = after.f.errors + after.f.through - (before.f.errors + before.f.through)
+	const gain = after.f.stagesOk + after.f.goalsOk - (before.f.stagesOk + before.f.goalsOk)
+	if (dBad > 0) return { ok: gain >= 1 && dBad <= 1 && after.f.errors <= before.f.errors, overlapFix: true }
+	return { ok: repairAccepted(before, after, k), overlapFix: false }
+}
+
+/** A small fix for things passing through each other (the edit step at its shipped low effort): kept when fewer pass through and no check is lost. */
+export async function fixOverlaps(L, ev) {
+	const bad = (ev.solved?.issues ?? []).filter((i) => i.level !== "info" && ["overlap", "stand_through"].includes(i.code)).map((i) => i.text)
+	if (!bad.length) return { ok: false, error: "nothing passes through" }
+	const text = `In this scene things pass through each other: ${bad.slice(0, 4).join("; ")}. Move them clear of each other with the smallest change (set_place with a new x or y_m, or move), keeping everything else exactly as it is and keeping what happens in the run.`
+	let out
+	try {
+		out = await runStep(L, "edit", { text, scene: ev.scene, plan: ev.plan }, { label: "overlap fix" })
+	} catch (e) {
+		return { ok: false, error: String(e?.message ?? e).slice(0, 200) }
+	}
+	const patches = Array.isArray(out.result?.patches) ? out.result.patches : []
+	if (!patches.length) return { ok: false, error: "no patches" }
+	const r = orch.applyPatches(ev.plan, patches, ev.scene)
+	const ev2 = await evaluate(r.plan)
+	const kept = ev2.ok && ev2.f.through + ev2.f.errors < ev.f.through + ev.f.errors && ev2.f.stagesOk + ev2.f.goalsOk >= ev.f.stagesOk + ev.f.goalsOk
+	return { ok: kept, ev: ev2, changes: r.changes }
+}
+
 export { evaluate, stagesOf }

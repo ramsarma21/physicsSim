@@ -3,13 +3,15 @@
 // the accounts build step's. Every call carries `Authorization: Bearer <session token>` (never a cookie); a 401 that says the token expired
 // gets one fresh token and one retry. Errors are Errors with the server's own sentence, plus {status, code, retryable, current?}.
 //   GET    /api/scenes                 -> {ok, scenes: [meta]}          meta: {id, name, items, bytes, version, createdAt, updatedAt, thumb: url | null}
-//   POST   /api/scenes {name, scene, thumb?: data URL}                  -> 201 {ok, scene: meta}
+//   POST   /api/scenes {name, scene, thumb?: data URL, savedAs?, copy?} -> 201 {ok, scene: meta}   (copy: "copy this browser's scenes", its own daily count)
 //   GET    /api/scenes/:id             -> {ok, scene: meta, data: scene}
-//   PUT    /api/scenes/:id {name?, scene?, thumb?: data URL | null}     (If-Match: "v<version>")  -> {ok, scene: meta}  (412 {code: "conflict", current})
+//   PUT    /api/scenes/:id {name?, scene?, thumb?: data URL | null, savedAs?} (If-Match: "v<version>")  -> {ok, scene: meta}  (412 {code: "conflict", current})
 //   DELETE /api/scenes/:id             -> {ok, deleted, restoreUntil}
 //   POST   /api/scenes/:id/restore     -> {ok, scene: meta}
 //   GET    /api/scenes/:id/thumb?v=…   -> the picture's bytes
 //   GET    /api/scenes/me              -> {ok, accounts, storage, user?, usage?: {scenes, bytes, maxScenes, maxBytes}, aiToday?}
+//   DELETE /api/scenes/me {confirm: "delete my account"} -> {ok, deleted}   (the account, its scenes and its sign-in, for good)
+// meta.savedAs: the app's scenario the scene was saved as with Save, so picking that scenario from the menu again continues the same scene.
 
 const ms = (v) => (typeof v === "number" ? v : Date.parse(v))
 /** the server's meta as the library's (dates as ms; the picture as {url, etag}) */
@@ -48,6 +50,8 @@ export function createCloudBackend({ getToken, base = "/api/scenes", fetch = glo
 		}
 	}
 	async function send(method, path = "", body, { headers = {}, raw = false, keepalive = false } = {}) {
+		const text = body === undefined ? undefined : JSON.stringify(body)
+		keepalive &&= (text?.length ?? 0) < 60000 // (a request that outlives the page may carry 64 KiB at most)
 		const go = async (fresh) => {
 			const token = await getToken?.(fresh ? { skipCache: true } : undefined)
 			if (!token) throw Object.assign(new Error("Sign in to reach your scenes"), { status: 401, code: "sign_in" })
@@ -57,7 +61,7 @@ export function createCloudBackend({ getToken, base = "/api/scenes", fetch = glo
 				credentials: "same-origin",
 				keepalive,
 				headers: { Accept: "application/json", Authorization: `Bearer ${token}`, ...(body !== undefined ? { "Content-Type": "application/json" } : {}), ...headers },
-				body: body === undefined ? undefined : JSON.stringify(body)
+				body: text
 			})
 		}
 		let r = await go(false)
@@ -84,8 +88,10 @@ export function createCloudBackend({ getToken, base = "/api/scenes", fetch = glo
 		label: "In your account",
 		persistent: true,
 		ready: Promise.resolve(true),
-		/** autosave writes at most this often to one scene (the server allows 120 writes an hour); local is 0 */
-		minWriteMs: 20000,
+		/** autosave writes one scene at most this often, and its picture at most every minThumbMs (the server allows 120 writes an hour in all:
+		 *  an hour of non-stop editing is 80 + 20); local has no such limits */
+		minWriteMs: 45000,
+		minThumbMs: 180000,
 		user,
 		async list() {
 			const j = await send("GET")
@@ -95,15 +101,16 @@ export function createCloudBackend({ getToken, base = "/api/scenes", fetch = glo
 			const j = await send("GET", `/${encodeURIComponent(id)}`)
 			return { meta: toMeta(j.scene), scene: j.data }
 		},
-		/** the server makes the id: a caller's `id` is ignored (the returned meta has the real one) */
-		async create({ name, scene, thumb } = {}) {
-			const j = await send("POST", "", { name, scene, ...(await thumbField(thumb)) })
+		/** the server makes the id: a caller's `id` is ignored (the returned meta has the real one). copy: a scene copied in from this browser
+		 *  (counted apart from the hour's writes the autosave needs) */
+		async create({ name, scene, thumb, savedAs = null, copy = false } = {}) {
+			const j = await send("POST", "", { name, scene, ...(await thumbField(thumb)), ...(typeof savedAs === "string" ? { savedAs } : {}), ...(copy ? { copy: true } : {}) })
 			const m = toMeta(j.scene)
 			changed([m.id])
 			return m
 		},
 		async update(id, patch = {}, { ifVersion, keepalive = false } = {}) {
-			const body = { ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.scene !== undefined ? { scene: patch.scene } : {}), ...(await thumbField(patch.thumb)) }
+			const body = { ...(patch.name !== undefined ? { name: patch.name } : {}), ...(patch.scene !== undefined ? { scene: patch.scene } : {}), ...(await thumbField(patch.thumb)), ...(patch.savedAs !== undefined ? { savedAs: patch.savedAs } : {}) }
 			if (!Object.keys(body).length) return (await this.get(id)).meta
 			const j = await send("PUT", `/${encodeURIComponent(id)}`, body, { headers: ifVersion != null ? { "If-Match": `"v${ifVersion}"` } : {}, keepalive })
 			const m = toMeta(j.scene)
@@ -135,8 +142,13 @@ export function createCloudBackend({ getToken, base = "/api/scenes", fetch = glo
 			const j = await send("GET", "/me")
 			return j.usage ?? { scenes: 0, bytes: 0 }
 		},
-		async findSaved() {
-			return null // (a scene saved with the app's Save lives in this browser; the account has no such link)
+		async findSaved(savedAs) {
+			return (await this.list()).find((m) => m.savedAs === savedAs) ?? null
+		},
+		/** Deletes the account: every scene in it and the sign-in itself, for good (the page signs out after). */
+		async deleteAccount() {
+			await send("DELETE", "/me", { confirm: "delete my account" })
+			changed([])
 		},
 		onChange(f) {
 			listeners.add(f)

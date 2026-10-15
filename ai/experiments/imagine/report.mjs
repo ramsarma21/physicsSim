@@ -97,9 +97,11 @@ export async function cmdReport({ RES, opt, CASES, PHASE1 = [], selectCases }) {
 
 	// ---- pipeline
 	const pipeDir = path.join(RES, "pipeline")
-	const arms = dirsIn(pipeDir)
+	const armList = opt.arms && opt.arms !== true ? String(opt.arms).split(",").map((x) => x.trim()) : null
+	const samples = opt.samples && opt.samples !== true ? String(opt.samples).split(",").map(Number) : null
+	const arms = armList ?? dirsIn(pipeDir)
 	if (arms.length) {
-		const recs = new Map(arms.map((a) => [a, jsonIn(path.join(pipeDir, a)).filter((r) => ids.has(r.case))]))
+		const recs = new Map(arms.map((a) => [a, jsonIn(path.join(pipeDir, a)).filter((r) => ids.has(r.case) && (!samples || samples.includes(r.sample)))]))
 		const key = (r) => `${r.case}#${r.sample}`
 		const common = new Set([...recs.get(arms[0])].map(key).filter((k) => arms.every((a) => recs.get(a).some((r) => key(r) === k))))
 		const judgeIds = [...new Set(arms.flatMap((a) => recs.get(a).flatMap((r) => Object.keys(r.judge ?? {}))))].sort()
@@ -143,6 +145,30 @@ export async function cmdReport({ RES, opt, CASES, PHASE1 = [], selectCases }) {
 				const s = summarize(rs)
 				out.pipeline[name][a] = s
 				md.push(line(a, s))
+			}
+		}
+		// paired against the text-only arm: per case × sample, the pass flips each way and the mean differences
+		if (recs.has("T")) {
+			md.push(`\n### Paired against T (same case and sample)\n`)
+			md.push(`| arm | pairs | pass: arm only / T only | Δ det. | ${judgeIds.map((j) => `Δ judge ${j}`).join(" | ")} | Δ time p50 s | Δ $ |`)
+			md.push(`|${"---|".repeat(6 + judgeIds.length)}`)
+			out.paired = {}
+			const tBy = new Map(recs.get("T").map((r) => [key(r), r]))
+			for (const a of arms.filter((x) => x !== "T")) {
+				const pairs = recs.get(a).map((r) => [r, tBy.get(key(r))]).filter(([, t]) => t)
+				if (!pairs.length) continue
+				const jd = (j) => mean(pairs.map(([r, t]) => (Number.isFinite(r.judge?.[j]?.score_0_10) && Number.isFinite(t.judge?.[j]?.score_0_10) ? r.judge[j].score_0_10 - t.judge[j].score_0_10 : NaN)))
+				const row = {
+					pairs: pairs.length,
+					armOnly: pairs.filter(([r, t]) => r.score?.pass && !t.score?.pass).length,
+					tOnly: pairs.filter(([r, t]) => !r.score?.pass && t.score?.pass).length,
+					det: mean(pairs.map(([r, t]) => (r.score?.score ?? 0) - (t.score?.score ?? 0))),
+					judge: Object.fromEntries(judgeIds.map((j) => [j, jd(j)])),
+					time: pct(pairs.map(([r, t]) => (r.totalMs - t.totalMs) / 1000), 0.5),
+					cost: mean(pairs.map(([r, t]) => (r.cost ?? 0) - (t.cost ?? 0)))
+				}
+				out.paired[a] = row
+				md.push(`| ${a} | ${row.pairs} | ${row.armOnly} / ${row.tOnly} | ${f(row.det, 3)} | ${judgeIds.map((j) => f(row.judge[j])).join(" | ")} | ${f(row.time, 1)} | ${f(row.cost, 3)} |`)
 			}
 		}
 		if (opt.detail) {

@@ -445,7 +445,13 @@ const flights = (y: readonly number[]) => {
  * The catalog's sprung items with a ball, against the same engine stepping 10 times finer (4800 Hz, which 9600 Hz agrees with to 0.4%):
  * a launcher at its stiffest and smallest setting and at its default throwing the ball sitting on its plate, and a ball dropped from 1 m
  * onto the default bounce pad and trampoline. (From ω·h = 1, 13 to 42% of a throw was lost at the stiffest settings: the spring's implicit
- * share, physics.ts `tuneSprings`, now starts at ω·h = √2.)
+ * share, physics.ts `tuneSprings`, now starts at ω·h = √2.) Since the engine batch 2 (2026-10-15) the catalog builds every stiffness the props
+ * ask for (no cap: the engine sub-steps a stiff spring's group, physics.ts `subSteps`) and the springs have mass (catalog_mechanisms.py
+ * `_spring_mass`). A throw is the top of the ball's first flight (an undamped plate rings on, and a ball that falls back on it can be thrown
+ * again higher or lower, as the plate's swing meets it). A drop is the median, over drop heights 0.97 to 1.03 m, of the first rebound's top,
+ * within 2.5% of the 4800 Hz median, or among the 4800 Hz rebounds of those drops: a ball as big as the default pad (the basketball) lands
+ * on its plate and its rails' tops at once, and whether it then rolls off the pad's side is a toss-up a centimetre of height (or the step)
+ * decides, at 4800 Hz as at 480 (0.31 or 0.33 m; each way within 1% of the other step's).
  */
 const sprungAgainstFine = async () => {
 	console.log("  the catalog's sprung items with a ball, against the same engine at 4800 Hz:")
@@ -476,40 +482,51 @@ const sprungAgainstFine = async () => {
 			return sceneOf([{ id: "p", type: "spring-launcher", x: 1.3, y: 0, props }, { id: "b", type: ball, x: 1.3, y: top + 0.03, held: false, rest: true }], 3)
 		})
 	)
+	/** The top of the first flight above where the ball starts: its first local high over 2 cm above the start. */
+	const thrown = (y: readonly number[]) => (flights([y[0] as number, ...y])[0]?.v ?? Math.max(...y)) - (y[0] as number)
 	for (const [i, [label, , ball]] of launchers.entries()) {
 		const d = loaded[i] as Doc
 		const sol = d.solids.find((x) => x.id.startsWith("b/")) as Doc["solids"][number]
 		const plate = d.solids.find((x) => x.id === "p/plate") as Doc["solids"][number]
 		sol.at.y = plate.at.y + (plate.body.height ?? 0) / 2 + (sol.body.radius ?? 0) + 0.0002
 		const { coarse, fine: ref } = both(d, sol.id)
-		check(`    spring launcher ${label}, ${ball}: how high it throws the ball`, Math.max(...coarse) - (coarse[0] as number), Math.max(...ref) - (ref[0] as number), 0.02, " m", "at 4800 Hz")
+		check(`    spring launcher ${label}, ${ball}: how high it throws the ball (its first flight)`, thrown(coarse), thrown(ref), 0.02, " m", "at 4800 Hz")
 	}
-	// dropped from 1 m: the first rebound's top
-	const drops: [string, string, boolean][] = [
-		["bounce-pad", "steel-ball", true],
-		["bounce-pad", "tennis-ball", true],
-		["bounce-pad", "basketball", true],
-		["bounce-pad", "ping-pong-ball", true],
-		["trampoline", "steel-ball", true],
-		["trampoline", "superball", true],
-		["trampoline", "tennis-ball", true],
-		["trampoline", "basketball", true],
-		// known limits, reported: a superball strikes the pad's light plate twice in 20 ms as the plate springs back (a double impact the
-		// step's timing decides), and a 7.3 kg bowling ball bottoms the trampoline's mat out on the table (a three-body impact, ball on a
-		// mat 9 times lighter on the table, that sequential impulses at 480 Hz resolve with more loss)
-		["bounce-pad", "superball", false],
-		["trampoline", "bowling-ball", false]
+	// dropped from 0.97 to 1.03 m: the first rebound's top, the median over the seven
+	const drops: [string, string][] = [
+		["bounce-pad", "steel-ball"],
+		["bounce-pad", "tennis-ball"],
+		["bounce-pad", "basketball"],
+		["bounce-pad", "ping-pong-ball"],
+		["bounce-pad", "superball"],
+		["trampoline", "steel-ball"],
+		["trampoline", "superball"],
+		["trampoline", "tennis-ball"],
+		["trampoline", "basketball"],
+		["trampoline", "bowling-ball"]
 	]
-	const docs = build(drops.map(([type, ball]) => sceneOf([{ id: "p", type, x: 1.3, y: 0, props: {} }, { id: "b", type: ball, x: 1.3, y: 1.0, held: true }], 2.5)))
-	for (const [i, [type, ball, held]] of drops.entries()) {
-		const d = docs[i] as Doc
-		const id = (d.solids.find((x) => x.id.startsWith("b/")) as Doc["solids"][number]).id
-		const { coarse, fine: ref } = both(d, id)
-		const a = flights(coarse)[0]?.v ?? 0
-		const b = flights(ref)[0]?.v ?? 0
+	const heights = [0.97, 0.98, 0.99, 1.0, 1.01, 1.02, 1.03]
+	const docs = build(drops.flatMap(([type, ball]) => heights.map((y) => sceneOf([{ id: "p", type, x: 1.3, y: 0, props: {} }, { id: "b", type: ball, x: 1.3, y, held: true }], 2.5))))
+	const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)] as number
+	for (const [i, [type, ball]] of drops.entries()) {
+		const a: number[] = []
+		const b: number[] = []
+		for (let k = 0; k < heights.length; k++) {
+			const d = docs[i * heights.length + k] as Doc
+			const id = (d.solids.find((x) => x.id.startsWith("b/")) as Doc["solids"][number]).id
+			const { coarse, fine: ref } = both(d, id)
+			a.push(flights(coarse)[0]?.v ?? 0)
+			b.push(flights(ref)[0]?.v ?? 0)
+		}
 		// (an impact at 480 Hz lands within a step of where a finer step has it: 1 to 2.5% on a rebound's height)
-		if (held) check(`    ${ball} dropped 1 m onto the default ${type}: its first rebound's top`, a, b, 0.025, " m", "at 4800 Hz")
-		else console.log(`    (known limit) ${ball} dropped 1 m onto the default ${type}: its first rebound's top ${a.toFixed(4)} m, at 4800 Hz ${b.toFixed(4)} m (${pct(a, b)})`)
+		const got = median(a)
+		const want = median(b)
+		const close = Math.abs(got - want) <= 0.025 * want
+		const among = got >= Math.min(...b) && got <= Math.max(...b)
+		claim(
+			`    ${ball} dropped 0.97-1.03 m onto the default ${type}: its first rebound's top, median of 7: engine ${got.toFixed(5)} m, at 4800 Hz ${want.toFixed(5)} m (${pct(got, want)}, within 2.50%${close ? "" : `, or among the 4800 Hz drops' ${Math.min(...b).toFixed(5)} to ${Math.max(...b).toFixed(5)} m: ${among ? "yes" : "no"}`})`,
+			close || among
+		)
 	}
 }
 

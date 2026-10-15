@@ -16,7 +16,7 @@ const fa = (v) => (Number.isFinite(v) ? (Math.abs(v) < 0.05 ? "0" : v.toFixed(1)
 const len = (m) => (m >= 1 ? `${+m.toFixed(2)} m` : `${+(m * 100).toFixed(1)} cm`)
 const mass = (kg) => (kg >= 1 ? `${+kg.toPrecision(3)} kg` : kg >= 0.001 ? `${+(kg * 1000).toPrecision(3)} g` : `${+(kg * 1e6).toPrecision(3)} mg`)
 const safety = (i) => i?.type === "wall" && i.props?.invisible_in_3d === true
-const COLOURS = ["yellow-green", "off-white", "red-brown", "red", "yellow", "green", "blue", "white", "black", "orange", "brown", "grey", "gray", "silver", "pink", "purple", "clear", "cream", "tan", "beige", "dark", "striped", "wooden", "wood", "steel", "glass"]
+const COLOURS = ["yellow-green", "off-white", "red-brown", "paper", "cardboard", "red", "yellow", "green", "blue", "white", "black", "orange", "brown", "grey", "gray", "silver", "pink", "purple", "clear", "cream", "tan", "beige", "dark", "striped", "wooden", "wood", "steel", "glass"]
 
 let LOOKS = null
 /** Each type's "Looks:" line from the catalog digest (what colour and kind of thing the view draws). */
@@ -32,7 +32,8 @@ export function looksOf(cat) {
 	return map
 }
 const colourOf = (looks) => {
-	const t = String(looks ?? "").toLowerCase()
+	// (what it looks like by default: "a tapered paper cup (its other materials, aluminium, glass or wood, change its look)" is paper)
+	const t = String(looks ?? "").toLowerCase().replace(/\([^)]*\)/g, " ")
 	let best = null
 	for (const c of COLOURS) {
 		const i = t.search(new RegExp(`\\b${c}\\b`))

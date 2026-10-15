@@ -862,7 +862,7 @@ function withAI(then) {
 			const was = S.history[S.hi]
 			setScene(clone(scene), { commit: true, keepCamera: false })
 			const committed = S.history[S.hi] !== was // (the same scene again adds no history entry: there is nothing to undo)
-			toast(committed ? `${verb} “${label}” (⌘Z undoes it)` : `No change: “${label}” is the scene already on the table`)
+			toast(committed ? `${verb} “${label}” (${matchMedia("(pointer: coarse)").matches ? "Undo takes it back" : "⌘Z undoes it"})` : `No change: “${label}” is the scene already on the table`)
 			return committed
 		},
 		replay: () => { if (S.layout) $("#play").click(); else { seek(0); setPlaying(true) } },

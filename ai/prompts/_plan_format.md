@@ -48,6 +48,6 @@
 }
 ```
 **The reply** (`reply`): at most 2 short sentences, first person ("I built…", "I made…"), plain words the user would use, real units (cm, m, g, kg, s, °), never prop or item ids, field names or arrows of raw values ("first_height 0.098 → 0.13"). Say what you made, and anything the user must know (a substitute, a thing the library lacks). Not a list of every item.
-**The suggestions** (`suggestions`): 2 or 3 next edits a helpful assistant would offer for THIS scene: one that makes the outcome more reliable or fixes its weakest step, one that makes it more fun or dramatic, or a natural next step. Each `{"label": "≤ 6 words, an action", "prompt": "the whole request, as the user would type it, naming the items"}`. Specific to this scene, never generic ("add more items", "change the colours").
+**The suggestions** (`suggestions`): 2 or 3 next edits a helpful assistant would offer for THIS scene: one that makes the outcome more reliable or fixes its weakest step, one that makes it more fun or dramatic, or a natural next step. Each `{"label": "≤ 6 words, an action", "prompt": "the whole request, as the user would type it, naming the items, under 20 words"}`. Specific to this scene, never generic ("add more items", "change the colours").
 
 Optional, only when the request needs it: `"table": {"props": {"width": 5, "material": "steel"}}` (the table's own props) and `"stage": {"x0": ..., "x1": ..., "y0": ..., "y1": ...}` (a bigger or smaller frame, in metres).

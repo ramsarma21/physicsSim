@@ -7,13 +7,13 @@
 //   bonstage  plans A-D -> each: stage-by-stage tuning -> render + rate -> the best -> its stage repairs -> the shipped loop
 import { clone, isObj, log, now, orch, runStep, shots, simulate, wire } from "./infra.mjs"
 import { evaluate } from "./physics.mjs"
-import { repairAccepted, repairStage } from "./repair.mjs"
+import { fixOverlaps, repairAccepted, repairStage, repairVerdict } from "./repair.mjs"
 import { shippedTune, stageTune } from "./stagetune.mjs"
 
 const brief = (ev) => (ev?.ok ? { goals: `${ev.f.goalsOk}/${ev.f.goals}`, checks: `${ev.f.stagesOk}/${ev.f.stages}`, errors: ev.f.errors, warnings: ev.f.warnings, floating: ev.f.floating, through: ev.f.through } : { error: ev?.error ?? "not built" })
 
 /** Stage-by-stage build with model repairs. -> {ev, log: {tune: [...], repairs: [...]}, runs, ms} */
-export async function chainBuild(L, request, plan, { from = null, repairs = 4, perStageRepairs = 2, name = "" } = {}) {
+export async function chainBuild(L, request, plan, { from = null, repairs = 4, perStageRepairs = 2, name = "", joint = process.env.SEARCH_JOINT === "1", v3 = process.env.SEARCH_REPAIR_V3 === "1" } = {}) {
 	const t0 = now()
 	let t = await stageTune(plan, { from })
 	const logs = { tune: [{ round: 0, stages: t.stages, failStage: t.failStage, runs: t.runs, ms: t.ms }], repairs: [] }
@@ -33,9 +33,20 @@ export async function chainBuild(L, request, plan, { from = null, repairs = 4, p
 		const entry = { stage: t.failStage, label, round: n + 1, ok: rep.ok, reply: rep.reply ?? null, changes: rep.changes ?? [], error: rep.error ?? null, ms: rep.ms ?? null }
 		logs.repairs.push(entry)
 		if (!rep.ok) continue
-		const ev2 = await evaluate(rep.plan)
+		let ev2 = await evaluate(rep.plan)
 		entry.after = brief(ev2)
-		if (!repairAccepted(t.ev, ev2, k)) {
+		if (v3) {
+			const vd = repairVerdict(t.ev, ev2, k)
+			if (!vd.ok) {
+				entry.accepted = false
+				continue
+			}
+			if (vd.overlapFix) {
+				const fx = await fixOverlaps(L, ev2)
+				entry.overlapFix = { kept: fx.ok, changes: fx.changes ?? [], error: fx.error ?? null }
+				if (fx.ok) ev2 = fx.ev
+			}
+		} else if (!repairAccepted(t.ev, ev2, k)) {
 			entry.accepted = false
 			continue
 		}
@@ -45,6 +56,17 @@ export async function chainBuild(L, request, plan, { from = null, repairs = 4, p
 		logs.tune.push({ round: logs.repairs.length, stages: t2.stages, failStage: t2.failStage, runs: t2.runs, ms: t2.ms })
 		entry.afterTune = brief(t2.ev)
 		t = t2
+	}
+	// v2: whatever still fails gets the app's own joint tuner too (all of plan.tune's knobs at once, for the goals); kept only when more checks
+	// pass and none that passed stops (r1: the stage tuner alone missed one case the joint tuner made, h02)
+	if (joint && t.ev.ok && (t.ev.f.goalsOk < t.ev.f.goals || t.ev.f.stagesOk < t.ev.f.stages)) {
+		const j = await shippedTune(t.ev.plan, { from: t.ev })
+		runs += j.runs
+		const a = t.ev
+		const b = j.ev
+		const kept = b.ok && b.f.goalsOk + b.f.stagesOk > a.f.goalsOk + a.f.stagesOk && a.stages.every((s, i) => !(s.res?.ok === true) || b.stages[i]?.res?.ok === true) && b.f.errors + b.f.through <= a.f.errors + a.f.through
+		logs.joint = { runs: j.runs, kept, changed: j.changed }
+		if (kept) t = { ...t, ev: b }
 	}
 	log(`${name} chain: ${brief(t.ev).checks} checks, goals ${brief(t.ev).goals}, ${logs.repairs.length} repairs (${logs.repairs.filter((r) => r.accepted).length} kept), ${runs} runs`)
 	return { ev: t.ev, log: logs, runs, ms: now() - t0 }
@@ -125,4 +147,43 @@ export async function shippedLoop(L, request, plan) {
 	const ms = now() - t0
 	const mine = L.calls.slice(before)
 	return { report, ms, waitMs: mine.reduce((s, c) => s + (c.waitMs ?? 0), 0), calls: mine.length }
+}
+
+/** Is a version verified by the physics: it has something to check, every goal and every stage check passes, and nothing builds badly. */
+export const verified = (ev) => !!ev?.ok && ev.f.goals + ev.f.stages > 0 && ev.f.goalsOk === ev.f.goals && ev.f.stagesOk === ev.f.stages && ev.f.errors === 0 && ev.f.through === 0 && ev.f.floating === 0
+
+/**
+ * The verified gate: a version the physics verifies gets ONE rate-only look (the app's final check, effort low) instead of the critic's rounds;
+ * a score of 8 or more puts it on the table as it is. Otherwise (not verified, or rated below 8, with its issues passed on) the shipped loop
+ * runs, and its result is kept only if it does not lose a goal or a stage check the verified version had (the guard).
+ * -> {gate: {verified, rate, issues, ms}, loop?: shippedLoop result, final: {plan, scene, from: "gate" | "loop" | "guard"}}
+ */
+export async function gatedFinish(L, request, ev) {
+	const gate = { verified: verified(ev) }
+	if (gate.verified) {
+		const t0 = now()
+		const pics = await shots(ev.sim, ev.scene)
+		try {
+			const out = await runStep(
+				L,
+				"refine",
+				{ text: request, plan: ev.plan, scene: ev.scene, sim: { summary: ev.sim.summary, warnings: ev.sim.warnings }, renders: pics.map((x) => wire(x, `the solved scene, ${x.label === "close-up" ? "close-up at the end" : `at ${Number(x.t).toFixed(1)} s (${x.label})`}`)), rate_only: true, round: 1, rounds: 1 },
+				{ label: "gate rate", routeStep: "rate" }
+			)
+			gate.rate = Number(out.result?.score_0_10)
+			gate.issues = (out.result?.issues ?? []).map((i) => (typeof i === "string" ? i : i?.text)).slice(0, 4)
+		} catch (e) {
+			gate.error = String(e?.message ?? e).slice(0, 200)
+		}
+		gate.ms = now() - t0
+		if (gate.rate >= 8) return { gate, final: { plan: ev.plan, scene: ev.scene, from: "gate" } }
+	}
+	const loop = await shippedLoop(L, request, ev.plan)
+	const rep = loop.report
+	if (gate.verified) {
+		const after = await evaluate(rep.plan)
+		const lost = !after.ok || after.f.goalsOk < ev.f.goalsOk || after.f.stagesOk < ev.f.stagesOk
+		if (lost) return { gate, loop, final: { plan: ev.plan, scene: ev.scene, from: "guard" } }
+	}
+	return { gate, loop, final: { plan: rep.plan, scene: rep.scene, from: "loop" } }
 }

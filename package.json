@@ -21,6 +21,7 @@
 		"vendor:clerk": "node tools/vendor-clerk.mjs",
 		"vendor:clerk:check": "node tools/vendor-clerk.mjs --check",
 		"test:accounts": "node --test web/account/test/server.test.mjs web/account/test/ai-function.test.mjs",
+		"test:accounts:browser": "node web/account/test/clerk-browser.mjs && node web/account/test/e2e-accounts.mjs",
 		"test:ai": "node --test \"ai/test/*.test.mjs\"",
 		"smoke:ai": "zsh -c 'source ~/.config/truefoundry/env && node ai/test/live-smoke.mjs'",
 		"digest:ai": "node ai/catalog-digest.mjs --stats --rebuild"

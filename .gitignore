@@ -56,3 +56,6 @@ tooling/src/sim/sprite.ts
 tools/apple-pow-tables.ts
 web/sim/engine-math.js
 web/sim/engine-worker.js
+
+# generated caches
+ai/.cache/

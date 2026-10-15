@@ -109,6 +109,11 @@ export async function createClerkProvider(config) {
 	const { Clerk } = await import("clerk-js") // (the vendored SDK: the importmap's "clerk-js"; a page without it stays local)
 	const clerk = new Clerk(key)
 	await timeout(clerk.load({ telemetry: false, routerPush: navigate, routerReplace: navigate }), LOAD_TIMEOUT_MS, "Loading sign-in")
+	// (load() also "succeeds" when Clerk can't be reached, with an empty environment: then, or when Google isn't switched on in the Clerk
+	// dashboard, sign-in is unavailable rather than a button that fails)
+	const strategies = clerk.environment?.userSettings?.authenticatableSocialStrategies
+	if (!Array.isArray(strategies) || !strategies.includes("oauth_google"))
+		throw new Error(clerk.environment?.displayConfig?.applicationName ? "Google sign-in isn’t switched on for this app in Clerk (SSO connections)" : "Clerk couldn’t be reached")
 
 	let notice = null
 	if (new URL(location.href).searchParams.get(CALLBACK) === "callback") {
@@ -167,7 +172,11 @@ export async function createClerkProvider(config) {
 			await signIn.authenticateWithRedirect({ strategy: "oauth_google", redirectUrl: callback.href, redirectUrlComplete: here })
 		},
 		async signOut() {
-			await clerk.signOut(() => {}) // (a callback instead of Clerk's navigation: the page stays as it is)
+			try {
+				await clerk.signOut(() => {}) // (a callback instead of Clerk's navigation: the page stays as it is)
+			} catch (e) {
+				if (clerk.user) throw e // (Clerk couldn't be told, but this page is signed out: that is what the person asked for)
+			}
 		},
 		getToken,
 		onChange(fn) {

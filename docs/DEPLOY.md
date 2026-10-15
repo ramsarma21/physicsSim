@@ -1,7 +1,8 @@
 # Deploying the sandbox to Vercel (preview)
 
 The deploy is a **static site** (the whole app, with the physics engine running in the browser) plus **one serverless function** for
-"Build with AI" (`api/ai/[step].mjs`, which holds the AI key). Nothing has been deployed yet. Everything below was checked locally
+"Build with AI" (`api/ai/[step].mjs`, which holds the AI key). Linked as `ram-sarmas-projects/physics-sandbox` on 2026-10-15; first preview
+(no AI key, AI off) `physics-sandbox-l6e6pfkp5-ram-sarmas-projects.vercel.app`. Everything below was checked locally
 (`npm run check:vercel` runs `vercel build` on the exact upload and calls the built function; a static server; headless Chromium; see
 "Verified" at the end).
 
@@ -9,6 +10,7 @@ The deploy is a **static site** (the whole app, with the physics engine running 
 | --- | --- | --- |
 | `dist/` (Vercel's `outputDirectory`) | index.html, the app's modules, models, styles, the engine bundle (`sim/engine-worker.js`, a module Worker), the 12 built-in scenes and `scenario-list.json`, vendored three.js and mediabunny (the MP4 muxer) | `tools/build-static.mjs`, from `web/` |
 | `/api/ai/observe\|plan\|refine\|edit` | the Vercel twin of `web/server.py`'s AI route | `api/ai/[step].mjs`, with all of `ai/` (the AI core, `ai/prompts/`, `ai/models.json`) and `web/sim/`'s code |
+| `/api/scenes`, `/api/scenes/:id[/thumb\|/restore]`, `/api/scenes/me` | accounts: sign in with Google, a person's saved scenes on any device, their AI allowance. **Off until Clerk and Neon are connected** (setup step 6); until then `/api/scenes/me` answers `{accounts: null}` and the page keeps scenes in the browser | `api/scenes/index.mjs` with `api/_lib/` and `web/sim/`'s code (docs/ACCOUNTS.md) |
 
 On any host that is not this machine the page picks the browser engine by itself (`web/app.js`: `localhost`, `*.localhost`, `127.x`
 and `[::1]` use the local server, every other host the browser). So the deployed page makes no calls to a physics server: the catalog,
@@ -60,6 +62,12 @@ All commands run in `blender-playground/`. The Vercel CLI (v63) is logged in as 
      asks for a Vercel login (Standard Protection leaves production domains open).
    - `AI_CACHE_DIR=/tmp`: lets a warm instance keep the catalog digest on disk. Not needed: without it the write fails quietly
      (read-only file system) and the digest is rebuilt once per cold start (measured: well under 0.1 s).
+6. **Accounts (optional): sign in with Google, "My scenes" in an account, a daily AI allowance per person.** Two Vercel Marketplace
+   integrations, Clerk and Neon, both free, each connected to this project in the dashboard (they create the provider accounts and accept their
+   terms, so only you can add them): **docs/ACCOUNTS.md section 9** has the exact clicks (about 10 minutes), then deploy as below. Nothing else
+   changes: the code is already in the upload and switches itself on when `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY` and
+   `DATABASE_URL` are there. With accounts on, **Build with AI needs a signed-in person** (on top of the protection in step 4), and every person
+   has hourly and daily step limits and a daily dollar cap, plus a site-wide daily dollar cap (docs/ACCOUNTS.md section 6).
 
 ## Every deploy
 
@@ -67,9 +75,17 @@ All commands run in `blender-playground/`. The Vercel CLI (v63) is logged in as 
 npm run build:static:nogen     # builds dist/ from web/ as it is and checks it (writes only dist/); fails on any stale generated file
 npm run check:vercel           # what a deploy does, without deploying: vercel build on the exact upload, then calls the built AI function
 npm run test:ai                # the AI core's tests, the Vercel twin included (a mock gateway, no key)
+npm run test:accounts          # the accounts' server: token checks, the scenes function on an in-process Postgres, the AI gate (no network, no keys)
 npm run preview:static         # optional: serves dist/ at http://127.0.0.1:4173/?engine=browser with vercel.json's headers
-vercel deploy                  # a PREVIEW deployment (never add --prod, see below)
+vercel deploy --target preview # a PREVIEW deployment (never add --prod, see below)
 ```
+
+**Always pass `--target preview`.** The CLI sends a new project's **first** deployment to production even without `--prod` (CLI 63:
+"This is the project's first deployment, so it was assigned to production"), and aliases it to the project's production domain
+(`physics-sandbox-blond.vercel.app`), which Standard Protection leaves **public**. That happened on 2026-10-15: the first `vercel deploy`
+here became production and its alias answered without a login (no AI key was set; the AI answered 503) for about 2 minutes, until
+`vercel alias rm physics-sandbox-blond.vercel.app` took the alias off (the deployment's own URL stays behind Vercel Authentication). The domain
+is still on the project, so a later production deploy would put it back.
 
 `build:static:nogen` fails if `vendor:three:check`, `vendor:media:check` or `gen:scenarios:check` fails, and if the engine bundle
 (`web/sim/engine-worker.js`, `engine-math.js`) is not byte-identical to what `npm run build:engine` makes from the current sources (it
@@ -83,12 +99,18 @@ the function's runtime, `maxDuration` and `supportsCancellation`, and that all o
 lays the function out as a deploy does (its traced files plus its `includeFiles`, read-only); and calls it the way Vercel's Node runtime does,
 against a mock gateway on 127.0.0.1 with a fake key: GET 405, an unknown step 404, an `edit` of the starter 200 (the bundled prompts,
 routing, catalog digest and scene digest), no key in any answer, then runs the starter in the function's own engine (541 frames, goal met).
+It also checks the scenes function (docs/ACCOUNTS.md): exactly two functions are built (`api/_lib/` holds modules, not functions), the two
+rewrites `/api/scenes/:id[/:part]` reach it, it holds web/sim's code and the Neon driver, and called with no keys it answers
+`/api/scenes/me` `{accounts: null, storage: false}` and `/api/scenes` 503 `not_configured`; an unreachable database answers 503 `unavailable`
+with nothing of its address.
 
 After `vercel deploy`, open the deployment URL (logged in to Vercel, or through the share link) with DevTools' Network panel open and check:
 
 - no request goes to `vercel.live` or `pusher.com`, and the page's HTML (`view-source:`) has no `<script>` that `web/index.html` does not have
   (if it does, the Toolbar is still on: setup step 3);
-- every other request goes to the deployment's own origin (blob: URLs are the app's own Workers);
+- every other request goes to the deployment's own origin (blob: URLs are the app's own Workers); with accounts on (setup step 6), also
+  Clerk's Frontend API (`https://<name>.clerk.accounts.dev`, fetches only: the sign-in code itself is vendored in `vendor/clerk-<hash>/`) and,
+  while signing in, Google's sign-in page;
 - the starter runs ("Ran in ..."), and "Build with AI" answers.
 
 Then share the link.
@@ -97,22 +119,29 @@ Then share the link.
 research, benchmark, tests, notes and cache, the build scripts, the engine's sources in `tooling/src`, `web/` without `web/dev` and the other
 local-only folders), then Vercel runs:
 
-1. `npm ci` (the lockfile: three 0.170.0, mediabunny 1.61.0, planck 1.5.0, effect 4.0.2, esbuild 0.28.2).
+1. `npm ci` (the lockfile: three 0.170.0, mediabunny 1.61.0, planck 1.5.0, effect 4.0.2, @neondatabase/serverless 1.2.0, esbuild 0.28.2,
+   @electric-sql/pglite 0.5.8 for the accounts' tests).
 2. `npm run build:static` = `node tools/build-static.mjs --regen`:
    - regenerates the generated files: `npm run build:engine` (the engine bundle from `tooling/src/sim`), `vendor:three`,
-     `vendor:media`, `gen:scenarios`. **An engine bundle that comes out different from the uploaded copy fails the deploy**: the uploaded one
+     `vendor:media`, `vendor:clerk` (Clerk's browser SDK from its pinned, integrity-checked npm tarball), `gen:scenarios`. **An engine bundle that comes out different from the uploaded copy fails the deploy**: the uploaded one
      is the one the parity tools checked, and the deploy must not ship engine code they never saw (`--allow-engine-drift` would ship the fresh
      build anyway; nothing uses it). A vendored package or scenario list that comes out different is a warning (the deploy has the fresh one);
    - copies only what the app loads into `dist/` (never `web/ai/dev-mock.js`, the development-only fake AI behind `?aimock=1`) and **fails
      the deploy** on any import, `new URL(..., import.meta.url)`, CSS `url()`/`@import` or HTML `src`/`href` that does not resolve to a
-     shipped file exactly as the browser asks for it (bare names only through the importmap: `three`, `three/addons/...`, `mediabunny`; none
+     shipped file exactly as the browser asks for it (bare names only through the importmap: `three`, `three/addons/...`, `mediabunny`, `clerk-js`; none
      in a module worker, which has no importmap), a template import (`./models/${g}.js`) whose names do not all exist, anything on another
-     origin, a new `web/` folder it does not know, or a shipped file holding the key's value (`TRUEFOUNDRY_API_KEY` is visible to the build).
-3. The function is bundled by `@vercel/node` (Node 24) with its `includeFiles` (all of `ai/`, `web/sim`'s `.js` and `.json`).
+     origin, a new `web/` folder it does not know, or a shipped file holding the key's value (`TRUEFOUNDRY_API_KEY` is visible to the build), or
+     the value of an accounts secret (`CLERK_SECRET_KEY`, `DATABASE_URL`, ...), a Clerk secret key or a database URL with a password.
+3. The functions are bundled by `@vercel/node` (Node 24) with their `includeFiles`: the AI function with all of `ai/` and `web/sim`'s `.js` and
+   `.json`; the scenes function (`api/scenes/index.mjs`, `maxDuration` 30) with `web/sim`'s `.js` and `.json` (it checks scenes with web/sim's
+   `clean()`). Both carry `api/_lib/` and the Neon driver (the AI function uses them for the accounts' AI limits).
 
 **Not production.** Do not run `vercel deploy --prod` or attach a public domain until there is (as `ai/DESIGN.md` "Protecting the hosted
 endpoint" says) a per-user rate limit and a daily spend cap in front of the AI steps, and protection on the production URL too
 (Deployment Protection scope "All Deployments", free on every plan with Vercel Authentication). Standard Protection leaves production domains open.
+With accounts on (setup step 6) the first two exist: Build with AI needs a signed-in person, each with hourly and daily limits and a daily
+dollar cap, under a site-wide daily dollar cap (docs/ACCOUNTS.md section 6). Production sign-in also needs your own domain and Google OAuth
+client (docs/ACCOUNTS.md 9.5).
 
 ## What vercel.json says, and why
 
@@ -128,6 +157,8 @@ endpoint" says) a per-user rate limit and a daily spend cap in front of the AI s
 | `...supportsCancellation` | `true` | When the browser gives up (the panel's Cancel, a closed tab) Vercel ends the function, so the model call stops with it. |
 | `...includeFiles` | `{ai/**,web/sim/**/*.js,web/sim/**/*.json}` | The AI core reads its prompts and routing and imports web/sim (the catalog digest, `clean()`, and the engine bundle that checks a refine's goals) by computed paths, which the file tracer cannot follow. All of `ai/` goes in, so a new module or data file there needs no change here; web/sim's `.js` and `.json` at any depth, never its source maps. |
 | `...excludeFiles` | `web/sim/**/*.map` | Keeps the 6 MB engine source map out of what the tracer adds (the function is 1.1 MB). It does not filter `includeFiles`, which is why that pattern names `.js` and `.json` only. |
+| `functions["api/scenes/*.mjs"]` | `maxDuration` 30, `includeFiles` web/sim's `.js` and `.json` | The accounts' scenes function (docs/ACCOUNTS.md): short requests (a list, a save, a picture); it validates scenes with web/sim's `clean()`, which imports the catalog. |
+| `rewrites` | `/api/scenes/:id` and `/api/scenes/:id/:part` to `/api/scenes` | One function serves the whole group of scene routes (Vercel's advice: a warm instance serves them all); the named segments arrive as `?id=` and `?part=`. Checked by `check:vercel`. |
 | headers `/(.*)` | `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` | No MIME guessing; no full URLs in Referer to other sites. |
 | headers `/((?!vendor/\|api/).*)` | `Cache-Control: public, max-age=0, must-revalidate` | The app's files keep their names between deploys, so browsers revalidate them (a 304 when unchanged; Vercel's CDN serves each deployment's files from its edge). |
 | headers `/vendor/(.*)` | `Cache-Control: public, max-age=31536000, immutable` | `dist/vendor/<pkg>-<12 hex of its content>/`: the build names each vendored package's folder by its content and rewrites the importmap in `dist/index.html`, so a new three.js, a new addon or a new mediabunny export set is a new URL. |
@@ -176,7 +207,9 @@ These are open on Hobby, and owned by the AI client and server code, not by this
    proxying), the key comes from the environment and is scrubbed from every answer and error, and it never reaches the browser or the
    static files (the build checks that no shipped file holds its value).
 3. **Before anything public**: a per-user and per-IP rate limit and a daily spend cap (a Vercel Firewall rate-limit rule on `/api/ai/`, within
-   the plan's WAF limits, or a KV counter checked before `runStep`; every answer's `usage.costInUSD` says what it cost).
+   the plan's WAF limits, or a KV counter checked before `runStep`; every answer's `usage.costInUSD` says what it cost). The per-user part
+   and the spend caps are built: with accounts on (setup step 6), `api/_lib/ai-gate.mjs` checks them in Neon before each step and records each
+   step's `usage.costInUSD` after it (docs/ACCOUNTS.md section 6). A per-IP flood limit is still the Firewall's job.
 
 `/_src` and `/_logs` on a deployment need your Vercel login. Function logs carry no key (the AI core redacts it).
 

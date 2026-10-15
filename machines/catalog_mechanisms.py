@@ -68,11 +68,32 @@ def _joint(c, kind, part, **fields):
         c.joint(kind, part, **fields)
 
 
-def _spring(c, part, a, b, anchor_a, anchor_b, rest, k, damping, compress_only=False, radius=0.012, coils=None, **extra):
+SPRING_STEEL = 7850.0       # kg/m³: spring steel (music wire, ASTM A228)
+SPRING_SHEAR = 79.3e9       # Pa: its shear modulus G
+SPRING_STRESS = 0.7e9       # Pa: the shear stress a coil spring that is worked again and again is designed to (music wire of 1-3 mm: about 45 % of its 2 GPa tensile
+                            # strength under a steady load, less for fatigue; provisional)
+
+
+def _spring_mass(k, travel):
+    """kg: how much steel a coil spring of stiffness k (N/m) needs to take `travel` (m) of deflection at its working stress (SPRING_STRESS). Taken that far it
+    stores ½k·travel², and the twisted wire of a helical spring holds at most τ²/(4G) of energy per cubic metre (a round wire in torsion; the curvature of
+    the coils and the dead end turns only add steel), so m = ρ·4G·(½k·travel²)/τ²: 5.1 g a joule (a documented estimate, after Shigley's Mechanical
+    Engineering Design, ch. 10). The default launcher's two 400 N/m springs, held pressed 6 cm, weigh 3.7 g each; one of 2500 N/m held 45 cm, 1.3 kg: it stores
+    250 J, which no thin wire could. The engine moves a third of it with what the spring pushes (Rayleigh), so a light plate on a strong spring is no longer
+    thrown as if the spring weighed nothing (a 5000 N/m launcher pressed 45 cm threw a ping-pong ball at about 200 m/s)."""
+    return SPRING_STEEL * 4 * SPRING_SHEAR * (0.5 * k * travel * travel) / (SPRING_STRESS * SPRING_STRESS)
+
+
+def _spring(c, part, a, b, anchor_a, anchor_b, rest, k, damping, compress_only=False, radius=0.012, coils=None, travel=0.0, **extra):
+    """A spring joint of stiffness k. travel (m): the most the item ever deflects it (to its closed coils, or the farthest it is stretched); its mass (`mass`,
+    kg) is the steel that takes that (_spring_mass)."""
     fields = dict(a=a, b=b, anchorA=anchor_a, anchorB=anchor_b, rest=round(rest, 5), stiffness=round(k, 5), damping=round(damping, 5),
                   coils=coils or max(5, min(24, int(rest / 0.01))), coilRadius=radius, **extra)
     if compress_only:
         fields["compressOnly"] = True
+    ms = round(_spring_mass(k, travel), 6)
+    if ms > 0:
+        fields["mass"] = ms
     _joint(c, "spring", part, **fields)
 
 
@@ -195,18 +216,14 @@ def _rate(m, I, arms):
 
 
 def _spring_cap(P, lam, fk):
-    """The stiffness prop a part's springs can be given and still be followed by the engine's step, their rate λ (_rate) known: they may turn it at most
-    ω·dt = 1.2 rad a step (k·λ·dt² ≤ 1.44). The engine holds any stiffness steady, but past ω·dt = √2 it solves the excess implicitly, which slows and damps
-    the part's bounce: the smallest, stiffest launcher threw its ball 32 % short of the same engine at 4800 Hz (research/rw-validate-p3.ts), where at this
-    cap it throws within 2 %. fk: the share of the stiffness prop each spring gets. A prop past what its part can take is built at that cap, which is written
-    into P (so `resolved` shows what was built). The damping has no cap: the engine solves it implicitly, true at any value (a 10 N·s/m gate and a 30 N·s/m
-    bumper swing as at 4800 Hz; capped at a fifth and a quarter of that, as they were, their swings came out 13 % and 27 % off).
+    """The stiffness prop a part's springs are built with: the prop itself, uncapped (2026-10-15, engine batch 2). It was capped where the engine's 480 Hz step
+    could not follow a light part on stiff springs (k·λ·dt² ≤ 1.44, λ the springs' rate on the part, _rate; fk the share of the prop each spring gets): past
+    ω·dt = √2 the engine solved the excess implicitly and the smallest, stiffest launcher threw its ball a third short. The engine now solves a stiff spring's
+    group in as many sub-steps as its fastest swing needs (ω·h at most 0.45, 0.15 while something nears it; up to 16 a step), and the spring's own mass
+    moves with the part (_spring_mass), so every prop is followed: the launchers throw within 0.2 % of the same engine stepping 10 times finer
+    (research/rw-validate-p3.ts, research/rw-validate-p4.ts). lam and fk are kept for the record.
     -> the stiffness prop to build with."""
-    k_max = math.floor(1.44 / (STEP * STEP * fk * lam) * 1000) / 1000
-    k = min(P["stiffness"], k_max)
-    if k < P["stiffness"]:
-        P["stiffness"] = k
-    return k
+    return P["stiffness"]
 
 
 JAM_GAP = 0.002         # m: how far under its wheel's rim the end of a pulley's run stops (the rope's end jams in the pulley there; 2 mm, so the body's 1 mm contact
@@ -260,14 +277,16 @@ def _sprung_plate(c, P, pad):
     W, rest, d, damp, th = P["width"], P["rest_length"], P["depth"], P["damping"], 0.004 if pad else 0.008
     cr = max(0.004, min(0.012, d / 2 - 0.0033))        # the coil's radius (picture only): 12 mm, narrower on a plate less than ~31 mm deep so it stays on its seat
     xs = max(W / 2 - 0.025, cr + 0.003)                # the springs stand 25 mm in from the plate's ends, but never closer to the middle than a coil and a 3 mm gap (a plate under ~76 mm wide)
-    # a small thin plate is light: its springs get no more stiffness than the engine's step can follow on it (_spring_cap; the bounce and the throw are the
-    # same, only the plate's own ringing is slower)
+    # its springs: the stiffness asked for (_spring_cap: the engine follows any), each with the steel it needs (_spring_mass): a pad's to be pressed to its closed
+    # coils (a heavy ball can), a launcher's as far as it is held pressed (then it swings as far each way)
     mp = MATERIALS[P["material"]]["density"] * W * th * d
     k = _spring_cap(P, _rate(mp, mp * (W * W + th * th) / 12, (-xs, xs)), 0.5)
     # held compressed at most until the coils close (the turns _spring draws, 2 mm wire, side by side plus the two seats), and a launcher never below 3 cm;
     # a pad's plate starts settled on its springs, or on its closed coils when they are too soft to hold it up
     solid = max(5, min(24, int(rest / 0.01))) * 0.002 + 0.004
-    comp = min(mp * G / k, rest - solid) if pad else min(P["compression"], rest - max(0.03, solid))
+    # (a pad's plate settles under its own weight and the third of each spring's own weight it carries, _spring_mass)
+    ms = round(_spring_mass(k / 2, rest - solid), 6) if pad else 0.0
+    comp = min((mp + 2 * ms / 3) * G / k, rest - solid) if pad else min(P["compression"], rest - max(0.03, solid))
     wood, steel = _wood(c), _steel(c)
     c.slab("base", W + 0.05, 0.02, d, 0, -0.01, kind="static", words="the base block", look="wood", material=wood)
     c.slab("plate", W, th, d, 0, rest - comp + th / 2, words="a springy bounce pad plate" if pad else "the launcher's plate")
@@ -276,7 +295,7 @@ def _sprung_plate(c, P, pad):
     gh = rest + max(0.05, comp + th + 0.02)
     for n, sx in enumerate((-1, 1)):
         x = sx * xs
-        _spring(c, f"spring{n + 1}", "base", "plate", (x, 0.01), (x, -th / 2), rest, k / 2, damp / 2, radius=cr)
+        _spring(c, f"spring{n + 1}", "base", "plate", (x, 0.01), (x, -th / 2), rest, k / 2, damp / 2, radius=cr, travel=rest - solid if pad else comp)
         c.slab(f"guide{n + 1}", 0.006, gh, 0.02, sx * (W / 2 + 0.007), gh / 2, kind="static", words="a steel guide rail", look="steel", material=steel)
 
 
@@ -296,7 +315,7 @@ def _springs():
         solid = coils * 2 * min(0.0035, max(0.0007, 0.08 * 0.012)) + 0.004
         stretch = max(0.0, min(P["start_stretch"], rest + 2 * m * G / k - solid))
         c.slab("weight", s, s, s, 0, -(rest + stretch) - s / 2 - SCREW_EYE, words="a weight on a spring")
-        _spring(c, "spring", "hanger", "weight", (0, -0.006 - SCREW_EYE), (0, s / 2), rest, k, damp, coils=coils)
+        _spring(c, "spring", "hanger", "weight", (0, -0.006 - SCREW_EYE), (0, s / 2), rest, k, damp, coils=coils, travel=max(0.0, rest + 2 * m * G / k - solid))
     wm = _weight_material()
     register(ItemType("hanging-spring", "Hanging spring", "Springs & ropes", build_hanging, material=wm, materials=_has(wm, "steel", "aluminium", "brick", "varnished hardwood"),
                       props=[Prop("stiffness", "Stiffness", 20.0, 1.0, 500.0, 0.5, "N/m", "How hard it pulls per metre stretched"),
@@ -306,26 +325,26 @@ def _springs():
                              Prop("start_stretch", "Start stretch", 0.2, 0.0, 1.0, 0.01, "m", "How far the spring is stretched when it lets go (at most until it would close its coils on the way back up); it then bounces about the point m·g/k below its rest length")],
                       tags=["hooke", "oscillate", "bounce", "bouncing weight", "coil", "slinky", "elastic", "mass on a spring", "harmonic", "vibrate"],
                       description="A weight on a coil spring, stretched and let go: it bounces up and down with a period 2π√(m/k).",
-                      source="Hooke's law F = −kx; period 2π√(m/k) (textbook). A teaching-lab coil spring is about 10-50 N/m (provisional); the spring itself has no weight.",
+                      source="Hooke's law F = −kx; period 2π√(m/k) (textbook). A teaching-lab coil spring is about 10-50 N/m (provisional); the spring's own steel (as much as it needs to stretch as far as it is let: a few grams) swings with a third of its weight (Rayleigh), a period a fraction of a percent longer.",
                       anchor="the top of the spring", facts="20 N/m · 0.2 kg · period 0.63 s"))
 
     # --- spring launcher
     register(ItemType("spring-launcher", "Spring launcher", "Springs & ropes", lambda c, P: _sprung_plate(c, P, False), material="varnished hardwood",
                       materials=_has("varnished hardwood", "aluminium", "steel", "solid rubber"),
-                      props=[Prop("stiffness", "Stiffness", 800.0, 50.0, 5000.0, 10.0, "N/m", "Both springs together (at most what the plate's weight allows: a very small plate gets less)"),
+                      props=[Prop("stiffness", "Stiffness", 800.0, 50.0, 5000.0, 10.0, "N/m", "Both springs together"),
                              Prop("rest_length", "Spring length", 0.15, 0.05, 0.5, 0.005, "m", "Uncompressed"),
                              Prop("compression", "Held compressed by", 0.06, 0.0, 0.45, 0.005, "m", "How far the plate is pressed down until the scene's release (at most until the coils close)"),
                              Prop("width", "Plate width", 0.16, 0.06, 0.6, 0.005, "m"), Prop("depth", "Front to back", 0.10, 0.02, 0.6, 0.01, "m", "Only for the 3D look and the weight"),
                              Prop("damping", "Damping", 0.5, 0.0, 20.0, 0.1, "N·s/m")],
                       tags=["catapult", "fling", "throw", "launch", "springboard", "plunger", "pop up", "ejector", "kick"],
                       description="A plate held down on two compressed springs. At the scene's release it springs up and flings what sits on it; tilt the item to aim.",
-                      source="Stored energy ½kx². With 800 N/m pressed 6 cm the plate and a 60 g ball leave at about 4 m/s (textbook energy balance; the values are provisional).",
+                      source="Stored energy ½kx² = ½(m + mₛ/3)v², a third of the springs' own steel (mₛ, as much as they need to be held pressed that far) moving with the plate (Rayleigh). With 800 N/m pressed 6 cm the plate and a 60 g ball leave at about 4 m/s (textbook energy balance; the values are provisional).",
                       anchor="the middle of its base's top", facts="800 N/m · pressed 6 cm · 0.09 kg plate", edit=[{"kind": "length", "prop": "width"}, {"kind": "rotate"}]))
 
     # --- bounce pad
     register(ItemType("bounce-pad", "Bounce pad", "Springs & ropes", lambda c, P: _sprung_plate(c, P, True), material="solid rubber",
                       materials=_has("solid rubber", "varnished hardwood", "aluminium", "steel"),
-                      props=[Prop("stiffness", "Stiffness", 1000.0, 50.0, 10000.0, 10.0, "N/m", "Both springs together (at most what the plate's weight allows: a very small plate gets less)"),
+                      props=[Prop("stiffness", "Stiffness", 1000.0, 50.0, 10000.0, 10.0, "N/m", "Both springs together"),
                              Prop("rest_length", "Spring length", 0.08, 0.03, 0.4, 0.005, "m"),
                              Prop("width", "Plate width", 0.2, 0.06, 0.8, 0.005, "m"), Prop("depth", "Front to back", 0.10, 0.02, 0.6, 0.01, "m", "Only for the 3D look and the weight"),
                              Prop("damping", "Damping", 0.5, 0.0, 20.0, 0.1, "N·s/m")],
@@ -338,8 +357,8 @@ def _springs():
     def build_trampoline(c, P):
         W, h, m, d, damp = P["width"], P["height"], P["mat_mass"], P["depth"], P["damping"]
         L0, t = 0.15, 0.004
-        # a light mat on two strong springs is light along them as well, and turns on them when it is pressed deep (each spring gets twice the stiffness prop):
-        # no more than the engine's step can follow on it (_spring_cap). Pressed down so that the springs slope at φ (here: as deep as a heavy ball presses it,
+        # a light mat on two strong springs is light along them as well, and turns on them when it is pressed deep (each spring gets twice the stiffness prop;
+        # _spring_cap keeps it, the record of their rate on the mat aside). Pressed down so that the springs slope at φ (here: as deep as a heavy ball presses it,
         # until they slope at 45°, or half way to the floor), the two mirror-image springs move the mat sideways and turn it as one motion, at the rate
         # (2cos²φ/m + 2(W/2)²sin²φ/I) per N/m
         sn = math.sin(math.atan2(min(h / 2, L0), L0))
@@ -348,7 +367,9 @@ def _springs():
         ks = 2 * K
         rest = L0 - (K * L0 / 2) / ks
         # where the mat hangs: its weight is carried by the vertical pull of the two sloped springs
-        sag = _bisect(lambda s: 2 * ks * (math.hypot(L0, s) - rest) * s / math.hypot(L0, s) - m * G, 0.0, 1.0)
+        # (and the third of each spring's own weight that it carries, _spring_mass)
+        ms = round(_spring_mass(ks, math.hypot(L0, min(h / 2, L0)) - rest), 6)
+        sag = _bisect(lambda s: 2 * ks * (math.hypot(L0, s) - rest) * s / math.hypot(L0, s) - (m + 2 * ms / 3) * G, 0.0, 1.0)
         sag = min(sag, h - t / 2 - 0.001)          # a heavy mat on soft springs would sag to the floor: it starts just over it
         steel = _steel(c)
         xl = W / 2 + L0 + 0.02
@@ -358,10 +379,11 @@ def _springs():
         for n, sx in enumerate((-1, 1)):
             c.slab(f"leg{n + 1}", 0.04, h + 0.02, d, sx * xl, (h + 0.02) / 2, kind="static", words="an end frame of the trampoline", look="steel", material=steel)
             # a trampoline spring is a close-wound extension spring: about 3 mm of wire a turn (some 37 turns over its 11 cm), 24 mm across
-            _spring(c, f"spring{n + 1}", "mat", f"leg{n + 1}", (sx * W / 2, 0), (-sx * 0.02, h - (h + 0.02) / 2), rest, ks, damp, coils=max(20, round(rest / 0.003)), render={"rows": rows})
+            _spring(c, f"spring{n + 1}", "mat", f"leg{n + 1}", (sx * W / 2, 0), (-sx * 0.02, h - (h + 0.02) / 2), rest, ks, damp, coils=max(20, round(rest / 0.003)),
+                    travel=math.hypot(L0, min(h / 2, L0)) - rest, render={"rows": rows})
     register(ItemType("trampoline", "Trampoline", "Springs & ropes", build_trampoline, material="trampoline mat", materials=["trampoline mat"],
                       props=[Prop("width", "Mat width", 0.8, 0.3, 2.0, 0.01, "m"), Prop("height", "Height of the mat", 0.35, 0.15, 1.5, 0.01, "m"),
-                             Prop("stiffness", "Stiffness", 300.0, 50.0, 3000.0, 10.0, "N/m", "How hard the mat pushes back per metre it is pressed down (at most what the mat's weight allows: a very light mat gets less)"),
+                             Prop("stiffness", "Stiffness", 300.0, 50.0, 3000.0, 10.0, "N/m", "How hard the mat pushes back per metre it is pressed down"),
                              Prop("mat_mass", "Mat weight", 0.05, 0.03, 5.0, 0.01, "kg", "A mat heavier than the ball takes its bounce away: a light one bounces a ball well"), Prop("depth", "Front to back", 0.6, 0.05, 2.0, 0.05, "m", "Only for the 3D look and the weight"),
                              Prop("damping", "Spring damping", 5.0, 0.0, 12.0, 0.5, "N·s/m", "Along each spring: the mat's up-and-down motion feels only a small share of it")],
                       tags=["bounce", "jump", "springs", "mat", "bouncy castle", "rebound", "gymnastics", "elastic", "stretch"],
@@ -374,7 +396,7 @@ def _springs():
         H, d, rest, damp = P["height"], P["depth"], P["rest_length"], P["damping"]
         # the plate is 3 cm thick, thicker on a tall plate, so that turned on its corner it is always taller (by 2.5 mm at least) than it is between the shelf and the keeper
         t = max(0.03, math.sqrt((H + 0.0025) ** 2 - H * H))
-        # a small plate is light: its springs (a quarter of its height above and below its middle) get no more stiffness than the engine's step can follow on it (_spring_cap)
+        # its springs (a quarter of its height above and below its middle): the stiffness asked for (_spring_cap: the engine follows any)
         mp = MATERIALS[P["material"]]["density"] * t * H * d
         k = _spring_cap(P, _rate(mp, mp * (t * t + H * H) / 12, (H / 4 + 0.0005, 0.0005 - H / 4)), 0.5)
         # pressed in at most until the coils close (the springs' turns, as _spring draws them, 2 mm wire, side by side plus the two seats), and pulled out no further than that
@@ -409,13 +431,13 @@ def _springs():
         cr = max(0.004, min(0.012, d / 2 - 0.0033, H / 4 - 0.003))
         steel = _steel(c)
         for n, fy in enumerate((0.25, 0.75)):
-            _spring(c, f"spring{n + 1}", "wall", "plate", (0.015, 0.01 + fy * H - wall_h / 2), (-t / 2, fy * H - (H / 2 + 0.0005)), rest, k / 2, damp / 2, radius=cr)
+            _spring(c, f"spring{n + 1}", "wall", "plate", (0.015, 0.01 + fy * H - wall_h / 2), (-t / 2, fy * H - (H / 2 + 0.0005)), rest, k / 2, damp / 2, radius=cr, travel=room)
             # inside each coil a steel guide pin from the wall, 1 mm shorter than the closed coil: hit hard, the plate lands on the pins before the coils close (a real spring stops at coil bind)
             rr = round(0.5 * cr, 5)
             c.slab(f"pin{n + 1}", solid - 0.001, 2 * rr, 2 * rr, (solid - 0.001) / 2, 0.01 + fy * H, kind="static", words="a steel guide pin inside the spring", look="steel", material=steel)
     register(ItemType("spring-bumper", "Spring bumper", "Springs & ropes", build_bumper, material="varnished hardwood", materials=_has("varnished hardwood", "aluminium", "steel", "solid rubber"),
                       props=[Prop("height", "Plate height", 0.12, 0.04, 0.5, 0.005, "m"), Prop("rest_length", "Spring length", 0.1, 0.03, 0.5, 0.005, "m"),
-                             Prop("stiffness", "Stiffness", 300.0, 20.0, 5000.0, 10.0, "N/m", "Both springs together (at most what the plate's weight allows: a very small plate gets less)"),
+                             Prop("stiffness", "Stiffness", 300.0, 20.0, 5000.0, 10.0, "N/m", "Both springs together"),
                              Prop("pushed_in", "Pushed in at the start", 0.0, -0.1, 0.1, 0.005, "m", "Positive presses the plate toward the wall, negative pulls it out (either way at most as far as the coils can close); it springs back at the scene's release"),
                              Prop("depth", "Front to back", 0.10, 0.02, 0.6, 0.01, "m", "Only for the 3D look and the weight"), Prop("damping", "Damping", 1.0, 0.0, 30.0, 0.1, "N·s/m")],
                       tags=["buffer", "shock absorber", "cushion", "wall", "spring plate", "pinball", "kicker", "stop", "recoil", "dampen"],
@@ -427,8 +449,8 @@ def _springs():
     def build_gate(c, P):
         L, th, d, a, damp, reach = P["length"], P["thickness"], P["depth"], P["start_angle"], P["damping"], P["spring_reach"]
         arm = 0.7 * L          # the spring pulls at 70 % of the way down the gate
-        # a small thin gate is light: its spring gets no more stiffness than the engine's step can follow on it (_spring_cap; the eye is ex across and 0.2 L down
-        # from the plank's middle, and its lever arm is never more than that distance, whichever way the spring pulls)
+        # its spring: the stiffness asked for (_spring_cap: the engine follows any; the eye is ex across and 0.2 L down from the plank's middle, and its lever arm
+        # is never more than that distance, whichever way the spring pulls)
         ex, m = th / 2 + 0.0026, MATERIALS[P["material"]]["density"] * th * L * d
         k = _spring_cap(P, _rate(m, m * (th * th + L * L) / 12, (math.hypot(ex, L / 2 - arm),)), 1.0)
         # the spring runs from the eye screw in the plank's right face to the post's left face, `reach` from the gate's middle line: it is at its rest length while the gate hangs
@@ -468,7 +490,10 @@ def _springs():
         _hanger(c, y=drop + 0.006)
         c.slab("post", 0.02, 0.06, d, reach + 0.01, -arm, kind="static", words="a post the spring is fixed to", look="wood", material=_wood(c))
         c.slab("gate", th, L, d, (L / 2) * math.sin(ar), -(L / 2) * math.cos(ar), langle=a, words="a gate on a spring hinge", pivot={"x": 0.0, "y": round(L / 2, 5)})
-        _spring(c, "spring", "gate", "post", (th / 2 + 0.0026, L / 2 - arm), (-0.01, 0.0), rest, k, damp)        # on the eye screw in the plank's right face
+        # (it is pressed to its closed coils toward the post, and stretched swinging away from it, to 85 degrees at most)
+        x85, y85 = ex * math.cos(-85 * D2R) + arm * math.sin(-85 * D2R), ex * math.sin(-85 * D2R) - arm * math.cos(-85 * D2R)
+        travel = max(rest - solid, abs(math.hypot(x85 - reach, y85 + arm) - rest))
+        _spring(c, "spring", "gate", "post", (th / 2 + 0.0026, L / 2 - arm), (-0.01, 0.0), rest, k, damp, travel=travel)        # on the eye screw in the plank's right face
         # the hinge's friction: its 3.8 mm steel pin (web/models/mechanisms-springs.js) turns in the knuckles under the gate's weight, μ·r·m·g (the spring is at its
         # rest length while the gate hangs). The gate's pivot (named, as every hinged part's is) is frictionless in the engine, so the friction is a pin joint at the
         # same point, drawn by the gate's own hinge (render.hinge "none")
@@ -478,7 +503,7 @@ def _springs():
                       props=[Prop("length", "Length", 0.4, 0.1, 1.5, 0.01, "m"), Prop("thickness", "Thickness", 0.02, 0.005, 0.1, 0.001, "m"),
                              Prop("depth", "Width (front to back)", 0.12, 0.02, 1.0, 0.01, "m"),
                              Prop("start_angle", "Start angle", 40.0, -80.0, 80.0, 1.0, "°", "From hanging straight down; positive swings it to the right, as far as its spring and post let it, negative to the left, only as far as it then swings back short of the post"),
-                             Prop("stiffness", "Spring stiffness", 40.0, 2.0, 1000.0, 1.0, "N/m", "A spring from the gate, 70 % of the way down, to a post on its right (at most what the gate's weight allows: a very small, thin gate gets less)"),
+                             Prop("stiffness", "Spring stiffness", 40.0, 2.0, 1000.0, 1.0, "N/m", "A spring from the gate, 70 % of the way down, to a post on its right"),
                              Prop("spring_reach", "Spring length", 0.4, 0.2, 1.0, 0.01, "m", "How far the post stands from the gate when it hangs straight: keep it more than the gate swings"),
                              Prop("damping", "Damping", 0.3, 0.0, 10.0, 0.05, "N·s/m")],
                       tags=["door", "saloon door", "flap", "self closing", "swing door", "hinge", "spring hinge", "return", "paddle"], anchor="the hinge, at the top",
@@ -563,7 +588,8 @@ def _springs():
         # throw's speed)
         I_pin = m_arm * (L * L + t * t) / 12 + m_arm * (0.2 * L) ** 2
         damp = 2 * 0.02 * math.sqrt((k * s_eye * s_eye + m_arm * G * 0.2 * L) * I_pin) / (s_eye * s_eye)
-        _spring(c, "spring", "arm", "base", (L / 2 - 0.02, -t / 2 - 0.0006), (tip_x - (right - 0.17) / 2, 0.01), rest, k, damp, coils=coils, radius=round(cr, 5))
+        _spring(c, "spring", "arm", "base", (L / 2 - 0.02, -t / 2 - 0.0006), (tip_x - (right - 0.17) / 2, 0.01), rest, k, damp, coils=coils, radius=round(cr, 5),
+                travel=max(0.0, math.hypot(e_eye * sa, eye_y(a)) - rest))
     register(ItemType("spring-catapult", "Spring catapult", "Springs & ropes", build_catapult, material="varnished hardwood", materials=_has("varnished hardwood", "aluminium"),
                       props=[Prop("arm_length", "Arm length", 0.4, 0.3, 1.2, 0.01, "m", "The ball sits on the long end, on the left; the spring pulls the short end down"),
                              Prop("cocked_angle", "Cocked angle", 25.0, 5.0, 60.0, 1.0, "°", "How far the long end is held below level until the release"),

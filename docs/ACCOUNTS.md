@@ -1,7 +1,11 @@
 # Accounts: sign in with Google, and every scene you saved, on any device
 
-Status (2026-10-15): **design only.** Nothing here is built, configured or deployed yet. This file is the contract for the build step
-and lists the owner's one-time setup steps (section 9), which only the owner can take: they create provider accounts and accept terms.
+Status (2026-10-15): **the server and the sign-in are built and tested; switched off until the owner connects Clerk and Neon** (section 9,
+about 10 minutes, which only the owner can do: it creates provider accounts and accepts their terms). Until then every deployment behaves as
+before: `/api/scenes/me` answers `{accounts: null}`, the page keeps scenes in the browser, and the AI function keeps its old access check.
+What was built, how it was checked and where it differs from the design below: **section 13**; the repairs after review (round 3: storage
+bounds, the Build-with-AI sign-in sheet, Save links, two-device conflicts, account deletion): **section 14**. The page's library and account
+chip (`web/account/` except `clerk.js`) are a separate build step with its own notes (7.9).
 
 What changes for people using the sandbox:
 
@@ -83,7 +87,9 @@ pools to manage on Fluid compute, and `sql.transaction([...])` covers the two-st
 
 - npm `@clerk/clerk-js` **6.39.0** (published 2026-10-09; `latest`). Its exports include `./no-rhc` (`dist/clerk.no-rhc.mjs`, 839 KB): a
   build without remotely hosted code (Clerk added it for browser extensions; it drops the Stripe and wallet loaders). The default
-  `dist/clerk.mjs` is 1.5 MB.
+  `dist/clerk.mjs` is 1.5 MB. **As built:** it is *not* a package.json dependency (that would add its ~50 dependencies, 159 MB of wallet SDKs,
+  to every `npm ci`); `tools/vendor-clerk.mjs` takes the one pinned tarball with `npm pack` and checks its sha512 integrity before using it
+  (section 13).
 - In Core 3 (clerk-js 6) Clerk's prebuilt components live in a separate `@clerk/ui` bundle, which the documented setup loads **at run time
   from the Clerk Frontend API domain** (`https://<fapi>/npm/@clerk/ui@1/dist/ui.browser.js`). This design loads **no Clerk UI**: the app
   draws its own sign-in sheet, avatar and menu, so nothing is fetched as code from Clerk at run time.
@@ -156,8 +162,8 @@ browser (static app, ES modules)                                       Vercel fu
                  ▼ yes
  web/account/account.js ── Bearer token ──► /api/scenes, /api/scenes/:id[/thumb|/restore], /api/scenes/me
    ├ cloud.js (signed in)                    api/scenes/index.mjs (one function; vercel.json rewrites)  ─► accounts, identities,
-   ├ local.js (signed out: localStorage +    api/_lib/{auth,origin,db,accounts,http}.mjs                      scenes, counters
-   │           IndexedDB, as today + pictures)
+   ├ local-idb.js (signed out: IndexedDB)    api/_lib/{auth,origin,db,accounts,http}.mjs                      scenes, counters
+   ├ ai-signin.js ("Build with AI needs an account", signed out on a deploy whose AI needs sign-in)
    ├ library.js ("My scenes" dialog)        /api/ai/<step>  api/ai/[step].mjs + api/_lib/ai-gate.mjs ──► counters (quota, spend)
    ├ thumb.js (640x360 picture of the scene)
    └ clerk-js (vendored) ──fetch──► Clerk Frontend API (*.clerk.accounts.dev)        api.clerk.com (secret key, server only)
@@ -185,7 +191,8 @@ browser (static app, ES modules)                                       Vercel fu
 | `api/_lib/ai-gate.mjs` | who may run an AI step, the quota checks, and recording usage (section 6) |
 | `api/_lib/http.mjs` | answers in the AI endpoint's shape (`{ok, ...}` / `{ok: false, error, code, retryable}`), JSON body reading with a byte cap, `Cache-Control: no-store` |
 | `web/account/account.js` | the entry point: config, Clerk, the sign-in sheet, the top-bar button and menu, `window.sandboxAccount`, the AI sign-in prompt, the copy-to-account offer |
-| `web/account/cloud.js`, `local.js` | the two libraries, with one interface (7.6) |
+| `web/account/cloud.js`, `local-idb.js` | the two libraries, with one interface (7.6, 7.9) |
+| `web/account/ai-signin.js` | "Build with AI needs an account": the sheet in front of the AI for someone signed out, and the way back to it after Google (6, 14) |
 | `web/account/library.js` | the "My scenes" dialog |
 | `web/account/thumb.js` | the scene's picture for its card (7.5) |
 | `web/account/account.css` | styles, using the app's existing tokens and button classes |
@@ -197,6 +204,11 @@ Files in `api/_lib/` are not turned into functions, because Vercel skips files w
 `check:vercel` asserts that the built output has exactly the two functions `api/ai/[step]` and `api/scenes/index`.
 
 ### 2.2 Hooks in shared files (small, self-contained; re-read each file right before editing it)
+
+**As built (server and sign-in, section 13):** `web/app.js` was **not** changed for accounts' server side: the AI token is added by
+`web/account/clerk.js` (a wrapper around `window.fetch` for same-origin POSTs to `/api/ai/*` while someone is signed in, with one retry on an
+expired token). `web/index.html` gained one importmap line (`"clerk-js"`); `tools/build-static.mjs`, `vercel.json`, `api/ai/[step].mjs`,
+`package.json` and `.vercelignore` got the edits listed in 13.2. The page's own hooks (the library and the chip) belong to the page's build step.
 
 **`web/app.js`** (about 6 lines). Split `api()` so the account layer can take the routes it owns. Pass extra headers through. Let a save
 say where it went. Expose two app actions.
@@ -292,9 +304,11 @@ create table if not exists scenes (
   version     integer not null default 1,          -- +1 on every change of name or scene (If-Match)
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),  -- a name or scene change; a new picture alone does not change it
-  deleted_at  timestamptz                          -- deleted (can be restored for 30 days)
+  deleted_at  timestamptz,                         -- deleted (can be restored for 30 days, while the account has room: 3.2)
+  saved_as    text                                 -- (schema 2) the app's scenario it was saved as with Save: picking that again continues it
 );
 create index if not exists scenes_owner_recent on scenes (owner_id, updated_at desc) where deleted_at is null;
+create index if not exists scenes_owner_deleted on scenes (owner_id, deleted_at) where deleted_at is not null;  -- (schema 2)
 
 create table if not exists counters (              -- AI quotas, site spend, scene write rate
   key    text not null,                            -- an account id, 'inv_<nonce>' (an invite cookie), 'tok' (the preview token), or '*' (the whole site)
@@ -322,15 +336,17 @@ own. Within one Clerk instance two users never share an email, so linking only e
 | What | Limit | Answer when over |
 | --- | --- | --- |
 | request body (POST/PUT JSON, picture included) | 1.5 MB (checked from `Content-Length`, and again while reading) | 413 `too_large` |
-| scene JSON after `clean()` | 1 MB (a 200-item scene is about 60 KB) | 413 `too_large` |
+| scene JSON after `clean()` | 256 KB (a 200-item scene is about 60 KB). Top-level keys the app never reads are dropped first (kept: `version`, `id`, `name`, `seconds`, `release`, `stage`, `items`, `goals`) | 413 `too_large` |
 | items in a scene | 200 (`clean()`'s `MAX_ITEMS`, as everywhere else) | 400 `bad_input` |
-| name | 1–60 characters after the same rule as local saves: letters, digits, spaces, `_`, `-`, `'`; trimmed; empty gives "Scene HHMMSS" | (normalised, never refused) |
+| name | 1–60 characters: letters, digits, spaces and ordinary punctuation (`_ - ' ’ . , : ; ( ) & ! ? + #`); spaces collapsed, trimmed; empty (or no letter or digit) gives "Scene HHMMSS". The page's rename uses the same rule and says what it left out | (normalised, never refused) |
 | picture | 150 KB; WebP, JPEG or PNG by its first bytes (never SVG); the page sends 640x360 | 413 `too_large` / 400 `bad_input` |
 | scenes per account | 500 (`SCENES_MAX_PER_USER`), not counting deleted ones | 403 `quota` |
-| bytes per account (scenes plus pictures) | 50 MB (`SCENES_MAX_BYTES_PER_USER`) | 403 `quota` |
+| bytes per account (scenes plus pictures) | 10 MB (`SCENES_MAX_BYTES_PER_USER`), **counting deleted scenes still in the 30-day bin**. When a save needs room, the bin empties itself, oldest first, so deleting always frees room and create-delete loops never grow the database | 403 `quota` |
+| bytes on the whole site (every account, the bins included) | 700 MB (`SCENES_SITE_MAX_BYTES`) of Neon's free 1 GB, where Neon blocks every write. Past it, every save that grows is refused (expired bin rows are removed first) | 403 `storage_full` |
 | scene writes per account | 120 an hour (POST, PUT, DELETE, restore) | 429 `rate_limited` with `Retry-After` |
+| scenes copied in from the browser (`copy: true` on POST) | 600 a day (`SCENES_COPIES_PER_DAY`), a count of their own: copying a library never uses up the hour's writes the autosave needs | 429 `rate_limited` (`copy: true`) |
 | list answer | the whole list in one answer (at most 500 entries, about 120 KB) | (no paging) |
-| deleted scenes | kept 30 days, then removed the next time that account deletes something | (no cron job needed) |
+| deleted scenes | kept 30 days (or until their room is needed), then removed the next time that account deletes or saves | (no cron job needed) |
 
 ## 4. API
 
@@ -347,7 +363,7 @@ own. Within one Clerk instance two users never share an email, so linking only e
 - **Ids.** Checked against `^s_[a-z2-7]{16}$` before any query; anything else is 404. Every query includes `owner_id = $account`. Another
   person's scene, a deleted one (except for restore), or a made-up id all answer **404 `not_found`**, never 403, so ids leak nothing.
 - **Scene meta** (in lists and answers):
-  `{id, name, items, bytes, version, createdAt, updatedAt, thumb: "/api/scenes/<id>/thumb?v=<etag>" | null}`.
+  `{id, name, items, bytes, version, createdAt, updatedAt, thumb: "/api/scenes/<id>/thumb?v=<etag>" | null, savedAs: string | null}`.
 
 ### 4.2 Routes
 
@@ -355,9 +371,9 @@ own. Within one Clerk instance two users never share an email, so linking only e
 | --- | --- | --- |
 | `GET /api/scenes/me` | — | Without a token: `{ok, accounts: {provider: "clerk", publishableKey} \| null, storage: true\|false, ai: {signInRequired}}`. With a token, also `user: {id, name, email}`, `usage: {scenes, bytes, maxScenes, maxBytes}` and `aiToday: {steps, usd, maxUsd, resetsAt}`. The first call with a token creates the account (3.1) |
 | `GET /api/scenes` | — | `{ok, scenes: [meta, ...]}`, newest first, deleted ones left out |
-| `POST /api/scenes` | `{name, scene, thumb?}`. `thumb` is a data URL `data:image/(webp\|jpeg\|png);base64,...` | **201** `{ok, scene: meta}` and `Location`. The server runs `clean(scene)` (400 with its message for a scene the builder can't use), sets `scene.id` and `scene.name`, and stores it |
+| `POST /api/scenes` | `{name, scene, thumb?, savedAs?, copy?}`. `thumb` is a data URL `data:image/(webp\|jpeg\|png);base64,...`; `savedAs` a scenario id (`[\p{L}\p{N}_'-]`, at most 80); `copy: true` for "copy this browser's scenes" (3.2) | **201** `{ok, scene: meta}` and `Location`. The server runs `clean(scene)` (400 with its message for a scene the builder can't use), sets `scene.id` and `scene.name`, and stores it |
 | `GET /api/scenes/:id` | — | `{ok, scene: meta, data: <the scene JSON>}` with `ETag: "v<version>"` |
-| `PUT /api/scenes/:id` | any of `{name, scene, thumb}` (`thumb: null` removes the picture). Optional `If-Match: "v<version>"` | `{ok, scene: meta}`. A name or scene change adds 1 to `version` and sets `updated_at`. A picture alone changes neither. A stale `If-Match` gives **412** `{code: "conflict", current: meta}` |
+| `PUT /api/scenes/:id` | any of `{name, scene, thumb, savedAs}` (`thumb: null` removes the picture; `savedAs` alone, like a picture alone, is not an edit). Optional `If-Match: "v<version>"` | `{ok, scene: meta}`. A name or scene change adds 1 to `version` and sets `updated_at`. A picture alone changes neither. A stale `If-Match` gives **412** `{code: "conflict", current: meta}` |
 | `DELETE /api/scenes/:id` | — | `{ok, deleted: id, restoreUntil}` (sets `deleted_at`) |
 | `POST /api/scenes/:id/restore` | — (no body needed) | `{ok, scene: meta}`, within 30 days of the delete |
 | `GET /api/scenes/:id/thumb?v=<etag>` | — | The picture's bytes with its type, `Cache-Control: private, max-age=31536000, immutable`, `Content-Security-Policy: default-src 'none'`, `Cross-Origin-Resource-Policy: same-origin`. 404 when the scene has none |
@@ -372,13 +388,14 @@ Duplicate and export are done in the page: it reads the scene, then POSTs a copy
 | 400 | `bad_input` | a body that is not an object, an unknown field, a scene `clean()` refuses (its message), a bad picture |
 | 401 | `sign_in` | no token, or a bad or expired one (`expired: true` tells the page to refresh the token once and retry) |
 | 403 | `forbidden` | an origin that is not this app's, or a disabled account |
-| 403 | `quota` | 500 scenes or 50 MB reached (the message says which, and that deleting frees room) |
+| 403 | `quota` | 500 scenes or 10 MB reached (the message says which, and that deleting frees room) |
+| 403 | `storage_full` | the whole site's scenes reached `SCENES_SITE_MAX_BYTES` ("Saving to accounts is paused…"); the page says it once and tries again on the next change |
 | 404 | `not_found` | no such scene in this account |
 | 405 | `bad_input` | a method the route doesn't take (`Allow` is set) |
 | 412 | `conflict` | `If-Match` is stale (`current` is the scene's meta as it is now) |
 | 413 | `too_large` | over a size limit in 3.2 |
 | 415 | `bad_input` | not `application/json` |
-| 429 | `rate_limited` | over 120 writes an hour (`Retry-After`, `retryable: true`) |
+| 429 | `rate_limited` | over 120 writes an hour, or 600 copied-in scenes a day (`copy: true`) (`Retry-After`, `retryable: true`) |
 | 503 | `not_configured` | `DATABASE_URL` or the Clerk keys are not set on this deployment |
 | 503 | `unavailable` | Neon or Clerk could not be reached (`retryable: true`; the message never names a host or a connection string) |
 
@@ -405,7 +422,8 @@ Duplicate and export are done in the page: it reads the scene, then POSTs a copy
   plain messages before they are answered or logged. The TrueFoundry key stays as it is (`ai/DESIGN.md`).
 - **Abuse.**
   - Writes: 120 an hour.
-  - Storage: 500 scenes and 50 MB per account.
+  - Storage: 500 scenes and 10 MB per account (the bin included), 256 KB per scene, unknown top-level keys dropped, and 700 MB for the whole
+    site, so no one account, and no loop of saves and deletes, can fill Neon's 1 GB (which would block every write, the AI's counters too).
   - AI: hourly and daily steps, daily dollars per person, and a site-wide daily dollar cap (section 6).
   - Sign-up: at most 100 users in the development instance.
   - Whole-site floods are still the Vercel Firewall's job (docs/DEPLOY.md).
@@ -425,20 +443,26 @@ Order, for each `POST /api/ai/<step>`, after the existing method, step and origi
    - Otherwise, the existing `accessProblem()` rules: an `ai_session` invite cookie (counted as `inv_<its nonce>`), or the preview token
      (counted as `tok`).
    - Otherwise:
-     - if sign-in is required (`AI_REQUIRE_SIGN_IN`, which is on whenever both Clerk keys are set), **401**
+     - if sign-in is required (`AI_REQUIRE_SIGN_IN`, which is on whenever both Clerk keys **and** `DATABASE_URL` are set: Clerk without the
+       database leaves the function's own access check in place, since nobody could be counted), **401**
        `{code: "sign_in", error: "Sign in with Google to use Build with AI", retryable: false}`;
      - if not, the existing 401 or 503 messages.
 2. **Allowed.** When `AI_ALLOWED_EMAILS` is set (comma-separated addresses and `@domain` entries), an account whose verified email does not
    match gets **403** `{code: "not_allowed", error: "Build with AI is invite-only for now"}`.
-3. **Limits.** Every check is atomic in Neon, in one transaction:
+3. **Limits.** Every check is atomic in Neon, in one statement of three guarded upserts (the site's dollars, then this caller's day, then
+   this caller's hour), each only if the one before it went through:
 
    ```sql
-   insert into counters (key, bucket, n) values ($1, $2, 1)
-   on conflict (key, bucket) do update set n = counters.n + 1 where counters.n < $3
-   returning n
+   insert into counters (key, bucket, n, usd) values ($1, $2, 1, $est)
+   on conflict (key, bucket) do update set n = counters.n + 1, usd = counters.usd + excluded.usd
+     where counters.usd + excluded.usd <= $cap and counters.n < $steps
+   returning 1
    ```
 
-   A missing row in the answer means the limit is reached. The checks:
+   A missing row in the answer means that limit is reached (what the guards before it added is given back). **The dollars are reserved,
+   not just compared:** each step adds its estimate (`STEP_USD`: plan $0.35, observe $0.20, refine $0.15, edit $0.10, about each step's
+   99th-percentile cost in `ai/bench/results`) in the same statement that checks the cap, so steps running side by side line up on the row
+   lock instead of all passing a cap they break together (12 parallel plans at a $3 cap: 8 run, the rest get `quota`). The checks:
    - this caller's steps this hour (`AI_USER_STEPS_PER_HOUR`, default 40);
    - this caller's steps today (`AI_USER_STEPS_PER_DAY`, 200);
    - this caller's dollars today (`ai_usd_per_day`, else `AI_USER_USD_PER_DAY`, 3.00);
@@ -450,14 +474,21 @@ Order, for each `POST /api/ai/<step>`, after the existing method, step and origi
 
    **Not 429**, because the AI client (`web/ai/orchestrator.js`, `call()`) treats every 429 as "the AI slots are busy" and waits and retries.
    A quota is not busy.
-4. **Database missing.** A signed-in user on a deployment without `DATABASE_URL` gets **503** `not_configured`
-   ("AI limits need the database"), on Vercel only. This fails closed, like the rest of the AI endpoint.
-5. **After the step** (success or failure, in the existing `finally` block): add `usage.costInUSD` (when the answer or error has it) to this
-   caller's day bucket and to the site's. One step can overshoot a cap by its own cost, at most about $0.35 for a plan.
+4. **Database missing.** Without `DATABASE_URL` accounts are off for the AI gate too: a token is ignored and the function's own access
+   check (invite cookie, preview token) decides, as before accounts. This fails closed, like the rest of the AI endpoint.
+5. **After the step** (`gate.run()`, success or failure): the reservation becomes the step's real `usage.costInUSD` (from the answer or the
+   error) for this caller's day and the site's; with no cost known it is given back. A cap can be passed only by what steps already running
+   cost beyond their estimates (a few cents each in practice), never by a burst of parallel steps.
 
-The page **does not wait for a 401** to explain this. When accounts are configured and nobody is signed in, `account.js` catches the
-**Build with AI** click (and the `A` key) in the capture phase. Instead of the AI panel, it shows the sign-in sheet: "Build with AI needs an
-account. Continue with Google." After signing in, the panel opens where the person left off.
+The page **does not wait for a 401** to explain this (**as built**, `web/account/ai-signin.js`). When `/api/scenes/me` says
+`ai: {signInRequired: true}` and nobody is signed in, it catches, in the capture phase before the app sees them: **Edit with AI** (the `#ai`
+button and the `A` key) and New → Build with AI's **Build new scene** button (and Enter in its box). Instead of the AI panel it shows a small
+sheet: "Edit with AI needs an account" / "Build with AI needs an account", **Continue with Google**, "You'll come right back. The scene on the
+table is kept.", and Not now. What the person was doing is kept in `sessionStorage` across Google's round trip; back, signed in, the AI opens
+where they left off (the drawer, or New with their words in the box: nothing is built until they press Build). If Clerk can't be reached the
+sheet says the AI is unavailable right now. **Backstop** for any other way in: a POST to this origin's `/api/ai/*` answered 401
+`{code: "sign_in"}` dispatches `sandbox:sign-in-needed` (a `fetch` wrapper outside clerk.js's, so its one retry with a fresh token has
+already happened), and the same sheet opens ("Sign in again" when someone is signed in but the token is no longer good).
 
 ## 7. The page (`web/account/`)
 
@@ -499,7 +530,8 @@ photo, so the page loads no images from other origins. The menu has:
 - **My scenes** (also the `L` key, when not typing);
 - AI today ("4 builds left today", from `aiToday`);
 - **Sign out**;
-- **Delete account…** (a confirm dialog that asks the person to type DELETE).
+- **Delete account…** (a confirm dialog that asks the person to type DELETE; it calls `DELETE /api/scenes/me`, then signs out. **As built**
+  (14); "AI today" is not in the menu yet).
 
 On a phone the circle stays visible, and the menu becomes a bottom sheet. Everything has labels, keyboard focus and Escape, like the app's
 other menus (`web/ui/ui.js`).
@@ -592,6 +624,30 @@ scene with its local picture and shows progress. Local copies are never deleted 
 | quota reached | the server's sentence ("You've reached 500 saved scenes. Delete some to save more.") |
 | AI allowance used up | the panel shows the server's sentence, with the reset time |
 
+### 7.9 As built: My scenes and autosave (2026-10-15; these lines replace 7.2–7.7 where they differ)
+
+- **Every scene is kept as it is made** (`web/account/autosave.js`), not only the ones Saved. A scene ("project") starts with New → Blank,
+  New → Build with AI, an example or a menu scenario, an imported file, or opening one from My scenes; every later change (by hand, Edit
+  with AI, undo, redo, Save) is written to it about a second later, and its picture (`thumb.js`: `view.renderFrame(0, 640×360, "wide")`,
+  WebP, about 20 ms, the canvas never stalls) once its run has landed and nobody is touching the page. An example only opened and run, or a
+  bare table, is never written. Undo past the start of a scene goes back to the project before it (each undo step records its project).
+- **Where, signed out:** IndexedDB `sandbox-scenes` (`sandbox-scenes@<profile>` with `?profile=`) in `local-idb.js`: scenes, dates and
+  pictures, deleted ones restorable for 30 days, other tabs told by BroadcastChannel; the same on the local server (`localhost:8790`).
+  Scenes saved with Save before this existed (the local server's `web/saved/`, or the in-page engine's `sandbox:saved`) are copied in
+  once and linked, so picking one from the scenario menu continues it. Save itself still writes where it always did; it also names the
+  project. **Signed in:** the account (`cloud.js`, section 4): a scene at most every 45 s and its picture every 3 minutes (inside the 120
+  writes an hour), and at once when the library opens or the page goes (`keepalive`).
+- **One interface** (`store.js`): `list, get, create, update, remove, restore, thumb, usage, onChange`, the backend chosen by `auth.js`.
+- **The page:** a **My scenes** button after New (key **O**; a dot on it says saving / saved), the library dialog (`library.js`: search,
+  sort, open, rename, duplicate, download, delete with Undo, keyboard and screen-reader ready, a sheet on phones), the New dialog's row of
+  recent scenes, and the account chip (Sign in with Google; signed in, the initials and a menu). Signing in offers "Copy N scenes to my
+  account" once; the scene on the table goes on in the account as one scene.
+- **Hooks in shared files:** `web/app.js` (`lib("changed" | "fresh")` in autosave, loadScenario, importScene, New → Blank, a new AI scene;
+  `window.sandboxApp.open/rename`; New's "save first" note skipped for a kept scene), `web/ai/new-project.js` (the recent row), `web/index.html`
+  (the stylesheet and `account/account.js`), `tools/build-static.mjs` (`account` in SHIP_DIRS, `account/dev-mock.js` in DEV_ONLY).
+- **Trying the signed-in screens without accounts:** `?accountmock=1` (or `=signedin`): a pretend Google sign-in and a pretend `/api/scenes`
+  in the page (`dev-mock.js`, never shipped). **Tests:** `node web/account/test/library.e2e.mjs` (the real app, headless Chromium).
+
 ## 8. Configuration (environment variables)
 
 | Name | Set by | Used for |
@@ -599,13 +655,14 @@ scene with its local picture and shows progress. Local copies are never deleted 
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | the Clerk integration (each environment gets its own instance's key) | `/api/scenes/me` gives it to the page. The server derives the Frontend API host, the JWKS URL and the expected `iss` from it. Also read as `CLERK_PUBLISHABLE_KEY` if that is set instead |
 | `CLERK_SECRET_KEY` | the Clerk integration | server only: the Backend API (new person's email and name; deleting a user) |
 | `CLERK_JWT_KEY` | optional, the owner | the instance's PEM public key, for verifying tokens without fetching the JWKS |
-| `DATABASE_URL` | the Neon integration | everything in section 3 (the pooled connection string; the HTTP driver needs nothing else) |
+| `DATABASE_URL` | the Neon integration | everything in section 3 (the pooled connection string; the HTTP driver needs nothing else). `POSTGRES_URL` is read when `DATABASE_URL` is not set |
 | `ACCOUNTS` | optional | `off` hides sign-in and the library on that deployment (an emergency switch; needs a redeploy, like any variable) |
-| `AI_REQUIRE_SIGN_IN` | optional | defaults to on when both Clerk keys are set; `0` turns it off |
+| `AI_REQUIRE_SIGN_IN` | optional | defaults to on when both Clerk keys and `DATABASE_URL` are set; `0` turns it off |
 | `AI_USER_STEPS_PER_HOUR`, `AI_USER_STEPS_PER_DAY` | optional | 40, 200 |
 | `AI_USER_USD_PER_DAY`, `AI_SITE_USD_PER_DAY` | optional | 3.00, 30.00 |
 | `AI_ALLOWED_EMAILS` | optional | invite-only AI: `you@example.com,@yourschool.edu` |
-| `SCENES_MAX_PER_USER`, `SCENES_MAX_BYTES_PER_USER` | optional | 500, 52428800 |
+| `SCENES_MAX_PER_USER`, `SCENES_MAX_BYTES_PER_USER`, `SCENES_WRITES_PER_HOUR` | optional | 500, 10485760 (10 MB, the bin included), 120 |
+| `SCENES_COPIES_PER_DAY`, `SCENES_SITE_MAX_BYTES` | optional | 600 (scenes copied in from the browser), 734003200 (700 MB of Neon's free 1 GB; raise it with a paid Neon plan) |
 | `ALLOWED_ORIGINS` | as in docs/DEPLOY.md | also the accepted `azp` values (aliases and custom domains) |
 
 The existing AI variables (`TRUEFOUNDRY_*`, `AI_SESSION_SECRET`, `AI_INVITE_CODES`, `AI_ACCESS_TOKEN`) are unchanged. Vercel applies any
@@ -613,15 +670,15 @@ variable change only to deployments made after it.
 
 ## 9. Your one-time steps
 
-Do these after the build step has landed this design in the code. Until then, nothing reads these variables. Each step is something only
-you can do: it creates provider accounts and accepts their terms. All of it happens in the Vercel dashboard for team **ram-sarmas-projects**,
-on the project created in docs/DEPLOY.md step 1 (for example `physics-sandbox`). Total: about 10 minutes.
+The code is in place (section 13): these steps switch it on. Each step is something only you can do: it creates provider accounts and
+accepts their terms. All of it happens in the Vercel dashboard for team **ram-sarmas-projects**, on the project **physics-sandbox** (linked
+on 2026-10-15, docs/DEPLOY.md step 1). Total: about 10 minutes. Nothing needs a code change, a key pasted anywhere, or SQL.
 
 ### 9.1 Clerk (about 4 minutes)
 
 1. vercel.com → team **ram-sarmas-projects** → **Integrations** → **Browse Marketplace** → **Clerk** → **Install**. Choose
    **Create New Clerk Account**, plan **Free / Hobby**, application name **Physics Sandbox**, then **Create**. You accept Clerk's terms here.
-2. On the integration's page: **Connect Project** → choose the project. Keep all three environments (Development, Preview, Production) →
+2. On the integration's page: **Connect Project** → **physics-sandbox**. Keep all three environments (Development, Preview, Production) →
    **Connect**. This adds `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Previews get the development instance's keys.
 3. **Open in Clerk**. With the **Development** instance selected (the default):
    - **SSO connections** (under User & authentication / Configure): make sure **Google** is there and enabled for sign-up and sign-in.
@@ -635,7 +692,7 @@ on the project created in docs/DEPLOY.md step 1 (for example `physics-sandbox`).
 
 1. The project → **Storage** → **Create Database** → **Neon** → **Continue**. Plan **Free**; region **Washington, D.C., USA (iad1)**
    (AWS us-east-1, next to the functions); database name `sandbox` → **Create**. You accept Neon's terms here.
-2. **Connect Project** → the same project. Environments: Development, Preview, Production. Leave **preview branching / "create a database
+2. **Connect Project** → **physics-sandbox**. Environments: Development, Preview, Production. Leave **preview branching / "create a database
    branch for each deployment" off**: this project deploys from the CLI, not Git, so there are no branches to copy. The default variable
    prefix (`DATABASE_URL`) is right → **Connect**.
 
@@ -654,15 +711,25 @@ For invite-only AI during the demo, add `AI_ALLOWED_EMAILS` the same way.
 ### 9.4 Deploy and check (about 3 minutes)
 
 ```sh
-npm run build:static:nogen && npm run check:vercel && npm run test:accounts && vercel deploy
+vercel env ls preview          # NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY and DATABASE_URL are listed (names only, never values)
+npm run build:static:nogen && npm run check:vercel && npm run test:accounts && vercel deploy --target preview
 ```
 
-Then open the new deployment through its share link, as in docs/DEPLOY.md, and check:
+A variable reaches only deployments made after it was added, so this must be a new deploy (and always `--target preview`: docs/DEPLOY.md
+explains why). Then open the new deployment through its share link, as in docs/DEPLOY.md, and check:
 
-1. **Sign in** → **Continue with Google** → pick your Google account → you are back on the sandbox with your initials in the top bar.
-2. **Save** a scene → toast "Saved to your account" → **My scenes** (`L`) shows it with its picture.
+0. `https://<deployment>/api/scenes/me` (in the same browser) answers `{"ok":true,"accounts":{"provider":"clerk",...},"storage":true,...}`.
+   Accounts switch on only when **both** Clerk and the database are there, so `accounts: null` means one of them is missing:
+   - **`storage: false`: stop here and finish 9.2 (Neon) first**, then deploy again. Until then the page stays as it was (no Sign in, scenes
+     in the browser, the AI behind its old invite check), so nothing is half-working in front of anyone;
+   - `storage: true` with `accounts: null`: the Clerk variables did not reach this deployment (9.1 step 2, then deploy again).
+1. **Sign in** → Google's account chooser → pick your Google account → you are back on the sandbox with your initials in the top bar.
+   (A greyed-out Sign in with "unavailable" means Clerk could not be reached, or Google is not switched on: 9.1 step 3.)
+2. Save or make a scene → **My scenes** shows it under "In your account", with its picture.
 3. Open the same link in a private window (or on your phone), sign in → the same scene is in **My scenes** → open it.
-4. Sign out → **Build with AI** asks you to sign in. Sign in → a build runs, and the menu shows today's allowance going down.
+4. Sign out → **Edit with AI** (or New → Build with AI → Build) shows "… needs an account" with Continue with Google (the AI function refuses
+   anyone signed out). Continue → back signed in, the AI opens where you were → a build runs (each step is counted against your allowance:
+   the `counters` table in the Neon console shows it).
 5. DevTools → Network: no requests to other origins except `*.clerk.accounts.dev` (and Google during sign-in).
 
 If step 1 says "Couldn't finish signing in", check the Clerk dashboard's **Logs** for an `oauth_callback.failed` event, and that 9.1 step 3
@@ -688,6 +755,8 @@ left nothing required.
 
 ## 10. What the build step must prove (before calling it done)
 
+(For the server and the sign-in: done, see 13.3. The page's library and chip have their own checks.)
+
 - **Unit and integration** (`npm run test:accounts`, node `--test`, no network, no keys):
   - the token verifier against a test RSA key and JWKS (valid; `alg` none and HS256; bad signature; expired; `nbf` in the future; wrong
     `iss`; foreign `azp`; unknown `kid` refetched once; `sts` pending);
@@ -704,7 +773,7 @@ left nothing required.
 - **Headless browser** (own Playwright Chromium, `headless: true`), on `npm run preview:static` (no accounts) and with `?accountmock=1`:
   - local Save → card with picture → rename, delete, Undo → survives a reload;
   - mock sign-in → the menu lists account scenes → Save says "Saved to your account" → the picture is uploaded;
-  - signed out, the AI button shows the sign-in sheet;
+  - signed out, the AI button shows the sign-in sheet (**built and checked in round 3**, section 14);
   - 375 px wide: no horizontal scroll, and the dialog is a full-screen sheet;
   - no console errors;
   - no request to another origin except the mock's.
@@ -716,7 +785,8 @@ left nothing required.
 
 - **Clerk Hobby**: $0. 50,000 monthly retained users per app; the development instance holds at most 100 users.
 - **Neon Free**: $0.
-  - 1 GB storage per project (about 15,000 scenes with pictures);
+  - 1 GB storage per project (about 15,000 scenes with pictures). Past it Neon blocks every write, so the site stops itself at 700 MB
+    (`SCENES_SITE_MAX_BYTES`, 3.2);
   - 100 CU-hours a month: compute runs only while queried, plus a 5-minute tail;
   - 5 GB egress a month: list answers are about 100 KB, pictures about 30 KB and cached in the browser.
   - Over a limit, writes or compute pause until the next month. Nothing is billed.
@@ -727,12 +797,15 @@ left nothing required.
 ## 12. Risks and open points
 
 - **Core 3's vanilla redirect API.** `authenticateWithRedirect` and `handleRedirectCallback` are documented, but Clerk marks the
-  `authenticateWithRedirect` API "legacy" and recommends `signIn.sso()`, whose redirect return is documented only for React. The build step
-  confirms both calls on 6.39.0. If a later version drops them, the fallback is Clerk's hosted sign-in page (`redirectToSignIn()`), which
-  needs no code change on the server.
-- **No-remotely-hosted-code build.** It is expected to leave out Turnstile; the build step confirms by reading the bundle for
-  `challenges.cloudflare.com`. If it turns out to need anything remote for Google sign-in, switch to `dist/clerk.mjs` (one constant in
-  `tools/vendor-clerk.mjs`).
+  `authenticateWithRedirect` API "legacy" and recommends `signIn.sso()`, whose redirect return is documented only for React. **Checked
+  (13.3):** the vendored 6.39.0 runs a whole Google sign-in with both calls in a headless browser against an emulated Frontend API (the
+  request carries `strategy=oauth_google` and our two addresses; the return signs the person in and puts the address back; a first-time
+  Google account is transferred to a sign-up and signed in). What only the
+  first real sign-in can prove is that Clerk's real Frontend API answers as the emulation does. If a later version drops the calls, the
+  fallback is Clerk's hosted sign-in page (`redirectToSignIn()`), which needs no change on the server.
+- **No-remotely-hosted-code build.** **Checked:** the vendored bundle names no Turnstile (`challenges.cloudflare.com`), Stripe or Clerk UI
+  URL (`tools/vendor-clerk.mjs` fails if it ever does), and its only network use is the Frontend API named by the key. If Google sign-in
+  ever needed something remote, switch the entry to `dist/clerk.mjs` (one constant in `tools/vendor-clerk.mjs`).
 - **Development instance cap.** If more than about 90 people will sign in before production, do 9.5 first.
 - **Shared database.** Previews and production share one Neon database, because there is no branching. That is intended (one product,
   one set of accounts), but a destructive test must not be run against a preview.
@@ -745,6 +818,92 @@ left nothing required.
   - saved MP4 videos (Vercel Blob client uploads);
   - a Clerk Frontend API proxy on our own origin;
   - an admin view.
+
+## 13. As built: the server and the sign-in (2026-10-15)
+
+### 13.1 Files
+
+| File | What it is |
+| --- | --- |
+| `api/scenes/index.mjs` | the scenes function (section 4): routing (path or the rewrite's `?id=&part=`), methods, the write Origin check, who is calling, sizes, `clean()`, every route |
+| `api/_lib/http.mjs` | answers in the AI endpoint's shape, `Cache-Control: no-store`, JSON bodies with a byte cap, and `scrubSecrets()`: every answer and log line has the environment's secret values, connection strings, bearer tokens and `sk_` keys replaced |
+| `api/_lib/origin.mjs` | the app's own origins (the AI function's rules), the writes' Origin / Sec-Fetch-Site check, the accepted `azp` values (off Vercel also `http://localhost:*` and `127.0.0.1`) |
+| `api/_lib/auth.mjs` | the publishable key's Frontend API host; Clerk session tokens checked with `node:crypto` only (1.4): RS256, `kid` from the JWKS (an hour's cache; an unknown kid refetches at most once a minute; `CLERK_JWT_KEY` instead when set), `iss`, `exp`/`nbf` with 5 s leeway, `sub`, `azp`, `sts`. A JWKS that can't be fetched is 503, not 401 |
+| `api/_lib/db.mjs` | Neon over HTTP (`@neondatabase/serverless` 1.2.0, exact pin, no dependencies of its own), imported on first use only; the schema made by the function itself, once per instance (section 3); every database error becomes a plain 503 |
+| `api/_lib/accounts.mjs` | identities to accounts (3.1): a new person's name and verified email from Clerk's Backend API (3 s), linking by verified email across Clerk instances, a race-safe first call, the email filled in later if Clerk didn't answer; deleting the Clerk user |
+| `api/_lib/scenes.mjs` | the scene queries (owner-scoped), ids, names, pictures (WebP / JPEG / PNG by their first bytes, 150 KB), the limits of 3.2, the write rate |
+| `api/_lib/ai-gate.mjs` | section 6, used by `api/ai/[step].mjs` |
+| `web/account/clerk.js` | the sign-in provider the page's `auth.js` loads on a deploy with accounts: the vendored SDK, `telemetry: false`, Clerk's navigations kept in the page, the return from Google (`?auth=callback`) handled first and the address put back (`?profile=` kept), "unavailable" when Clerk can't be reached or Google isn't switched on, and the token on the page's POSTs to `/api/ai/*` |
+| `web/vendor/clerk/clerk.mjs`, `LICENSE` | `@clerk/clerk-js` 6.39.0's no-remotely-hosted-code build as one ES module (841 KiB, 333 KiB gzipped; loaded only on a deploy with accounts), its MIT licence |
+| `tools/vendor-clerk.mjs` | makes them: `npm pack` of the pinned version, its sha512 integrity checked, the four optional wallet and password-strength modules replaced by a module that says they're left out, a check that no remote-code URL and no bare import is left; `--check` |
+| `web/account/test/*` | the tests below (never uploaded: `.vercelignore`; never shipped: the build skips `test/`) |
+
+### 13.2 Edits to shared files
+
+- `api/ai/[step].mjs` (4 places): the import; `aiGate()` in place of `accessProblem()` (which it still calls); `gate.charge()` after the queue
+  gives a slot (so a "busy" retry is not counted; a refusal gives the slot back); `gate.run(() => runStep(...))` to record the cost.
+- `vercel.json`: the `api/scenes/*.mjs` function (`maxDuration` 30, web/sim in `includeFiles`) and the two rewrites.
+- `tools/build-static.mjs`: `vendor:clerk` in `--regen`, `vendor:clerk:check` in the plain build, the shipped-secret scan for
+  `CLERK_SECRET_KEY`, `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `POSTGRES_URL`, `POSTGRES_PASSWORD`, `PGPASSWORD` and `AI_SESSION_SECRET` (and any
+  `sk_live_`/`sk_test_` key or database URL with a password in shipped text), and `--vercel-check`'s scenes function checks (DEPLOY.md).
+- `web/index.html`: the importmap entry `"clerk-js": "./vendor/clerk/clerk.mjs"`.
+- `package.json`: `@neondatabase/serverless` 1.2.0, devDependency `@electric-sql/pglite` 0.5.8 (a Postgres in the test process), scripts
+  `vendor:clerk`, `vendor:clerk:check`, `test:accounts`, `test:accounts:browser`. `.vercelignore`: `tools/vendor-clerk.mjs` is uploaded.
+
+Differences from the design above: the page reads its configuration from `GET /api/scenes/me` (as 7.1 says; no build-time config file);
+clerk-js is vendored from its tarball, not installed (1.3); `web/app.js` is not touched by this part (2.2); a quota refusal of the AI gate
+happens after the queue, not before it (so retries while busy cost nothing); `sk_`-shaped keys and database URLs are also refused in shipped
+files; a JWKS that can't be fetched answers 503 `unavailable` (not 401), so the page doesn't ask anyone to sign in again for Clerk's outage.
+
+### 13.3 How it was checked (no accounts, no keys, nothing deployed)
+
+| Command | What it proves | Result |
+| --- | --- | --- |
+| `npm run test:accounts` | the token checks (good, `alg` none and HS256, a bad signature, another key, expired, `nbf`, issuer, a foreign `azp`, `sts` pending, the JWKS refetch rule and a rotated key, `CLERK_JWT_KEY`, the JWKS unreachable); the scenes function on a real Postgres in the process: the first call makes the account, create / list / get / rename / update with If-Match / 412 / picture alone / delete / restore, another person's scene and made-up or malformed ids 404, `clean()`'s messages, unknown fields, 400/405/413/415, foreign Origin and cross-site writes 403, SVG or HTML "pictures" refused, every limit of 3.2 (scenes, bytes, the scene, the body, writes per hour with Retry-After), linking by verified email across two Clerk instances (and not by an unverified one), Clerk's Backend API down, account deletion, no secret in any answer; the AI gate alone (sign-in required, invite cookie and preview token, hourly steps, dollars per person and per site, invite-only emails, fail-closed without a database) and inside the real `api/ai/[step].mjs` with the AI core's mock gateway (401 `sign_in`, a step's cost recorded, 403 `quota` with the model never called and the slot given back, an expired token, the invite cookie) | 32 of 32 |
+| `node --test ai/test/vercel.test.mjs` | the AI function's own tests, after the gate went in | 8 of 8 |
+| `node web/account/test/clerk-browser.mjs` (headless Chromium) | `clerk.js` against a recording stand-in (the redirect's addresses, `?profile=` kept, the return handled and the address put back, a failed return, Google off, the token on `/api/ai/*` POSTs only, an expired token refreshed once, sign-out without leaving); the **real vendored SDK**: loads with no other-origin code, and a Clerk that can't be reached gives "unavailable" within 6 s; then a **whole Google sign-in with the real SDK** against an emulated Frontend API (`fapi-emulator.mjs`): `POST /v1/client/sign_ins` with `strategy=oauth_google` and our two addresses, the trip to "Google", the return, `handleRedirectCallback`, the session made active, a session token, sign-out ending the session; and a **first-time** Google account, which Clerk turns into a sign-up (`POST /v1/client/sign_ups` with `transfer=true`) and signs in | 21 of 21 |
+| `node web/account/test/e2e-accounts.mjs` (headless Chromium) | the real page and the page's account layer against the real scenes function on PGlite, with a stand-in for Clerk whose tokens are real RS256 JWTs: signed out the page offers Sign in; the Google round trip; the chip shows the person; a scene saved to the account is in the database under that person; My scenes lists it; a picture goes up and comes back (a picture alone is not an edit); a second device (375 px wide, no sideways scroll) sees the scene; another person doesn't; sign-out goes back to this browser; no page errors, no other-origin request | 10 of 10 |
+| `npm run build:static:nogen` | the site builds with `web/account/` and the vendored SDK, every import resolves (`clerk-js` through the importmap), `vendor:clerk:check` passes | passed (117 files) |
+| `npm run check:vercel` | `vercel build` on the exact upload: two functions only, the rewrites, the scenes function's files and the Neon driver in it, `/api/scenes/me` with no keys `{accounts: null, storage: false}`, an unreachable database answering 503 with nothing of its address; the AI function as before (its edit of the starter 200) | passed |
+| `vercel dev` on a copy of the upload (the linked project, nothing changed on it) | Vercel's own router: `/api/scenes/me` with a test publishable key, the rewrites reaching the function (`/:id`, `/:id/thumb`, `/:id/restore`, an unknown part 404), 405, a cross-site write 403; a token signed by a test key (`CLERK_JWT_KEY`) accepted, a foreign `azp` and a tampered one 401 | as expected |
+
+Not checkable here: the real Clerk instance and Google (the owner's first sign-in, 9.4), and Neon itself (the queries ran on PGlite, which is
+Postgres; the Neon driver's loading and its unreachable-database answer were checked in the built function). `vercel dev` with a real database
+would need Neon's HTTP endpoint.
+
+## 14. Repairs after review (round 3, 2026-10-15)
+
+Each problem the review verified, what changed, and what proves it. The defaults moved, so section 13's figures for the limits are replaced
+by 3.2 and 8.
+
+| Problem | What changed | Where |
+| --- | --- | --- |
+| Signed out, Build with AI gave an error card ("Couldn't reach the AI … Sign in with Google…") instead of a way to sign in | The "needs an account" sheet (6): the AI's ways in caught in the capture phase, Continue with Google, the AI reopened where the person left off after Google, and the `sandbox:sign-in-needed` backstop on any 401 `sign_in` from `/api/ai/*`. `auth.js` keeps `ai.signInRequired` | `web/account/ai-signin.js` (new), `auth.js`, `account.js`, `account.css`, `dev-mock.js` (`ai.signInRequired`, `&aisignin=0` turns it off) |
+| One account could fill the shared database (deleted scenes not counted, padded scenes accepted, 50 MB × 100 users = 5 GB) | Bytes per account count the 30-day bin and the bin empties itself oldest first when room is needed; a site-wide cap (700 MB, 403 `storage_full`); 10 MB per account and 256 KB per scene by default; top-level keys the app never reads dropped before `clean()` | `api/_lib/scenes.mjs`, `api/scenes/index.mjs`, `api/_lib/db.mjs` (index) |
+| Signed in, Save didn't link the scene, so picking the saved scenario again made a second copy | `scenes.saved_as` (schema 2), `savedAs` accepted on POST / PUT and returned in every meta; `cloud.js` sends it; the autosave also finds a Save not yet written (the account spaces one scene's writes 45 s apart) and keeps it when a newer change replaces it | `api/_lib/db.mjs`, `scenes.mjs`, `index.mjs`, `web/account/cloud.js`, `autosave.js` |
+| Copying a big browser library into the account ran into the 120 writes an hour, and autosave was then refused for the hour | `copy: true` on POST counts in its own bucket (600 a day), never the hour's writes; a partial copy says how far it got and keeps offering the rest | `scenes.mjs`, `index.mjs`, `cloud.js`, `library.js` |
+| Parallel AI steps could all pass a dollar cap (check before, record after) | Each step reserves its estimate in the statement that checks the caps, for the person and the site; the real cost replaces it after; a refused step gives back what it reserved | `api/_lib/ai-gate.mjs` |
+| Clerk connected without Neon broke Build with AI for everyone and My scenes after sign-in | Accounts (and AI sign-in) switch on only with Clerk **and** the database; the page also treats `storage: false` as local; 9.4 step 0 says to stop and finish 9.2 | `api/scenes/index.mjs` `accountsOn()`, `ai-gate.mjs` `signInRequired()`, `web/account/auth.js`, 9.4 |
+| Two tabs or devices on one scene: the last writer won silently | Every autosave write (and picture) carries the version it was based on (If-Match / the local `ifVersion`); a 412 keeps this page's version as "<name> (other copy)" and the table goes on as that copy, with a toast saying so. Also found and fixed: a retry queued from inside the write queue (the "deleted meanwhile" 404 path) waited on itself and stalled every later write | `web/account/autosave.js` |
+| Rename dropped ordinary punctuation silently; AI names lost theirs in the account | One wider rule on both sides: letters, digits, spaces and `_ - ' ’ . , : ; ( ) & ! ? + #`; the rename says what it left out ("names can't have < > ✨") and refuses a name with no letter or digit visibly | `web/account/util.js` `cleanName()`, `api/_lib/scenes.mjs` `normName()`, `library.js` |
+| No account deletion in the UI; "Not now" on the copy offer was final; deleting the scene on the table made a same-named card at the next edit with no word; the ⋯ button was 28 px on phones | **Delete account…** in the account menu (type DELETE; `DELETE /api/scenes/me`, then sign-out, a reload when the provider can't be told); a line under the cards while browser scenes remain uncopied that brings the offer back; the Undo bar says "It's still on the table: your next change there keeps it as a new scene."; a 44 px touch target under `(hover: none)`; autosave refusals that waiting won't fix (403 / 413 / 400) are said once and not retried in a loop | `account.js`, `cloud.js`, `library.js`, `account.css`, `autosave.js` |
+| `dist/` still shipped the deleted `account/local.js`; a stale comment about a build-time config file | Rebuilt (`npm run build:static:nogen`: 120 files, `account/ai-signin.js` in, `dev-mock.js` out); the comment is gone | `dist/`, `api/scenes/index.mjs` |
+
+**Left to the AI panel's owners** (`web/ai/` is theirs): `orchestrator.js` `plainError()` still titles a 401 `sign_in` and a 403 `quota` /
+`site_quota` "Couldn't reach the AI" (and offers Try again). The sheet now covers sign-in before any request, and the backstop covers the rest,
+but a quota refusal should get its own title (the server's sentence, with `resetsAt`) and no Try again; `sign_in` should not offer Try again.
+The New dialog's Build with AI pane could also say "needs an account" before anything is typed (`window.sandboxLibrary.auth.aiSignInRequired`).
+
+**How it was checked** (no accounts, no keys, nothing deployed; headless Chromium only):
+
+| Command | What it proves | Result |
+| --- | --- | --- |
+| `npm run test:accounts` | everything in 13.3, plus: the bin counted and emptied oldest first (12 create + delete cycles at 1 MB hold at most 1 MB; the newest deleted scene still restores, the oldest says it was removed to make room); padding dropped (a 900 KB junk key stores 1.4 KB); 256 KB per scene; `storage_full` for everyone past the site cap; `savedAs` kept, changed alone without an edit, malformed ones refused; `copy: true` with its own count while the hour's writes stay free; Clerk without a database: accounts off and the AI's own check; 12 parallel plans at a $3 cap: 8 run, at most $3 recorded; a failed step with no cost gives its reservation back; a site refusal gives back what it reserved; names keep punctuation | 39 of 39 |
+| `node web/account/test/e2e-accounts.mjs` | as in 13.3, plus with the **real AI gate**: signed out, Edit with AI shows the sheet and the gate's own 401 `sign_in` brings it up too; signed in, the gate lets the person through; `saved_as` in the database; two devices renaming one scene: the laptop's change kept, the phone's kept as "(other copy)" (a real 412); Delete account removes the account, its scenes and the Clerk user and signs out; `storage: false` stays local | 16 of 16 |
+| `node web/account/test/library.e2e.mjs` (local server, mock accounts) | as in 7.9, plus `aiSignIn` (the sheet for the button, the A key and New's Build; Continue → back in New with the words; Build then runs into the account; the backstop), `cloudSavedAs`, `copyLater`, `edits` (punctuation kept and the left-out characters named; the on-table delete message), `deleteAccount`, `phone` (44 px) | all parts pass |
+| `node web/account/test/clerk-browser.mjs`, `node --test ai/test/vercel.test.mjs` | unchanged parts still hold | 21 of 21, 8 of 8 |
+| `npm run build:static:nogen`, `npm run check:vercel` | the site builds, every import resolves; the two functions, the rewrites, `/api/scenes/me` unconfigured `{accounts: null, storage: false, ai: {signInRequired: false}}` | passed |
+| the reviewer's own probes (`savedas.mjs`, `flush.mjs`, `gate-par.mjs`, `adv-server.test.mjs`) | signed in, one "My ramp" scene, not two; two tabs keep both versions; 8 of 12 parallel steps, $2.80 recorded; a padded scene stores 1.4 KB and create + delete loops stay inside the quota | as expected |
 
 ## Sources (read 2026-10-15)
 
@@ -762,4 +921,5 @@ left nothing required.
 - npm: `@clerk/clerk-js` 6.39.0 (2026-10-09; exports `.` and `./no-rhc`), `@neondatabase/serverless` 1.2.0 (2026-10-01)
 - Neon via Vercel (variables, preview branching): https://neon.com/docs/guides/vercel-managed-integration ; Neon free plan: https://neon.com/pricing
 - Vercel Blob pricing and Hobby limits: https://vercel.com/docs/vercel-blob/usage-and-pricing
+- Neon free plan, re-read for round 3: "1 GB/project"; "Exceeding 1 GB of Postgres storage in a project … blocks writes" (hence the 700 MB site cap): https://neon.com/pricing
 - Vercel Functions limits (4.5 MB bodies, 300 s on Hobby): https://vercel.com/docs/functions/limitations ; Node.js functions (one function per group of routes, plus rewrites): https://vercel.com/docs/functions/runtimes/node-js ; rewrites (named segments become query parameters): https://vercel.com/docs/routing/rewrites

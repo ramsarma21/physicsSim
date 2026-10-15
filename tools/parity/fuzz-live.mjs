@@ -324,7 +324,35 @@ function randomScene(i) {
 			scene.goals.push(goal)
 		}
 	}
+	otherGoals(scene, i)
 	return scene
+}
+/** The goal kinds besides "in" (machines/items.py summarize: "falls", "hits", "moves"), on 35% of the scenes, from a random stream of their own
+ *  (so every scene's items, and so its run, are what they were before these were added): good ones, and odd fields the server keeps as they are. */
+function otherGoals(scene, i) {
+	const r = mulberry32((SEED ^ Math.imul(i + 1, 0x85ebca6b)) >>> 0)
+	const pk = (arr) => arr[Math.floor(r() * arr.length)]
+	if (r() >= 0.35) return
+	const ids = scene.items.map((x) => x.id)
+	const n = 1 + Math.floor(r() * 3)
+	for (let k = 0; k < n; k++) {
+		const kind = pk(["falls", "falls", "hits", "hits", "moves", "moves", "fall"])
+		const g = { kind }
+		if (kind === "falls" || kind === "fall") {
+			if (r() < 0.5) g.items = Array.from({ length: 1 + Math.floor(r() * 4) }, () => (r() < 0.05 ? pk(["missing", 7, null]) : pk(ids)))
+			else g.item = r() < 0.05 ? "missing" : pk(ids)
+			if (r() < 0.1) g.items = pk([[], "i0", {}])
+		} else if (kind === "hits") {
+			g.item = pk(ids)
+			g.target = r() < 0.05 ? pk(["missing", 3, null]) : pk(ids)
+			if (r() < 0.5) g.before_s = pk([0.5, 1, 1.25, 2, 2.5, 0.333333, -1, 0, true, "1", null, 1e400])
+		} else {
+			g.item = r() < 0.05 ? "missing" : pk(ids)
+			if (r() < 0.6) g.min_m = pk([0.01, 0.05, 0.1, 0.2, 0.5, 1, 1.5, 2.345, 0, -0.1, "0.1", null, true])
+		}
+		if (r() < 0.3) g.label = pk(["Topple them all", "", "ünïcode ✓", "x".repeat(250)])
+		scene.goals.push(g)
+	}
 }
 
 // ---------------------------------------------------------------- run

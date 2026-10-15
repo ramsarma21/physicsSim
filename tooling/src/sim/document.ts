@@ -101,7 +101,9 @@ const JointRecord = Schema.Union([
 		damping: Finite,
 		compressOnly: Schema.optionalKey(Schema.Boolean),
 		coils: Schema.optionalKey(Finite),
-		coilRadius: Schema.optionalKey(Finite)
+		coilRadius: Schema.optionalKey(Finite),
+		/** kg: the spring's own mass (a third of it moves with what it pushes); none without it. */
+		mass: Schema.optionalKey(Finite)
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("rope"),

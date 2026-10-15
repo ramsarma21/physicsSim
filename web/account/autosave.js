@@ -10,6 +10,10 @@
 //   fresh(kind, scenarioId) right before a new scene replaces the table: "scenario" (an example or the menu), "blank", "import", "ai"
 // and opens a project through window.sandboxApp.open(scene) (one undo step, as an import is). Which project each step of the app's
 // undo history belongs to is written on that step's own history record (S.hmeta[i].project), so undo and redo find it again.
+// Two tabs or two devices on one scene: every write says which version of it this page last wrote or read (If-Match), so a scene changed
+// elsewhere meanwhile is never overwritten. This page's changes are then kept as a scene of their own ("<name> (other copy)"), and the
+// table goes on as that copy. A refusal that waiting won't fix (the account or the site is full) is said once and not retried by itself:
+// the next change, or opening My scenes, tries again.
 import { captureThumb, canCapture } from "./thumb.js"
 import { nameFor, newId, prefs, thingsIn } from "./util.js"
 
@@ -43,7 +47,10 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 	const pending = new Map() // id -> {json, savedAs?, origin, backend}: a change waiting to be written
 	let written = new Map() // id -> the JSON this page last wrote (or read) for it
 	let sceneNames = new Map() // id -> the scene's own name when last written (a new name on the table renames the project)
+	let based = new Map() // id -> the version this page last wrote or read (its next write is refused if the scene has moved on elsewhere)
+	let lastRefusal = { text: "", at: 0 }
 	const lastWriteAt = new Map()
+	const lastThumbAt = new Map()
 	const thumbWanted = new Set() // ids whose picture is older than their scene
 	let thumbFails = 0
 	let timer = 0
@@ -52,6 +59,11 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 	let ready = false
 	let lastInput = 0
 	let st = { state: "idle", at: 0, error: null }
+	let carry = null // after a sign-in: {from: the browser's project the table was, to: the id the table has in the account until it is made}
+	const markCopied = (localId) => {
+		const k = `copied@${store.owner}`
+		prefs.set(k, [...new Set([...(prefs.get(k) ?? []), localId])])
+	}
 	const setState = (state, error = null) => {
 		st = { state, at: Date.now(), error }
 		try {
@@ -76,6 +88,8 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 	function projectForFresh(f) {
 		if (f.project) return f.project
 		if (f.kind === "scenario" && f.scenarioId && !builtins.has(f.scenarioId)) {
+			// (a Save not yet written counts too: the account spaces one scene's writes 45 s apart)
+			for (const [id, p] of pending) if (p.savedAs === f.scenarioId) return id
 			for (const m of metas.values()) if (m.savedAs === f.scenarioId) return m.id
 		}
 		return newId()
@@ -99,6 +113,7 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 		lastEntry = entry
 		switchTo(id)
 		note(S, origin)
+		if (thumbWanted.has(id)) scheduleThumb() // (an undo or redo onto a project still waiting for its picture)
 	}
 	function fresh(kind, scenarioId = null) {
 		if (!ready) return
@@ -122,7 +137,9 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 		// an example exactly as it ships, or a bare table, is never written: not as a new project, and not over one (undoing back past the
 		// start of a scene leaves the project as it last was worth keeping)
 		if (!worthKeeping(S, json)) return void pending.delete(id)
-		pending.set(id, { json, savedAs, origin: origin ?? pending.get(id)?.origin ?? null, backend: store.backend() })
+		const was = pending.get(id)
+		// (a Save not written yet stays linked when a newer change replaces it: the account spaces one scene's writes 45 s apart)
+		pending.set(id, { json, savedAs: savedAs ?? was?.savedAs, origin: origin ?? was?.origin ?? null, backend: store.backend(), ...(was?.name ? { name: was.name } : {}) })
 		flushSoon(id)
 	}
 
@@ -132,21 +149,22 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 		if (wait === 0) return flush(id)
 		timer = setTimeout(() => flushAll(), wait)
 	}
-	function flushAll({ keepalive = false } = {}) {
-		for (const id of [...pending.keys()]) flush(id, { keepalive })
+	/** now: write even inside the backend's least gap between writes (the library is being opened, the page is going); keepalive: the page is going */
+	function flushAll({ keepalive = false, now = keepalive } = {}) {
+		for (const id of [...pending.keys()]) flush(id, { keepalive, now })
 		return chain
 	}
-	function flush(id, { keepalive = false } = {}) {
-		chain = chain.then(() => write(id, { keepalive })).catch((e) => console.warn("My scenes:", e))
+	function flush(id, { keepalive = false, now = false } = {}) {
+		chain = chain.then(() => write(id, { keepalive, now })).catch((e) => console.warn("My scenes:", e))
 		return chain
 	}
-	async function write(id, { keepalive }) {
+	async function write(id, { keepalive, now }) {
 		const p = pending.get(id)
 		if (!p) return
 		const b = p.backend
 		if (b !== store.backend()) return void pending.delete(id) // (signed in or out since: the table goes on in the new library)
 		const gap = (b.minWriteMs ?? 0) - (Date.now() - (lastWriteAt.get(id) ?? 0))
-		if (gap > 0 && !keepalive) {
+		if (gap > 0 && !now) {
 			clearTimeout(timer)
 			timer = setTimeout(() => flushAll(), gap)
 			return
@@ -157,7 +175,7 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 		try {
 			let m = metas.get(id)
 			if (!m) {
-				m = await b.create({ id, name: nameFor(scene), scene, origin: p.origin, savedAs: p.savedAs ?? null })
+				m = await b.create({ id, name: p.name ?? nameFor(scene), scene, origin: p.origin, savedAs: p.savedAs ?? null })
 				if (m.id !== id) {
 					alias.set(id, m.id)
 					written.set(m.id, p.json)
@@ -170,9 +188,14 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 				const patch = { scene }
 				if ((scene.name ?? "") !== (sceneNames.get(id) ?? "")) patch.name = nameFor(scene) // (renamed on the table: the inspector, Save, the AI)
 				if (p.savedAs !== undefined && p.savedAs !== m.savedAs) patch.savedAs = p.savedAs
-				m = await b.update(id, patch, { keepalive })
+				m = await b.update(id, patch, { keepalive, ifVersion: based.get(id) ?? m.version })
 			}
 			metas.set(m.id, m)
+			based.set(m.id, m.version)
+			if (carry && (carry.to === id || carry.to === m.id)) {
+				markCopied(carry.from) // (the browser's scene the table was is in the account now: not offered for copying)
+				carry = null
+			}
 			written.set(m.id, p.json)
 			sceneNames.set(m.id, scene.name ?? "")
 			lastWriteAt.set(m.id, Date.now())
@@ -183,16 +206,54 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 			if (e?.status === 404 && metas.has(id)) {
 				// deleted meanwhile (in My scenes, or another tab) while it is still on the table and being changed: it comes back as it is now
 				metas.delete(id)
+				based.delete(id)
 				if (!pending.has(id)) pending.set(id, p)
-				return flushSoon(id, 0)
+				return void flushSoon(id, 0) // (queued behind this write: never awaited from inside the chain, which would wait on itself)
 			}
+			if (e?.status === 412) return keepAsCopy(id, p, scene, e)
 			if (!pending.has(id)) pending.set(id, p) // (a newer change waiting replaces this one anyway)
+			if (refused(e)) {
+				// (waiting won't fix it: the account or the site is full, or the scene is refused. Said once; the next change tries again)
+				setState("error", e)
+				if (e.message !== lastRefusal.text || Date.now() - lastRefusal.at > 60000) toast(e.message)
+				lastRefusal = { text: e.message, at: Date.now() }
+				return
+			}
 			const n = Math.min(RETRY_MS.length - 1, (p.tries = (p.tries ?? 0) + 1) - 1)
 			setState("error", e)
 			if (p.tries === 2) toast(store.kind === "cloud" ? "Couldn’t save to your account; trying again" : "Couldn’t save to My scenes; trying again")
 			clearTimeout(timer)
 			timer = setTimeout(() => flushAll(), e?.retryAfter ? e.retryAfter * 1000 : RETRY_MS[n])
 		}
+	}
+
+	/** A refusal that trying again in a moment won't change (400 / 403 / 413: a full account or site, a scene the server can't use). */
+	const refused = (e) => [400, 403, 413].includes(e?.status)
+	/** "<name> (other copy)" */
+	const copyNameOf = (name) => `${String(name || "Untitled scene").slice(0, 46).trim()} (other copy)`
+	/**
+	 * The scene was changed in another tab or on another device since this page last wrote it (412). Nothing is overwritten: this page's
+	 * version is kept as a new scene, "<name> (other copy)", and the table goes on as that copy (its history steps too, so undo stays with it).
+	 */
+	function keepAsCopy(id, p, scene, e) {
+		if (e.current) metas.set(id, e.current)
+		based.delete(id)
+		written.delete(id)
+		const name = copyNameOf(scene.name ? nameFor(scene) : metas.get(id)?.name)
+		const to = newId()
+		pending.set(to, { json: p.json, origin: "copy", backend: p.backend, name })
+		sceneNames.set(to, scene.name ?? "")
+		if (current?.id === id) {
+			const S = app()
+			for (const en of S?.hmeta ?? []) if (en?.project === id) en.project = to
+			current = { id: to }
+			thumbWanted.add(to)
+			const pend = pending.get(id)
+			if (pend) (pending.delete(id), pending.set(to, { ...pend, origin: "copy", name }))
+			remember(S?.scene ? JSON.stringify(S.scene) : null)
+		}
+		toast(`“${metas.get(id)?.name ?? nameFor(scene)}” was also changed in another tab or device, so your changes here are kept as “${name}”`)
+		flushSoon(to, 0) // (queued behind this write, not awaited from inside the chain)
 	}
 
 	// ---------------------------------------------------------------- the picture
@@ -213,20 +274,31 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 	async function takeThumb() {
 		const S = app()
 		const id = current?.id
-		if (!id || !thumbWanted.has(id) || !metas.has(id) || thumbBusy) return
+		if (thumbBusy) return scheduleThumb()
+		if (!id || !thumbWanted.has(id) || !metas.has(id)) return
 		if (!canCapture(S?.view)) return scheduleThumb(4000) // (a layout preview, a video export, or no WebGL: later)
 		if (!pictureTime(S)) return scheduleThumb(800)
 		const json = JSON.stringify(S.scene)
 		if (written.get(id) !== json) return // (a write is on its way: it asks for the picture again)
+		const wait = (store.backend().minThumbMs ?? 0) - (Date.now() - (lastThumbAt.get(id) ?? 0))
+		if (wait > 0 && metas.get(id)?.thumb) return scheduleThumb(wait) // (the account's write allowance: a newer picture a little later)
 		thumbBusy = true
 		try {
 			const blob = await captureThumb(S.view)
 			if (!blob) return scheduleThumb(4000)
 			if (current?.id !== id || JSON.stringify(app()?.scene) !== json) return scheduleThumb() // (changed while the picture was taken)
 			const b = store.backend()
-			const m = await b.update(id, { thumb: blob })
+			let m
+			try {
+				m = await b.update(id, { thumb: blob }, { ifVersion: based.get(id) })
+			} catch (e) {
+				if (e?.status !== 412) throw e
+				thumbWanted.delete(id) // (the scene moved on elsewhere: this table's picture isn't its picture; the next write here asks again)
+				return
+			}
 			metas.set(id, m)
 			thumbWanted.delete(id)
+			lastThumbAt.set(id, Date.now())
 			thumbFails = 0
 		} catch (e) {
 			if (++thumbFails <= 3) scheduleThumb(3000 * thumbFails)
@@ -259,11 +331,20 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 		if (ptr?.id && metas.has(ptr.id) && json && ptr.sig === sig(json)) {
 			current = { id: ptr.id }
 			try {
-				const { scene } = await store.get(ptr.id)
+				const { meta, scene } = await store.get(ptr.id)
 				written.set(ptr.id, JSON.stringify(scene))
 				sceneNames.set(ptr.id, scene.name ?? "")
+				based.set(ptr.id, meta.version)
 			} catch {}
-		} else current = { id: newId() }
+		} else {
+			current = { id: newId() }
+			// back from signing in (the page was reloaded): the table is the browser's scene it was, which goes on in the account as one scene
+			const lp = store.kind === "cloud" ? prefs.get("project") : null
+			if (lp?.id && json && lp.sig === sig(json)) {
+				carry = { from: lp.id, to: current.id }
+				written.set(current.id, json)
+			}
+		}
 		if (!metas.get(current.id)?.thumb) thumbWanted.add(current.id)
 		ready = true
 		const entry = S?.hmeta?.[S.hi]
@@ -274,13 +355,18 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 	}
 	/** Signed in or out: the table goes on in the other library (as a new scene there, the first time it changes). */
 	function switchBackend() {
+		// the table's scene goes on in the other library as one scene: made there by its first change, or by "copy this browser's scenes",
+		// whichever comes first (`carry` links the two, so the copy offer never makes a second one)
+		const from = current && metas.has(current.id) && store.kind === "cloud" ? current.id : null
 		metas = new Map()
 		written = new Map()
 		sceneNames = new Map()
+		based = new Map()
 		alias.clear()
 		pendingFresh = null
 		const S = app()
 		current = { id: newId() }
+		carry = from ? { from, to: current.id } : null
 		if (S?.scene) {
 			written.set(current.id, JSON.stringify(S.scene)) // (nothing is written until it changes)
 			const entry = S.hmeta?.[S.hi]
@@ -304,6 +390,7 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 		scene.name = meta.name
 		flushAll()
 		metas.set(id, meta)
+		based.set(id, meta.version)
 		written.set(id, JSON.stringify(scene))
 		sceneNames.set(id, scene.name)
 		if (!meta.thumb) thumbWanted.add(id)
@@ -335,17 +422,23 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 		},
 		/** My scenes renamed a project: the table's scene takes the name too when it is that one (one undo step, as the inspector's rename) */
 		renamed(id, name, meta) {
-			if (meta) metas.set(id, meta)
+			if (meta) {
+				if (meta.version === (based.get(id) ?? 0) + 1) based.set(id, meta.version) // (this page's own rename: the scene is still what it wrote)
+				metas.set(id, meta)
+			}
 			if (current?.id === id && app()?.scene && app().scene.name !== name) {
 				sceneNames.set(id, name)
 				window.sandboxApp?.rename?.(name)
 			}
 		},
-		/** My scenes deleted a project. If it is the one on the table, the table goes on as a new scene (made when it next changes). */
+		/** My scenes deleted a project. If it is the one on the table, the table goes on as a new scene (made when it next changes).
+		 *  -> true when it was the scene on the table */
 		deleted(id) {
+			const onTable = current?.id === id
 			metas.delete(id)
 			pending.delete(id)
-			if (current?.id === id) {
+			based.delete(id)
+			if (onTable) {
 				const S = app()
 				current = { id: newId() }
 				if (S?.scene) written.set(current.id, JSON.stringify(S.scene))
@@ -353,10 +446,12 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 				if (entry) entry.project = current.id
 				remember(null)
 			}
+			return onTable
 		},
 		/** …and brought it back: the table is that project again if it still shows it */
 		restored(meta) {
 			metas.set(meta.id, meta)
+			if (!based.has(meta.id)) based.set(meta.id, meta.version)
 			const S = app()
 			const json = S?.scene ? JSON.stringify(S.scene) : null
 			if (json && written.get(meta.id) === json && current && !metas.has(current.id)) {
@@ -365,6 +460,30 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 				const entry = S.hmeta?.[S.hi]
 				if (entry) entry.project = meta.id
 				remember(json)
+			}
+		},
+		/** "Copy this browser's scenes" made `meta` in the account from the browser's scene `localId`: if that is the scene on the table
+		 *  (signed in since, not changed yet), the table goes on as that copy instead of becoming another one */
+		link(localId, meta) {
+			if (!carry || carry.from !== localId || metas.has(carry.to)) return
+			const to = carry.to
+			carry = null
+			alias.set(to, meta.id)
+			metas.set(meta.id, meta)
+			based.set(meta.id, meta.version)
+			const w = written.get(to)
+			if (w) written.set(meta.id, w)
+			const p = pending.get(to)
+			if (p) (pending.delete(to), pending.set(meta.id, p))
+			const S = app()
+			for (const e of S?.hmeta ?? []) if (e?.project === to) e.project = meta.id
+			if (current?.id === to) {
+				current = { id: meta.id }
+				remember(S?.scene ? JSON.stringify(S.scene) : null)
+			}
+			if (!meta.thumb) {
+				thumbWanted.add(meta.id) // (copied before it had a picture: it gets one now)
+				scheduleThumb()
 			}
 		},
 		/** Scenes saved with the app's Save before My scenes existed (this browser's, or the local server's web/saved): kept in the library once. */
@@ -386,7 +505,7 @@ export function createAutosave({ store, onState = () => {}, toast = () => {} }) 
 			}
 			return n
 		},
-		_debug: { get pending() { return pending }, get metas() { return metas }, get written() { return written }, takeThumb, pictureTime: () => pictureTime(app()) }
+		_debug: { get pending() { return pending }, get metas() { return metas }, get written() { return written }, get based() { return based }, takeThumb, pictureTime: () => pictureTime(app()) }
 	}
 
 	/** [[id, scene]] of the scenes saved with Save: localStorage (the page's own engine) or the local server's list */

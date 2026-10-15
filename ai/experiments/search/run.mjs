@@ -30,7 +30,7 @@ const RES = path.join(HERE, "results", RUN)
 const infra = await import("./lib/infra.mjs")
 const { log, ledger, ledgerTotals, now, clone, closeAll, shots, saveShots, loadShots, SCRATCH, inFlight } = infra
 const { planVariant, VARIANTS } = await import("./lib/plan.mjs")
-const { chainBuild, selectBest, shippedLoop } = await import("./lib/arms.mjs")
+const { chainBuild, selectBest, shippedLoop, gatedFinish } = await import("./lib/arms.mjs")
 const { measure, judgeIt, bench } = await import("./lib/metrics.mjs")
 const { evaluate } = await import("./lib/physics.mjs")
 const { incrementalBuild } = await import("./lib/inc.mjs")
@@ -98,7 +98,7 @@ async function runArm(arm, c, plans) {
 	const f = fileOf(arm, c.id)
 	if (!opt.force && fs.existsSync(f)) return
 	const L = ledger(arm)
-	const used = arm === "base" || arm === "stage" || arm === "inc" ? ["A"] : VARS
+	const used = ["base", "stage", "inc", "gate"].includes(arm) ? ["A"] : VARS
 	for (const v of used) for (const call of plans.variants[v]?.calls ?? []) L.add({ ...call, label: `plan ${v}` })
 	const okPlans = used.filter((v) => plans.variants[v]?.ok).map((v) => ({ variant: v, plan: plans.variants[v].plan, ms: plans.variants[v].ms }))
 	const rec = { case: c.id, arm, origin: c.origin, category: c.category, prompt: c.prompt, at: new Date().toISOString(), timing: {} }
@@ -131,7 +131,7 @@ async function runArm(arm, c, plans) {
 			rec.timing.searchMs = ch.ms - L.calls.slice(before).reduce((s, x) => s + (x.waitMs ?? 0), 0)
 			rec.timing.searchRuns = ch.runs
 			plan = ch.ev.ok ? ch.ev.plan : A.plan
-		} else {
+		} else if (arm === "bon" || arm === "bonstage") {
 			const sel = await selectBest(L, c.prompt, okPlans, { mode: arm === "bonstage" ? "stage" : "shipped", name: `${c.id}/${arm}` })
 			rec.select = sel.table
 			if (!sel.best) throw new Error("no candidate built")
@@ -145,6 +145,37 @@ async function runArm(arm, c, plans) {
 				rec.timing.searchMs += ch.ms - L.calls.slice(before).reduce((s, x) => s + (x.waitMs ?? 0), 0)
 				plan = ch.ev.ok ? ch.ev.plan : plan
 			}
+		}
+		if (arm === "gate") {
+			// the stage build, then the verified gate instead of the critic's rounds
+			const A = okPlans.find((p) => p.variant === "A")
+			if (!A) throw new Error("plan A failed")
+			let before = L.calls.length
+			const ch = await chainBuild(L, c.prompt, A.plan, { name: `${c.id}/gate` })
+			rec.chain = ch.log
+			rec.timing.searchMs = ch.ms - L.calls.slice(before).reduce((s, x) => s + (x.waitMs ?? 0), 0)
+			rec.timing.searchRuns = ch.runs
+			const ev = ch.ev.ok ? ch.ev : await evaluate(A.plan)
+			rec.chosen = "A"
+			rec.plan0 = ev.plan
+			rec.pre = await measure(c, ev.plan, ev.scene)
+			delete rec.pre.sim
+			before = L.calls.length
+			const t1 = now()
+			const g = await gatedFinish(L, c.prompt, ev)
+			rec.gate = { ...g.gate, from: g.final.from }
+			rec.timing.loopMs = now() - t1 - L.calls.slice(before).reduce((s, x) => s + (x.waitMs ?? 0), 0)
+			if (g.loop) {
+				const rep = g.loop.report
+				rec.report = { title: rep.title, refine: (rep.refine ?? []).map((e) => ({ round: e.round, score: e.score, done: e.done, final: !!e.final, rejected: e.rejected ?? null, changes: (e.changes ?? []).slice(0, 8), issues: (e.issues ?? []).slice(0, 4) })), tune: rep.tune ? { runs: rep.tune.runs, passed: rep.tune.passed, changed: rep.tune.changed, reverted: !!rep.tune.reverted } : null, score: rep.score ?? null, goals: rep.goals ?? null }
+			} else rec.report = { refine: [], tune: null }
+			rec.plan = g.final.plan
+			rec.scene = g.final.scene
+			rec.final = await measure(c, g.final.plan, g.final.scene)
+			rec.sim = trimSim(rec.final.sim)
+			delete rec.final.sim
+			rec.ok = true
+			throw Object.assign(new Error("done"), { done: true })
 		}
 		rec.chosen = chosen
 		rec.plan0 = plan
@@ -164,8 +195,10 @@ async function runArm(arm, c, plans) {
 		delete rec.final.sim
 		rec.ok = true
 	} catch (e) {
-		rec.ok = false
-		rec.error = String(e?.stack ?? e).slice(0, 800)
+		if (!e?.done) {
+			rec.ok = false
+			rec.error = String(e?.stack ?? e).slice(0, 800)
+		}
 	}
 	rec.timing.wallMs = now() - T0
 	rec.timing.modeledMs = (rec.timing.planMs ?? 0) + (rec.timing.searchMs ?? 0) + (rec.timing.loopMs ?? 0)
@@ -204,22 +237,34 @@ async function cmdJudge() {
 			let rec = readJson(file)
 			const c = B.cases.get(id)
 			if (!c || !rec.ok) return
-			if (judges.every((j) => rec.judge?.[j]) && !opt.force) return
-			const sim = await infra.simulate(rec.scene)
-			let pics = rec.shots ? loadShots(rec.shots) : []
+			// --which pre: the version before the shipped loop (the plan as the search left it), judged the same way
+			const pre = opt.which === "pre"
+			const JK = pre ? "judgePre" : "judge"
+			const SK = pre ? "shotsPre" : "shots"
+			if (judges.every((j) => rec[JK]?.[j]) && !opt.force) return
+			let plan = rec.plan
+			let scene = rec.scene
+			if (pre) {
+				if (!rec.plan0) return
+				plan = rec.plan0
+				scene = (await evaluate(plan)).scene
+				if (!scene) return
+			}
+			const sim = await infra.simulate(scene)
+			let pics = rec[SK] ? loadShots(rec[SK]) : []
 			if (!pics.length) {
-				pics = await shots(sim, rec.scene)
-				rec.shots = saveShots(pics, path.join(SCRATCH, "renders", RUN, arm), id)
+				pics = await shots(sim, scene)
+				rec[SK] = saveShots(pics, path.join(SCRATCH, "renders", RUN, pre ? `${arm}-pre` : arm), id)
 			}
 			for (const j of judges) {
-				if (rec.judge?.[j] && !opt.force) continue
+				if (rec[JK]?.[j] && !opt.force) continue
 				const L = ledger("judge")
 				try {
-					const r = await judgeIt(L, c, { plan: rec.plan, scene: rec.scene, sim: { summary: sim.summary, warnings: sim.warnings }, shots: pics }, j)
-					rec = { ...readJson(file), shots: rec.shots }
-					rec.judge = { ...(rec.judge ?? {}), [j]: { score: r?.score_0_10 ?? null, rubric_met: r?.rubric_met ?? null, outcome: r?.outcome ?? null, fidelity: r?.request_fidelity ?? null, sense: r?.physical_sense ?? null, honesty: r?.honesty ?? null, issues: (r?.issues ?? []).slice(0, 5), summary: r?.summary ?? null, cost: L.calls.reduce((s, x) => s + (x.cost ?? 0), 0) } }
+					const r = await judgeIt(L, c, { plan, scene, sim: { summary: sim.summary, warnings: sim.warnings }, shots: pics }, j)
+					rec = { ...readJson(file), [SK]: rec[SK] }
+					rec[JK] = { ...(rec[JK] ?? {}), [j]: { score: r?.score_0_10 ?? null, rubric_met: r?.rubric_met ?? null, outcome: r?.outcome ?? null, fidelity: r?.request_fidelity ?? null, sense: r?.physical_sense ?? null, honesty: r?.honesty ?? null, issues: (r?.issues ?? []).slice(0, 5), summary: r?.summary ?? null, cost: L.calls.reduce((s, x) => s + (x.cost ?? 0), 0) } }
 					writeJson(file, rec)
-					log(`judge ${j} ${arm}/${id}: ${r?.score_0_10}${r?.rubric_met ? " (rubric met)" : ""}`)
+					log(`judge ${j}${pre ? " (pre)" : ""} ${arm}/${id}: ${r?.score_0_10}${r?.rubric_met ? " (rubric met)" : ""}`)
 				} catch (e) {
 					log(`judge ${j} ${arm}/${id} failed: ${e.message}`)
 				}
@@ -241,10 +286,15 @@ const pct = (a, p) => {
 	return s[Math.floor(i)] + (s[Math.ceil(i)] - s[Math.floor(i)]) * (i - Math.floor(i))
 }
 const fx = (v, d = 2) => (v === null || v === undefined || !Number.isFinite(v) ? "–" : Number(v).toFixed(d))
+/** An arm's records, from one run or several (--run r1,r2: samples pooled; each record keeps its run). */
 function loadArm(arm) {
-	const dir = path.join(RES, arm)
-	if (!fs.existsSync(dir)) return []
-	return fs.readdirSync(dir).filter((f) => f.endsWith(".json")).map((f) => readJson(path.join(dir, f)))
+	const out = []
+	for (const run of RUN.split(",")) {
+		const dir = path.join(HERE, "results", run, arm)
+		if (!fs.existsSync(dir)) continue
+		for (const f of fs.readdirSync(dir).filter((x) => x.endsWith(".json"))) out.push({ ...readJson(path.join(dir, f)), run })
+	}
+	return out
 }
 function rowOf(recs, which = "final") {
 	const ok = recs.filter((r) => r.ok)
@@ -273,7 +323,7 @@ function rowOf(recs, which = "final") {
 // requests with three or more hand-offs between different mechanisms
 const CHAINS = new Set(["c1-rube-cup", "c2-marble-zigzag", "g2-chain-reaction", "h01-rube6-cup", "h03-domino-spiral-bell", "h04-pendulum-dominoes-ledge-bucket", "h06-ramp-seesaw-basket", "h07-two-pendulums-cup", "h08-conveyor-ramp-bucket", "h14-three-shelves-dominoes"])
 function cmdReport() {
-	const arms = list(opt.arms) ?? ["base", "bon", "stage", "bonstage"].filter((a) => fs.existsSync(path.join(RES, a)))
+	const arms = list(opt.arms) ?? ["base", "bon", "stage", "bonstage", "inc", "gate"].filter((a) => RUN.split(",").some((run) => fs.existsSync(path.join(HERE, "results", run, a))))
 	const data = Object.fromEntries(arms.map((a) => [a, loadArm(a)]))
 	const groups = [
 		["all", () => true],
@@ -301,11 +351,13 @@ function cmdReport() {
 	lines.push(`| case | ${arms.join(" | ")} |`, `|---|${arms.map(() => "---").join("|")}|`)
 	for (const id of ids) {
 		const cells = arms.map((a) => {
-			const r = data[a].find((x) => x.case === id)
-			if (!r) return " "
+			const rs = data[a].filter((x) => x.case === id)
+			if (!rs.length) return " "
+			return rs.map((r) => {
 			if (!r.ok) return "ERR"
 			const f = r.final
 			return `${f.success ? "✓" : "✗"}${f.pass ? "P" : ""} ${f.ownStages ? `${f.ownStagesOk}/${f.ownStages}` : "-"} j${fx(r.judge?.["opus-high"]?.score, 0)} ${fx(r.timing?.modeledMs / 1000, 0)}s${r.chosen && r.chosen !== "A" ? ` [${r.chosen}]` : ""}${r.pre?.success && !f.success ? " (pre✓)" : ""}`
+			}).join(" · ")
 		})
 		lines.push(`| ${id} | ${cells.join(" | ")} |`)
 	}
@@ -322,8 +374,9 @@ function cmdReport() {
 	}
 	const text = lines.join("\n")
 	console.log(text)
-	fs.mkdirSync(RES, { recursive: true })
-	fs.writeFileSync(path.join(RES, "report.md"), text)
+	const out = path.join(HERE, "results", RUN.replace(/,/g, "+"))
+	fs.mkdirSync(out, { recursive: true })
+	fs.writeFileSync(path.join(out, "report.md"), text)
 }
 
 try {

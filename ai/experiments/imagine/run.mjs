@@ -466,7 +466,13 @@ function makeApi(arm, track, original) {
 	return async (p, body, signal) => {
 		const name = p.replace("/api/ai/", "")
 		let payload = body.payload
-		if (arm === "IFplan" && name === "refine") {
+		// IFdirect: no observe step at all (the plan reads the concept picture itself): an empty observation stands in, and is not sent on
+		if (arm === "IFdirect" && name === "observe") return { ok: true, result: { summary: "", objects: [], relations: [], motion_story: [], view: { camera: "side", plane: "x along the table, y up" }, scale_hint: null, uncertain: [] }, model: null, ms: 0, usage: null }
+		if (arm === "IFdirect" && name === "plan") {
+			payload = { ...payload }
+			delete payload.observation
+		}
+		if ((arm === "IFplan" || arm === "IFdirect") && name === "refine") {
 			// the concept informs the plan only: the critic works as in a text build (the words, no picture, no observation, no covers)
 			payload = { ...payload, text: original, images: [], plan: { ...payload.plan, covers: undefined } }
 			delete payload.observation
@@ -510,8 +516,17 @@ async function cmdPipeline() {
 		const orch = ORCH.createOrchestrator({ api: makeApi(a, track, c.prompt), shot, simulate: (scene, signal) => simPool().simulate(scene, signal) })
 		const t0 = Date.now()
 		try {
-			const job = orch.build(req, { onEvent: () => {}, reconcile: a === "IFfull" })
-			const rep = await job.result
+			let rep
+			try {
+				rep = await orch.build(req, { onEvent: () => {}, reconcile: a === "IFfull" }).result
+			} catch (e) {
+				// the concept could not be used (its observation or the plan from it failed): as an integrated imagine-first would, build from the
+				// words alone, and count the time lost
+				if (a === "T" || !["observe", "plan"].includes(e?.step)) throw e
+				rec.fallback = { step: e.step, error: String(e?.message ?? e).slice(0, 300), ms: Date.now() - t0 }
+				const orchT = ORCH.createOrchestrator({ api: makeApi("T", track, c.prompt), shot, simulate: (scene, signal) => simPool().simulate(scene, signal) })
+				rep = await orchT.build({ text: c.prompt }, { onEvent: () => {} }).result
+			}
 			const wall = Date.now() - t0
 			rec.report = { title: rep.title, calls: rep.calls, timings: rep.timings, refine: rep.refine, tune: rep.tune, issues: rep.issues, score: rep.score ?? null, missing: rep.missing, goals: rep.goals ?? null, differences: rep.differences, coverage: rep.coverage ?? null, observation: rep.observation ?? null }
 			rec.buildWallMs = wall
@@ -576,14 +591,44 @@ async function cmdJudge() {
 	}, Number(opt.jobs ?? 8))
 }
 
+/** Re-score stored results with the current case files (re-runs the engine on the stored scenes; no model calls). --phase plan|pipeline */
+async function cmdRescore() {
+	const phases = list(opt.phase) ?? ["plan", "pipeline"]
+	const ids = new Set(selectCases().map((c) => c.id))
+	let n = 0
+	for (const ph of phases) {
+		const dir = path.join(RES, ph)
+		if (!exists(dir)) continue
+		for (const a of fs.readdirSync(dir).filter((x) => fs.statSync(path.join(dir, x)).isDirectory())) {
+			const files = fs.readdirSync(path.join(dir, a)).filter((x) => x.endsWith(".json"))
+			await runJobs(files.map((f) => ({ f, label: f })), async ({ f }) => {
+				const file = path.join(dir, a, f)
+				const rec = readJson(file)
+				if (!ids.has(rec.case) || !rec.scene) return
+				const c = CASES.get(rec.case)
+				let sim = null
+				try {
+					sim = await simPool().simulate(rec.scene)
+				} catch (e) {
+					sim = { error: String(e?.message ?? e) }
+				}
+				rec.score = compactScore(await score.scoreCase(c, { plan: rec.plan ?? rec.output, scene: rec.scene, sim }, { simulate: false }))
+				writeJson(file, rec)
+				n++
+			}, 8)
+		}
+	}
+	log(`rescore: ${n} results`)
+}
+
 const { cmdReport } = await import("./report.mjs")
-const COMMANDS = { phase1: cmdPhase1, prepass: cmdPrepass, concepts: cmdConcepts, check: cmdCheck, observe: cmdObserve, plan: cmdPlan, pipeline: cmdPipeline, judge: cmdJudge, report: () => cmdReport({ RES, opt, CASES, PHASE1, selectCases }) }
+const COMMANDS = { rescore: cmdRescore, phase1: cmdPhase1, prepass: cmdPrepass, concepts: cmdConcepts, check: cmdCheck, observe: cmdObserve, plan: cmdPlan, pipeline: cmdPipeline, judge: cmdJudge, report: () => cmdReport({ RES, opt, CASES, PHASE1, selectCases }) }
 if (!COMMANDS[cmd]) {
 	const lines = fs.readFileSync(fileURLToPath(import.meta.url), "utf8").split("\n").slice(1)
 	console.log(lines.slice(0, lines.findIndex((l) => !l.startsWith("//"))).join("\n"))
 	process.exit(cmd ? 2 : 0)
 }
-if (cmd !== "report" && !process.env.TRUEFOUNDRY_API_KEY) {
+if (!["report", "rescore"].includes(cmd) && !process.env.TRUEFOUNDRY_API_KEY) {
 	console.error("TRUEFOUNDRY_API_KEY is not set: run it as zsh -c 'source ~/.config/truefoundry/env && node ai/experiments/imagine/run.mjs ...'")
 	process.exit(2)
 }

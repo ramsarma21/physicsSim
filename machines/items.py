@@ -669,8 +669,114 @@ def _world_poses(doc):
     return out
 
 
+FALL_MIN_DEG, FALL_MAX_DEG, FALL_MARGIN_DEG = 20, 85, 5     # ai/goals.mjs: the least and the most a body must turn to have fallen, and the margin
+R2D = 180 / math.pi                                         # past its tipping angle (degrees)
+
+
+def _num(v):
+    """A JSON number that is a finite float (not a bool), else None (a goal's own fields are whatever the scene says)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    try:
+        f = float(v)
+    except OverflowError:
+        return None
+    return f if math.isfinite(f) else None
+
+
+def _short_m(m):
+    """A length for a label, as ai/goals.mjs writes it: 1.25 m, 12.3 cm."""
+    t = f"{m:.2f}" if m >= 1 else f"{m * 100:.1f}"
+    t = t.rstrip("0").rstrip(".") if "." in t else t
+    return f"{t} m" if m >= 1 else f"{t} cm"
+
+
+class _Fall:
+    """The balance-point rule of ai/goals.mjs (trackTools: bodies, tipAngle, fell), so the run's summary counts a fallen body as the AI's
+    goal check does: an item's rigid bodies that can fall (weld groups not hinged to the world or a parent; round ones only when it has
+    nothing else) have fallen when turned past their tipping angle (atan(base / height) of their outline box at the start, + 5 degrees,
+    within 20 to 85) or knocked down at least half their smaller side and 2 cm (not a body on wheels)."""
+
+    def __init__(self, doc, fr):
+        self.f0, self.end = fr[0]["placements"], fr[-1]["placements"]
+        by_id = {s["id"]: s for s in doc["solids"]}
+
+        def root_of(s):
+            r = s
+            for _ in range(50):
+                if not (r.get("parent") and not r.get("pivot") and r["parent"] in by_id):
+                    break
+                r = by_id[r["parent"]]
+            return r
+        self.groups = {}
+        for s in doc["solids"]:
+            if s["kind"] != "dynamic":
+                continue
+            r = root_of(s)
+            lst = self.groups.setdefault(s["item"], [])
+            gr = next((g for g in lst if g["root"] is r), None)
+            if gr is None:
+                gr = {"root": r, "members": []}
+                lst.append(gr)
+            gr["members"].append(s)
+        self.cache = {}
+
+    def _points(self, s, pose):
+        b = s["body"]
+        if b["kind"] == "ball":
+            r = b["radius"]
+            pts = [(-r, 0), (r, 0), (0, -r), (0, r)]
+        elif b["kind"] == "slab":
+            hw, hh = b["width"] / 2, b["height"] / 2
+            hb = hw * b.get("taper", 1)
+            pts = [(-hb, -hh), (hb, -hh), (hw, hh), (-hw, hh)]
+        else:
+            pts = [(p["x"], p["y"]) for p in b["points"]]
+        c, n = math.cos(pose["angle"]), math.sin(pose["angle"])
+        return [(pose["x"] + x * c - y * n, pose["y"] + x * n + y * c) for x, y in pts]
+
+    def bodies(self, iid):
+        if iid in self.cache:
+            return self.cache[iid]
+        all_ = [g for g in self.groups.get(iid, []) if not g["root"].get("pivot")]
+        round_ = lambda g: all(m["body"]["kind"] == "ball" for m in g["members"])
+        keep = [g for g in all_ if not round_(g)] if any(not round_(g) for g in all_) else all_
+        out = []
+        for g in keep:
+            pts = [p for m in g["members"] for p in self._points(m, self.f0[m["id"]])]
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            w = max(xs) - min(xs) if pts else 0.0
+            h = max(ys) - min(ys) if pts else 0.0
+            out.append(dict(g, w=w, h=h, round=round_(g), wheeled=len(keep) < len(all_)))
+        self.cache[iid] = out
+        return out
+
+    @staticmethod
+    def _wrap_deg(rad):
+        d = math.fmod(rad * R2D, 360)
+        if d > 180:
+            d -= 360
+        if d < -180:
+            d += 360
+        return abs(d)
+
+    def tip(self, b):
+        return min(FALL_MAX_DEG, max(FALL_MIN_DEG, math.atan(b["w"] / b["h"]) * R2D + FALL_MARGIN_DEG)) if b["w"] > 0 and b["h"] > 0 else 45
+
+    def fell(self, b):
+        rid = b["root"]["id"]
+        turned = 0 if b["round"] else self._wrap_deg(self.end[rid]["angle"] - self.f0[rid]["angle"])
+        mid = lambda at: sum(at[m["id"]]["y"] for m in b["members"]) / len(b["members"])
+        dropped = mid(self.f0) - mid(self.end)
+        return turned > self.tip(b) or (not b["wheeled"] and dropped >= max(0.02, min(b["w"], b["h"]) / 2))
+
+
 def summarize(scene, doc, track):
-    """Plain-language results: the goals, each moving item's story, and the first hits between items in order."""
+    """Plain-language results: the goals, each moving item's story, and the first hits between items in order. A goal is
+    {kind: "in", item, container} (it ends between the container's walls), {kind: "falls", item | items: [id]} (every rigid body of them ends
+    fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given) or
+    {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), as ai/goals.mjs
+    checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others)."""
     items = {i["id"]: i for i in scene.get("items", [])}
     name = lambda iid: items[iid].get("name") or TYPES[items[iid]["type"]].name if iid in items else iid
     item_of = {s["id"]: s["item"] for s in doc["solids"]}
@@ -702,6 +808,7 @@ def summarize(scene, doc, track):
         first.append({"t": round(h["t"], 3), "a": mover, "b": other, "text": f"{nm} {verb} {name(other)}", "speed": h["speed"]})
     first.sort(key=lambda e: e["t"])
     stories = []
+    fall = None
     for iid, it in items.items():
         sol = [s for s in doc["solids"] if s["item"] == iid and s["kind"] == "dynamic"]
         if not sol:
@@ -724,9 +831,12 @@ def summarize(scene, doc, track):
         end = fr[-1]["placements"]
         story = {"item": iid, "name": name(iid), "moved_at": moved_at, "max_speed": round(max_v, 2)}
         if it["type"] == "domino-row":
-            fallen = sum(1 for s in sol if abs(end[s["id"]]["angle"] - t0[s["id"]]["angle"]) > 1.0)
-            story["text"] = f"{fallen} of {len(sol)} fall"
-            story["ok"] = fallen == len(sol)
+            # (by the balance-point rule the AI's goal check uses, _Fall: a domino leaning on the next past its tipping angle has fallen)
+            fall = fall or _Fall(doc, fr)
+            bodies = fall.bodies(iid)
+            fallen = sum(1 for b in bodies if fall.fell(b))
+            story["text"] = f"{fallen} of {len(bodies)} fall"
+            story["ok"] = fallen == len(bodies)
         elif it["type"] in ("seesaw",) or any("pivot" in s for s in sol):
             turn = max(abs(f["placements"][s["id"]]["angle"] - t0[s["id"]]["angle"]) for f in fr for s in sol if "pivot" in s) if any("pivot" in s for s in sol) else 0
             story["text"] = f"turns {math.degrees(turn):.0f}°"
@@ -737,11 +847,42 @@ def summarize(scene, doc, track):
         stories.append(story)
     goals = []
     poses = {sid: (p["x"], p["y"]) for sid, p in fr[-1]["placements"].items()}
+    known = lambda v: isinstance(v, str) and v in items
     for g in scene.get("goals", []):
-        if g.get("kind") == "in" and g.get("item") in items and g.get("container") in items:
+        kind = g.get("kind")
+        if kind == "in" and g.get("item") in items and g.get("container") in items:
             ok = inside(scene, doc, poses, g["item"], g["container"])
             goals.append({"label": g.get("label") or f"{name(g['item'])} ends in the {name(g['container']).lower()}", "ok": ok,
                           "item": g["item"], "container": g["container"]})
+        elif kind == "falls":
+            ids = g["items"] if isinstance(g.get("items"), list) and g["items"] else ([g["item"]] if g.get("item") is not None else [])
+            if not ids or not all(known(i) for i in ids):
+                continue
+            fall = fall or _Fall(doc, fr)
+            bodies = [b for i in ids for b in fall.bodies(i)]
+            down = sum(1 for b in bodies if fall.fell(b))
+            who = f"all {len(ids)} of {', '.join(name(i) for i in ids[:3])}{'…' if len(ids) > 3 else ''}" if len(ids) > 1 else name(ids[0])
+            goals.append({"label": g.get("label") or f"{who} {'fall' if len(ids) > 1 else 'falls'} over", "ok": bool(bodies) and down == len(bodies),
+                          "kind": "falls", "items": ids, "fallen": down, "of": len(bodies)})
+        elif kind == "hits" and known(g.get("item")) and known(g.get("target")):
+            a = {s["id"] for s in doc["solids"] if s["item"] == g["item"]}
+            b = {s["id"] for s in doc["solids"] if s["item"] == g["target"]}
+            t = min((h["t"] for h in track.get("impacts", []) if (h["a"] in a and h["b"] in b) or (h["a"] in b and h["b"] in a)), default=None)
+            by = _num(g.get("before_s"))
+            when = "" if by is None else f" by {f'{by:.2f}'.rstrip('0').rstrip('.')} s"
+            goals.append({"label": g.get("label") or f"{name(g['item'])} hits {name(g['target'])}{when}", "ok": t is not None and (by is None or t <= by),
+                          "kind": "hits", "item": g["item"], "target": g["target"], "t": None if t is None else round(t, 3)})
+        elif kind == "moves" and known(g.get("item")):
+            sids = [s["id"] for s in doc["solids"] if s["item"] == g["item"] and s["kind"] == "dynamic"]
+            least = _num(g.get("min_m"))
+            least = 0.05 if least is None else least
+            d = 0.0
+            if sids:
+                c0 = (sum(fr[0]["placements"][i]["x"] for i in sids) / len(sids), sum(fr[0]["placements"][i]["y"] for i in sids) / len(sids))
+                c1 = (sum(fr[-1]["placements"][i]["x"] for i in sids) / len(sids), sum(fr[-1]["placements"][i]["y"] for i in sids) / len(sids))
+                d = math.hypot(c1[0] - c0[0], c1[1] - c0[1])
+            goals.append({"label": g.get("label") or f"{name(g['item'])} moves at least {_short_m(least)}", "ok": bool(sids) and d >= least,
+                          "kind": "moves", "item": g["item"], "moved_m": round(d, 4)})
     return {"goals": goals, "stories": stories, "events": first[:16]}
 
 

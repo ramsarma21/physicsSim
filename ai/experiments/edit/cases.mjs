@@ -1,4 +1,4 @@
-// The edit eval set: 92 realistic follow-up requests on the starter Rube Goldberg machine, 5 built-in scenarios and 5 AI-built scenes,
+// The edit eval set: 105 realistic follow-up requests on the starter Rube Goldberg machine (63), 5 built-in scenarios and 5 AI-built scenes,
 // each with HARD checks (lib/check.mjs reads these specs):
 //   t: {itemId: spec}   the asked change, item by item. spec: type (one of) · removed · props {k: {ratio|eq|min|max|delta|changed}} (on the
 //                       built values: a ball's auto mass included) · dx / dy / da [lo, hi] (anchor and angle deltas, m and °) · x / y [lo, hi] ·
@@ -27,7 +27,7 @@ export const CASES = [
 	{ id: "s-swap-user", base: STARTER, cat: "swap", text: "replace the yellow ball with a tennis ball and the red ball with a basketball", t: { ball2: { type: "tennis-ball", rests: "same", dx: [-0.06, 0.06] }, ball1: { type: "basketball", held: true, dx: [-0.15, 0.15], dy: [-0.01, 0.35] } } },
 	{ id: "s-swap-golf", base: STARTER, cat: "swap", text: "swap the red ball for a golf ball", t: { ball1: { type: "golf-ball", held: true, dx: [-0.05, 0.05], dy: [-0.03, 0.05] } } },
 	{ id: "s-swap-pingpong", base: STARTER, cat: "swap", text: "make the yellow ball a ping-pong ball", t: { ball2: { type: "ping-pong-ball", rests: "same", dx: [-0.05, 0.05] } } },
-	{ id: "s-swap-bucket", base: STARTER, cat: "swap", text: "replace the box with a bucket", t: { box: { type: "bucket", dx: [-0.15, 0.15], dy: [-0.2, 0.2] } }, added: [{ type: ["wooden-block", "brick", "hardcover-book"], count: [0, 2] }], note: "a bucket cannot hang on cords: a post under it is allowed" },
+	{ id: "s-swap-bucket", base: STARTER, cat: "swap", text: "replace the box with a bucket", t: { box: { type: "bucket", dx: [-0.15, 0.15], dy: [-0.2, 0.2] } }, added: [{ type: ["wooden-block", "brick", "hardcover-book", "paperback-book", "plank", "cardboard-box"], count: [0, 2] }], note: "a bucket cannot hang on cords: a post under it is allowed" },
 	{ id: "s-swap-steel", base: STARTER, cat: "swap", text: "use a steel ball instead of the red one", t: { ball1: { type: "steel-ball", held: true, dx: [-0.05, 0.05], dy: [-0.03, 0.05] } } },
 	// ---------------------------------------------------------------- starter: resize
 	{ id: "s-box-wider", base: STARTER, cat: "resize", text: "make the box twice as wide", t: { box: { props: { width: { ratio: [1.9, 2.1] } }, dx: [-0.3, 0.3] } }, allow: ["seesaw", "ball2"] },
@@ -147,7 +147,7 @@ export const CASES = [
 
 	// ---------------------------------------------------------------- more starter cases (the user's own scene gets the most)
 	{ id: "s-swap-both-history", base: STARTER, cat: "swap", text: "now do the same for the other ball: make it a golf ball", history: [{ role: "user", text: "make the red ball a tennis ball" }, { role: "assistant", text: "Swapped the red ball (Ball 1) for a tennis ball at the top of ramp 1." }], t: { ball2: { type: "golf-ball", rests: "same" } } },
-	{ id: "s-swap-box-cup", base: STARTER, cat: "swap", text: "swap the box for a cup", t: { box: { type: ["cup", "plastic-cup"], dx: [-0.15, 0.15], dy: [-0.2, 0.2] } }, added: [{ type: ["wooden-block", "brick", "hardcover-book"], count: [0, 2] }], note: "a cup cannot hang on cords: a post under it is allowed" },
+	{ id: "s-swap-box-cup", base: STARTER, cat: "swap", text: "swap the box for a cup", t: { box: { type: ["cup", "plastic-cup"], dx: [-0.15, 0.15], dy: [-0.2, 0.2] } }, added: [{ type: ["wooden-block", "brick", "hardcover-book", "paperback-book", "plank", "cardboard-box"], count: [0, 2] }], note: "a cup cannot hang on cords: a post under it is allowed" },
 	{ id: "s-resize-red-small", base: STARTER, cat: "resize", text: "make the red ball half the size", t: { ball1: { props: { diameter: { ratio: [0.45, 0.55] } }, held: true, dx: [-0.05, 0.05] } } },
 	{ id: "s-move-red-closer", base: STARTER, cat: "move", text: "move the red ball 3 cm to the right", t: { ball1: { dx: [0.025, 0.035], dy: [-0.005, 0.03], held: true } } },
 	{ id: "s-rm-both-balls", base: STARTER, cat: "remove", text: "remove both balls", t: { ball1: { removed: true }, ball2: { removed: true } } },

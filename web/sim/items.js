@@ -726,6 +726,110 @@ export function use_catalog_module(name, register_all) {
 export const _world_poses = rube._world
 
 /** Plain-language results: the goals, each moving item's story, and the first hits between items in order. */
+const FALL_MIN_DEG = 20 // ai/goals.mjs: the least and the most a body must turn to have fallen, and the margin
+const FALL_MAX_DEG = 85 // past its tipping angle (degrees)
+const FALL_MARGIN_DEG = 5
+const R2D = 180 / Math.PI
+
+/** A JSON number that is a finite float (not a bool), else null (a goal's own fields are whatever the scene says). */
+function _num(v) {
+	return typeof v === "number" && Number.isFinite(v) ? v : null
+}
+
+/** A length for a label, as ai/goals.mjs writes it: 1.25 m, 12.3 cm. */
+function _short_m(m) {
+	let t = m >= 1 ? fmtF(m, 2) : fmtF(m * 100, 1)
+	if (t.includes(".")) t = t.replace(/0+$/, "").replace(/\.$/, "")
+	return m >= 1 ? `${t} m` : `${t} cm`
+}
+
+/** The balance-point rule of ai/goals.mjs (trackTools: bodies, tipAngle, fell), so the run's summary counts a fallen body as the AI's
+ *  goal check does: an item's rigid bodies that can fall (weld groups not hinged to the world or a parent; round ones only when it has
+ *  nothing else) have fallen when turned past their tipping angle (atan(base / height) of their outline box at the start, + 5 degrees,
+ *  within 20 to 85) or knocked down at least half their smaller side and 2 cm (not a body on wheels). */
+class _Fall {
+	constructor(doc, fr) {
+		this.f0 = fr[0].placements
+		this.end = fr[fr.length - 1].placements
+		const by_id = new Map(doc.solids.map((s) => [s.id, s]))
+		const root_of = (s) => {
+			let r = s
+			for (let k = 0; k < 50; k++) {
+				if (!(truthy(r.parent) && !truthy(r.pivot) && by_id.has(r.parent))) break
+				r = by_id.get(r.parent)
+			}
+			return r
+		}
+		this.groups = new Map()
+		for (const s of doc.solids) {
+			if (s.kind !== "dynamic") continue
+			const r = root_of(s)
+			if (!this.groups.has(s.item)) this.groups.set(s.item, [])
+			const lst = this.groups.get(s.item)
+			let gr = lst.find((g) => g.root === r)
+			if (gr === undefined) {
+				gr = { root: r, members: [] }
+				lst.push(gr)
+			}
+			gr.members.push(s)
+		}
+		this.cache = new Map()
+	}
+	_points(s, pose) {
+		const b = s.body
+		let pts
+		if (b.kind === "ball") {
+			const r = b.radius
+			pts = [[-r, 0], [r, 0], [0, -r], [0, r]]
+		} else if (b.kind === "slab") {
+			const hw = b.width / 2
+			const hh = b.height / 2
+			const hb = hw * (hasOwn(b, "taper") ? b.taper : 1)
+			pts = [[-hb, -hh], [hb, -hh], [hw, hh], [-hw, hh]]
+		} else pts = b.points.map((p) => [p.x, p.y])
+		const c = cos(pose.angle)
+		const n = sin(pose.angle)
+		return pts.map(([x, y]) => [pose.x + x * c - y * n, pose.y + x * n + y * c])
+	}
+	bodies(iid) {
+		if (this.cache.has(iid)) return this.cache.get(iid)
+		const all = (this.groups.get(iid) ?? []).filter((g) => !truthy(g.root.pivot))
+		const round = (g) => g.members.every((m) => m.body.kind === "ball")
+		const keep = all.some((g) => !round(g)) ? all.filter((g) => !round(g)) : all
+		const out = keep.map((g) => {
+			const pts = g.members.flatMap((m) => this._points(m, this.f0[m.id]))
+			const xs = pts.map((p) => p[0])
+			const ys = pts.map((p) => p[1])
+			const w = pts.length ? maxOf(xs) - minOf(xs) : 0.0
+			const h = pts.length ? maxOf(ys) - minOf(ys) : 0.0
+			return { ...g, w, h, round: round(g), wheeled: keep.length < all.length }
+		})
+		this.cache.set(iid, out)
+		return out
+	}
+	static _wrap_deg(rad) {
+		let d = (rad * R2D) % 360
+		if (d > 180) d -= 360
+		if (d < -180) d += 360
+		return Math.abs(d)
+	}
+	tip(b) {
+		return b.w > 0 && b.h > 0 ? pymin(FALL_MAX_DEG, pymax(FALL_MIN_DEG, Math.atan(b.w / b.h) * R2D + FALL_MARGIN_DEG)) : 45
+	}
+	fell(b) {
+		const rid = b.root.id
+		const turned = b.round ? 0 : _Fall._wrap_deg(this.end[rid].angle - this.f0[rid].angle)
+		const mid = (at) => pySum(b.members.map((m) => at[m.id].y)) / b.members.length
+		const dropped = mid(this.f0) - mid(this.end)
+		return turned > this.tip(b) || (!b.wheeled && dropped >= pymax(0.02, pymin(b.w, b.h) / 2))
+	}
+}
+
+/** Plain-language results: the goals, each moving item's story, and the first hits between items in order. A goal is
+ *  {kind: "in", item, container} (it ends between the container's walls), {kind: "falls", item | items: [id]} (every rigid body of them ends
+ *  fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given) or
+ *  {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), as ai/goals.mjs
+ *  checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others). */
 export function summarize(scene, doc, track) {
 	const items = new Map((scene.items ?? []).map((i) => [i.id, i]))
 	const name = (iid) => (items.has(iid) ? (truthy(items.get(iid).name) ? items.get(iid).name : TYPES[items.get(iid).type].name) : iid)
@@ -767,6 +871,7 @@ export function summarize(scene, doc, track) {
 	}
 	first.sort((x, y) => (x.t < y.t ? -1 : x.t > y.t ? 1 : 0))
 	const stories = []
+	let fall = null
 	for (const [iid, it] of items) {
 		const sol = doc.solids.filter((s) => s.item === iid && s.kind === "dynamic")
 		if (!sol.length) continue
@@ -790,9 +895,12 @@ export function summarize(scene, doc, track) {
 		const end = fr[fr.length - 1].placements
 		const story = { item: iid, name: name(iid), moved_at, max_speed: pyRound(max_v, 2) }
 		if (it.type === "domino-row") {
-			const fallen = sol.filter((s) => Math.abs(end[s.id].angle - t0[s.id].angle) > 1.0).length
-			story.text = `${fallen} of ${sol.length} fall`
-			story.ok = fallen === sol.length
+			// (by the balance-point rule the AI's goal check uses, _Fall: a domino leaning on the next past its tipping angle has fallen)
+			fall = fall ?? new _Fall(doc, fr)
+			const bodies = fall.bodies(iid)
+			const fallen = bodies.filter((b) => fall.fell(b)).length
+			story.text = `${fallen} of ${bodies.length} fall`
+			story.ok = fallen === bodies.length
 		} else if (it.type === "seesaw" || sol.some((s) => "pivot" in s)) {
 			let turn = 0
 			if (sol.some((s) => "pivot" in s)) {
@@ -810,10 +918,39 @@ export function summarize(scene, doc, track) {
 	}
 	const goals = []
 	const poses = new Map(Object.entries(fr[fr.length - 1].placements).map(([sid, p]) => [sid, [p.x, p.y]]))
+	const known = (v) => typeof v === "string" && items.has(v)
 	for (const g of scene.goals ?? []) {
-		if (g.kind === "in" && items.has(g.item) && items.has(g.container)) {
+		const kind = g.kind
+		if (kind === "in" && items.has(g.item) && items.has(g.container)) {
 			const ok = inside(scene, doc, poses, g.item, g.container)
 			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} ends in the ${pyLower(name(g.container))}`, ok, item: g.item, container: g.container })
+		} else if (kind === "falls") {
+			const ids = Array.isArray(g.items) && g.items.length ? g.items : g.item !== null && g.item !== undefined ? [g.item] : []
+			if (!ids.length || !ids.every(known)) continue
+			fall = fall ?? new _Fall(doc, fr)
+			const bodies = ids.flatMap((i) => fall.bodies(i))
+			const down = bodies.filter((b) => fall.fell(b)).length
+			const who = ids.length > 1 ? `all ${ids.length} of ${ids.slice(0, 3).map(name).join(", ")}${ids.length > 3 ? "…" : ""}` : name(ids[0])
+			goals.push({ label: truthy(g.label) ? g.label : `${who} ${ids.length > 1 ? "fall" : "falls"} over`, ok: bodies.length > 0 && down === bodies.length, kind: "falls", items: ids, fallen: down, of: bodies.length })
+		} else if (kind === "hits" && known(g.item) && known(g.target)) {
+			const a = new Set(doc.solids.filter((s) => s.item === g.item).map((s) => s.id))
+			const b = new Set(doc.solids.filter((s) => s.item === g.target).map((s) => s.id))
+			let t = null
+			for (const h of track.impacts ?? []) if ((a.has(h.a) && b.has(h.b)) || (a.has(h.b) && b.has(h.a))) t = t === null || h.t < t ? h.t : t
+			const by = _num(g.before_s)
+			const when = by === null ? "" : ` by ${fmtF(by, 2).replace(/0+$/, "").replace(/\.$/, "")} s`
+			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} hits ${name(g.target)}${when}`, ok: t !== null && (by === null || t <= by), kind: "hits", item: g.item, target: g.target, t: t === null ? null : pyRound(t, 3) })
+		} else if (kind === "moves" && known(g.item)) {
+			const sids = doc.solids.filter((s) => s.item === g.item && s.kind === "dynamic").map((s) => s.id)
+			let least = _num(g.min_m)
+			least = least === null ? 0.05 : least
+			let d = 0.0
+			if (sids.length) {
+				const c0 = [pySum(sids.map((i) => fr[0].placements[i].x)) / sids.length, pySum(sids.map((i) => fr[0].placements[i].y)) / sids.length]
+				const c1 = [pySum(sids.map((i) => fr[fr.length - 1].placements[i].x)) / sids.length, pySum(sids.map((i) => fr[fr.length - 1].placements[i].y)) / sids.length]
+				d = hypot(c1[0] - c0[0], c1[1] - c0[1])
+			}
+			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} moves at least ${_short_m(least)}`, ok: sids.length > 0 && d >= least, kind: "moves", item: g.item, moved_m: pyRound(d, 4) })
 		}
 	}
 	return { goals, stories, events: first.slice(0, 16) }

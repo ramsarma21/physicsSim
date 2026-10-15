@@ -31,6 +31,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 	let dlg = null
 	let els = {}
 	let io = null
+	let cards = new Map() // id -> {sig, li}: the cards drawn, reused while their scene is unchanged
 	let refreshTimer = 0
 
 	// ---------------------------------------------------------------- the dialog
@@ -79,8 +80,9 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		const grid = h("ul", { class: "lib-grid", role: "list", "aria-label": "Your scenes" })
 		const empty = h("div", { class: "lib-empty", hidden: true })
 		const banner = h("div", { class: "lib-banner", hidden: true })
+		const foot = h("p", { class: "lib-foot", hidden: true })
 		const snack = h("div", { class: "lib-snack", role: "status", "aria-live": "polite", hidden: true })
-		const body = h("div", { class: "lib-body" }, banner, grid, empty)
+		const body = h("div", { class: "lib-body" }, banner, grid, empty, foot)
 		const card = h(
 			"div",
 			{ class: "ui-card lib-card", tabindex: "-1" },
@@ -94,7 +96,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 					{ class: "lib-tools" },
 					h("label", { class: "lib-search" }, icon("search", "lib-search-ic"), search),
 					h("span", { class: "lib-sort-w" }, sort),
-					h("button", { type: "button", class: "primary lib-new", title: "Start a new scene (N)", on: { click: () => (close(), setTimeout(newScene, reduceMotion() ? 0 : 160)) } }, icon("plus"), h("span", { text: "New scene" }))
+					h("button", { type: "button", class: "primary lib-new", title: "Start a new scene", on: { click: () => (close(), setTimeout(newScene, reduceMotion() ? 0 : 160)) } }, icon("plus"), h("span", { text: "New scene" }))
 				)
 			),
 			body,
@@ -102,7 +104,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		)
 		dlg.append(card)
 		document.body.append(dlg)
-		els = { card, search, sort, where, grid, empty, banner, snack, body }
+		els = { card, search, sort, where, grid, empty, banner, foot, snack, body }
 		io = new IntersectionObserver(
 			(entries) => {
 				for (const e of entries) if (e.isIntersecting) loadThumb(e.target)
@@ -114,7 +116,10 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 			clearTimeout(refreshTimer)
 			refreshTimer = setTimeout(() => reload(), 150)
 		})
-		auth?.onChange(() => dlg?.open && reload())
+		auth?.onChange(() => {
+			S.list = null // (signed in or out: another library; skeleton cards until it is here)
+			if (dlg?.open) reload({ skeleton: true })
+		})
 	}
 
 	async function open() {
@@ -125,9 +130,11 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 			dlg.showModal()
 		}
 		els.search.value = S.query
-		;(coarse() ? els.card : els.search).focus({ preventScroll: true })
+		els.search.placeholder = matchMedia("(max-width: 640px)").matches ? "Search" : "Search your scenes"
+		els.card.focus({ preventScroll: true })
 		await reload({ skeleton: true })
-		if (!coarse() && document.activeElement === els.card) els.search.focus({ preventScroll: true })
+		// the search, ready to type in (the empty library has none: its New scene button); on touch screens nothing, so no keyboard pops up
+		if (!coarse() && dlg.open && (document.activeElement === els.card || document.activeElement === document.body)) (els.card.classList.contains("lib-none") ? els.empty.querySelector("button") : els.search)?.focus({ preventScroll: true })
 	}
 	function close() {
 		if (!dlg?.open || dlg.classList.contains("ui-closing")) return
@@ -139,7 +146,10 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 			dlg.close()
 			for (const u of S.urls.values()) URL.revokeObjectURL(u)
 			S.urls.clear()
-			els.grid.innerHTML = ""
+			cards = new Map()
+			io.disconnect()
+			els.grid.replaceChildren()
+			S.query = "" // (the next visit starts with every scene showing)
 		}
 		if (reduceMotion()) return done()
 		dlg.classList.add("ui-closing")
@@ -152,7 +162,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		S.error = null
 		const t = skeleton && !S.list ? setTimeout(() => S.loading && renderSkeleton(), SKELETON_AFTER_MS) : 0
 		try {
-			await autosave.flush() // (the scene on the table, as it is now)
+			await autosave.flush({ now: true }) // (the scene on the table, as it is now)
 			S.list = await store.list()
 		} catch (e) {
 			S.error = e
@@ -170,12 +180,14 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 
 	// ---------------------------------------------------------------- drawing
 	function renderSkeleton() {
-		els.grid.innerHTML = ""
+		cards = new Map()
+		els.grid.replaceChildren()
 		els.grid.setAttribute("aria-busy", "true")
 		for (let i = 0; i < 6; i++) els.grid.append(h("li", { class: "lib-item lib-skel", "aria-hidden": "true" }, h("div", { class: "lib-thumb" }), h("div", { class: "lib-skel-l" }), h("div", { class: "lib-skel-l short" })))
 	}
 	function render() {
 		if (!dlg?.open) return
+		if (S.renaming) return void (S.renderLater = true) // (not under a name being typed: once it is done)
 		const focusedId = document.activeElement?.closest?.(".lib-item")?.dataset.id
 		const scroll = els.body.scrollTop
 		renderWhere()
@@ -183,14 +195,25 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		els.grid.removeAttribute("aria-busy")
 		const all = S.list ?? []
 		const list = visible()
-		els.grid.innerHTML = ""
-		io.disconnect()
 		els.empty.hidden = true
-		if (S.error && !S.list) return renderEmpty("error")
-		if (!all.length) return renderEmpty("none")
-		if (!list.length) return renderEmpty("search")
+		// (no search or sort over nothing; a dialog that fits its content until there are cards)
+		els.card.classList.toggle("lib-none", !all.length)
+		if (S.error && !S.list) return (els.grid.replaceChildren(), renderEmpty("error"))
+		if (!all.length) return (els.grid.replaceChildren(), renderEmpty("none"))
+		if (!list.length) return (els.grid.replaceChildren(), renderEmpty("search"))
+		// a card that hasn't changed is kept as it is (its picture stays put: nothing flickers when another card changes)
 		const now = Date.now()
-		for (const m of list) els.grid.append(cardFor(m, now))
+		const keep = new Map()
+		const lis = list.map((m) => {
+			const sig = JSON.stringify([m.name, m.updatedAt, m.createdAt, m.items, m.thumb?.etag ?? m.thumb?.url ?? null, autosave.currentId === m.id])
+			let c = cards.get(m.id)
+			if (!c || c.sig !== sig) c = { sig, li: cardFor(m, now) }
+			else c.li.querySelector("time").textContent = `Edited ${ago(m.updatedAt, now)}` // (the words for the time move on)
+			keep.set(m.id, c)
+			return c.li
+		})
+		cards = keep
+		els.grid.replaceChildren(...lis)
 		els.body.scrollTop = scroll
 		if (focusedId) els.grid.querySelector(`.lib-item[data-id="${CSS.escape(focusedId)}"] .lib-open`)?.focus({ preventScroll: true })
 		if (S.flash) {
@@ -233,10 +256,15 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 			h("div", { class: "lib-empty-acts" }, h("button", { type: "button", class: "primary", on: { click: () => (close(), setTimeout(newScene, reduceMotion() ? 0 : 160)) } }, icon("plus"), "New scene"))
 		)
 	}
+	let bannerSeq = 0
 	function renderBanner() {
+		if (S.copying) return // (the copy's progress stays on show until it is done)
 		const b = els.banner
+		bannerSeq++
 		b.hidden = true
 		b.replaceChildren()
+		els.foot.hidden = true
+		els.foot.replaceChildren()
 		b.className = "lib-banner"
 		if (store.kind === "local" && !store.persistent) {
 			b.hidden = false
@@ -265,16 +293,30 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 	/** Signed in: this browser's scenes, offered once into the account (each copied scene is remembered, so it is never offered twice). */
 	async function offerCopy(b) {
 		const owner = store.owner
+		const seq = bannerSeq
 		const done = new Set(prefs.get(`copied@${owner}`) ?? [])
 		let locals = []
 		try {
 			locals = (await store.local.list()).filter((m) => !done.has(m.id))
 		} catch {}
-		if (!locals.length || store.owner !== owner || prefs.get(`copy-dismissed@${owner}`)) return
+		if (seq !== bannerSeq || S.copying) return // (drawn again meanwhile, or a copy is under way)
+		if (!locals.length || store.owner !== owner) return
+		if (prefs.get(`copy-dismissed@${owner}`)) {
+			// "Not now" was chosen: a quiet line under the cards keeps the way back while scenes remain in this browser only
+			const again = () => {
+				prefs.del(`copy-dismissed@${owner}`)
+				renderBanner()
+				els.body.scrollTo({ top: 0, behavior: reduceMotion() ? "auto" : "smooth" })
+				setTimeout(() => els.banner.querySelector(".lib-copy")?.focus({ preventScroll: true }), 120)
+			}
+			els.foot.hidden = false
+			els.foot.append(icon("device", "lib-foot-ic"), h("span", { text: `${plural(locals.length, "scene")} in this browser ${locals.length === 1 ? "isn’t" : "aren’t"} in your account yet.` }), h("button", { type: "button", class: "ui-link lib-foot-go", text: `Copy ${locals.length === 1 ? "it" : "them"} to my account`, on: { click: again } }))
+			return
+		}
 		b.hidden = false
 		const text = h("p", { text: `${plural(locals.length, "scene is", "scenes are")} saved in this browser. Copy ${locals.length === 1 ? "it" : "them"} to your account to open ${locals.length === 1 ? "it" : "them"} anywhere.` })
 		const go = h("button", { type: "button", class: "primary lib-copy", on: { click: () => copyIn(locals, text, go) } }, icon("upload"), "Copy to my account")
-		const no = h("button", { type: "button", class: "ui-link", text: "Not now", on: { click: () => (prefs.set(`copy-dismissed@${owner}`, true), (b.hidden = true)) } })
+		const no = h("button", { type: "button", class: "ui-link", text: "Not now", on: { click: () => (prefs.set(`copy-dismissed@${owner}`, true), renderBanner()) } })
 		b.append(icon("device", "lib-banner-ic"), text, h("span", { class: "lib-banner-acts" }, no, go))
 	}
 	async function copyIn(locals, text, btn) {
@@ -289,14 +331,15 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 				text.textContent = `Copying ${n + 1} of ${locals.length}…`
 				const { scene } = await store.local.get(m.id)
 				const thumb = await store.local.thumb(m)
-				await store.backend().create({ name: m.name, scene: { ...scene, name: m.name }, thumb })
+				const meta = await store.backend().create({ name: m.name, scene: { ...scene, name: m.name }, thumb, savedAs: m.savedAs ?? null, copy: true }) // (copy: its own daily count, never the hour's writes the autosave needs)
+				autosave.link(m.id, meta)
 				done.add(m.id)
 				prefs.set(`copied@${owner}`, [...done])
 				n++
 			}
 			showSnack(`Copied ${plural(n, "scene")} to your account`)
 		} catch (e) {
-			showSnack(`Copied ${n} of ${locals.length}: ${e.message}`)
+			showSnack(`Copied ${n} of ${locals.length}. ${e.message}`) // (the rest stay offered: each copied scene is remembered)
 		} finally {
 			S.copying = null
 			reload()
@@ -338,6 +381,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		if (!m?.thumb) return
 		const key = `${m.id}:${m.thumb.etag ?? m.thumb.url ?? ""}`
 		let url = S.urls.get(key)
+		const fresh = !url
 		if (!url) {
 			const blob = await store.thumb(m).catch(() => null)
 			if (!blob || !dlg?.open) return
@@ -353,7 +397,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		}
 		el.classList.remove("lib-ph")
 		el.replaceChildren(img)
-		if (!reduceMotion()) img.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: "ease-out" })
+		if (fresh && !reduceMotion()) img.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: "ease-out" })
 	}
 
 	// ---------------------------------------------------------------- actions
@@ -386,12 +430,18 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 			input.remove()
 			li.classList.remove("renaming")
 			li.querySelector(".lib-open")?.focus({ preventScroll: true })
+			if (S.renderLater) {
+				S.renderLater = false
+				render()
+			}
+			if (save && !name && input.value.trim()) return showSnack("A name needs at least one letter or digit")
 			if (!save || !name || name === m.name) return
 			nameEl.textContent = name // (at once; put back if the rename fails)
 			try {
 				const meta = await store.update(m.id, { name })
 				autosave.renamed(m.id, name, meta)
-				showSnack(`Renamed to “${name}”`)
+				const left = [...new Set([...input.value].filter((ch) => !/[\p{L}\p{N}_\-'\u2019.,:;()&!?+#\s]/u.test(ch)))]
+				showSnack(left.length ? `Renamed to “${name}” (names can’t have ${left.slice(0, 6).join(" ")})` : `Renamed to “${name}”`)
 			} catch (e) {
 				nameEl.textContent = m.name
 				showSnack(`Couldn’t rename it: ${e.message}`)
@@ -450,7 +500,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		} catch (e) {
 			return showSnack(`Couldn’t delete it: ${e.message}`)
 		}
-		autosave.deleted(m.id)
+		const onTable = autosave.deleted(m.id)
 		S.list = (S.list ?? []).filter((x) => x.id !== m.id)
 		const nextId = next?.dataset.id
 		const gone = () => {
@@ -462,7 +512,8 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 			li.classList.add("lib-going")
 			setTimeout(gone, 170)
 		} else gone()
-		showSnack(`Deleted “${m.name}”`, {
+		// (the scene on the table stays on the table: say what happens to it, so a new card after its next change is no surprise)
+		showSnack(onTable ? `Deleted “${m.name}”. It’s still on the table: your next change there keeps it as a new scene.` : `Deleted “${m.name}”`, {
 			label: "Undo",
 			act: async () => {
 				try {
@@ -561,11 +612,11 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 	}
 
 	// ---------------------------------------------------------------- keys
-	function cards() {
+	function cardButtons() {
 		return [...els.grid.querySelectorAll(".lib-item:not(.lib-skel) .lib-open")]
 	}
 	function focusCard(i) {
-		const all = cards()
+		const all = cardButtons()
 		all[Math.max(0, Math.min(all.length - 1, i))]?.focus()
 	}
 	function columns() {
@@ -598,7 +649,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 			a.act()
 			return
 		}
-		const all = cards()
+		const all = cardButtons()
 		const i = all.indexOf(el)
 		if (i === -1) return
 		const m = (S.list ?? []).find((x) => x.id === el.closest(".lib-item")?.dataset.id)
@@ -637,7 +688,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		el.hidden = true
 		let list = []
 		try {
-			await autosave.flush()
+			await autosave.flush({ now: true })
 			list = (await store.list()).filter((m) => m.id !== autosave.currentId).slice(0, 3)
 		} catch {
 			return
@@ -645,11 +696,11 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 		const all = h("button", { type: "button", class: "lib-r-all", on: { click: () => (done(), setTimeout(open, reduceMotion() ? 0 : 170)) } }, icon("scenes"), h("span", { text: "All my scenes" }))
 		el.replaceChildren(h("div", { class: "lib-r-head" }, h("p", { class: "lib-r-t", text: list.length ? "Or carry on with one of yours" : "Your scenes" }), all))
 		if (list.length) {
-			const row = h("div", { class: "lib-r-row", role: "list" })
+			const row = h("div", { class: "lib-r-row", role: "list", "aria-label": "Your latest scenes" })
 			for (const m of list) {
 				const th = h("span", { class: "lib-thumb" })
 				placeholder(th, m)
-				const b = h("button", { type: "button", class: "lib-r-card", role: "listitem", title: `${m.name}: edited ${ago(m.updatedAt)}`, on: { click: async () => {
+				const b = h("button", { type: "button", class: "lib-r-card", title: `${m.name}: edited ${ago(m.updatedAt)}`, "aria-label": `Open “${m.name}”, edited ${ago(m.updatedAt)}`, on: { click: async () => {
 					done()
 					try {
 						await autosave.open(m.id)
@@ -658,7 +709,7 @@ export function createLibrary({ store, autosave, auth = null, toast = () => {}, 
 						toast(`Couldn’t open it: ${e.message}`)
 					}
 				} } }, th, h("span", { class: "lib-r-name", text: m.name }), h("span", { class: "lib-r-meta", text: ago(m.updatedAt) }))
-				row.append(b)
+				row.append(h("div", { role: "listitem", class: "lib-r-li" }, b))
 				if (m.thumb) store.thumb(m).then((blob) => {
 					if (!blob || !b.isConnected) return
 					const u = URL.createObjectURL(blob)
