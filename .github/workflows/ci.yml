@@ -108,8 +108,12 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
-      - name: npm ci
-        run: npm ci
+          cache: pip
+          cache-dependency-path: .github/requirements-ci.txt
+      - name: npm ci, pip install (.github/requirements-ci.txt)
+        run: |
+          npm ci
+          python -m pip install -r .github/requirements-ci.txt
       - name: Link the paths the research scripts assume
         id: paths
         run: |
