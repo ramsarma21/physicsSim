@@ -1,0 +1,169 @@
+{
+	"version": 1,
+	"id": "ball-drop",
+	"camera": {
+		"canvas": {
+			"width": 1536,
+			"height": 1024
+		},
+		"origin": {
+			"x": 0,
+			"y": 0
+		},
+		"pixel": {
+			"x": 370,
+			"y": 930
+		},
+		"pixelsPerMeter": 792
+	},
+	"materials": {
+		"varnished hardwood": {
+			"density": 700
+		},
+		"solid rubber": {
+			"density": 906,
+			"source": "Density from a measured 102.5 g, 60 mm superball: Cross, Am. J. Phys. 70, 482 (2002), a 60 mm superball on a hard wood floor."
+		}
+	},
+	"contacts": [
+		{
+			"between": [
+				"solid rubber",
+				"varnished hardwood"
+			],
+			"friction": 0.52,
+			"restitution": 0.86,
+			"rollingResistance": 0.012,
+			"source": "Restitution 0.86 (vertical, at 4.13 m/s) and static friction 0.52: Cross, Am. J. Phys. 70, 482 (2002), a 60 mm superball on a hard wood floor. Rolling resistance provisional (the Prism mechanics lab's calibration for a ball on wood)."
+		}
+	],
+	"solids": [
+		{
+			"kind": "static",
+			"id": "floor",
+			"words": "a varnished hardwood floor",
+			"body": {
+				"kind": "slab",
+				"width": 2,
+				"height": 0.15,
+				"depth": 2
+			},
+			"material": "varnished hardwood",
+			"at": {
+				"x": 0.5,
+				"y": -0.075
+			},
+			"placeholder": {
+				"fill": "#c8955a"
+			},
+			"render": {
+				"kind": "procedural",
+				"shade": "#a8743f"
+			},
+			"depth": 0
+		},
+		{
+			"kind": "dynamic",
+			"id": "ball",
+			"words": "a red rubber ball",
+			"body": {
+				"kind": "ball",
+				"radius": 0.03
+			},
+			"material": "solid rubber",
+			"at": {
+				"x": 0,
+				"y": 1.03
+			},
+			"placeholder": {
+				"fill": "#d22"
+			},
+			"render": {
+				"kind": "rigid"
+			},
+			"depth": 1
+		}
+	],
+	"animated": [],
+	"organic": [
+		{
+			"kind": "organic",
+			"id": "hand",
+			"words": "a child's hand and forearm in a blue sleeve",
+			"at": {
+				"x": 0,
+				"y": 1.03
+			},
+			"reach": {
+				"x": -0.5,
+				"y": 0.25
+			},
+			"poses": [
+				"holding",
+				"opening",
+				"open"
+			],
+			"depth": 2
+		}
+	],
+	"release": {
+		"parts": [
+			"ball"
+		],
+		"at": 0.5,
+		"holder": {
+			"id": "hand",
+			"from": "holding",
+			"via": [
+				{
+					"pose": "opening",
+					"seconds": 0.08
+				}
+			],
+			"to": "open"
+		}
+	},
+	"seconds": 6,
+	"sprites": {
+		"ball": {
+			"file": "ball-drop/sprites/ball.png",
+			"sha256": "e6ff8c549944b9a54fac71633b9c2ad053febdcb760562ce145a27e0af7c284e",
+			"width": 97,
+			"height": 98,
+			"kx": 0.00063365060560178,
+			"ky": 0.0006293700959287252,
+			"ox": -0.030732054371686333,
+			"oy": 0.030839134700507538
+		},
+		"hand-holding": {
+			"file": "ball-drop/sprites/hand-holding.png",
+			"sha256": "a3b90d104aba28b05d29f8e45b634f89c2138e82dc5f3fa68a2a743c0026e116",
+			"width": 626,
+			"height": 467,
+			"kx": 0.0006313164243333116,
+			"ky": 0.0006319101516409562,
+			"ox": -0.3593877551020408,
+			"oy": 0.2626530612244898
+		},
+		"hand-opening": {
+			"file": "ball-drop/sprites/hand-opening.png",
+			"sha256": "5c80f22e22badb1dd005140a192b6a53d04bb6fe53928e3ada8725e39f7f5c75",
+			"width": 630,
+			"height": 424,
+			"kx": 0.0006311370262390671,
+			"ky": 0.0006311392953407778,
+			"ox": -0.35910306122448976,
+			"oy": 0.2626530612244898
+		},
+		"hand-open": {
+			"file": "ball-drop/sprites/hand-open.png",
+			"sha256": "17dc63051fb13989aa89789e44690dfbb201714d6a7d8964946b5850f30888c4",
+			"width": 625,
+			"height": 423,
+			"kx": 0.0006314644897959183,
+			"ky": 0.0006306231003039513,
+			"ox": -0.3586545918367347,
+			"oy": 0.2626530612244898
+		}
+	}
+}

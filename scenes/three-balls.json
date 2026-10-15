@@ -1,0 +1,695 @@
+{
+	"version": 1,
+	"id": "three-balls",
+	"camera": {
+		"canvas": {
+			"width": 1536,
+			"height": 1024
+		},
+		"origin": {
+			"x": 0,
+			"y": 0
+		},
+		"pixel": {
+			"x": 370,
+			"y": 975
+		},
+		"pixelsPerMeter": 792
+	},
+	"materials": {
+		"varnished hardwood": {
+			"density": 700
+		},
+		"painted steel": {
+			"density": 7850,
+			"source": "Standard density of carbon steel."
+		},
+		"solid rubber": {
+			"density": 906,
+			"source": "Density from a measured 102.5 g, 60 mm superball: Cross, Am. J. Phys. 70, 482 (2002), a 60 mm superball on a hard wood floor."
+		},
+		"hollow plastic": {
+			"density": 950,
+			"source": "Polyethylene, 910 (LDPE) to 960 (HDPE) kg/m³ (Engineering ToolBox, Solids – Densities). Wall thickness provisional."
+		},
+		"modeling clay": {
+			"density": 1570,
+			"yieldStrength": 120000,
+			"source": "Density 1570 kg/m³ for Van Aken plasticine (Eckerson, Liechty and Sorensen, J. Strain Anal. Eng. Des., 2008). Yield strength: plasticine flow stress 0.08–0.175 MPa in compression (Sofuoglu and Rasty, Tribology International, 2000)."
+		}
+	},
+	"contacts": [
+		{
+			"between": [
+				"solid rubber",
+				"varnished hardwood"
+			],
+			"friction": 0.52,
+			"restitution": 0.86,
+			"rollingResistance": 0.012,
+			"source": "Restitution 0.86 (vertical, at 4.13 m/s) and static friction 0.52: Cross, Am. J. Phys. 70, 482 (2002), a 60 mm superball on a hard wood floor. Rolling resistance provisional (the Prism mechanics lab's calibration for a ball on wood)."
+		},
+		{
+			"between": [
+				"hollow plastic",
+				"varnished hardwood"
+			],
+			"friction": 0.33,
+			"restitution": 0.69,
+			"rollingResistance": 0.02,
+			"source": "Restitution: a hollow hard plastic ball dropped 92 cm onto concrete rebounded 43.6 cm, e = 0.69 (Bennett and Meepagala, The Physics Factbook, 2005). Friction: static, polyethylene on planed unfinished hemlock (Murase, J. Fac. Agr. Kyushu Univ. 28, 147, 1984). Rolling resistance provisional."
+		},
+		{
+			"between": [
+				"modeling clay",
+				"varnished hardwood"
+			],
+			"friction": 0.9,
+			"restitution": 0.05,
+			"rollingResistance": 0.3
+		}
+	],
+	"solids": [
+		{
+			"kind": "static",
+			"id": "floor",
+			"words": "a varnished hardwood floor",
+			"body": {
+				"kind": "slab",
+				"width": 2,
+				"height": 0.15,
+				"depth": 2
+			},
+			"material": "varnished hardwood",
+			"at": {
+				"x": 0.5,
+				"y": -0.075
+			},
+			"placeholder": {
+				"fill": "#c8955a"
+			},
+			"render": {
+				"kind": "procedural",
+				"shade": "#a8743f"
+			},
+			"depth": 0
+		},
+		{
+			"kind": "static",
+			"id": "rail",
+			"words": "a painted steel rail",
+			"body": {
+				"kind": "slab",
+				"width": 2,
+				"height": 0.04,
+				"depth": 0.04
+			},
+			"material": "painted steel",
+			"at": {
+				"x": 0.5,
+				"y": 1.18
+			},
+			"placeholder": {
+				"fill": "#5f6b78"
+			},
+			"render": {
+				"kind": "procedural",
+				"shade": "#4b5562"
+			},
+			"depth": 2
+		},
+		{
+			"kind": "dynamic",
+			"id": "rubber",
+			"words": "a red solid rubber ball",
+			"body": {
+				"kind": "ball",
+				"radius": 0.03
+			},
+			"material": "solid rubber",
+			"at": {
+				"x": 0.15,
+				"y": 1.03
+			},
+			"placeholder": {
+				"fill": "#d22"
+			},
+			"render": {
+				"kind": "rigid"
+			},
+			"depth": 1
+		},
+		{
+			"kind": "dynamic",
+			"id": "plastic",
+			"words": "a smooth yellow hollow plastic ball with no holes",
+			"body": {
+				"kind": "ball",
+				"radius": 0.03,
+				"wall": 0.0006
+			},
+			"material": "hollow plastic",
+			"at": {
+				"x": 0.5,
+				"y": 1.03
+			},
+			"placeholder": {
+				"fill": "#f2c230"
+			},
+			"render": {
+				"kind": "rigid"
+			},
+			"depth": 1
+		},
+		{
+			"kind": "dynamic",
+			"id": "clay",
+			"words": "a green ball of modeling clay",
+			"body": {
+				"kind": "ball",
+				"radius": 0.03
+			},
+			"material": "modeling clay",
+			"at": {
+				"x": 0.85,
+				"y": 1.03
+			},
+			"placeholder": {
+				"fill": "#5a9b4a"
+			},
+			"render": {
+				"kind": "rigid"
+			},
+			"depth": 1
+		}
+	],
+	"animated": [
+		{
+			"kind": "animated",
+			"id": "rubber-mount",
+			"words": "the steel body of a claw gripper: a short rod down to a hub",
+			"sprite": "claw-mount",
+			"vector": [
+				{
+					"id": "rod",
+					"tag": "rect",
+					"attrs": {
+						"x": -0.005,
+						"y": 0.013,
+						"width": 0.01,
+						"height": 0.072,
+						"fill": "#8a96a3",
+						"stroke": "#333",
+						"stroke-width": 3,
+						"vector-effect": "non-scaling-stroke"
+					}
+				},
+				{
+					"id": "hub",
+					"tag": "rect",
+					"attrs": {
+						"x": -0.022,
+						"y": -0.005,
+						"width": 0.044,
+						"height": 0.02,
+						"rx": 0.004,
+						"fill": "#8a96a3",
+						"stroke": "#333",
+						"stroke-width": 3,
+						"vector-effect": "non-scaling-stroke"
+					}
+				}
+			],
+			"at": {
+				"x": 0.15,
+				"y": 1.075
+			},
+			"keys": [],
+			"depth": 2
+		},
+		{
+			"kind": "animated",
+			"id": "rubber-jaw-left",
+			"words": "the left jaw of a steel claw gripper: a curved steel finger",
+			"sprite": "claw-jaw-left",
+			"vector": [
+				{
+					"id": "jaw",
+					"tag": "g",
+					"children": [
+						{
+							"id": "jaw-edge",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q-0.0215 -0.004 -0.0215 -0.028 L-0.0215 -0.05 Q-0.0215 -0.064 -0.009 -0.069",
+								"fill": "none",
+								"stroke": "#333",
+								"stroke-width": 0.0095,
+								"stroke-linecap": "round"
+							}
+						},
+						{
+							"id": "jaw-steel",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q-0.0215 -0.004 -0.0215 -0.028 L-0.0215 -0.05 Q-0.0215 -0.064 -0.009 -0.069",
+								"fill": "none",
+								"stroke": "#8a96a3",
+								"stroke-width": 0.007,
+								"stroke-linecap": "round"
+							}
+						}
+					]
+				}
+			],
+			"at": {
+				"x": 0.13799999999999998,
+				"y": 1.075
+			},
+			"keys": [
+				{
+					"t": 0.5,
+					"angle": 0
+				},
+				{
+					"t": 0.6,
+					"angle": -0.7
+				}
+			],
+			"depth": 3
+		},
+		{
+			"kind": "animated",
+			"id": "rubber-jaw-right",
+			"words": "the right jaw of a steel claw gripper: a curved steel finger",
+			"sprite": "claw-jaw-right",
+			"vector": [
+				{
+					"id": "jaw",
+					"tag": "g",
+					"children": [
+						{
+							"id": "jaw-edge",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q0.0215 -0.004 0.0215 -0.028 L0.0215 -0.05 Q0.0215 -0.064 0.009 -0.069",
+								"fill": "none",
+								"stroke": "#333",
+								"stroke-width": 0.0095,
+								"stroke-linecap": "round"
+							}
+						},
+						{
+							"id": "jaw-steel",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q0.0215 -0.004 0.0215 -0.028 L0.0215 -0.05 Q0.0215 -0.064 0.009 -0.069",
+								"fill": "none",
+								"stroke": "#8a96a3",
+								"stroke-width": 0.007,
+								"stroke-linecap": "round"
+							}
+						}
+					]
+				}
+			],
+			"at": {
+				"x": 0.162,
+				"y": 1.075
+			},
+			"keys": [
+				{
+					"t": 0.5,
+					"angle": 0
+				},
+				{
+					"t": 0.6,
+					"angle": 0.7
+				}
+			],
+			"depth": 3
+		},
+		{
+			"kind": "animated",
+			"id": "plastic-mount",
+			"words": "the steel body of a claw gripper: a short rod down to a hub",
+			"sprite": "claw-mount",
+			"vector": [
+				{
+					"id": "rod",
+					"tag": "rect",
+					"attrs": {
+						"x": -0.005,
+						"y": 0.013,
+						"width": 0.01,
+						"height": 0.072,
+						"fill": "#8a96a3",
+						"stroke": "#333",
+						"stroke-width": 3,
+						"vector-effect": "non-scaling-stroke"
+					}
+				},
+				{
+					"id": "hub",
+					"tag": "rect",
+					"attrs": {
+						"x": -0.022,
+						"y": -0.005,
+						"width": 0.044,
+						"height": 0.02,
+						"rx": 0.004,
+						"fill": "#8a96a3",
+						"stroke": "#333",
+						"stroke-width": 3,
+						"vector-effect": "non-scaling-stroke"
+					}
+				}
+			],
+			"at": {
+				"x": 0.5,
+				"y": 1.075
+			},
+			"keys": [],
+			"depth": 2
+		},
+		{
+			"kind": "animated",
+			"id": "plastic-jaw-left",
+			"words": "the left jaw of a steel claw gripper: a curved steel finger",
+			"sprite": "claw-jaw-left",
+			"vector": [
+				{
+					"id": "jaw",
+					"tag": "g",
+					"children": [
+						{
+							"id": "jaw-edge",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q-0.0215 -0.004 -0.0215 -0.028 L-0.0215 -0.05 Q-0.0215 -0.064 -0.009 -0.069",
+								"fill": "none",
+								"stroke": "#333",
+								"stroke-width": 0.0095,
+								"stroke-linecap": "round"
+							}
+						},
+						{
+							"id": "jaw-steel",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q-0.0215 -0.004 -0.0215 -0.028 L-0.0215 -0.05 Q-0.0215 -0.064 -0.009 -0.069",
+								"fill": "none",
+								"stroke": "#8a96a3",
+								"stroke-width": 0.007,
+								"stroke-linecap": "round"
+							}
+						}
+					]
+				}
+			],
+			"at": {
+				"x": 0.488,
+				"y": 1.075
+			},
+			"keys": [
+				{
+					"t": 0.5,
+					"angle": 0
+				},
+				{
+					"t": 0.6,
+					"angle": -0.7
+				}
+			],
+			"depth": 3
+		},
+		{
+			"kind": "animated",
+			"id": "plastic-jaw-right",
+			"words": "the right jaw of a steel claw gripper: a curved steel finger",
+			"sprite": "claw-jaw-right",
+			"vector": [
+				{
+					"id": "jaw",
+					"tag": "g",
+					"children": [
+						{
+							"id": "jaw-edge",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q0.0215 -0.004 0.0215 -0.028 L0.0215 -0.05 Q0.0215 -0.064 0.009 -0.069",
+								"fill": "none",
+								"stroke": "#333",
+								"stroke-width": 0.0095,
+								"stroke-linecap": "round"
+							}
+						},
+						{
+							"id": "jaw-steel",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q0.0215 -0.004 0.0215 -0.028 L0.0215 -0.05 Q0.0215 -0.064 0.009 -0.069",
+								"fill": "none",
+								"stroke": "#8a96a3",
+								"stroke-width": 0.007,
+								"stroke-linecap": "round"
+							}
+						}
+					]
+				}
+			],
+			"at": {
+				"x": 0.512,
+				"y": 1.075
+			},
+			"keys": [
+				{
+					"t": 0.5,
+					"angle": 0
+				},
+				{
+					"t": 0.6,
+					"angle": 0.7
+				}
+			],
+			"depth": 3
+		},
+		{
+			"kind": "animated",
+			"id": "clay-mount",
+			"words": "the steel body of a claw gripper: a short rod down to a hub",
+			"sprite": "claw-mount",
+			"vector": [
+				{
+					"id": "rod",
+					"tag": "rect",
+					"attrs": {
+						"x": -0.005,
+						"y": 0.013,
+						"width": 0.01,
+						"height": 0.072,
+						"fill": "#8a96a3",
+						"stroke": "#333",
+						"stroke-width": 3,
+						"vector-effect": "non-scaling-stroke"
+					}
+				},
+				{
+					"id": "hub",
+					"tag": "rect",
+					"attrs": {
+						"x": -0.022,
+						"y": -0.005,
+						"width": 0.044,
+						"height": 0.02,
+						"rx": 0.004,
+						"fill": "#8a96a3",
+						"stroke": "#333",
+						"stroke-width": 3,
+						"vector-effect": "non-scaling-stroke"
+					}
+				}
+			],
+			"at": {
+				"x": 0.85,
+				"y": 1.075
+			},
+			"keys": [],
+			"depth": 2
+		},
+		{
+			"kind": "animated",
+			"id": "clay-jaw-left",
+			"words": "the left jaw of a steel claw gripper: a curved steel finger",
+			"sprite": "claw-jaw-left",
+			"vector": [
+				{
+					"id": "jaw",
+					"tag": "g",
+					"children": [
+						{
+							"id": "jaw-edge",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q-0.0215 -0.004 -0.0215 -0.028 L-0.0215 -0.05 Q-0.0215 -0.064 -0.009 -0.069",
+								"fill": "none",
+								"stroke": "#333",
+								"stroke-width": 0.0095,
+								"stroke-linecap": "round"
+							}
+						},
+						{
+							"id": "jaw-steel",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q-0.0215 -0.004 -0.0215 -0.028 L-0.0215 -0.05 Q-0.0215 -0.064 -0.009 -0.069",
+								"fill": "none",
+								"stroke": "#8a96a3",
+								"stroke-width": 0.007,
+								"stroke-linecap": "round"
+							}
+						}
+					]
+				}
+			],
+			"at": {
+				"x": 0.838,
+				"y": 1.075
+			},
+			"keys": [
+				{
+					"t": 0.5,
+					"angle": 0
+				},
+				{
+					"t": 0.6,
+					"angle": -0.7
+				}
+			],
+			"depth": 3
+		},
+		{
+			"kind": "animated",
+			"id": "clay-jaw-right",
+			"words": "the right jaw of a steel claw gripper: a curved steel finger",
+			"sprite": "claw-jaw-right",
+			"vector": [
+				{
+					"id": "jaw",
+					"tag": "g",
+					"children": [
+						{
+							"id": "jaw-edge",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q0.0215 -0.004 0.0215 -0.028 L0.0215 -0.05 Q0.0215 -0.064 0.009 -0.069",
+								"fill": "none",
+								"stroke": "#333",
+								"stroke-width": 0.0095,
+								"stroke-linecap": "round"
+							}
+						},
+						{
+							"id": "jaw-steel",
+							"tag": "path",
+							"attrs": {
+								"d": "M0 0 Q0.0215 -0.004 0.0215 -0.028 L0.0215 -0.05 Q0.0215 -0.064 0.009 -0.069",
+								"fill": "none",
+								"stroke": "#8a96a3",
+								"stroke-width": 0.007,
+								"stroke-linecap": "round"
+							}
+						}
+					]
+				}
+			],
+			"at": {
+				"x": 0.862,
+				"y": 1.075
+			},
+			"keys": [
+				{
+					"t": 0.5,
+					"angle": 0
+				},
+				{
+					"t": 0.6,
+					"angle": 0.7
+				}
+			],
+			"depth": 3
+		}
+	],
+	"organic": [],
+	"release": {
+		"parts": [
+			"rubber",
+			"plastic",
+			"clay"
+		],
+		"at": 0.5
+	},
+	"seconds": 5,
+	"sprites": {
+		"rubber": {
+			"file": "three-balls/sprites/rubber.png",
+			"sha256": "f0b2dac7575fa99ff726e78c247c61ee79dab07c512bd91d7acd6dc6eed348de",
+			"width": 98,
+			"height": 98,
+			"kx": 0.0006282798833819241,
+			"ky": 0.0006282798833819241,
+			"ox": -0.030785714285714284,
+			"oy": 0.030785714285714284
+		},
+		"plastic": {
+			"file": "three-balls/sprites/plastic.png",
+			"sha256": "e5e14c27ef32e2c84e4c200cf339873c191ca33dbdcc7f8a3cf802e12bacabb7",
+			"width": 98,
+			"height": 97,
+			"kx": 0.0006290015043328769,
+			"ky": 0.0006340150233870765,
+			"ox": -0.030821073712310968,
+			"oy": 0.030749728634273207
+		},
+		"clay": {
+			"file": "three-balls/sprites/clay.png",
+			"sha256": "1e95f9576d72c89830ed28447e1b80202cf2ddb23af2ac083a4aff4ad1215eb1",
+			"width": 97,
+			"height": 98,
+			"kx": 0.0006336450116698967,
+			"ky": 0.000629362004642297,
+			"ox": -0.030731783065989983,
+			"oy": 0.03083873822747255
+		},
+		"claw-mount": {
+			"file": "three-balls/sprites/claw-mount.png",
+			"sha256": "609a29ecbc6f3832b9161a851decabe51e4e7c5b03dc4da0fc7a38da7a2a5ec0",
+			"width": 73,
+			"height": 146,
+			"kx": 0.0006302743716926375,
+			"ky": 0.0006302743716926375,
+			"ox": -0.023005014566781272,
+			"oy": 0.08576002913356254
+		},
+		"claw-jaw-left": {
+			"file": "three-balls/sprites/claw-jaw-left.png",
+			"sha256": "7d3872059b4227254ef8566e5b3959e0a119dbab9d4be9b2149aceacedbe855d",
+			"width": 50,
+			"height": 124,
+			"kx": 0.0006251255073496709,
+			"ky": 0.0006333089482241885,
+			"ox": -0.026378137683741764,
+			"oy": 0.004765154789899688
+		},
+		"claw-jaw-right": {
+			"file": "three-balls/sprites/claw-jaw-right.png",
+			"sha256": "11356a60dc451a9cdedafdf41e5722bc5d93ddbf36715550a08218effacbf052",
+			"width": 50,
+			"height": 124,
+			"kx": 0.0006288326979877663,
+			"ky": 0.0006299755107055996,
+			"ox": -0.004970817449694152,
+			"oy": 0.0045584816637471775
+		}
+	}
+}
