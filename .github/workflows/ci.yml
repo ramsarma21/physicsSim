@@ -1,0 +1,190 @@
+# CI for the physics sandbox. What runs, and what waits for the engine bundle:
+#   checks    (Linux, Node 24 = Vercel's runtime and Node 26) syntax of every JS/TS/Python file, the generated files' --check scripts, the
+#             node:test suites, the engine's real-world validators (research/rw-validate*.ts), and the static site build
+#   machines  (Linux) the Python scene builder's tests (machines/test_*.py), which run the engine from tooling/src/sim
+#   parity    (macOS arm64) the Python <-> JS parity suite, tools/parity/run.sh, against web/server.py started in the job
+# The engine bundle (web/sim/engine-worker.js, engine-math.js) is git-ignored and built here by `npm run build:engine`, which needs
+# tools/apple-pow-tables.ts: not in this public repository until the open-source pow replacement lands. Until then the steps that load
+# web/sim (most unit tests, the static build, the parity suite) are skipped with a notice; they turn on by themselves when the bundle
+# becomes buildable (.github/scripts/engine-bundle.sh).
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: Checks (Linux, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 26]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: npm ci
+        run: npm ci
+      - name: Link the paths the research scripts assume
+        id: paths
+        run: |
+          .github/scripts/ci-paths.sh
+          mkdir -p ci-logs
+      - name: Syntax (node --check, strip-only TypeScript, py_compile)
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: |
+          node --no-warnings .github/scripts/syntax-check.mjs
+          git ls-files -z '*.py' | xargs -0 python -m py_compile
+          echo "py_compile: $(git ls-files '*.py' | wc -l | tr -d ' ') Python files compile"
+      - name: Engine bundle (npm run build:engine, when buildable)
+        id: engine
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: .github/scripts/engine-bundle.sh build "the unit test files that load web/sim and the static site build"
+      - name: Generated files are up to date (vendor, scenario list)
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: |
+          npm run vendor:three:check
+          npm run vendor:media:check
+          npm run --if-present vendor:clerk:check
+          npm run gen:scenarios:check
+      - name: Unit tests (node --test)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        run: .github/scripts/unit-tests.sh ${{ steps.engine.outputs.built }}
+      - name: Engine validators (research/rw-validate*.ts)
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: |
+          for v in rw-validate rw-validate-p2 rw-validate-poly rw-validate-p3; do
+            echo "::group::research/$v.ts"
+            node --no-warnings "research/$v.ts" 2>&1 | tee "ci-logs/$v.log"
+            echo "::endgroup::"
+            tail -n 1 "ci-logs/$v.log"
+          done
+      - name: Static site (npm run build:static:nogen)
+        if: ${{ !cancelled() && steps.engine.outputs.built == 'true' }}
+        run: npm run build:static:nogen
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: checks-node${{ matrix.node }}-logs
+          path: |
+            ci-logs/
+            dist/
+            research/tmp/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  machines:
+    name: Scene builder tests (Linux, machines/test_*.py)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: npm ci
+        run: npm ci
+      - name: Link the paths the research scripts assume
+        id: paths
+        run: |
+          .github/scripts/ci-paths.sh
+          mkdir -p ci-logs
+      - name: machines/test_rg.py (the starter runs exactly like rube.py's machine)
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: python machines/test_rg.py 2>&1 | tee ci-logs/test_rg.log
+      - name: machines/test_catalog.py
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: python machines/test_catalog.py 2>&1 | tee ci-logs/test_catalog.log
+      - name: machines/test_mechanisms.py
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: python machines/test_mechanisms.py 2>&1 | tee ci-logs/test_mechanisms.log
+      - name: machines/test_everyday.py
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: python machines/test_everyday.py 2>&1 | tee ci-logs/test_everyday.log
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: machines-logs
+          path: |
+            ci-logs/
+            research/tmp/
+            scenes/.test-*
+          if-no-files-found: ignore
+          include-hidden-files: true
+          retention-days: 14
+
+  engine:
+    name: Engine bundle buildable?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      buildable: ${{ steps.detect.outputs.buildable }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: detect
+        run: .github/scripts/engine-bundle.sh detect
+
+  parity:
+    name: Python <-> JS parity (macOS arm64)
+    needs: engine
+    if: needs.engine.outputs.buildable == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Platform
+        run: |
+          sw_vers
+          uname -m
+          python3 -c 'import sys, platform; print(sys.version); print(platform.mac_ver())'
+          node --version
+      - name: npm ci
+        run: npm ci
+      - name: Link the paths the research scripts assume
+        run: .github/scripts/ci-paths.sh
+      - name: Engine bundle (npm run build:engine)
+        run: .github/scripts/engine-bundle.sh build
+      - name: Parity suite (tools/parity/run.sh, with web/server.py on :8790)
+        run: .github/scripts/parity-macos.sh
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parity-logs
+          path: ci-logs/
+          if-no-files-found: ignore
+          retention-days: 14
