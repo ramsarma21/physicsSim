@@ -1,0 +1,2 @@
+# Python packages the tests need beyond the standard library (pinned to the development machine's versions).
+numpy==2.3.5   # machines/test_everyday.py: the egg, bowl and other shape checks
