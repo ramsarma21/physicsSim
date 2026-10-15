@@ -72,7 +72,7 @@ function call(step, { method = "POST", body, headers = {}, url } = {}) {
 	})
 }
 const EDIT = { payload: { text: "hi", scene: { items: [{ id: "table", type: "table", x: 1.3, y: 0 }] } }, client: { requestId: "r1" } }
-const NOTHING = { content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }) }
+const NOTHING = { content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }) }
 
 test("method, step and body checks", async () => {
 	assert.equal((await call("plan", { method: "GET" })).status, 405)

@@ -270,11 +270,18 @@ export const rateSchema = {
 	}
 }
 
+/** What an edit answer is (ai/DESIGN.md §14): a change, a question back when the request is truly ambiguous, an answer to a question, a fix
+ *  ("make it work"), an undo, or a new scene. ask, answer and undo change nothing. */
+export const EDIT_KINDS = ["change", "ask", "answer", "fix", "undo", "new"]
+export const EDIT_NO_CHANGE = ["ask", "answer", "undo"]
+const MAX_TARGETS = 20
 export const editSchema = {
 	type: "object",
 	required: ["mode", "reply"],
 	additionalProperties: false,
 	properties: {
+		kind: { type: "string" }, // one of EDIT_KINDS (checked in validateEdit, with the measured error words)
+		targets: { type: "array", maxItems: MAX_TARGETS, items: { type: "object" } }, // [{says, ids, because}]: what each thing the request names is
 		mode: { enum: ["patch", "plan", "new"] }, // new: the user wants a different scene (the server then plans it: ai/DESIGN.md §13.8)
 		reply: str(1200, 1),
 		why: str(300), // one sentence: why this is a change of the scene on screen, or a new scene
@@ -1716,6 +1723,53 @@ function editIntentSoft(v, ctx) {
 }
 
 // ---------------------------------------------------------------- edit
+/**
+ * The answer's `kind` and `targets` (ai/DESIGN.md §14, measured in ai/experiments/edit as arm n7): a kind outside EDIT_KINDS, targets that are
+ * not a list, and a kind that changes nothing (ask, answer, undo) with patches get the repair turn, with the words the experiment used; the
+ * rest is tidied with a warning, never repaired: each target kept as {says, ids, because} (ids from a string or `id`), at most 20; mode "new"
+ * (or a legacy whole plan) is kind "new"; kind "new" with patches is a change, without them mode "new"; undo and kind "undo" go together.
+ */
+function checkEditKind(v, errors, warnings) {
+	if (!Array.isArray(v.targets)) errors.push("targets must be a list ([] when the request names nothing)")
+	else {
+		const kept = []
+		for (const [i, t] of v.targets.entries()) {
+			if (!isObj(t)) {
+				warnings.push(`edit.targets[${i}] dropped: a target is {says, ids, because}`)
+				continue
+			}
+			const raw = Array.isArray(t.ids) ? t.ids : typeof t.ids === "string" ? [t.ids] : typeof t.id === "string" ? [t.id] : []
+			const ids = [...new Set(raw.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().slice(0, LIMITS.idLength)))].slice(0, LIMITS.items)
+			kept.push({ says: String(t.says ?? "").slice(0, 200), ids, ...(t.because !== undefined && t.because !== null ? { because: String(t.because).slice(0, 300) } : {}) })
+		}
+		if (kept.length > MAX_TARGETS) warnings.push(`edit.targets cut to the first ${MAX_TARGETS}`)
+		v.targets = kept.slice(0, MAX_TARGETS)
+	}
+	if (!EDIT_KINDS.includes(v.kind)) {
+		errors.push(`kind must be one of ${EDIT_KINDS.join(", ")}`)
+		return
+	}
+	const patches = Array.isArray(v.patches) ? v.patches : []
+	if ((v.mode === "new" || v.mode === "plan") && v.kind !== "new") {
+		warnings.push(`edit.kind "${v.kind}" read as "new": mode "${v.mode}" is a different scene`)
+		v.kind = "new"
+	} else if (v.kind === "new" && v.mode === "patch") {
+		if (patches.length) {
+			warnings.push('edit.kind "new" read as "change": the answer patches the scene on screen')
+			v.kind = "change"
+		} else {
+			warnings.push('edit.mode "patch" read as "new": kind "new" is a different scene')
+			v.mode = "new"
+		}
+	}
+	if (v.undo === true && v.kind !== "undo" && !patches.length) {
+		warnings.push(`edit.kind "${v.kind}" read as "undo": undo is true`)
+		v.kind = "undo"
+	}
+	if (v.kind === "undo" && v.undo !== true && !patches.length) v.undo = true
+	if (EDIT_NO_CHANGE.includes(v.kind) && patches.length) errors.push(`kind "${v.kind}" changes nothing: "patches": []`)
+}
+
 /** ctx: {catalog, plan? (the scene's plan), scene? (the current scene; used as an exact plan when no plan is given), stage?} */
 export function validateEdit(value, ctx = {}) {
 	const errors = []
@@ -1723,6 +1777,7 @@ export function validateEdit(value, ctx = {}) {
 	if (!isObj(value)) return { ok: false, errors: ["the answer must be a JSON object"], warnings, value }
 	const v = clone(value)
 	if (v.missing === undefined) v.missing = []
+	checkEditKind(v, errors, warnings)
 	tidyReply(v, "edit", warnings, 1200)
 	tidySuggestions(v, "edit", warnings)
 	cutStr(v, "notes", 3000, "edit", warnings)

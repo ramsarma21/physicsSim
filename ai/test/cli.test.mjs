@@ -65,7 +65,7 @@ const noKey = (r) => {
 }
 
 test("ok: exit 0 and {ok, result, model, ms, usage}", async () => {
-	gw.script("m1", [{ content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }) }])
+	gw.script("m1", [{ content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }) }])
 	const r = await runCli({ step: "edit", payload: { text: "what does the seesaw do?", scene: { items: [{ id: "table", type: "table", x: 1.3, y: 0 }] } }, client: { requestId: "req-1" } })
 	assert.equal(r.code, 0, r.out + r.err)
 	assert.equal(r.json.ok, true)
@@ -147,7 +147,7 @@ test("progress (AI_PROGRESS=1): streamed steps write AIPROGRESS lines on stderr:
 	const r0 = testRouting({ timeoutMs: 4000, budgetMs: 8000, backoffMs: 10, stream: true })
 	r0.models.m1 = { ...r0.models.m1, stream: true }
 	writeFileSync(streamPath, JSON.stringify(r0))
-	gw.script("m1", [{ content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }), thinking: 6, chunkDelayMs: 60 }])
+	gw.script("m1", [{ content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }), thinking: 6, chunkDelayMs: 60 }])
 	const r = await runCli({ step: "edit", payload: { text: "what does the seesaw do?", scene: { items: [{ id: "table", type: "table", x: 1.3, y: 0 }] } } }, { env: { AI_MODELS: streamPath, AI_PROGRESS: "1" } })
 	assert.equal(r.code, 0, r.out + r.err)
 	noKey(r)

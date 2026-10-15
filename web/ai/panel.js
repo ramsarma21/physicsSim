@@ -995,7 +995,8 @@ export function mountAiPanel(host) {
 		const fx = r?.fix
 		if (!fx || fx.state === "searching") return []
 		const ok = h("span", { class: "ai-ok-mark", "aria-label": "works" }, "✓")
-		if (fx.state === "found") return [" Want me to ", h("b", {}, fx.say), "? ", h("span", { class: "ai-checked", title: `I ran it in the physics engine: ${fx.checked} happens` }, "(checked: ", fx.checked, " ", ok, ")")]
+		// (a fix that works only at its exact value says so: "only just")
+		if (fx.state === "found") return [" Want me to ", h("b", {}, fx.say), "? ", h("span", { class: "ai-checked", title: `I ran it in the physics engine: ${fx.checked} happens${fx.fragile ? " (but a few millimetres either way and it misses)" : ""}` }, "(checked: ", fx.checked, " ", ok, fx.fragile ? ", only just" : "", ")")]
 		if (fx.state === "none") return [" I couldn’t find a small fix that I could check works — want the AI to rework it?"]
 		if (fx.state === "stopped") return [" I stopped looking for a fix. Want the AI to rework it?"]
 		return [" I couldn’t look for a fix just now. Want the AI to rework it?"]
@@ -1016,12 +1017,12 @@ export function mountAiPanel(host) {
 		const fx = t.report?.fix
 		const data = which === "near" ? fx?.near : fx
 		if (!data?.sceneJSON) return
-		if (t.sceneJSON !== JSON.stringify(host.getScene() ?? null)) return note("The scene has changed since I found that: ask me again (for example “make it work”)")
+		if (t.sceneJSON !== JSON.stringify(host.getScene() ?? null)) return (note("The scene has changed since I found that: ask me again (for example “make it work”)"), false)
 		let scene
 		try {
 			scene = JSON.parse(data.sceneJSON)
 		} catch {
-			return
+			return false
 		}
 		stopFixSearch()
 		if (bubble) userBubble(said ?? data.label, "fix")
@@ -1047,7 +1048,7 @@ export function mountAiPanel(host) {
 			totalMs: fx.ms ?? null
 		}
 		fx.used = which
-		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text: user.text, mode: "fix", images: [] }, report }
+		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text: said ?? data.label, mode: "fix", images: [] }, report }
 		turn.sceneJSON = sceneNow
 		turn.plan = planAfterFix(t.plan ?? S.lastBuild?.plan ?? null, scene)
 		const changed = committed !== false
@@ -1061,6 +1062,7 @@ export function mountAiPanel(host) {
 		persist()
 		announce(report.lead)
 		scrollToEnd()
+		return true
 	}
 	/** The items of a scene that are byte for byte the same in another (not the table or the safety walls). */
 	function unchangedOf(a, b) {
@@ -1093,8 +1095,9 @@ export function mountAiPanel(host) {
 				const fx = turn.report.fix
 				// a "yes" typed while it looked: the fix goes on the table now (or the reply says plainly that there is none)
 				if (job.applyOnFound) {
-					if (fx?.state === "found") applyFix(turn, "fix", job.applyOnFound, { bubble: false })
-					else noFixReply(turn, "I couldn’t find a small fix that I could check works — want the AI to rework it?")
+					if (fx?.state === "found") {
+						if (applyFix(turn, "fix", job.applyOnFound, { bubble: false }) !== true) replyTurn("The scene changed while I looked, so I didn’t apply it — ask me again (for example “make it work”).")
+					} else noFixReply(turn, "I couldn’t find a small fix that I could check works — want the AI to rework it?")
 					return
 				}
 				announce(fx?.state === "found" ? `Found a fix: ${fx.say}` : "No small fix found")
@@ -1601,9 +1604,9 @@ export function mountAiPanel(host) {
 			return
 		}
 		S.open = true
-		// (the toast that said "open Edit with AI to apply it" has done its job)
+		// (the toast that said "open Edit with AI to apply it" has done its job; on a phone any toast would sit over the box and its send button)
 		const toastEl = document.getElementById("toast")
-		if (toastEl && !toastEl.hidden && /Edit with AI/.test(toastEl.textContent ?? "")) toastEl.hidden = true
+		if (toastEl && !toastEl.hidden && (/Edit with AI/.test(toastEl.textContent ?? "") || matchMedia("(max-width: 900px)").matches)) toastEl.hidden = true
 		const top = document.querySelector("header.top")?.getBoundingClientRect().bottom
 		if (top > 0) drawer.style.setProperty("--ai-top", `${Math.round(top + 10)}px`)
 		drawer.hidden = false

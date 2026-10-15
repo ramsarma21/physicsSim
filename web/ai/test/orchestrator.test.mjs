@@ -805,7 +805,8 @@ test("a follow-up 'make it work' keeps the change of the turn before (request.ke
 	const s0 = solve(dp)
 	const first = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Moved.", patches: [{ op: "move", id: "box", x: 1.9 }] } }) })
 		.build({ text: "move the box to x 1.9", mode: "edit", scene: s0.scene, plan: dp, planScene: s0.scene, sim: await simulate(s0.scene) }).result
-	assert.deepEqual(first.edit.touched, [["box", ["place"]]], "what the edit set is kept with the turn")
+	assert.deepEqual(first.edit.touched.map((t) => t.slice(0, 2)), [["box", ["place-x"]]], "what the edit set is kept with the turn (moved along the table only: a fix may still raise it)")
+	assert.equal(first.edit.touched[0][2].x, 1.5, "and where it stood before")
 	const scene = first.scene
 	const sim = await simulate(scene)
 	const ask = (keep) =>
@@ -818,4 +819,104 @@ test("a follow-up 'make it work' keeps the change of the turn before (request.ke
 	const free = await ask(null)
 	assert.ok(free.fixApplied, free.lead)
 	assert.match(free.fixApplied.say, /box/, "with nothing to keep, the box (the plain fix) may move")
+})
+
+// ================================================================ "the edit isn't automatically supposed to have it work" (the user, 2026-10-15): a plain change
+// does what it names; what the edit step re-tuned beyond that is put back (a thing in the way is moved, the least that makes room, and said)
+import { humanChanges, namedIn, editScope } from "../orchestrator.js"
+const sceneOf = (id) => JSON.parse(readFileSync(new URL(`../../scenarios/${id}.json`, import.meta.url)))
+async function editOf(id, patches, text, extra = {}) {
+	const scene = sceneOf(id)
+	const sim = await simulate(scene)
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Done.", patches, ...extra } }) }).build({ text, mode: "edit", scene, sim }).result
+	const was = (i) => scene.items.find((x) => x.id === i)
+	const now = (i) => r.scene.items.find((x) => x.id === i)
+	return { r, scene, was, now }
+}
+
+test("a plain edit changes only what it names: the AI's extra changes are put back; a thing in the way is moved the least that makes room, and said", async () => {
+	// (the live answer to "move the seesaw 10 cm left": it also moved the hanging box 10 cm and the dominoes 3 cm "so the ball can still land")
+	const { r, was, now } = await editOf("rube-goldberg", [{ op: "move", id: "seesaw", dx: -0.1 }, { op: "move", id: "ball2", dx: -0.1 }, { op: "move", id: "box", dx: -0.1 }, { op: "set_props", id: "dominoes", props: { spacing: 0.54 } }], "move the seesaw 10 cm left")
+	assert.equal(JSON.stringify(now("box")), JSON.stringify(was("box")), "the box is exactly where it was")
+	assert.equal(now("dominoes").props.spacing ?? 0.568, 0.568, "the dominoes keep their spacing (the default, as it was)")
+	near(now("seesaw").x, was("seesaw").x - 0.1, 1e-4, "the seesaw moved as asked")
+	assert.deepEqual(r.edit.leftAlone, ["the box"])
+	assert.match(r.lead, /^I moved the seesaw \(with Ball 2 on it\) 10 cm left and the dominoes \d(\.\d)? cm left to make room — now .+ ✗\.$/, r.lead)
+	assert.deepEqual(r.edit.touched.map(([id]) => id).sort(), ["ball2", "seesaw"], "only the asked change is protected from the fix search")
+	// a request that states the outcome may change more (the edit step's way of making it work stays)
+	const o = await editOf("rube-goldberg", [{ op: "move", id: "box", dx: 0.15 }, { op: "set_props", id: "seesaw", props: { tilt: 14 } }], "move the box 15 cm right so Ball 2 still lands in it")
+	assert.equal(o.now("seesaw").props.tilt, 14)
+	assert.equal(o.r.edit.leftAlone, undefined)
+})
+
+test("a plain edit: a named thing's own extra move is put back when nothing is in the way; the run's length too, unless asked", async () => {
+	const b = await editOf("rube-goldberg", [{ op: "set_props", id: "box", props: { width: 0.16 } }, { op: "move", id: "box", dx: -0.06 }], "make the box 16 cm wide")
+	near(b.now("box").x, b.was("box").x, 1e-6, "the box stays where it was")
+	assert.equal(b.now("box").props.width, 0.16)
+	assert.deepEqual(b.r.edit.leftAlone, ["the box’s place"])
+	const c = await editOf("conveyor-delivery", [{ op: "set_props", id: "belt", props: { speed: 0.5 } }, { op: "set_scene", seconds: 8 }], "make the conveyor belt run half as fast")
+	assert.equal(c.r.scene.seconds, 6)
+	assert.deepEqual(c.r.edit.leftAlone, ["the run’s length (6 s)"])
+	assert.match(c.r.lead, /^Done! I made the conveyor belt slower \(belt speed 1 → 0\.5 m\/s\) — /, c.r.lead)
+	const t = await editOf("conveyor-delivery", [{ op: "set_scene", seconds: 8 }, { op: "set_props", id: "belt", props: { speed: 0.9 } }], "make the conveyor belt a bit slower and run it for 8 seconds")
+	assert.equal(t.r.scene.seconds, 8)
+	// a scene with no safety walls gets none from an edit
+	const s = await editOf("spring-launch", [{ op: "move", id: "cup", dx: -0.2 }], "move the cup 20 cm left")
+	assert.ok(!s.r.scene.items.some((i) => i.type === "wall"), "no walls added")
+	assert.match(s.r.lead, /^I moved the cup 20 cm left — now the golf ball flies \d+ cm past the cup ✗\.$/, s.r.lead)
+})
+
+test("what a request names: by name, kind, id or a head word; colour or order words, outcomes and behaviours leave the request unscoped", () => {
+	const r = sceneOf("rube-goldberg")
+	assert.deepEqual([...namedIn("make ramp 1 steeper", r)], ["ramp1"])
+	assert.deepEqual([...namedIn("make the ramps steeper", r)].sort(), ["ramp1", "ramp2"])
+	assert.deepEqual([...namedIn("space the dominoes further apart", r)], ["dominoes"])
+	assert.deepEqual([...namedIn("pull the launcher back only 3 cm", sceneOf("spring-launch"))], ["launcher"])
+	assert.deepEqual([...editScope("move the seesaw 10 cm left", r).asked].sort(), ["ball2", "seesaw"], "what rides on it goes with it")
+	for (const t of ["swap the yellow ball for a tennis ball", "make ball 2 fly higher", "move the box so Ball 2 still lands in it", "make the first domino taller", "make the ball heavier"]) assert.equal(editScope(t, r), null, t)
+})
+
+test("a rename is a change; an edit answered with a whole plan protects what it changed", async () => {
+	const n = await editOf("rube-goldberg", [{ op: "set_item", id: "ball1", name: "Marble" }], "rename Ball 1 to Marble")
+	assert.match(n.r.lead, /^Done! I renamed Ball 1 to Marble — /, n.r.lead)
+	const scene = sceneOf("rube-goldberg")
+	const { planFromScene } = await import("../solver.js")
+	const whole = planFromScene(scene)
+	whole.items.find((i) => i.id === "box").place.x += 0.06
+	const w = await createOrchestrator({ api: mockApi({ edit: { mode: "plan", reply: "Moved.", plan: whole } }) }).build({ text: "move the box 6 cm right", mode: "edit", scene, sim: await simulate(scene) }).result
+	assert.deepEqual(w.edit.touched.map((t) => t.slice(0, 2)), [["box", ["place-x"]]])
+})
+
+test("wording: a pendulum pulled back less, a seesaw tilted, a deeper box, dominoes spaced in cm, riders said with what carries them, lengths by the figure shown", () => {
+	const pd = sceneOf("pendulum-dominoes")
+	const p2 = JSON.parse(JSON.stringify(pd))
+	p2.items.find((i) => i.id === "pendulum").props.start_angle = -20
+	assert.deepEqual(humanChanges(pd, p2), ["pulled the pendulum back less (55° → 20°)"])
+	const r = sceneOf("rube-goldberg")
+	const t = JSON.parse(JSON.stringify(r))
+	t.items.find((i) => i.id === "seesaw").props.tilt = 15
+	t.items.find((i) => i.id === "box").props.depth = 0.17
+	t.items.find((i) => i.id === "dominoes").props.spacing = 0.65
+	assert.deepEqual(humanChanges(r, t), ["spaced the dominoes further apart (first gap 5.6 → 6.4 cm)", "tilted the seesaw more (12.5° → 15°)", "made the box deeper (depth 12 → 17 cm)"])
+	const cv = sceneOf("conveyor-delivery")
+	const c2 = JSON.parse(JSON.stringify(cv))
+	for (const id of ["belt", "ball1", "ball2", "ball3"]) c2.items.find((i) => i.id === id).x -= 0.2
+	assert.deepEqual(humanChanges(cv, c2), ["moved the conveyor belt (with the golf balls on it) 20 cm left"])
+	assert.equal(fmtLen(0.00999), "1 cm")
+	assert.equal(fmtLen(0.9999), "1 m")
+	assert.equal(editLead({ changes: ["made the conveyor belt slower (belt speed 1 → 0.5 m/s)", "made it run 8 s instead of 6 s"], targets: [] }), "Done! I made the conveyor belt slower (belt speed 1 → 0.5 m/s) and made it run 8 s instead of 6 s")
+	// past three changes, the rest are named, never "and 1 more change"
+	assert.equal(editLead({ changes: ["moved the seesaw 10 cm left", "moved the dominoes 3 cm left", "moved Ramp 2 1 cm left", "moved the box 10 cm left"], who: ["the seesaw", "the dominoes", "Ramp 2", "the box"], targets: [{ label: "Ball 2 lands in the box", ok: false, was: true, happened: "Ball 2 misses" }] }), "I moved the seesaw 10 cm left, the dominoes 3 cm left and changed Ramp 2 and the box too — now Ball 2 misses ✗.")
+})
+
+test("a later edit keeps the person's earlier change, and its fix may still line the rest up with it ('move the box 10 cm left', then 'make the box 2 cm wider')", async () => {
+	const scene = starter()
+	const first = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Moved.", patches: [{ op: "move", id: "box", dx: -0.1 }] } }) }).build({ text: "move the box 10 cm left", mode: "edit", scene, sim: await simulate(scene) }).result
+	const s1 = first.scene
+	const second = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Wider.", patches: [{ op: "set_props", id: "box", props: { width: 0.28 } }] } }) }).build({ text: "make the box 2 cm wider", mode: "edit", scene: s1, plan: first.plan, planScene: s1, sim: await simulate(s1), keep: first.edit.touched }).result
+	assert.equal(second.fixNeeded, true, second.lead)
+	const fr = await createOrchestrator({ api: mockApi({}) }).findFix(second.fixCtx, { budgetMs: 30000 })
+	assert.equal(fr.status, "found", JSON.stringify(fr.near?.words))
+	near(fr.fix.scene.items.find((i) => i.id === "box").x, s1.items.find((i) => i.id === "box").x, 1e-9, "the box stays where the person moved it")
+	assert.match(fr.fix.words.say, /to line up with the box/, fr.fix.words.say)
 })

@@ -96,11 +96,18 @@ test("a fix in words: an instruction, what was done, and a short chip label (rea
 	assert.equal(w([{ kind: "prop", id: "seesaw", key: "tilt", from: 12.452, to: 11.5 }]).say, "tilt the seesaw less (12.5° → 11.5°)")
 	assert.equal(w([{ kind: "prop", id: "dominoes", key: "spacing", from: 0.568, to: 0.48 }]).label, "Space the dominoes closer together")
 	assert.equal(w([{ kind: "prop", id: "ball2", key: "mass", from: 0.0577, to: 0.04 }]).say, "make the tennis ball lighter (58 g → 40 g)")
+	assert.equal(w([{ kind: "prop", id: "dominoes", key: "spacing", from: 0.568, to: 0.45 }]).say, "space the dominoes closer together (first gap 5.6 → 4.4 cm)")
+	// (a chip is short: "Start the launcher 3 cm higher", never cut off mid-phrase)
+	const sl = scenario("spring-launch")
+	assert.deepEqual(fixWords([{ kind: "slide", id: "launcher", on: "support", dx: -0.03 }], sl), { say: "start the spring launcher 3 cm higher up the support plank", did: "started the spring launcher 3 cm higher up the support plank", label: "Start the launcher 3 cm higher" })
 })
 
 test("which requests state an outcome (their edit is made to work too)", () => {
 	for (const t of ["make it work", "move the box 10 cm left so the ball still lands in it", "Fix it so Ball 2 lands in the box", "Make the golf ball land in cup 3", "add a tennis ball that rolls into the cup", "Make it work again so that ball 2 lands in the box"]) assert.equal(statesOutcome(t), true, t)
 	for (const t of ["move the box 10 cm left", "make the dominoes taller", "add 5 more dominoes", "swap the yellow ball for a tennis ball", "make the tennis ball heavier", "rotate ramp 2 by 5°"]) assert.equal(statesOutcome(t), false, t)
+	// (the ways people ask for it to keep working; and "fix" or "make sure" that are about something else)
+	for (const t of ["move the cup 20 cm left but keep the golf ball landing in it", "move the cup 20 cm left and keep it working", "swap ball 2 for a golf ball without breaking the machine", "spread the dominoes out more and make sure they all still fall", "move the conveyor belt 20 cm left and make sure the balls still go in the box"]) assert.equal(statesOutcome(t), true, t)
+	for (const t of ["fix the box to the table", "fix the ramp in place", "can you make sure the box is red"]) assert.equal(statesOutcome(t), false, t)
 })
 
 test("the reply's first sentence: what changed, then what happens instead (now / still), or that it works", () => {
@@ -198,4 +205,48 @@ test("plinko (real engine): a request that states the outcome ('land in cup 3') 
 	const again = await simulate(r.scene)
 	assert.equal(again.summary.goals.find((g) => g.container === "cup3")?.ok, true, "the scene put on the table does it")
 	log(`plinko: "${r.lead}"`)
+})
+
+// ================================================================ the repair of 2026-10-15 (late): supports in the chain, a wider table, a hung thing re-hung, sturdy fixes
+test("conveyor (real engine): the box moved 25 cm right — the belt (with the golf balls on it) follows; the chain's support is part of the chain", async () => {
+	const { r, fr } = await editThenFix(scenario("conveyor-delivery"), "move the box 25 cm right", [{ op: "move", id: "box", dx: 0.25 }])
+	assert.equal(fr.status, "found", JSON.stringify({ runs: fr.runs, near: fr.near?.words }))
+	assert.match(fr.fix.words.say, /^move the conveyor belt \(with the golf balls on it\) \d+ cm right to line up with the box$/, fr.fix.words.say)
+	await verifyFix(r, fr)
+	log(`conveyor: "${r.lead}" → ${fr.fix.words.say} (${fr.runs} runs)`)
+})
+
+test("starter (real engine): the box moved 15 cm right — the seesaw follows, and the table is made wider for it (said)", async () => {
+	const { r, fr } = await editThenFix(scenario("rube-goldberg"), "move the box 15 cm right", [{ op: "move", id: "box", dx: 0.15 }])
+	assert.equal(fr.status, "found", JSON.stringify({ runs: fr.runs, near: fr.near?.words }))
+	assert.match(fr.fix.words.say, /^move the seesaw \(with Ball 2 on it\) \d+ cm right to line up with the box \(and make the table \d+ cm wider\)$/, fr.fix.words.say)
+	assert.ok(Math.abs(fr.fix.scene.items.find((i) => i.id === "box").x - (r.scene.items.find((i) => i.id === "box").x)) < 1e-9, "the box stays")
+	await verifyFix(r, fr)
+})
+
+test("pendulum (real engine): a string made 30 cm shorter — the pendulum is hung 30 cm lower, so it swings as low as before", async () => {
+	const { r, fr } = await editThenFix(scenario("pendulum-dominoes"), "make the pendulum string 30 cm long", [{ op: "set_props", id: "pendulum", props: { length: 0.3 } }])
+	assert.match(r.lead, /^I made the pendulum shorter \(length 60 → 30 cm\) — now none of the dominoes fall ✗\.$/, r.lead)
+	assert.equal(fr.status, "found")
+	assert.equal(fr.fix.words.say, "lower the pendulum 30 cm so it swings as low as before")
+	assert.equal(fr.fix.words.label, "Lower the pendulum 30 cm")
+	await verifyFix(r, fr)
+})
+
+test("a fix is sturdy: it still works a little either side of its value; a knob before everything the person changed is tried only when nothing else works", async () => {
+	// (the live search offered "move Ball 1 1 cm left" for a seesaw made 10 cm shorter: it failed at ±1 mm)
+	const { r, fr } = await editThenFix(scenario("rube-goldberg"), "make the seesaw 10 cm shorter", [{ op: "set_props", id: "seesaw", props: { length: 0.498 } }, { op: "move", id: "ball2", dx: -0.1 }])
+	assert.equal(fr.status, "found")
+	const ids = fr.fix.changes.flatMap((c) => (c.kind === "move" ? c.ids : [c.id]))
+	assert.ok(!ids.includes("ball1") && !ids.includes("ramp1"), fr.fix.words.say)
+	assert.ok(!fr.fix.fragile, "a sturdy one")
+	const res = await verifyFix(r, fr)
+	// nudged a little, it still works
+	for (const d of [-0.0025, 0.0025]) {
+		const c = fr.fix.changes[0]
+		const sc = applyChanges(r.fixCtx.scene, [{ ...c, ...(c.kind === "move" ? { dx: c.dx + d } : c.kind === "turn" ? { d: c.d + d * 100 } : { to: c.to * (1 + d * 10) }) }])
+		const s = await simulate(sc)
+		assert.ok(judge(r.fixCtx.targets ?? fr.targets, s).every((x) => x.ok === true), `nudged ${d}: ${fr.fix.words.say}`)
+	}
+	log(`sturdy: "${r.lead}" → ${fr.fix.words.say}`)
 })

@@ -790,9 +790,12 @@ function aimCandidates({ scene, sim, goal }) {
  * moved thing late in the chain (the box): the things before it, nearest first, in growing groups (the seesaw with its ball; and the dominoes;
  * and the ramp…); for one early in the chain: the things after it. -> [{changes, cost, why}]
  */
-function followCandidates({ scene, before, order, riders, touched, inAir }) {
+function followCandidates({ scene, before, order, riders, touched, inAir, origin = null }) {
 	if (!before?.scene) return []
 	const A = new Map(before.scene.items.map((i) => [i.id, i]))
+	// (a thing the person moved in an earlier turn counts as moved from where it stood before that: "move the box 10 cm left", then "make it
+	// 2 cm wider": the rest may still line up with the box)
+	for (const [id, o] of origin ?? []) if (A.has(id)) A.set(id, { ...A.get(id), x: o.x, y: o.y })
 	const out = []
 	const isRider = (id) => [...riders.values()].some((l) => l.includes(id))
 	// (how far a thing has moved since before the edit: a follower that already moved, to make room, follows only the rest of the way)
@@ -845,7 +848,7 @@ function followCandidates({ scene, before, order, riders, touched, inAir }) {
 		// and the whole rest of the chain, both sides at once: everything lined up with it again, as it was (when one side alone isn't enough)
 		if (up.length && down.length) {
 			const moves = movesFor([...up.slice(0, 5), ...down.slice(0, 5)], dx, dy, 1, it.id)
-			if (moves.length > 1) out.push({ changes: moves, cost: costOf(moves) * 1.3, why: "follow-all" })
+			if (moves.length) out.push({ changes: moves, cost: costOf(moves) * 1.3, why: "follow-all" })
 		}
 	}
 	return out
@@ -973,7 +976,7 @@ export async function findFix(ctx, opts = {}) {
 		if (!ctx.flex && lockOf(ctx.touched, g.item).x) continue
 		firstCands.push(...aimCandidates({ scene, sim, goal: g }))
 	}
-	firstCands.push(...followCandidates({ scene, before: ctx.before, order, riders, touched: ctx.touched, inAir }))
+	firstCands.push(...followCandidates({ scene, before: ctx.before, order, riders, touched: ctx.touched, inAir, origin: ctx.origin }))
 	// a thing hung from a pivot made shorter or longer (a pendulum's string): hung that much lower or higher, so it swings as low as before
 	for (const [id, keys] of ctx.touched ?? []) {
 		if (keys === "all" || !keys?.has?.("length") || lockOf(ctx.touched, id).y) continue
@@ -1179,10 +1182,21 @@ const shortName = (it) => {
 	const n = theName(it)
 	return /^the \S+ \S+$/.test(n) ? `the ${n.split(" ").at(-1)}` : n
 }
+/** Do these moves (with what rides on them) take every real thing but `lead` (and what rides on it)? "everything else" */
+function everythingElse(ids, lead, scene, R) {
+	const moved = new Set(ids.flatMap((id) => [id, ...(R.get(id) ?? [])]))
+	const fixed = new Set([lead, ...(R.get(lead) ?? [])])
+	const real = scene.items.filter((i) => i.type !== "table" && !(i.type === "wall" && i.props?.invisible_in_3d) && !fixed.has(i.id))
+	return real.length > 2 && real.every((i) => moved.has(i.id))
+}
 function changeWords(c, scene, before) {
 	const item = (id) => scene.items.find((i) => i.id === id)
 	if (c.kind === "move") {
 		const R = riderMap(scene)
+		if (c.follows && c.ids.length > 1 && everythingElse(c.ids, c.follows, scene, R)) {
+			const w = `everything else ${dirWords(c.dx, c.dy)} to line up with ${theName(item(c.follows))}`
+			return { say: `shift ${w}`, did: `shifted ${w}`, label: `Shift everything else ${dirWords(c.dx, c.dy)}` }
+		}
 		const names = c.ids.map((id) => {
 			const it = item(id)
 			const rs = (R.get(id) ?? []).map(item)
@@ -1258,6 +1272,13 @@ export function fixWords(changes, scene, before = null) {
 		const parts = changes.map((c) => `${andList(c.ids.map((id) => theName(item(id))))}${c.ids.some((id) => (R.get(id) ?? []).length) ? ` (with ${groupNames(c.ids.flatMap((id) => R.get(id) ?? []).map(item))})` : ""} ${dirWords(c.dx, c.dy)}`)
 		const lead = theName(item(changes[0].follows))
 		const n = new Set(changes.flatMap((c) => c.ids.flatMap((id) => [id, ...(R.get(id) ?? [])]))).size
+		// (all of the rest: said so, with the odd one out named: "shift everything else 10 cm left (the dominoes only 7 cm) to line up with the seesaw")
+		if (everythingElse(changes.flatMap((c) => c.ids), changes[0].follows, scene, R)) {
+			const main = [...changes].sort((a, b) => b.ids.length - a.ids.length)[0]
+			const odd = changes.filter((c) => c !== main).map((c) => `${andList(c.ids.map((id) => theName(item(id))))} only ${fmtLen(Math.hypot(c.dx, c.dy))}`)
+			const w = `everything else ${dirWords(main.dx, main.dy)}${odd.length ? ` (${andList(odd)})` : ""} to line up with ${lead}`
+			return { say: `shift ${w}`, did: `shifted ${w}`, label: `Line everything up with ${lead}` }
+		}
 		return { say: `shift ${parts.join(", and ")}, to line up with ${lead}`, did: `shifted ${parts.join(", and ")}, to line up with ${lead}`, label: `Line ${n} things up with ${lead}` }
 	}
 	const parts = changes.map((c) => changeWords(c, scene, before))

@@ -114,8 +114,8 @@ test("refine: the solved scene, the run, the types in use and the renders are al
 
 test("edit: patches against a hand-made scene; a bad id is repaired", async () => {
 	gw.script("m1", [
-		{ content: JSON.stringify({ mode: "patch", reply: "Moved it.", patches: [{ op: "move", id: "boxx", dx: 0.1 }] }) },
-		{ content: JSON.stringify({ mode: "patch", reply: "Moved the box 10 cm right.", patches: [{ op: "move", id: "box", dx: 0.1 }] }) }
+		{ content: JSON.stringify({ kind: "change", targets: [{ says: "the box", ids: ["box"] }], mode: "patch", reply: "Moved it.", patches: [{ op: "move", id: "boxx", dx: 0.1 }] }) },
+		{ content: JSON.stringify({ kind: "change", targets: [{ says: "the box", ids: ["box"] }], mode: "patch", reply: "Moved the box 10 cm right.", patches: [{ op: "move", id: "box", dx: 0.1 }] }) }
 	])
 	const out = await runStep("edit", { text: "move the box a bit right", scene: scenario("rube-goldberg"), history: [{ role: "user", text: "build it" }, { role: "assistant", text: "done" }] }, opts())
 	assert.equal(out.result.patches[0].id, "box")
@@ -323,7 +323,7 @@ test("observe: a request that calls the picture a sketch is observed with observ
 const isEdit = (req) => /^You edit scenes/.test(String(req.body?.messages?.[0]?.content ?? ""))
 const STARTER = () => scenario("rube-goldberg")
 test("plan with a scene on screen: a request that changes it comes back as an edit (patches applied to the scene's plan, untouched items exact); the fresh plan is dropped", async () => {
-	const swap = { mode: "patch", why: "They name two balls in this scene.", reply: "Swapped both balls.", suggestions: [{ label: "Lower the box", prompt: "Lower the box so the tennis ball lands in it" }], patches: [{ op: "replace_type", id: "ball2", type: "tennis-ball" }, { op: "replace_type", id: "ball1", type: "basketball" }, { op: "set_place", id: "ball1", place: { on: "ramp1", x: 0 } }] }
+	const swap = { kind: "change", targets: [{ says: "the yellow ball", ids: ["ball2"] }, { says: "the red ball", ids: ["ball1"] }], mode: "patch", why: "They name two balls in this scene.", reply: "Swapped both balls.", suggestions: [{ label: "Lower the box", prompt: "Lower the box so the tennis ball lands in it" }], patches: [{ op: "replace_type", id: "ball2", type: "tennis-ball" }, { op: "replace_type", id: "ball1", type: "basketball" }, { op: "set_place", id: "ball1", place: { on: "ramp1", x: 0 } }] }
 	let planSeen = 0
 	gw.fallback = (req) => (isEdit(req) ? { content: JSON.stringify(swap), delayMs: 50 } : (planSeen++, { content: JSON.stringify(PLAN), delayMs: 400 }))
 	try {
@@ -350,7 +350,7 @@ test("plan with a scene on screen: a request that changes it comes back as an ed
 })
 
 test("plan with a scene on screen: a different scene gets the fresh plan (intent new); intent 'new' or a picture's observation skips the check; a failed check never falls back to a new scene", async () => {
-	gw.fallback = (req) => (isEdit(req) ? { content: JSON.stringify({ mode: "new", why: "A different setup.", reply: "Building a new scene." }) } : { content: JSON.stringify(PLAN) })
+	gw.fallback = (req) => (isEdit(req) ? { content: JSON.stringify({ kind: "new", targets: [], mode: "new", why: "A different setup.", reply: "Building a new scene." }) } : { content: JSON.stringify(PLAN) })
 	try {
 		let out = await runStep("plan", { text: "A ball rolls down a ramp into a pot.", scene: STARTER() }, opts())
 		assert.equal(out.intent, "new")
@@ -371,7 +371,7 @@ test("plan with a scene on screen: a different scene gets the fresh plan (intent
 })
 
 test("edit: mode 'new' goes on to the plan step (its own prompt and effort) and comes back as mode 'plan' with intent 'new'", async () => {
-	gw.fallback = (req) => (isEdit(req) ? { content: JSON.stringify({ mode: "new", why: "Start over.", reply: "Starting over." }) } : { content: JSON.stringify(PLAN) })
+	gw.fallback = (req) => (isEdit(req) ? { content: JSON.stringify({ kind: "new", targets: [], mode: "new", why: "Start over.", reply: "Starting over." }) } : { content: JSON.stringify(PLAN) })
 	try {
 		const out = await runStep("edit", { text: "Start over: a ball rolls into a pot.", scene: STARTER() }, opts())
 		assert.equal(out.intent, "new")
@@ -383,8 +383,8 @@ test("edit: mode 'new' goes on to the plan step (its own prompt and effort) and 
 })
 
 test("edit intent \"edit\": the request says the user pressed Edit; a \"new\" answer gets one repair turn toward a patch, and when it stays it comes back as it is (no planner call); a bad intent is a 400", async () => {
-	const NEW = { content: JSON.stringify({ mode: "new", reply: "That is a different scene: build it as a new one?", why: "They describe a new setup." }) }
-	gw.script("m1", [NEW, { content: JSON.stringify({ mode: "patch", why: "They pressed Edit.", reply: "Swapped the ball.", patches: [{ op: "replace_type", id: "ball1", type: "tennis-ball" }] }) }])
+	const NEW = { content: JSON.stringify({ kind: "new", targets: [], mode: "new", reply: "That is a different scene: build it as a new one?", why: "They describe a new setup." }) }
+	gw.script("m1", [NEW, { content: JSON.stringify({ kind: "change", targets: [{ says: "the ball", ids: ["ball1"] }], mode: "patch", why: "They pressed Edit.", reply: "Swapped the ball.", patches: [{ op: "replace_type", id: "ball1", type: "tennis-ball" }] }) }])
 	let out = await runStep("edit", { text: "new scene: the same machine with a tennis ball", scene: scenario("rube-goldberg"), intent: "edit" }, opts())
 	assert.equal(out.result.mode, "patch")
 	assert.match(gw.requests[0].body.messages[1].content, /The user pressed "Edit"/)
@@ -402,13 +402,37 @@ test("edit intent \"edit\": the request says the user pressed Edit; a \"new\" an
 	await assert.rejects(runStep("edit", { text: "x", scene: scenario("rube-goldberg"), intent: "new" }, opts()), badInput(/intent must be "auto" or "edit"/))
 })
 
-test("edit with the run of the scene on screen: its goals (MET / FAILED) and where things ended reach the model; a bad sim is a 400", async () => {
-	gw.script("m1", [{ content: JSON.stringify({ mode: "patch", reply: "I lowered the box 30 cm so Ball 2 lands in it.", patches: [{ op: "move", id: "box", dy: -0.3 }] }) }])
-	const sim = { summary: { goals: [{ label: "Ball 2 lands in the box", ok: false, item: "ball2", container: "box" }], stories: [], events: [] }, warnings: [], final: [{ id: "ball2", x: 2.95, y: 0.02 }] }
-	await runStep("edit", { text: "It stopped working. Make it work again.", scene: STARTER(), sim }, opts())
+test("edit (§14): the request carries the rich digest from a run made here (looks, places in words, each item's part in the run, look-alikes, the goals MET / FAILED), the client's feedback just before the request; kind and targets come back; a bad sim or feedback is a 400", async () => {
+	gw.script("m1", [{ content: JSON.stringify({ kind: "fix", targets: [], mode: "patch", reply: "I lowered the box 30 cm so Ball 2 lands in it.", patches: [{ op: "move", id: "box", dy: -0.3 }] }) }])
+	const fb = "# Your last answer was applied and run\nIn its run: FAILED: Ball 2 lands in the box."
+	const out = await runStep("edit", { text: "Make it work again.", scene: STARTER(), feedback: fb }, opts())
+	assert.deepEqual([out.result.kind, out.result.targets, out.intent], ["fix", [], "edit"])
 	const user = gw.requests[0].body.messages[1].content
-	assert.match(user, /# The run of the scene on screen/)
-	assert.match(user, /FAILED: Ball 2 lands in the box/)
-	assert.match(user, /Where things ended: ball2 \(2\.95, 0\.02\)/)
+	assert.match(user, /^# The current scene\n/)
+	assert.match(user, /- ball2 · “Ball 2” · a yellow ball: plastic-ball .* · 6 cm across, 6\.32 g\n  where: right third of the table, resting on seesaw/)
+	assert.match(user, /- ball1 · “Ball 1” · a red ball: superball[^\n]*\n  where: left third of the table, in the air; 3\.1 cm above ramp1; dynamic, held/)
+	assert.match(user, /in the last run: starts moving at 2\.8\d s; is hit by seesaw/)
+	assert.match(user, /## Look-alikes [^\n]*\n- 2 ramps: [^\n]*\n- 2 balls: ball2 \(yellow, [^\n]*ball1 \(red,/)
+	assert.match(user, /## The last run \(before this request\)\nGoals: MET: Ball 2 lands in the box\nWhat happened, in order: 0\.61 s Ball 1 hits Ramp 1/)
+	assert.ok(user.indexOf(fb) > user.indexOf("# Its plan") && user.indexOf(fb) < user.indexOf("# The user's request now"), "the feedback goes just before the request")
+	assert.match(String(gw.requests[0].body.messages[0].content[0]?.text ?? gw.requests[0].body.messages[0].content), /"kind": "ask"/)
 	await assert.rejects(runStep("edit", { text: "x", scene: STARTER(), sim: 3 }, opts()), badInput(/sim must be an object/))
+	await assert.rejects(runStep("edit", { text: "x", scene: STARTER(), feedback: 5 }, opts()), badInput(/feedback must be text/))
+	await assert.rejects(runStep("edit", { text: "x", scene: STARTER(), feedback: "x".repeat(9000) }, opts()), badInput(/feedback is too long/))
+})
+
+test("edit (§14): the plan's goals of other kinds are checked on the same run (MET / FAILED); a kind that changes nothing with patches gets the repair turn; ask comes back with no patches", async () => {
+	const { planFromScene } = await import("../schemas.mjs")
+	const { getCatalog } = await import("../catalog-digest.mjs")
+	const cat = await getCatalog()
+	const pl = planFromScene(STARTER(), cat.index)
+	pl.goals = [...(pl.goals ?? []), { kind: "falls", label: "The dominoes fall", item: "dominoes" }, { kind: "moves", label: "The box flies off", item: "ball1", min_m: 50 }]
+	const BAD = { content: JSON.stringify({ kind: "ask", targets: [{ says: "the ball", ids: ["ball1", "ball2"] }], mode: "patch", reply: "Which ball?", patches: [{ op: "move", id: "ball1", dx: 0.1 }] }) }
+	const ASK = { content: JSON.stringify({ kind: "ask", targets: [{ says: "the ball", ids: ["ball1", "ball2"], because: "two balls" }], mode: "patch", why: "Two balls fit.", reply: "Which ball: the red one at the top, or the yellow one on the seesaw?", patches: [], suggestions: [{ label: "The red ball", prompt: "Make the red ball at the top bigger" }] }) }
+	gw.script("m1", [BAD, ASK])
+	const out = await runStep("edit", { text: "make the ball bigger", scene: STARTER(), plan: pl }, opts())
+	assert.deepEqual([out.result.kind, out.result.patches, out.result.targets[0].ids], ["ask", [], ["ball1", "ball2"]])
+	assert.match(gw.requests[1].body.messages.at(-1).content, /kind "ask" changes nothing: "patches": \[\]/)
+	const user = gw.requests[0].body.messages[1].content
+	assert.match(user, /Goals: MET: Ball 2 lands in the box; MET: The dominoes fall; FAILED: The box flies off \(/)
 })

@@ -1802,6 +1802,8 @@ export function createOrchestrator(deps) {
 			return ids
 		}
 		let baseline = null
+		let ridersOnScreen = null
+		const r6 = (v) => Math.round(v * 1e6) / 1e6
 		// (the invisible walls at the table's ends: an edit of a scene that has none adds none, so nothing new stops a ball that flies off the end)
 		const walls = exactEdit && !request.scene.items.some(isSafetyWall) ? { safetyWalls: false } : {}
 		const solveV = (p, opts0 = {}) => {
@@ -1817,12 +1819,43 @@ export function createOrchestrator(deps) {
 			}
 			const free = new Set()
 			let r
-			for (let k = 0; k < 4; k++) {
-				const pin = pinUntouched(p, basePlan, request.scene, free)
+			let ref = request.scene
+			let pp = p
+			let carried = false
+			for (let k = 0; k < 5; k++) {
+				const pin = pinUntouched(pp, basePlan, ref, free)
 				r = solve(pin.plan, { ...opts, noShift: true })
 				const hit = [...hitIds(r, pin.pinned)].filter((id) => !baseline.has(id))
-				if (!hit.length) break
-				for (const id of hit) free.add(id)
+				if (hit.length) {
+					for (const id of hit) free.add(id)
+					continue
+				}
+				// (what rests on a thing that was moved to make room goes with it, once: the seesaw moved aside carries its ball)
+				if (carried || !free.size) break
+				carried = true
+				ridersOnScreen ??= (() => {
+					try {
+						return riderMap(request.scene)
+					} catch {
+						return new Map()
+					}
+				})()
+				const at = new Map(r.scene.items.map((i) => [i.id, i]))
+				const moves = new Map()
+				for (const id of free) {
+					const a = request.scene.items.find((i) => i.id === id)
+					const b = at.get(id)
+					if (!a || !b) continue
+					const dx = (Number(b.x) || 0) - (Number(a.x) || 0)
+					const dy = (Number(b.y) || 0) - (Number(a.y) || 0)
+					if (Math.abs(dx) < 0.001 && Math.abs(dy) < 0.001) continue
+					for (const rid of ridersOnScreen.get(id) ?? []) if (!free.has(rid)) moves.set(rid, { dx, dy })
+				}
+				if (!moves.size) break
+				// (held at its pose: that pose moves; resting on it at a place along it: that place moves)
+				ref = { ...request.scene, items: request.scene.items.map((i) => (moves.has(i.id) ? { ...i, x: r6((Number(i.x) || 0) + moves.get(i.id).dx), y: r6((Number(i.y) || 0) + moves.get(i.id).dy) } : i)) }
+				const base = new Map((basePlan?.items ?? []).filter(isObj).map((i) => [i.id, JSON.stringify(i)]))
+				pp = { ...pp, items: pp.items.map((i) => (isObj(i) && moves.has(i.id) && base.get(i.id) === JSON.stringify(i) && isObj(i.place) && typeof i.place.on === "string" && i.place.on !== "air" && num(i.place.x) !== null ? { ...i, place: { ...i.place, x: r6(i.place.x + moves.get(i.id).dx) } } : i)) }
 			}
 			r.exact = restoreExact(r.scene, request.scene)
 			r.freed = [...free]
@@ -1852,13 +1885,38 @@ export function createOrchestrator(deps) {
 			return { id: nextId++, plan: p, solved, scene: solved.scene, sim, score: null, judged: false, fromRound: 0, parent: null }
 		}
 		const draft = (v, label) => onEvent({ type: "draft", sim: v.sim, scene: v.scene, label })
-		// ---- a plain change does what it names and nothing else (the user: "the edit isn't automatically supposed to have it work - that's not how
-		// physics works"): what the edit step changed beyond the things the request names (and what rides on them), often re-tuned to keep a goal
-		// working, is put back as it was; the run then shows what the change really does and the panel offers a checked fix. A thing in the way
-		// of the change is moved instead, the least that makes room (and the reply says so); only when nothing smaller works does the edit step's
-		// own change of it stay. Each is tried in a solve: the things asked about must land as the edit step's version puts them.
+		// ---- an edit does exactly what was asked (the user, 2026-10-15: "the edit isn't automatically supposed to have it work - that's not how
+		// physics works"). Every step below is tried in a solve before it is kept.
+		const was = new Map((basePlan?.items ?? []).filter(isObj).map((i) => [i.id, i]))
+		const trouble = (r) => new Set([...(r.freed ?? []), ...r.issues.filter((i) => i.level !== "info" && i.item).map((i) => `${i.code}|${i.item}`)])
+		let R = new Map()
+		if (mode === "edit")
+			try {
+				R = riderMap(request.scene)
+			} catch {}
+		const shiftX = (x, d) => ({ ...clone(x), place: { ...clone(x.place), x: Math.round((x.place.x + d) * 1e5) / 1e5 } })
+		// (what rides on a thing moved along goes with it, unless the edit placed it itself)
+		const withEntry = (p, id, entry) => {
+			const d = (num(entry.place?.x) ?? 0) - (num(was.get(id)?.place?.x) ?? num(entry.place?.x) ?? 0)
+			const riders = new Set(Math.abs(d) > 1e-9 ? R.get(id) ?? [] : [])
+			return { ...p, items: p.items.map((x) => (!isObj(x) ? x : x.id === id ? entry : riders.has(x.id) && JSON.stringify(x) === JSON.stringify(was.get(x.id)) && num(x.place?.x) !== null ? shiftX(x, d) : x)) }
+		}
+		const ROOM = [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12, 0.15]
+		if (mode === "edit") {
+			// (1) a thing moved along the table carries what rests on it: "the yellow ball on it moves with it", as the edit step itself says)
+			for (const it of plan.items) {
+				const a = isObj(it) ? was.get(it.id) : null
+				if (!a || a.type !== it.type || !isObj(a.place) || !isObj(it.place) || num(a.place.x) === null || num(it.place.x) === null) continue
+				const rest = (pl) => JSON.stringify({ ...pl, x: 0 })
+				if (rest(a.place) !== rest(it.place) || Math.abs(it.place.x - a.place.x) < 1e-9) continue
+				plan = withEntry(plan, it.id, it)
+			}
+		}
+		// (2) a plain change does what it names and nothing else: what the edit step changed beyond the things the request names (and what rides on
+		// them), often re-tuned to keep a goal working, is put back as it was; the run then shows what the change really does and the panel offers
+		// a checked fix. A thing in the way of the change is moved instead, the least that makes room (and the reply says so); only when nothing
+		// smaller works does the edit step's own change of it stay. The things asked about must land as the edit step's version puts them.
 		if (mode === "edit" && scope) {
-			const was = new Map((basePlan?.items ?? []).filter(isObj).map((i) => [i.id, i]))
 			const changed = plan.items.filter((it) => isObj(it) && was.has(it.id) && JSON.stringify(was.get(it.id)) !== JSON.stringify(it))
 			let ref = null
 			if (changed.some((it) => scope.named.has(it.id)))
@@ -1866,7 +1924,6 @@ export function createOrchestrator(deps) {
 					ref = solveV(plan)
 				} catch {}
 			if (ref) {
-				const trouble = (r) => new Set([...(r.freed ?? []), ...r.issues.filter((i) => i.level !== "info" && i.item).map((i) => `${i.code}|${i.item}`)])
 				const refTrouble = trouble(ref)
 				const askedIds = [...scope.asked].filter((id) => ref.scene.items.some((i) => i.id === id))
 				const poseOf = (r) => askedIds.map((id) => r.scene.items.find((i) => i.id === id))
@@ -1880,24 +1937,6 @@ export function createOrchestrator(deps) {
 						return false
 					}
 				}
-				let R = new Map()
-				try {
-					R = riderMap(request.scene)
-				} catch {}
-				// (what rides on a thing moved to make room goes with it)
-				const withEntry = (p, id, entry) => {
-					const d = (num(entry.place?.x) ?? 0) - (num(was.get(id)?.place?.x) ?? num(entry.place?.x) ?? 0)
-					const riders = new Set(Math.abs(d) > 1e-9 ? R.get(id) ?? [] : [])
-					return {
-						...p,
-						items: p.items.map((x) => {
-							if (!isObj(x)) return x
-							if (x.id === id) return entry
-							if (riders.has(x.id) && JSON.stringify(x) === JSON.stringify(was.get(x.id)) && num(x.place?.x) !== null) return { ...clone(x), place: { ...clone(x.place), x: Math.round((x.place.x + d) * 1e5) / 1e5 } }
-							return x
-						})
-					}
-				}
 				const midX = askedIds.length ? askedIds.map((id) => Number(ref.scene.items.find((i) => i.id === id)?.x) || 0).reduce((a, b) => a + b, 0) / askedIds.length : 0
 				for (const it of changed) {
 					if (scope.asked.has(it.id)) continue
@@ -1909,7 +1948,7 @@ export function createOrchestrator(deps) {
 					const x0 = num(a.place?.x)
 					if (x0 !== null) {
 						const dir = (Number(request.scene.items.find((i) => i.id === it.id)?.x) || x0) < midX ? -1 : 1
-						for (const d of [0.005, 0.01, 0.015, 0.02, 0.03, 0.04, 0.05, 0.06, 0.08, 0.1, 0.12, 0.15]) tries.push({ entry: { ...clone(a), place: { ...clone(a.place), x: Math.round((x0 + dir * d) * 1e5) / 1e5 } }, room: true })
+						for (const d of ROOM) tries.push({ entry: shiftX(a, dir * d), room: true })
 					}
 					// (or where the edit step moved it, with its own settings back)
 					if (JSON.stringify(a.place ?? null) !== JSON.stringify(it.place ?? null)) tries.push({ entry: { ...clone(a), place: clone(it.place) }, room: true })
@@ -1926,16 +1965,10 @@ export function createOrchestrator(deps) {
 				plan = { ...plan, seconds: basePlan.seconds }
 			}
 		}
-		// a thing the request names that the edit step also moved, though no move was asked for ("make the box 16 cm wide" that slid it 6 cm left
-		// to stay under the ball): its place (and that of what rides on it) is put back when that runs into nothing the edit step's version
+		// (3) a thing the request names that the edit step also moved, though no move was asked for ("make the box 16 cm wide" that slid it 6 cm
+		// left to stay under the ball): its place (and that of what rides on it) is put back when that runs into nothing the edit step's version
 		// didn't; otherwise that move made room, and it stays
 		if (mode === "edit" && scope && !scope.placeAsked) {
-			const was = new Map((basePlan?.items ?? []).filter(isObj).map((i) => [i.id, i]))
-			const trouble = (r) => new Set([...(r.freed ?? []), ...r.issues.filter((i) => i.level !== "info" && i.item).map((i) => `${i.code}|${i.item}`)])
-			let R = new Map()
-			try {
-				R = riderMap(request.scene)
-			} catch {}
 			for (const id of scope.named) {
 				const it = plan.items.find((x) => isObj(x) && x.id === id)
 				const a = was.get(id)
@@ -1966,6 +1999,48 @@ export function createOrchestrator(deps) {
 				plan = alt
 				const nm = theName(request.scene.items.find((i) => i.id === id) ?? a)
 				leftAlone.push({ id, name: `${nm}${/s$/.test(nm) ? "’" : "’s"} place` })
+			}
+		}
+		// (4) a thing the edit moved that the solver would push aside, because it runs into something the edit left alone ("move the seesaw 10 cm
+		// left" into the last domino): it goes where it was asked, and the thing in the way moves the least that makes room (and is said)
+		if (mode === "edit") {
+			let r0 = null
+			try {
+				r0 = solveV(plan)
+			} catch {}
+			const nameToIds = new Map()
+			for (const x of plan.items.filter(isObj)) {
+				const n = String(x.name ?? typeName(x.type) ?? x.id)
+				nameToIds.set(n, [...(nameToIds.get(n) ?? []), x.id])
+			}
+			const placedByEdit = (id) => {
+				const x = plan.items.find((y) => isObj(y) && y.id === id)
+				const a = was.get(id)
+				return !!x && (!a || JSON.stringify(a.place ?? null) !== JSON.stringify(x.place ?? null))
+			}
+			for (const iss of r0 ? r0.issues.filter((i) => i.code === "moved" && i.item && placedByEdit(i.item)) : []) {
+				const m = /to clear (.+)$/.exec(iss.text ?? "")
+				const blockers = (m ? m[1].split(/, /) : []).flatMap((n) => nameToIds.get(n) ?? []).filter((id) => id !== iss.item && !scope?.named?.has(id) && JSON.stringify(plan.items.find((y) => isObj(y) && y.id === id)) === JSON.stringify(was.get(id)) && num(was.get(id)?.place?.x) !== null)
+				const D = plan.items.find((y) => isObj(y) && y.id === iss.item)
+				const dx0 = num(D?.place?.x) ?? 0
+				const t0 = trouble(r0)
+				for (const bid of blockers) {
+					const b = was.get(bid)
+					const dir = num(b.place.x) < dx0 ? -1 : 1
+					const fits = (p) => {
+						try {
+							const r = solveV(p)
+							return !r.issues.some((i) => i.code === "moved" && i.item === iss.item) && [...trouble(r)].every((k) => t0.has(k))
+						} catch {
+							return false
+						}
+					}
+					const d = ROOM.find((dd) => fits(withEntry(plan, bid, shiftX(b, dir * dd))))
+					if (d === undefined) continue
+					plan = withEntry(plan, bid, shiftX(b, dir * d))
+					madeRoom.add(bid)
+					break
+				}
 			}
 		}
 		if (report.edit && leftAlone.length) report.edit.leftAlone = leftAlone.map((x) => x.name)
@@ -2089,13 +2164,21 @@ export function createOrchestrator(deps) {
 			const mine = [...touched.keys()].some((id) => own.has(id))
 			const axisOf = (id, keys) => (placeAxis.has(id) && keys !== "all" && keys.has("place") ? new Set([...keys].map((k) => (k === "place" ? placeAxis.get(id) : k))) : keys)
 			const protect = new Map([...touched].filter(([id]) => !mine || own.has(id) || !onScreen.has(id)).map(([id, keys]) => [id, axisOf(id, keys)]))
-			for (const [id, keys] of Array.isArray(request.keep) ? request.keep : []) {
+			// (where a thing the person moved stood before they first moved it, carried turn to turn: a later fix may still line the rest up with it)
+			const origin = new Map()
+			for (const [id] of protect) {
+				const r0 = request.scene.items.find((i) => i.id === id)
+				const r1 = cur.scene.items.find((i) => i.id === id)
+				if (r0 && r1 && (Math.abs((Number(r0.x) || 0) - (Number(r1.x) || 0)) > 1e-6 || Math.abs((Number(r0.y) || 0) - (Number(r1.y) || 0)) > 1e-6)) origin.set(id, { x: Number(r0.x) || 0, y: Number(r0.y) || 0 })
+			}
+			for (const [id, keys, from] of Array.isArray(request.keep) ? request.keep : []) {
 				if (!cur.scene.items.some((i) => i.id === id)) continue
 				const had = protect.get(id)
 				protect.set(id, had === "all" || keys === "all" ? "all" : new Set([...(had ?? []), ...(Array.isArray(keys) ? keys : [])]))
+				if (isObj(from) && num(from.x) !== null && num(from.y) !== null && !origin.has(id)) origin.set(id, { x: from.x, y: from.y })
 			}
-			if (report.edit) report.edit.touched = [...protect].map(([id, keys]) => [id, keys === "all" ? "all" : [...keys]])
-			const fixCtx = { scene: cur.scene, sim: cur.sim, goals: G(cur), before, touched: protect, swapped, targets, flex }
+			if (report.edit) report.edit.touched = [...protect].map(([id, keys]) => [id, keys === "all" ? "all" : [...keys], ...(origin.has(id) ? [origin.get(id)] : [])])
+			const fixCtx = { scene: cur.scene, sim: cur.sim, goals: G(cur), before, touched: protect, swapped, targets, flex, origin }
 			if (now0.some((r) => r.ok === false)) {
 				if (statesOutcome(text)) {
 					let fr = null
@@ -2558,7 +2641,7 @@ export function fixInfo(fr, scene, targets = null, report = null) {
 	const checked = !tg.length ? null : tg.length === 1 || explicit.length === 1 ? first.label : explicit.length > 1 ? `all ${explicit.length} goals` : first.label
 	const out = { state: fr?.status === "found" ? "found" : "none", checked: checked ? String(checked).replace(/[.!]+$/, "") : null, goal: first?.label ?? null, runs: fr?.runs ?? 0, ms: fr?.ms ?? 0 }
 	const res = (list) => (Array.isArray(list) ? list.map((r, i) => ({ label: r.label, ok: r.ok, ...(tg[i]?.implicit ? { implicit: true } : {}) })) : [])
-	if (fr?.status === "found") Object.assign(out, { say: fr.fix.words.say, did: fr.fix.words.did, label: fr.fix.words.label, sceneJSON: JSON.stringify(fr.fix.scene), changes: fr.fix.changes, results: res(fr.fix.results) })
+	if (fr?.status === "found") Object.assign(out, { say: fr.fix.words.say, did: fr.fix.words.did, label: fr.fix.words.label, sceneJSON: JSON.stringify(fr.fix.scene), changes: fr.fix.changes, results: res(fr.fix.results), ...(fr.fix.fragile ? { fragile: true } : {}) })
 	if (fr?.near) out.near = { say: fr.near.words.say, did: fr.near.words.did, label: fr.near.words.label, happened: fr.near.happened ?? null, sceneJSON: JSON.stringify(fr.near.scene), results: res(fr.near.results) }
 	return out
 }
