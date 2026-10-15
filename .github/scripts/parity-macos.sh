@@ -2,7 +2,8 @@
 # The Python <-> JS parity suite (tools/parity/run.sh) as CI runs it, on macOS: web/sim matches CPython built on the platform libm down to
 # rounding ties, and that libm is macOS's. Needs the engine bundle (.github/scripts/engine-bundle.sh build).
 #  - The steps are run.sh's own `node ...` lines (so a step added there runs here too), PARITY_JOBS (default 3, the runner's cores) at a
-#    time: they are independent (each writes its own temp folder and only reads the server), and one after another they take ~14 min.
+#    time, last first: they are independent (each writes its own temp folder and only reads the server); one after another they take
+#    ~14 min on the runner, 3 at a time ~9.
 #  - The browser steps get the playwright-core version the tools name (the development machine's ~/.bun cache) and its headless
 #    Chromium, through PLAYWRIGHT_CORE.
 #  - The steps that compare against the running server (core.mjs's live rows, catalog.mjs, mechanisms.mjs, browser-mechanisms.mjs,
@@ -68,8 +69,8 @@ while IFS= read -r line; do
 	printf 'cd %q\n%s\n' "$PWD" "$line" >"ci-logs/parity/$(printf %02d $n).cmd"
 done < <(grep -E '^node ' tools/parity/run.sh)
 [ "$n" -gt 0 ] || { echo "::error::no steps found in tools/parity/run.sh"; exit 1; }
-echo "parity: $n steps from tools/parity/run.sh, ${PARITY_JOBS:-3} at a time"
-ls ci-logs/parity/*.cmd | xargs -P "${PARITY_JOBS:-3}" -n 1 "$self" --one
+echo "parity: $n steps from tools/parity/run.sh, ${PARITY_JOBS:-3} at a time, last first (run.sh ends with the longest: fuzz-live)"
+ls ci-logs/parity/*.cmd | awk '{ a[NR] = $0 } END { for (i = NR; i > 0; i--) print a[i] }' | xargs -P "${PARITY_JOBS:-3}" -n 1 "$self" --one
 
 failed=0
 for f in ci-logs/parity/*.cmd; do
