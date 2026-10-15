@@ -1,12 +1,16 @@
-# CI for the physics sandbox. What runs, and what waits for the engine bundle:
-#   checks    (Linux, Node 24 = Vercel's runtime and Node 26) syntax of every JS/TS/Python file, the generated files' --check scripts, the
-#             node:test suites, the engine's real-world validators (research/rw-validate*.ts), and the static site build
-#   machines  (Linux) the Python scene builder's tests (machines/test_*.py), which run the engine from tooling/src/sim
-#   parity    (macOS arm64) the Python <-> JS parity suite, tools/parity/run.sh, against web/server.py started in the job
+# CI for the physics sandbox:
+#   checks    (Linux, Node 24 = Vercel's runtime, and Node 26) syntax of every JS/TS/Python file; vercel.json's function patterns; the
+#             generated files (vendor, scenario list, web/sim's sprites.js and unicode.js); the node:test files that do not load web/sim;
+#             the engine's real-world validators (research/rw-validate*.ts)
+#   machines  (Linux) the Python scene builder's tests (every machines/test_*.py), which run the engine from tooling/src/sim
+#   macos     (macOS arm64) everything that needs the engine bundle: every node:test file (Node 24 and 26), the static site build, the
+#             Vercel deploy check (`npm run check:vercel`: vercel build on the exact upload, then the built functions are called), web/sim's
+#             trig.js against macOS libm, and the Python <-> JS parity suite (tools/parity/run.sh) against web/server.py started in the job
 # The engine bundle (web/sim/engine-worker.js, engine-math.js) is git-ignored and built here by `npm run build:engine`, which needs
-# tools/apple-pow-tables.ts: not in this public repository until the open-source pow replacement lands. Until then the steps that load
-# web/sim (most unit tests, the static build, the parity suite) are skipped with a notice; they turn on by themselves when the bundle
-# becomes buildable (.github/scripts/engine-bundle.sh).
+# tools/apple-pow-tables.ts: not in this public repository until the open-source pow replacement lands. .github/scripts/engine-bundle.sh
+# tries the build: on Linux, without the tables, the steps that load web/sim are skipped with a notice; on macOS the bundle is built with
+# pow = Math.pow instead (.github/scripts/stub-pow.sh: the same bits as the Apple tables on macOS; never deployed). Both switch to the
+# real bundle by themselves from the first commit where `npm run build:engine` works from a clean checkout.
 name: CI
 
 on:
@@ -57,29 +61,30 @@ jobs:
           node --no-warnings .github/scripts/syntax-check.mjs
           git ls-files -z '*.py' | xargs -0 python -m py_compile
           echo "py_compile: $(git ls-files '*.py' | wc -l | tr -d ' ') Python files compile"
+      - name: vercel.json function patterns match files of this commit
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: node .github/scripts/vercel-functions.mjs
       - name: Engine bundle (npm run build:engine, when buildable)
         id: engine
         if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        run: .github/scripts/engine-bundle.sh build "the unit test files that load web/sim and the static site build"
-      - name: Generated files are up to date (vendor, scenario list)
+        run: .github/scripts/engine-bundle.sh build "the node:test files that load web/sim, and the static site build"
+      - name: Generated files are up to date (vendor, scenario list, web/sim/sprites.js and unicode.js)
         if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
         run: |
           npm run vendor:three:check
           npm run vendor:media:check
-          npm run --if-present vendor:clerk:check
+          npm run vendor:clerk:check
           npm run gen:scenarios:check
+          python tools/parity/gen_sprites.py >/dev/null
+          python tools/parity/gen_unicode.py >/dev/null
+          git diff --exit-code -- web/sim/sprites.js web/sim/unicode.js
+          echo "web/sim/sprites.js and unicode.js regenerate byte for byte (tools/parity/gen_sprites.py, gen_unicode.py)"
       - name: Unit tests (node --test)
-        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
-        run: .github/scripts/unit-tests.sh ${{ steps.engine.outputs.built }}
-      - name: Engine validators (research/rw-validate*.ts)
         if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        run: |
-          for v in rw-validate rw-validate-p2 rw-validate-poly rw-validate-p3; do
-            echo "::group::research/$v.ts"
-            node --no-warnings "research/$v.ts" 2>&1 | tee "ci-logs/$v.log"
-            echo "::endgroup::"
-            tail -n 1 "ci-logs/$v.log"
-          done
+        run: .github/scripts/unit-tests.sh ${{ steps.engine.outputs.built == 'true' }}
+      - name: Engine validators (research/rw-validate*.ts; rw-validate.ts is a smoke run)
+        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
+        run: .github/scripts/validators.sh
       - name: Static site (npm run build:static:nogen)
         if: ${{ !cancelled() && steps.engine.outputs.built == 'true' }}
         run: npm run build:static:nogen
@@ -115,22 +120,29 @@ jobs:
           npm ci
           python -m pip install -r .github/requirements-ci.txt
       - name: Link the paths the research scripts assume
-        id: paths
         run: |
           .github/scripts/ci-paths.sh
           mkdir -p ci-logs
-      - name: machines/test_rg.py (the starter runs exactly like rube.py's machine)
-        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        run: python machines/test_rg.py 2>&1 | tee ci-logs/test_rg.log
-      - name: machines/test_catalog.py
-        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        run: python machines/test_catalog.py 2>&1 | tee ci-logs/test_catalog.log
-      - name: machines/test_mechanisms.py
-        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        run: python machines/test_mechanisms.py 2>&1 | tee ci-logs/test_mechanisms.log
-      - name: machines/test_everyday.py
-        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        run: python machines/test_everyday.py 2>&1 | tee ci-logs/test_everyday.log
+      - name: machines/test_*.py (every one, even after a failure)
+        run: |
+          rc=0
+          n=0
+          for t in machines/test_*.py; do
+            n=$((n + 1))
+            name="$(basename "$t" .py)"
+            echo "::group::$t"
+            start=$(date +%s)
+            if python "$t" 2>&1 | tee "ci-logs/$name.log"; then
+              echo "::endgroup::"
+              echo "ok      $t ($(($(date +%s) - start)) s): $(tail -n 1 "ci-logs/$name.log" | cut -c1-140)"
+            else
+              echo "::endgroup::"
+              echo "::error title=Scene builder test failed::$t (ci-logs/$name.log)"
+              rc=1
+            fi
+          done
+          echo "machines: $n test files"
+          exit $rc
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v7
@@ -144,30 +156,15 @@ jobs:
           include-hidden-files: true
           retention-days: 14
 
-  engine:
-    name: Engine bundle buildable?
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      buildable: ${{ steps.detect.outputs.buildable }}
-    steps:
-      - uses: actions/checkout@v7
-      - id: detect
-        run: .github/scripts/engine-bundle.sh detect
-
-  parity:
-    name: Python <-> JS parity (macOS arm64)
-    needs: engine
-    if: needs.engine.outputs.buildable == 'true'
+  macos:
+    name: Engine bundle, unit tests, deploy check, parity (macOS arm64)
     runs-on: macos-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          # Node 26, as on the development machine: under Node 24.20 fuzz-live.mjs's fetch() of web/server.py's answers dies in
-          # undici's own parser (AssertionError: assert(!this.paused), in Parser.finish), before comparing anything
-          node-version: 26
+          node-version: 24
           cache: npm
       - uses: actions/setup-python@v7
         with:
@@ -181,16 +178,47 @@ jobs:
       - name: npm ci
         run: npm ci
       - name: Link the paths the research scripts assume
-        run: .github/scripts/ci-paths.sh
-      - name: Engine bundle (npm run build:engine)
-        run: .github/scripts/engine-bundle.sh build
+        run: |
+          .github/scripts/ci-paths.sh
+          mkdir -p ci-logs
+      - name: Engine bundle (the real one when buildable, else stub pow)
+        id: engine
+        run: .github/scripts/engine-bundle.sh build-or-stub
+      - name: web/sim/trig.js is up to date (CPython on macOS libm)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        run: |
+          python3 tools/parity/gen_trig.py >/dev/null
+          git diff --exit-code -- web/sim/trig.js
+          echo "web/sim/trig.js regenerates byte for byte (tools/parity/gen_trig.py)"
+      - name: Unit tests, every node:test file (Node 24, Vercel's runtime)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        run: .github/scripts/unit-tests.sh true
+      - name: Static site (npm run build:static:nogen)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        run: npm run build:static:nogen
+      - name: Vercel deploy check (npm run check:vercel; nothing is deployed)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        run: |
+          # the CLI version Vercel's own builds ran (their build log: "Vercel CLI 64.0.2"); vercel build needs no login here
+          npm install -g --no-audit --no-fund vercel@64.0.2
+          npm run check:vercel
+      - uses: actions/setup-node@v7
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        with:
+          # Node 26, as on the development machine: under Node 24.20 fuzz-live.mjs's fetch() of web/server.py's answers dies in
+          # undici's own parser (AssertionError: assert(!this.paused), in Parser.finish), before comparing anything
+          node-version: 26
+      - name: Unit tests, every node:test file (Node 26)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
+        run: .github/scripts/unit-tests.sh true
       - name: Parity suite (tools/parity/run.sh, with web/server.py on :8790)
+        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         run: .github/scripts/parity-macos.sh
       - name: Upload logs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: parity-logs
+          name: macos-logs
           path: ci-logs/
           if-no-files-found: ignore
           retention-days: 14

@@ -22,7 +22,7 @@ renders/
 shots/
 snapshots/
 old-tests/
-scenes/
+/scenes/
 control/inbox/
 web/sim/*.map
 

@@ -4,6 +4,7 @@
 	"fluid": true,
 	"installCommand": "npm ci",
 	"buildCommand": "npm run build:static",
+	"ignoreCommand": "[ ! -f tools/apple-pow-tables.ts ] && grep -q 'from \"./apple-pow-tables' tools/fdlibm.ts && echo 'Skipped: tools/apple-pow-tables.ts is not in git; deploy from the dev Mac (docs/DEPLOY.md)'",
 	"outputDirectory": "dist",
 	"cleanUrls": true,
 	"functions": {
