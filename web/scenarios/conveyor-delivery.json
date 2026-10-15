@@ -1,0 +1,81 @@
+{
+  "version": 2,
+  "id": "conveyor-delivery",
+  "name": "Conveyor delivery",
+  "seconds": 6.0,
+  "release": 0.5,
+  "stage": {
+    "x0": 0.4,
+    "x1": 2.2,
+    "y0": -0.12,
+    "y1": 1.08
+  },
+  "items": [
+    {
+      "id": "table",
+      "type": "table",
+      "name": "Table",
+      "x": 1.3,
+      "y": 0.0
+    },
+    {
+      "id": "belt",
+      "type": "conveyor-belt",
+      "name": "Conveyor belt",
+      "x": 1.0,
+      "y": 0.3
+    },
+    {
+      "id": "ball1",
+      "type": "golf-ball",
+      "name": "Golf ball 1",
+      "x": 0.62,
+      "y": 0.32185
+    },
+    {
+      "id": "ball2",
+      "type": "golf-ball",
+      "name": "Golf ball 2",
+      "x": 0.73,
+      "y": 0.32185
+    },
+    {
+      "id": "ball3",
+      "type": "golf-ball",
+      "name": "Golf ball 3",
+      "x": 0.84,
+      "y": 0.32185
+    },
+    {
+      "id": "box",
+      "type": "box",
+      "name": "Box",
+      "x": 1.62,
+      "y": 0.0,
+      "props": {
+        "wall": 0.22,
+        "hung": false
+      }
+    }
+  ],
+  "goals": [
+    {
+      "kind": "in",
+      "item": "ball1",
+      "container": "box",
+      "label": "Golf ball 1 ends in the box"
+    },
+    {
+      "kind": "in",
+      "item": "ball2",
+      "container": "box",
+      "label": "Golf ball 2 ends in the box"
+    },
+    {
+      "kind": "in",
+      "item": "ball3",
+      "container": "box",
+      "label": "Golf ball 3 ends in the box"
+    }
+  ]
+}

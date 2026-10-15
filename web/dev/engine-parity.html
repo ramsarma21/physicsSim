@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engine parity page</title>
+<style>
+	body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+	pre { white-space: pre-wrap; word-break: break-word; }
+	@media (prefers-color-scheme: dark) { body { background: #151515; color: #eee; } }
+</style>
+</head>
+<body>
+<h1>Engine parity page</h1>
+<p>Runs <code>web/sim/engine.js</code> (the physics engine in a Web Worker). <code>tools/parity-engine.mjs</code> drives it through <code>window.parity</code>.
+By hand: <code>?doc=URL&amp;rate=120</code> runs the scene document at URL (a doc as <code>/api/layout</code> returns it, or <code>/api/simulate</code>'s <code>doc</code>);
+<code>&amp;noworker=1</code> pretends Workers don't exist (the main-thread fallback).</p>
+<pre id="out">starting...</pre>
+<script type="module">
+import { createEngine } from "../sim/engine.js"
+
+const q = new URLSearchParams(location.search)
+if (q.has("noworker")) window.Worker = undefined
+const engine = createEngine()
+const out = document.getElementById("out")
+
+// Is `a` exactly what JSON would make of it (no -0, NaN, Infinity or undefined fields)? The server's track is JSON, so this must hold.
+const jsonClean = (a) => {
+	if (typeof a === "number") return Number.isFinite(a) && !Object.is(a, -0)
+	if (Array.isArray(a)) return a.every(jsonClean)
+	if (a && typeof a === "object") return Object.values(a).every((v) => v !== undefined && jsonClean(v))
+	return true
+}
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const abortError = (e) => e instanceof DOMException && e.name === "AbortError"
+
+window.parity = {
+	engine,
+	// One run of a scene document given as JSON text: what came back, and how long it took (round trip, and inside the engine).
+	async run(docText, rate) {
+		const doc = JSON.parse(docText)
+		const t0 = performance.now()
+		const track = await engine.run(doc, rate)
+		const wallMs = performance.now() - t0
+		return { trackText: JSON.stringify(track), jsonClean: jsonClean(track), wallMs, workerMs: engine.lastMs, mode: engine.mode }
+	},
+	// The message of the error a (bad) document ends in, or null if it ran.
+	async error(docText, rate) {
+		try {
+			await engine.run(JSON.parse(docText), rate)
+			return null
+		} catch (e) {
+			return e instanceof Error ? e.message : String(e)
+		}
+	},
+	// Cancellation and queueing, with a real scene: the checks the engine client promises.
+	async behaviour(docText, rate) {
+		const doc = JSON.parse(docText)
+		const res = {}
+		const base = JSON.stringify(await engine.run(doc, rate))
+		// 1. a run aborted while the worker has it rejects with the AbortError at once; the engine then serves the next run correctly
+		{
+			const ac = new AbortController()
+			const p = engine.run(doc, rate, ac.signal)
+			await sleep(20)
+			const t0 = performance.now()
+			ac.abort()
+			let name = null
+			await p.catch((e) => (name = e.name))
+			res.abortedBusyRejectedAs = name
+			res.abortedBusyMs = Math.round(performance.now() - t0)
+			const t1 = performance.now()
+			res.afterAbortSame = JSON.stringify(await engine.run(doc, rate)) === base
+			res.afterAbortMs = Math.round(performance.now() - t1)
+		}
+		// 2. a signal already aborted never starts
+		{
+			const ac = new AbortController()
+			ac.abort()
+			let name = null
+			await engine.run(doc, rate, ac.signal).catch((e) => (name = e.name))
+			res.preAbortedRejectedAs = name
+		}
+		// 3. waiting runs go newest first; an aborted waiting run drops out without running
+		{
+			const order = []
+			const acs = [new AbortController(), new AbortController()]
+			const a = engine.run(doc, rate).then(() => order.push("A"))
+			const b = engine.run(doc, rate).then(() => order.push("B"))
+			const c = engine.run(doc, rate).then(() => order.push("C"))
+			const d = engine.run(doc, rate, acs[0].signal).then(() => order.push("D"), (e) => order.push(abortError(e) ? "d-aborted" : "d-failed"))
+			acs[0].abort()
+			const e = engine.run(doc, rate, acs[1].signal).then(() => order.push("E"))
+			await Promise.all([a, b, c, d, e])
+			res.order = order.join(",")
+		}
+		// 4. terminate rejects what is pending, and later runs too
+		{
+			const eng2 = createEngine()
+			const p = eng2.run(doc, rate)
+			eng2.terminate()
+			const names = []
+			await p.catch((e) => names.push(e.name))
+			await eng2.run(doc, rate).catch((e) => names.push(e.name))
+			res.terminated = names.join(",")
+		}
+		return res
+	},
+	// A document the worker can't be sent (a function in it): that run fails, and the engine goes on serving the next one (it must not stay stuck).
+	async dataClone(docText, rate) {
+		const doc = JSON.parse(docText)
+		const eng = createEngine()
+		let firstRejectedAs = null
+		await eng.run({ ...doc, note: () => 1 }, rate).catch((e) => (firstRejectedAs = e.name))
+		const next = await Promise.race([eng.run(doc, rate).then(() => "ran", (e) => "failed: " + e), sleep(20000).then(() => "stuck")])
+		const second = await Promise.race([eng.run(doc, rate).then(() => "ran", (e) => "failed: " + e), sleep(20000).then(() => "stuck")])
+		eng.terminate()
+		return { firstRejectedAs, next, second, mode: eng.mode }
+	},
+	// The no-Workers page only: quick edits, each aborting the run before it, must cost one run on the main thread (not all of them), and an
+	// older run that has not started yet lets a newer one go first. A stand-in engine module counts the runs that really start.
+	async mainBurst() {
+		const code = 'globalThis.__calls = []\nexport const handle = ({ id, rate }) => { globalThis.__calls.push(rate); return { id, ms: 0, track: { echo: rate } } }'
+		const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))
+		const eng = createEngine({ url })
+		const res = { mode: eng.mode }
+		await eng.run({}, 0) // loads the module
+		globalThis.__calls.length = 0
+		let prev = null
+		const settled = []
+		for (let i = 1; i <= 25; i++) {
+			prev?.abort()
+			prev = new AbortController()
+			settled.push(eng.run({}, i, prev.signal).then((t) => t.echo, (e) => (abortError(e) ? "aborted" : "failed")))
+			await sleep(5)
+		}
+		const outcomes = await Promise.all(settled)
+		res.burstRuns = globalThis.__calls.length
+		res.burstLast = outcomes[24]
+		res.burstAborted = outcomes.filter((o) => o === "aborted").length
+		// newest first: A is waiting out its pause when B arrives, so B runs first
+		globalThis.__calls.length = 0
+		const a = eng.run({}, 101)
+		await sleep(5)
+		const b = eng.run({}, 102)
+		await Promise.all([a, b])
+		res.order = globalThis.__calls.join(",")
+		eng.terminate()
+		URL.revokeObjectURL(url)
+		return res
+	},
+	// x ** 3 as engine-math.js's cube gives it, for a list of numbers (the harness compares it with node's).
+	async cubes(xs) {
+		const m = await import("../sim/engine-math.js")
+		return xs.map((x) => m.cube(x))
+	},
+	// A worker that fails to load (module workers unsupported, blocked...) hands the runs to the main thread, which gets the same answer.
+	async fallsBack() {
+		const code = 'if (typeof WorkerGlobalScope !== "undefined") throw new Error("pretend module workers are not supported")\n' +
+			'export const handle = ({ id, rate }) => ({ id, ms: 0, track: { echo: rate } })'
+		const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }))
+		const eng = createEngine({ url })
+		const track = await eng.run({}, 77)
+		const again = await eng.run({}, 78)
+		const mode = eng.mode
+		eng.terminate()
+		URL.revokeObjectURL(url)
+		return { echo: track.echo, echoAgain: again.echo, mode }
+	}
+}
+
+const docUrl = q.get("doc")
+if (docUrl) {
+	try {
+		const j = await (await fetch(docUrl)).json()
+		const t0 = performance.now()
+		const track = await engine.run(j.doc ?? j, Number(q.get("rate") ?? 120))
+		out.textContent = `${engine.mode}: ${track.frames.length} frames, ${track.impacts.length} impacts; ${Math.round(performance.now() - t0)} ms round trip, ${engine.lastMs} ms in the engine`
+	} catch (e) {
+		out.textContent = `failed: ${e}`
+	}
+} else out.textContent = `ready (${engine.mode})`
+document.title = "Engine parity page: ready"
+window.parityReady = true
+</script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+{
+ "id": "ball-drop",
+ "source": "scenario:ball-drop (web/scenarios)",
+ "description": "Six balls held 1 m above the table in a row: superball, tennis ball, basketball, ping-pong ball, clay ball and bowling ball.",
+ "scene": "gt/ball-drop.json",
+ "shot": {
+  "t": 0,
+  "run_seconds_for_framing": 0.5,
+  "page": "http://localhost:8790/?profile=bench-gt&quality=high (chrome hidden, view 1280×720)"
+ },
+ "quality": {
+  "mode": "high",
+  "tier": "high",
+  "reason": "chosen"
+ },
+ "renders": [
+  {
+   "file": "gt/ball-drop.png",
+   "camera": "wide",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     1.6199,
+     0.9825,
+     2.2218
+    ],
+    "direction": [
+     0,
+     -0.1191,
+     -0.9929
+    ],
+    "target": null,
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   },
+   "held": false,
+   "box_m": {
+    "x0": -0.55,
+    "y0": -0.15,
+    "x1": 3.15,
+    "y1": 0,
+    "w": 3.7,
+    "h": 0.15
+   },
+   "image_box": {
+    "gt/ball-drop.png": null
+   }
+  },
+  {
+   "id": "superball",
+   "type": "superball",
+   "name": "Superball",
+   "x": 0.3,
+   "y": 1.03,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": 0.27,
+    "y0": 1,
+    "x1": 0.33,
+    "y1": 1.06,
+    "w": 0.06,
+    "h": 0.06
+   },
+   "image_box": {
+    "gt/ball-drop.png": [
+     0.0508,
+     0.2997,
+     0.0823,
+     0.3358
+    ]
+   }
+  },
+  {
+   "id": "tennis",
+   "type": "tennis-ball",
+   "name": "Tennis ball",
+   "x": 0.8,
+   "y": 1.0335,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": 0.7665,
+    "y0": 1,
+    "x1": 0.8335,
+    "y1": 1.067,
+    "w": 0.067,
+    "h": 0.067
+   },
+   "image_box": {
+    "gt/ball-drop.png": [
+     0.2155,
+     0.2954,
+     0.2457,
+     0.3358
+    ]
+   }
+  },
+  {
+   "id": "basketball",
+   "type": "basketball",
+   "name": "Basketball",
+   "x": 1.3,
+   "y": 1.121,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": 1.179,
+    "y0": 1,
+    "x1": 1.421,
+    "y1": 1.242,
+    "w": 0.242,
+    "h": 0.242
+   },
+   "image_box": {
+    "gt/ball-drop.png": [
+     0.3461,
+     0.1826,
+     0.4378,
+     0.3362
+    ]
+   }
+  },
+  {
+   "id": "ping-pong",
+   "type": "ping-pong-ball",
+   "name": "Ping-pong ball",
+   "x": 1.8,
+   "y": 1.02,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": 1.78,
+    "y0": 1,
+    "x1": 1.82,
+    "y1": 1.04,
+    "w": 0.04,
+    "h": 0.04
+   },
+   "image_box": {
+    "gt/ball-drop.png": [
+     0.5521,
+     0.3118,
+     0.5663,
+     0.3357
+    ]
+   }
+  },
+  {
+   "id": "clay",
+   "type": "clay-ball",
+   "name": "Clay ball",
+   "x": 2.3,
+   "y": 1.03,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": 2.27,
+    "y0": 1,
+    "x1": 2.33,
+    "y1": 1.06,
+    "w": 0.06,
+    "h": 0.06
+   },
+   "image_box": {
+    "gt/ball-drop.png": [
+     0.7106,
+     0.2997,
+     0.7363,
+     0.3358
+    ]
+   }
+  },
+  {
+   "id": "bowling",
+   "type": "bowling-ball",
+   "name": "Bowling ball",
+   "x": 2.8,
+   "y": 1.109,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": 2.691,
+    "y0": 1,
+    "x1": 2.909,
+    "y1": 1.218,
+    "w": 0.218,
+    "h": 0.218
+   },
+   "image_box": {
+    "gt/ball-drop.png": [
+     0.8365,
+     0.1988,
+     0.947,
+     0.3361
+    ]
+   }
+  }
+ ]
+}

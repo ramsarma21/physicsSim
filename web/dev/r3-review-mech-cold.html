@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Mechanisms cold review</title></head>
+<body style="font:12px monospace;background:#222;color:#ddd">
+<pre id="out">running</pre>
+<script type="module">
+// Cold build timing: each item in a fresh iframe of r3-review-mech.html?mode=cold (so no kit cache is shared). ?items=a,b,c  ?reps=2
+const q = new URLSearchParams(location.search)
+const items = (q.get("items") || "hanging-spring,spring-launcher,bounce-pad,trampoline,spring-bumper,spring-gate,spring-catapult,rope-pendulum,wrecking-ball,swing,hanging-chain,atwood-machine,pulley-lift,motor-spinner").split(",")
+const reps = Number(q.get("reps") || 1)
+const rows = []
+for (const it of items) {
+  let best = null
+  for (let r = 0; r < reps; r++) {
+    const f = document.createElement("iframe")
+    f.style.cssText = "width:400px;height:300px;position:fixed;left:-500px"
+    f.src = `r3-review-mech.html?mode=cold&item=${it}&rnd=${Math.random()}`
+    document.body.appendChild(f)
+    await new Promise((res) => { const t = setInterval(() => { if (f.contentWindow.ready || f.contentWindow.cold) { clearInterval(t); res() } }, 50) })
+    const c = f.contentWindow.cold
+    if (!best || c.ms < best.ms) best = { ...c, warn: f.contentWindow.__warn }
+    f.remove()
+  }
+  rows.push({ item: it, ms: best.ms, tris: best.tris, parts: best.parts.map((p) => `${p.part}:${p.ms}ms/${p.tris}`).join(" "), warn: best.warn })
+}
+window.rows = rows
+window.done = true
+document.getElementById("out").textContent = rows.map((r) => `${r.item.padEnd(16)} ${String(r.ms).padStart(7)} ms ${String(r.tris).padStart(7)} tris  ${r.warn.length ? "WARN " + r.warn.join("|") : ""}\n   ${r.parts}`).join("\n")
+</script></body></html>

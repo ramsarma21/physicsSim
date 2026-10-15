@@ -1,0 +1,115 @@
+{
+ "version": 2,
+ "id": "balls-lineup",
+ "name": "Ball line-up",
+ "seconds": 4.5,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.4,
+  "x1": 2.3,
+  "y0": -0.12,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "golf-ball",
+   "type": "golf-ball",
+   "name": "Golf ball",
+   "x": 0.50135,
+   "y": 0.02285
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "billiard-ball",
+   "type": "billiard-ball",
+   "name": "Billiard ball",
+   "x": 0.61549,
+   "y": 0.0301
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "glass-marble",
+   "type": "glass-marble",
+   "name": "Glass marble",
+   "x": 0.69741,
+   "y": 0.0095
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "soccer-ball",
+   "type": "soccer-ball",
+   "name": "Soccer ball",
+   "x": 0.85664,
+   "y": 0.1115
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "bowling-ball",
+   "type": "bowling-ball",
+   "name": "Bowling ball",
+   "x": 1.14121,
+   "y": 0.1105
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "tennis-ball",
+   "type": "tennis-ball",
+   "name": "Tennis ball",
+   "x": 1.33944,
+   "y": 0.035
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "baseball",
+   "type": "baseball",
+   "name": "Baseball",
+   "x": 1.45283,
+   "y": 0.0385
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "ping-pong-ball",
+   "type": "ping-pong-ball",
+   "name": "Ping-pong ball",
+   "x": 1.55955,
+   "y": 0.0215
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "steel-ball",
+   "type": "steel-ball",
+   "name": "Steel ball",
+   "x": 1.63898,
+   "y": 0.0142
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "basketball",
+   "type": "basketball",
+   "name": "Basketball",
+   "x": 1.82907,
+   "y": 0.1225
+  }
+ ],
+ "goals": []
+}

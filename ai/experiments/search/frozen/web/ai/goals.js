@@ -1,0 +1,272 @@
+// A verbatim copy of ai/goals.mjs (the server's goal checks), so the browser judges every goal kind exactly as the critic is told: keep the two the same (diff them).
+// Goals: the outcomes a request states ("lands in the cup", "topple them", "hit the box", "push the cart along"), in a form a run can check.
+// Pure functions, no imports: web/ai (the browser) may copy this file as it is, so the critic, the panel and the tuner judge a goal the same way.
+//
+//   kind "in"     {item, container}            the item ends between the container's walls (a box, cup, bucket or basket: web/sim inside(),
+//                                              which the engine's summary already checks for the scene's own goals)
+//   kind "falls"  {item | items: [id]}         every one of those things ends fallen: each rigid body of each item (each domino of a
+//                                              domino row, each block of a tower, a bowling pin's six welded parts as one) ends turned past
+//                                              its own tipping angle from how it started (tipAngle: atan(base / height) of its outline at the
+//                                              start, + 5°, at least 20°, at most 85°: a domino of thickness h/6 tips at 9.5°, so one leaning
+//                                              40° on the next, as a finished cascade leaves it, has fallen; a cube must turn 50°), or knocked
+//                                              down (its middle ends at least half its smaller side, and 2 cm, lower: a cube pushed off a
+//                                              tower may land flat, a quarter turn looking the same as none). Hinged parts (a pendulum's rod)
+//                                              and round ones (a car's wheels) do not count when the item has other bodies, and a body on
+//                                              wheels must tip over (a car that drove down a ramp has not fallen). The count is of bodies:
+//                                              "5 of 7 fell" for a row of 7, "7 of 10 fell" for 10 pins.
+//   kind "hits"   {item, target, before_s?}    something of item touches something of target during the run (an impact), by before_s if given
+//   kind "moves"  {item, min_m}                the item ends at least min_m from where it started (the mean of its moving parts)
+//
+//   checkGoals(goals, {doc, track, summary})   -> [{label, kind, ok: true | false | null (cannot tell from what was given), detail, ...ids}]
+//   With doc + track (a whole run, as /api/simulate answers it) every kind is exact. With only a summary ({goals, stories, events}): "in" from
+//   the engine's own goal check, "falls" for a domino row from its story ("5 of 7 fall": the engine counts a domino that turned over 57°),
+//   "hits" from the first hits (the summary keeps the first 16 pairs), "moves" only when the item never moved; otherwise ok is null.
+export const GOAL_KINDS = ["in", "falls", "hits", "moves"]
+/** The least and the most a part must turn to count as fallen, and the margin past its geometric tipping angle (degrees). */
+export const FALL_MIN_DEG = 20
+export const FALL_MAX_DEG = 85
+export const FALL_MARGIN_DEG = 5
+const R2D = 180 / Math.PI
+
+/** A goal's kind: its own, else read from its fields (a container: "in"; a target: "hits"; min_m: "moves"; items: "falls"). */
+export function goalKind(g) {
+	if (g && GOAL_KINDS.includes(g.kind)) return g.kind
+	if (g?.container) return "in"
+	if (g?.target) return "hits"
+	if (g?.min_m !== undefined) return "moves"
+	if (Array.isArray(g?.items)) return "falls"
+	return "in"
+}
+/** The item ids a goal is about (the thing that must fall, move, hit or land; not the container or the target). */
+export const goalItems = (g) => (Array.isArray(g?.items) && g.items.length ? [...g.items] : g?.item ? [g.item] : [])
+/** Every item id a goal names (its items, the container, the target). */
+export const goalRefs = (g) => [...goalItems(g), ...(g?.container ? [g.container] : []), ...(g?.target ? [g.target] : [])]
+
+/** A plain label for a goal that has none. names: id -> what the user calls it. */
+export function goalLabel(g, names = {}) {
+	const n = (id) => names[id] ?? id
+	const k = goalKind(g)
+	const its = goalItems(g)
+	const who = its.length > 1 ? `all ${its.length} of ${its.slice(0, 3).map(n).join(", ")}${its.length > 3 ? "…" : ""}` : n(its[0] ?? "?")
+	if (k === "in") return `${who} lands in ${n(g.container)}`
+	if (k === "falls") return `${who} ${its.length > 1 ? "fall" : "falls"} over`
+	if (k === "hits") return `${who} hits ${n(g.target)}${Number.isFinite(g.before_s) ? ` by ${g.before_s} s` : ""}`
+	return `${who} moves at least ${fmtM(g.min_m)}`
+}
+const fmtM = (m) => (Number.isFinite(m) ? (m >= 1 ? `${+m.toFixed(2)} m` : `${+(m * 100).toFixed(1)} cm`) : "?")
+const wrapDeg = (rad) => {
+	let d = (rad * R2D) % 360
+	if (d > 180) d -= 360
+	if (d < -180) d += 360
+	return Math.abs(d)
+}
+
+/** The goals' results in a run. run = {doc?, track?, summary?}: see the header. */
+export function checkGoals(goals, run = {}) {
+	const out = []
+	const doc = run.doc ?? null
+	const track = run.track ?? null
+	const summary = run.summary ?? run.sim?.summary ?? null
+	const exact = !!(doc?.solids && track?.frames?.length)
+	let T = null
+	if (exact) T = trackTools(doc, track)
+	for (const g of Array.isArray(goals) ? goals : []) {
+		if (!g || typeof g !== "object") continue
+		const kind = goalKind(g)
+		const label = typeof g.label === "string" && g.label.trim() ? g.label.trim() : goalLabel(g)
+		const base = { label, kind, item: g.item ?? null, ...(g.items ? { items: g.items } : {}), ...(g.container ? { container: g.container } : {}), ...(g.target ? { target: g.target } : {}) }
+		let r
+		try {
+			if (!goalItems(g).length || (kind === "hits" && !g.target) || (kind === "in" && !g.container)) r = { ok: null, detail: "the goal does not name its items" }
+			else r = kind === "in" ? inGoal(g, summary) : exact ? exactGoal(kind, g, T) : summaryGoal(kind, g, summary)
+		} catch (e) {
+			r = { ok: null, detail: `could not be checked (${e?.message ?? e})` }
+		}
+		out.push({ ...base, ...r })
+	}
+	return out
+}
+
+function inGoal(g, summary) {
+	const s = (summary?.goals ?? []).find((x) => x && x.item === g.item && x.container === g.container)
+	if (!s) return { ok: null, detail: "not checked by the engine (the container is not a box, cup, bucket or basket, or the goal was left out of the scene)" }
+	return { ok: !!s.ok, detail: s.ok ? "it ends inside" : "it does not end inside" }
+}
+
+function exactGoal(kind, g, T) {
+	if (kind === "falls") {
+		let n = 0
+		let down = 0
+		const standing = []
+		for (const id of goalItems(g)) {
+			const groups = T.bodies(id)
+			if (!groups.length) {
+				standing.push(id)
+				continue
+			}
+			let itemDown = true
+			for (const b of groups) {
+				n++
+				if (T.fell(b)) down++
+				else itemDown = false
+			}
+			if (!itemDown) standing.push(id)
+		}
+		if (!n) return { ok: false, detail: "nothing of it can move" }
+		return { ok: down === n, detail: `${down} of ${n} fell (tipped past their balance point or knocked down)`, fallen: down, of: n, ...(standing.length && standing.length < 6 ? { standing } : {}) }
+	}
+	if (kind === "hits") {
+		const a = new Set(T.solidsOf(g.item))
+		const b = new Set(T.solidsOf(g.target))
+		let first = null
+		for (const h of T.impacts) {
+			if ((a.has(h.a) && b.has(h.b)) || (a.has(h.b) && b.has(h.a))) {
+				if (first === null || h.t < first.t) first = h
+			}
+		}
+		const by = Number.isFinite(g.before_s) ? g.before_s : Infinity
+		if (!first) return { ok: false, detail: "they never touch" }
+		const t = Math.round(first.t * 100) / 100
+		return { ok: first.t <= by, detail: first.t <= by ? `first touch at ${t} s${Number.isFinite(first.speed) ? ` (${Math.round(first.speed * 100) / 100} m/s)` : ""}` : `first touch at ${t} s, after ${by} s`, t }
+	}
+	if (kind === "moves") {
+		const sids = T.moving(g.item)
+		if (!sids.length) return { ok: false, detail: "nothing of it can move" }
+		const c0 = mid(sids.map((s) => T.start(s)))
+		const c1 = mid(sids.map((s) => T.end(s)))
+		const d = c0 && c1 ? Math.hypot(c1.x - c0.x, c1.y - c0.y) : 0
+		const min = Number.isFinite(g.min_m) ? g.min_m : 0.05
+		return { ok: d >= min, detail: `ends ${fmtM(d)} from where it started (needs ${fmtM(min)})`, moved_m: Math.round(d * 1e4) / 1e4 }
+	}
+	return { ok: null, detail: `unknown goal kind ${kind}` }
+}
+
+function summaryGoal(kind, g, summary) {
+	const stories = new Map((summary?.stories ?? []).map((s) => [s.item, s]))
+	if (kind === "falls") {
+		let all = true
+		const parts = []
+		for (const id of goalItems(g)) {
+			const st = stories.get(id)
+			const m = /(\d+) of (\d+) fall/.exec(st?.text ?? "")
+			if (m) {
+				parts.push(`${m[1]} of ${m[2]}`)
+				if (m[1] !== m[2]) return { ok: false, detail: `${parts.join(", ")} fell` }
+			} else if (st && st.moved_at == null) return { ok: false, detail: `${id} never moves` }
+			else all = false
+		}
+		return all ? { ok: true, detail: `${parts.join(", ")} fell` } : { ok: null, detail: "cannot tell from the run's summary (no end angles)" }
+	}
+	if (kind === "hits") {
+		const ev = (summary?.events ?? []).find((e) => (e.a === g.item && e.b === g.target) || (e.a === g.target && e.b === g.item))
+		const by = Number.isFinite(g.before_s) ? g.before_s : Infinity
+		if (ev) return { ok: ev.t <= by, detail: `first touch at ${ev.t} s`, t: ev.t }
+		if ((summary?.events ?? []).length < 16) return { ok: false, detail: "they never touch" }
+		return { ok: null, detail: "not among the first hits the summary keeps" }
+	}
+	if (kind === "moves") {
+		const st = stories.get(g.item)
+		if (st && st.moved_at == null) return { ok: false, detail: "it never moves" }
+		return { ok: null, detail: "cannot tell how far from the run's summary" }
+	}
+	return { ok: null, detail: `unknown goal kind ${kind}` }
+}
+
+const mid = (ps) => {
+	const v = ps.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+	if (!v.length) return null
+	return { x: v.reduce((s, p) => s + p.x, 0) / v.length, y: v.reduce((s, p) => s + p.y, 0) / v.length }
+}
+
+/** Lookups over a run: an item's solids, its moving ones, a solid's first and last placement, the impacts. A static solid that never moves is
+ *  listed only in frames[0] (CONTRACT.md "One run"), so a missing placement falls back to the last one seen. */
+function trackTools(doc, track) {
+	const byItem = new Map()
+	const movingBy = new Map()
+	for (const s of doc.solids) {
+		if (!byItem.has(s.item)) byItem.set(s.item, [])
+		byItem.get(s.item).push(s.id)
+		if (s.kind === "dynamic") {
+			if (!movingBy.has(s.item)) movingBy.set(s.item, [])
+			movingBy.get(s.item).push(s.id)
+		}
+	}
+	const frames = track.frames
+	const f0 = frames[0]?.placements ?? {}
+	const end = (sid) => {
+		for (let k = frames.length - 1; k >= 0; k--) {
+			const p = frames[k].placements?.[sid]
+			if (p) return p
+		}
+		return null
+	}
+	const solidById = new Map(doc.solids.map((s) => [s.id, s]))
+	/** A solid's outline points in the world at a placement (a ball: its four extreme points). */
+	const worldPts = (s, pose) => {
+		const b = s.body
+		if (!b || !pose) return []
+		let pts
+		if (b.kind === "ball") pts = [[-b.radius, 0], [b.radius, 0], [0, -b.radius], [0, b.radius]]
+		else if (b.kind === "slab") {
+			const hw = (b.width ?? 0) / 2
+			const hh = (b.height ?? 0) / 2
+			const hb = hw * (b.taper ?? 1)
+			pts = [[-hb, -hh], [hb, -hh], [hw, hh], [-hw, hh]]
+		} else if (b.kind === "polygon" && Array.isArray(b.points)) pts = b.points.map((p) => [p.x, p.y])
+		else return []
+		const c = Math.cos(pose.angle ?? 0)
+		const n = Math.sin(pose.angle ?? 0)
+		return pts.map(([x, y]) => [pose.x + x * c - y * n, pose.y + x * n + y * c])
+	}
+	/** The weld group a solid belongs to: up its parent chain while the link is a weld (a parent and no pivot). */
+	const rootOf = (s) => {
+		let r = s
+		for (let k = 0; k < 50 && r.parent && !r.pivot && solidById.has(r.parent); k++) r = solidById.get(r.parent)
+		return r
+	}
+	const groupsBy = new Map() // item id -> [{root, members: [solid]}]
+	for (const s of doc.solids) {
+		if (s.kind !== "dynamic") continue
+		const r = rootOf(s)
+		const list = groupsBy.get(s.item) ?? groupsBy.set(s.item, []).get(s.item)
+		let gr = list.find((x) => x.root === r)
+		if (!gr) list.push((gr = { root: r, members: [] }))
+		gr.members.push(s)
+	}
+	/** An item's rigid bodies that can fall: weld groups that are not hinged (to the world or to a parent: a pendulum's rod, a lever's
+	 *  plank); round ones (a car's wheels) only when the item has nothing else. Each with its outline box at the start. */
+	const bodiesCache = new Map()
+	const bodiesOf = (id) => {
+		if (bodiesCache.has(id)) return bodiesCache.get(id)
+		const all = (groupsBy.get(id) ?? []).filter((gr) => !gr.root.pivot)
+		const round = (gr) => gr.members.every((m) => m.body?.kind === "ball")
+		const keep = all.some((gr) => !round(gr)) ? all.filter((gr) => !round(gr)) : all
+		const out = keep.map((gr) => {
+			const pts = gr.members.flatMap((m) => worldPts(m, f0[m.id]))
+			const xs = pts.map((p) => p[0])
+			const ys = pts.map((p) => p[1])
+			const w = pts.length ? Math.max(...xs) - Math.min(...xs) : 0
+			const h = pts.length ? Math.max(...ys) - Math.min(...ys) : 0
+			// a body on wheels (its item has round parts left out: a car's wheels) rolls down slopes: only tipping over counts for it
+			return { ...gr, w, h, round: round(gr), wheeled: keep.length < all.length }
+		})
+		bodiesCache.set(id, out)
+		return out
+	}
+	const midY = (members, at) => {
+		const ys = members.map((m) => at(m.id)?.y).filter(Number.isFinite)
+		return ys.length ? ys.reduce((a, y) => a + y, 0) / ys.length : NaN
+	}
+	/** How far (degrees) a body must turn from its start to have fallen: past the angle at which it would tip over its base edge
+	 *  (atan(base / height) of its outline at the start), plus a margin, within FALL_MIN_DEG…FALL_MAX_DEG. */
+	const tipAngle = (b) => (b.w > 0 && b.h > 0 ? Math.min(FALL_MAX_DEG, Math.max(FALL_MIN_DEG, Math.atan(b.w / b.h) * R2D + FALL_MARGIN_DEG)) : 45)
+	/** Has this body fallen: turned past its tipping angle (not for a round one), or knocked down at least half its smaller side and 2 cm? */
+	const fell = (b) => {
+		const a0 = f0[b.root.id]?.angle
+		const a1 = end(b.root.id)?.angle
+		const turned = !b.round && Number.isFinite(a0) && Number.isFinite(a1) ? wrapDeg(a1 - a0) : 0
+		const dropped = midY(b.members, (sid) => f0[sid]) - midY(b.members, end)
+		return turned > tipAngle(b) || (!b.wheeled && Number.isFinite(dropped) && dropped >= Math.max(0.02, Math.min(b.w, b.h) / 2))
+	}
+	return { solidsOf: (id) => byItem.get(id) ?? [], moving: (id) => movingBy.get(id) ?? [], start: (sid) => f0[sid] ?? null, end, impacts: track.impacts ?? [], bodies: bodiesOf, fell, tipAngle }
+}

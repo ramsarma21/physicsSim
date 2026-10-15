@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Upload bench r5</title>
+<script type="importmap">{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js"}}</script></head>
+<body><script type="module">
+// canvas round trip vs DataTexture: build-side ms (putImageData / flip) and upload ms (initTexture + finish), fresh renderer per path
+import * as THREE from "three"
+const W = 2048, H = 1024
+const mk = () => { const o = new Uint8ClampedArray(W * H * 4); let s = 1; for (let i = 0; i < o.length; i++) { s = (s * 1103515245 + 12345) >>> 0; o[i] = (i & 3) === 3 ? 255 : s >>> 24 } return o }
+const rr = new THREE.WebGLRenderer(); rr.setSize(64, 64, false)
+const gl = rr.getContext()
+const finish = () => gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
+// warm
+{ const t = new THREE.DataTexture(mk(), 64, 32); t.needsUpdate = true; rr.initTexture(t); finish() }
+const res = { canvas: [], data: [] }
+for (let rep = 0; rep < 4; rep++) {
+  for (const path of ["canvas", "data"]) {
+    const o = mk()
+    const t0 = performance.now()
+    let t
+    if (path === "canvas") {
+      const c = document.createElement("canvas"); c.width = W; c.height = H
+      c.getContext("2d").putImageData(new ImageData(o, W, H), 0, 0)
+      t = new THREE.CanvasTexture(c)
+    } else {
+      const row = W * 4, tmp = new Uint8ClampedArray(row)
+      for (let a = 0, b = H - 1; a < b; a++, b--) { tmp.set(o.subarray(a * row, a * row + row)); o.copyWithin(a * row, b * row, b * row + row); o.set(tmp, b * row) }
+      t = new THREE.DataTexture(o, W, H); t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true; t.needsUpdate = true
+    }
+    t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; t.wrapS = THREE.RepeatWrapping
+    const t1 = performance.now()
+    rr.initTexture(t); finish()
+    const t2 = performance.now()
+    res[path].push([+(t1 - t0).toFixed(1), +(t2 - t1).toFixed(1)])
+  }
+}
+window.res = res; document.body.textContent = JSON.stringify(res); window.ready = true
+</script></body></html>

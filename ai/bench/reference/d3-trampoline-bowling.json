@@ -1,0 +1,129 @@
+{
+ "case": "d3-trampoline-bowling",
+ "notes": "",
+ "plan": {
+  "title": "Trampoline",
+  "items": [
+   {
+    "id": "trampoline",
+    "type": "trampoline",
+    "name": "Trampoline",
+    "props": {
+     "height": 0.4,
+     "width": 1,
+     "stiffness": 400
+    },
+    "place": {
+     "on": "table",
+     "x": 1.3
+    },
+    "why": "reference"
+   },
+   {
+    "id": "basketball",
+    "type": "basketball",
+    "name": "Basketball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1,
+     "y_m": 1
+    },
+    "held": true,
+    "why": "reference"
+   },
+   {
+    "id": "superball",
+    "type": "superball",
+    "name": "Superball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.6,
+     "y_m": 1.15
+    },
+    "held": true,
+    "why": "reference"
+   },
+   {
+    "id": "bowling",
+    "type": "bowling-ball",
+    "name": "Bowling ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.3,
+     "y_m": 1.3
+    },
+    "held": true,
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 7,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "trampoline",
+  "name": "Trampoline",
+  "seconds": 7,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.1,
+   "x1": 2.5,
+   "y0": -0.15,
+   "y1": 1.45
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "trampoline",
+    "type": "trampoline",
+    "name": "Trampoline",
+    "x": 1.3,
+    "y": 0,
+    "props": {
+     "height": 0.4,
+     "width": 1,
+     "stiffness": 400
+    }
+   },
+   {
+    "id": "basketball",
+    "type": "basketball",
+    "name": "Basketball",
+    "x": 1,
+    "y": 1,
+    "held": true
+   },
+   {
+    "id": "superball",
+    "type": "superball",
+    "name": "Superball",
+    "x": 1.6,
+    "y": 1.15,
+    "held": true
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "bowling",
+    "type": "bowling-ball",
+    "name": "Bowling ball",
+    "held": true,
+    "x": 1.3,
+    "y": 1.3
+   }
+  ],
+  "goals": []
+ }
+}

@@ -1,0 +1,221 @@
+{
+	"$comment": "Step -> model routing for ai/core.mjs callModel(), chosen by the benchmark in ai/bench/ (2026-10-15; tables, numbers and reasons: ai/research/benchmark.md). Every thinking step runs on Claude Opus 5.5 (the user's preference, confirmed or matched by the measurements), at the reasoning effort the benchmark found best for that step: observe medium (end to end on the picture cases, 2 samples x 26: pass 0.96 vs 0.90 at low, +11 s), plan medium, refine medium, edit low (for plan, high was no better and slower; for edits, medium/high changed things the user did not ask for). Route: claude-group (Anthropic-native: prompt caching of the catalog, 0 errors in ~1,500 bench calls). Fallbacks: the same model on AWS Bedrock (an independent backend; no strict json_schema there, which these steps do not use), then a different family measured as the best fast stand-in for that step. retries 1 per route: a hung or failing route moves on to an independent backend quickly instead of retrying it twice. timeoutMs is about 3x the slowest answer measured for the primary; budgetMs leaves room for one fallback. models: per-route quirks (vision, prompt caching via cache_control on the system prompt, params the route rejects). 2026-10-15 (repair): plan timeoutMs 180 → 300 s (a classroom Rube Goldberg photo's plan took 145 s on its second try after the first was cut at 180 s), and every step streams on the routes that stream their thinking as it goes (quirk stream: true: claude-group, the OpenAI group; Bedrock buffers the whole answer, so it is called plainly): an attempt with no progress for idleTimeoutMs (90 s) is dropped at once and the next try or route starts, while a long plan that keeps thinking may use its whole timeout. 2026-10-15 (round 2, ai/research/benchmark.md §13): \"rate\" is refine's rate-only final check (payload rate_only: true): the same system prompt as refine (so it reads the prompt cache), effort low, a short answer {score_0_10, issues}; observe.simpleParams is the effort for a picture the request calls a sketch or a drawing (low: as good on the bench's sketches, about half the time). Quirk cacheTtl \"1h\" (claude-group and Bedrock Opus 5.5, checked through the gateway): the static system prompts stay cached for an hour instead of 5 minutes, so the first build after a pause reads the 44k-token catalog prompt from the cache.",
+	"version": 2,
+	"defaults": {
+		"retries": 1,
+		"backoffMs": 1500,
+		"maxBackoffMs": 20000,
+		"timeoutMs": 120000,
+		"budgetMs": 300000,
+		"minAttemptMs": 8000,
+		"idleTimeoutMs": 90000
+	},
+	"models": {
+		"claude-group/claude-opus-5-5": {
+			"family": "claude",
+			"vision": true,
+			"cache": true,
+			"drop": [
+				"temperature",
+				"top_p"
+			],
+			"stream": true,
+			"cacheTtl": "1h"
+		},
+		"aws-bedrock/global.anthropic.claude-opus-5-5": {
+			"family": "claude",
+			"vision": true,
+			"cache": true,
+			"drop": [
+				"temperature",
+				"top_p"
+			],
+			"cacheTtl": "1h"
+		},
+		"microsoft-foundry-quark/claude-opus-5-5": {
+			"family": "claude",
+			"vision": true,
+			"cache": true,
+			"drop": [
+				"temperature",
+				"top_p"
+			]
+		},
+		"claude-group/claude-sonnet-5-5": {
+			"family": "claude",
+			"vision": true,
+			"cache": true,
+			"drop": [
+				"temperature",
+				"top_p"
+			],
+			"stream": true
+		},
+		"claude-group/claude-haiku-5-5": {
+			"family": "claude",
+			"vision": true,
+			"cache": true,
+			"stream": true
+		},
+		"openai-group/gpt-6.1-sol": {
+			"family": "openai",
+			"vision": true,
+			"cache": false,
+			"drop": [
+				"temperature",
+				"top_p"
+			],
+			"stream": true
+		},
+		"openai-primary/gpt-6.1-sol": {
+			"family": "openai",
+			"vision": true,
+			"cache": false,
+			"drop": [
+				"temperature",
+				"top_p"
+			],
+			"stream": true
+		},
+		"openai-group/gpt-6-astra": {
+			"family": "openai",
+			"vision": true,
+			"cache": false,
+			"drop": [
+				"temperature",
+				"top_p"
+			],
+			"stream": true
+		},
+		"gemini-group/gemini-4-argon": {
+			"family": "gemini",
+			"vision": true,
+			"cache": false
+		},
+		"gemini-group/gemini-3.8-flash": {
+			"family": "gemini",
+			"vision": true,
+			"cache": false
+		},
+		"xai-group/grok-4.7": {
+			"family": "xai",
+			"vision": false,
+			"cache": false
+		}
+	},
+	"steps": {
+		"observe": {
+			"model": "claude-group/claude-opus-5-5",
+			"fallbacks": [
+				"aws-bedrock/global.anthropic.claude-opus-5-5",
+				{
+					"model": "openai-group/gpt-6.1-sol",
+					"params": {
+						"max_tokens": 16000,
+						"reasoning_effort": "medium"
+					}
+				}
+			],
+			"params": {
+				"max_tokens": 16000,
+				"reasoning_effort": "medium"
+			},
+			"timeoutMs": 120000,
+			"budgetMs": 300000,
+			"retries": 1,
+			"needsVision": true,
+			"stream": true,
+			"simpleParams": {
+				"reasoning_effort": "low"
+			}
+		},
+		"plan": {
+			"model": "claude-group/claude-opus-5-5",
+			"fallbacks": [
+				"aws-bedrock/global.anthropic.claude-opus-5-5",
+				{
+					"model": "openai-group/gpt-6.1-sol",
+					"params": {
+						"max_tokens": 32000,
+						"reasoning_effort": "high"
+					}
+				}
+			],
+			"params": {
+				"max_tokens": 32000,
+				"reasoning_effort": "medium"
+			},
+			"timeoutMs": 300000,
+			"budgetMs": 420000,
+			"retries": 1,
+			"needsVision": false,
+			"stream": true
+		},
+		"refine": {
+			"model": "claude-group/claude-opus-5-5",
+			"fallbacks": [
+				"aws-bedrock/global.anthropic.claude-opus-5-5",
+				{
+					"model": "gemini-group/gemini-4-argon",
+					"params": {
+						"max_tokens": 16000,
+						"reasoning_effort": "low"
+					}
+				}
+			],
+			"params": {
+				"max_tokens": 16000,
+				"reasoning_effort": "medium"
+			},
+			"timeoutMs": 120000,
+			"budgetMs": 240000,
+			"retries": 1,
+			"needsVision": true,
+			"stream": true
+		},
+		"rate": {
+			"model": "claude-group/claude-opus-5-5",
+			"fallbacks": [
+				"aws-bedrock/global.anthropic.claude-opus-5-5",
+				{
+					"model": "gemini-group/gemini-4-argon",
+					"params": {
+						"max_tokens": 8000,
+						"reasoning_effort": "low"
+					}
+				}
+			],
+			"params": {
+				"max_tokens": 8000,
+				"reasoning_effort": "low"
+			},
+			"timeoutMs": 60000,
+			"budgetMs": 120000,
+			"retries": 1,
+			"needsVision": true,
+			"stream": true
+		},
+		"edit": {
+			"model": "claude-group/claude-opus-5-5",
+			"fallbacks": [
+				"aws-bedrock/global.anthropic.claude-opus-5-5",
+				{
+					"model": "openai-group/gpt-6.1-sol",
+					"params": {
+						"max_tokens": 16000,
+						"reasoning_effort": "low"
+					}
+				}
+			],
+			"params": {
+				"max_tokens": 16000,
+				"reasoning_effort": "low"
+			},
+			"timeoutMs": 60000,
+			"budgetMs": 180000,
+			"retries": 1,
+			"needsVision": false,
+			"stream": true
+		}
+	}
+}

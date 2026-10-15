@@ -1,0 +1,1 @@
+shot("left_wall")

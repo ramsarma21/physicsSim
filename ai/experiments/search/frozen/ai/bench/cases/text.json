@@ -1,0 +1,2509 @@
+{
+	"version": 1,
+	"about": "Text prompts for the AI scene builder's benchmark (ai/DESIGN.md). Each case: {id, category, mode: new|edit, prompt, base_scene? ('scenario:<id>' = web/scenarios/<id>.json, 'gt:<id>' = gt/<id>.json, 'reference:<id>' = a plan-built scene with its plan, reference/<id>.json; 'scene:<id>' = a hand-made scene, cases/scenes/<id>.json, e.g. a broken one to repair), history? (edit: earlier chat turns), expect}. The expect fields, the spec syntax (type key | @group | #id | [any of]), the relations and the outcomes are documented at the top of ai/bench/score.mjs, which checks them on the plan, the solved scene and the engine's run. `rubric` is for the LLM judge. reference/ holds a hand-built solution for many cases (tools/selftest.mjs proves each case can pass and that the checks catch broken answers).",
+	"groups": {
+		"@ball": [
+			"superball",
+			"plastic-ball",
+			"clay-ball",
+			"ping-pong-ball",
+			"tennis-ball",
+			"golf-ball",
+			"baseball",
+			"basketball",
+			"soccer-ball",
+			"bowling-ball",
+			"glass-marble",
+			"steel-ball",
+			"beach-ball",
+			"wooden-ball",
+			"billiard-ball"
+		],
+		"@ball_not_marble": [
+			"superball",
+			"plastic-ball",
+			"clay-ball",
+			"ping-pong-ball",
+			"tennis-ball",
+			"golf-ball",
+			"baseball",
+			"basketball",
+			"soccer-ball",
+			"bowling-ball",
+			"steel-ball",
+			"beach-ball",
+			"wooden-ball",
+			"billiard-ball"
+		],
+		"@ramp": [
+			"plank",
+			"steel-beam",
+			"ice-sheet",
+			"glass-sheet",
+			"rubber-mat",
+			"carpet-strip",
+			"concrete-slab",
+			"wedge",
+			"cutting-board"
+		],
+		"@domino": [
+			"domino",
+			"domino-row"
+		],
+		"@book": [
+			"hardcover-book",
+			"paperback-book"
+		],
+		"@container": [
+			"box",
+			"cup",
+			"bucket",
+			"basket",
+			"plastic-cup",
+			"glass-jar"
+		],
+		"@cup": [
+			"cup",
+			"plastic-cup",
+			"glass-jar"
+		],
+		"@vehicle": [
+			"toy-car",
+			"motor-car",
+			"cart",
+			"skateboard",
+			"truck"
+		],
+		"@toy_car": [
+			"toy-car",
+			"motor-car"
+		],
+		"@pendulum": [
+			"pendulum",
+			"rope-pendulum",
+			"wrecking-ball"
+		],
+		"@lever": [
+			"seesaw",
+			"lever"
+		],
+		"@spring": [
+			"hanging-spring",
+			"spring-launcher",
+			"bounce-pad",
+			"trampoline",
+			"spring-bumper",
+			"spring-gate",
+			"spring-catapult"
+		],
+		"@pulley": [
+			"pulley-lift",
+			"atwood-machine"
+		],
+		"@weight": [
+			"steel-weight-1kg",
+			"steel-weight-5kg"
+		],
+		"@block": [
+			"wooden-block",
+			"brick",
+			"foam-block",
+			"cardboard-box",
+			"lego-brick",
+			"rubiks-cube",
+			"ice-cube",
+			"die",
+			"tissue-box",
+			"cereal-box"
+		],
+		"@can": [
+			"soda-can",
+			"soda-can-side"
+		],
+		"@bottle": [
+			"water-bottle",
+			"water-bottle-side"
+		],
+		"@fruit": [
+			"apple",
+			"orange"
+		],
+		"@glass_like": [
+			"glass-jar",
+			"plastic-cup",
+			"cup",
+			"coffee-mug"
+		],
+		"@standing_four": [
+			"soda-can",
+			"coffee-mug",
+			"candle",
+			"water-bottle"
+		],
+		"@three_balls": [
+			"glass-marble",
+			"wooden-ball",
+			"superball"
+		],
+		"@scenery": [
+			"table",
+			"wall"
+		]
+	},
+	"families": [
+		"@domino",
+		"@ball",
+		"@ramp",
+		"@book",
+		"@container",
+		"@vehicle",
+		"@pendulum",
+		"@lever",
+		"@spring",
+		"@pulley",
+		"@weight",
+		"@block",
+		"@can",
+		"@bottle",
+		"@fruit"
+	],
+	"cases": [
+		{
+			"id": "s1-ball-ramp",
+			"category": "simple",
+			"mode": "new",
+			"prompt": "A ball rolls down a ramp.",
+			"expect": {
+				"must_types": [
+					"@ball",
+					"@ramp"
+				],
+				"not_missing": [
+					"ball",
+					"ramp"
+				],
+				"items": {
+					"min": 2,
+					"max": 6
+				},
+				"relations": [
+					{
+						"rel": "over",
+						"a": "@ball",
+						"b": "@ramp"
+					},
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"min_deg": 3,
+						"max_deg": 50
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "moves",
+						"of": "@ball",
+						"min_m": 0.1
+					},
+					{
+						"kind": "descends",
+						"of": "@ball",
+						"min_m": 0.03
+					}
+				],
+				"rubric": "One ball, one tilted ramp (a plank or similar, held up by something real, e.g. a block or books, or a ramp the catalog builds standing). The ball starts at or just above the high end and visibly rolls down. Nothing unrelated, nothing floating or overlapping. Reasonable size: a ramp of roughly 0.5–1.5 m, a small ball."
+			}
+		},
+		{
+			"id": "s2-five-dominoes",
+			"category": "simple",
+			"mode": "new",
+			"prompt": "Five dominoes in a row; tip the first one over so it knocks down the rest.",
+			"expect": {
+				"must_types": [
+					"@domino"
+				],
+				"not_missing": [
+					"domino"
+				],
+				"counts": [
+					{
+						"of": "@domino",
+						"eq": 5
+					}
+				],
+				"relations": [
+					{
+						"rel": "on_table",
+						"a": "@domino"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 1
+					}
+				],
+				"rubric": "Exactly five dominoes standing on the table in a straight row, spaced closer than their height so each falls into the next. Something starts the first one falling (a tilt, a small push from a ball or pendulum). All five fall."
+			}
+		},
+		{
+			"id": "s3-car-ramp",
+			"category": "simple",
+			"mode": "new",
+			"prompt": "A toy car rolls down a ramp and onto the table.",
+			"expect": {
+				"must_types": [
+					"@toy_car",
+					"@ramp"
+				],
+				"not_missing": [
+					"toy car",
+					"car",
+					"ramp"
+				],
+				"relations": [
+					{
+						"rel": "over",
+						"a": "@toy_car",
+						"b": "@ramp"
+					},
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"min_deg": 3,
+						"max_deg": 45
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "descends",
+						"of": "@toy_car",
+						"min_m": 0.02
+					},
+					{
+						"kind": "lands_on",
+						"of": "@toy_car",
+						"on": "table"
+					}
+				],
+				"rubric": "A toy car starts on (or at the top of) a tilted ramp whose low end meets the table; it rolls down and carries on along the table on its wheels, upright. The ramp's angle is gentle enough that the car does not tumble."
+			}
+		},
+		{
+			"id": "c1-rube-cup",
+			"category": "chain",
+			"mode": "new",
+			"prompt": "Build a Rube Goldberg machine with at least four stages that ends with a ball dropping into a cup.",
+			"expect": {
+				"must_types": [
+					"@ball",
+					"@cup"
+				],
+				"not_missing": [
+					"ball",
+					"cup",
+					"domino",
+					"ramp"
+				],
+				"items": {
+					"min": 6
+				},
+				"min_families": 4,
+				"outcomes": [
+					{
+						"kind": "chain_events",
+						"min": 4
+					},
+					{
+						"kind": "in",
+						"item": "@ball",
+						"container": "@cup"
+					}
+				],
+				"rubric": "At least four distinct stages, each clearly triggering the next (e.g. ball down a ramp -> dominoes -> seesaw or pendulum -> ball into the cup). The final ball really ends inside the cup in the run. Laid out left to right so it reads; no stage is decorative; nothing overlaps or floats unsupported (held items are fine)."
+			}
+		},
+		{
+			"id": "c2-marble-zigzag",
+			"category": "chain",
+			"mode": "new",
+			"prompt": "A marble rolls down two zig-zag ramps, knocks over a row of dominoes, and the last domino pushes a ball off a ledge into a bucket.",
+			"expect": {
+				"must_types": [
+					"glass-marble",
+					"@ramp",
+					"@domino",
+					"bucket",
+					"@ball_not_marble"
+				],
+				"not_missing": [
+					"marble",
+					"ramp",
+					"domino",
+					"bucket",
+					"ball"
+				],
+				"counts": [
+					{
+						"of": "@ramp",
+						"min": 2
+					}
+				],
+				"relations": [
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"sign": "down_right",
+						"min_deg": 3
+					},
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"sign": "down_left",
+						"min_deg": 3
+					},
+					{
+						"rel": "over",
+						"a": "glass-marble",
+						"b": "@ramp"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "glass-marble",
+						"b": "@domino"
+					},
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					},
+					{
+						"kind": "in",
+						"item": "@ball_not_marble",
+						"container": "bucket"
+					},
+					{
+						"kind": "sequence",
+						"steps": [
+							{
+								"kind": "hits",
+								"a": "glass-marble",
+								"b": "@domino"
+							},
+							{
+								"kind": "moves",
+								"of": "@ball_not_marble",
+								"min_m": 0.01
+							}
+						]
+					}
+				],
+				"rubric": "Two ramps sloping opposite ways (a zig-zag: the marble runs down one, drops or turns onto the other), then a domino row, then a ball resting on a raised ledge (a block, book or box) at the end of the row, and a bucket below the ledge. The second ball only moves because the dominoes reach it, and it ends in the bucket."
+			}
+		},
+		{
+			"id": "k1-book-stack",
+			"category": "stacking",
+			"mode": "new",
+			"prompt": "Stack four books on top of each other on the table.",
+			"expect": {
+				"must_types": [
+					"@book"
+				],
+				"not_missing": [
+					"book"
+				],
+				"counts": [
+					{
+						"of": "@book",
+						"eq": 4
+					}
+				],
+				"items": {
+					"max": 4
+				},
+				"relations": [
+					{
+						"rel": "stack",
+						"a": "@book",
+						"min": 4
+					},
+					{
+						"rel": "on_table",
+						"a": "@book"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "stays",
+						"of": "@book",
+						"max_m": 0.01,
+						"max_deg": 3
+					}
+				],
+				"rubric": "Exactly four books lying flat in one neat, stable stack (centred over each other, maybe a mix of hardcover and paperback) on the table. Nothing else. The stack does not move when the run plays."
+			}
+		},
+		{
+			"id": "k2-tower-wrecking",
+			"category": "stacking",
+			"mode": "new",
+			"prompt": "Build a tower of six wooden blocks and knock it down with a swinging wrecking ball.",
+			"expect": {
+				"must_types": [
+					"wooden-block",
+					"wrecking-ball"
+				],
+				"not_missing": [
+					"wooden block",
+					"block",
+					"wrecking ball"
+				],
+				"counts": [
+					{
+						"of": "wooden-block",
+						"eq": 6
+					}
+				],
+				"relations": [
+					{
+						"rel": "stack",
+						"a": "wooden-block",
+						"min": 6
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "wrecking-ball",
+						"b": "wooden-block"
+					},
+					{
+						"kind": "displaced",
+						"of": "wooden-block",
+						"min_fraction": 0.5,
+						"min_m": 0.05
+					}
+				],
+				"rubric": "Six wooden blocks stacked one on another into a single standing tower; a wrecking ball pulled back to one side whose swing reaches the tower and knocks most of it down. The tower stands still until it is hit."
+			}
+		},
+		{
+			"id": "e1-phone-board-pillow",
+			"category": "everyday",
+			"mode": "new",
+			"prompt": "A phone slides down a cutting board propped up on two books and stops on a pillow.",
+			"expect": {
+				"must_types": [
+					"smartphone",
+					"cutting-board",
+					"@book",
+					"pillow"
+				],
+				"not_missing": [
+					"phone",
+					"cutting board",
+					"book",
+					"pillow"
+				],
+				"counts": [
+					{
+						"of": "@book",
+						"eq": 2
+					},
+					{
+						"of": "smartphone",
+						"eq": 1
+					}
+				],
+				"relations": [
+					{
+						"rel": "on",
+						"a": "smartphone",
+						"b": "cutting-board"
+					},
+					{
+						"rel": "on",
+						"a": "cutting-board",
+						"b": "@book"
+					},
+					{
+						"rel": "angled",
+						"a": "cutting-board",
+						"min_deg": 8,
+						"max_deg": 60
+					},
+					{
+						"rel": "stack",
+						"a": "@book",
+						"min": 2
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "moves",
+						"of": "smartphone",
+						"min_m": 0.05
+					},
+					{
+						"kind": "lands_on",
+						"of": "smartphone",
+						"on": "pillow",
+						"soft": true
+					}
+				],
+				"rubric": "Two books stacked, a cutting board leaning from the top book down to the table (or to the pillow), the phone lying on the board near its high end, a pillow at the low end. The slope is steep enough for the phone to slide (friction) and the phone ends on the pillow."
+			}
+		},
+		{
+			"id": "e2-tallest-to-shortest",
+			"category": "everyday",
+			"mode": "new",
+			"prompt": "Line up a soda can, a coffee mug, a candle and a water bottle on the table from tallest to shortest, left to right.",
+			"expect": {
+				"must_types": [
+					"soda-can",
+					"coffee-mug",
+					"candle",
+					"water-bottle"
+				],
+				"forbid_types": [
+					"soda-can-side",
+					"water-bottle-side"
+				],
+				"not_missing": [
+					"soda can",
+					"can",
+					"coffee mug",
+					"mug",
+					"candle",
+					"water bottle",
+					"bottle"
+				],
+				"items": {
+					"max": 4
+				},
+				"relations": [
+					{
+						"rel": "order_x",
+						"specs": [
+							"candle",
+							"water-bottle",
+							"soda-can",
+							"coffee-mug"
+						]
+					},
+					{
+						"rel": "on_table",
+						"a": "@standing_four",
+						"all": true
+					},
+					{
+						"rel": "upright",
+						"a": "@standing_four",
+						"all": true,
+						"max_deg": 3
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "stays",
+						"of": "@standing_four",
+						"max_m": 0.01,
+						"max_deg": 3
+					}
+				],
+				"rubric": "Uses real heights: candle (25 cm) > water bottle (20.5 cm) > soda can (12 cm) > coffee mug (9.5 cm), so left to right: candle, water bottle, soda can, mug, all standing upright on the table with small even gaps. Nothing else added."
+			}
+		},
+		{
+			"id": "e3-balance-can-book",
+			"category": "everyday",
+			"mode": "new",
+			"prompt": "Balance a tennis ball on top of a standing soda can, which stands on a hardcover book.",
+			"expect": {
+				"must_types": [
+					"tennis-ball",
+					"soda-can",
+					"hardcover-book"
+				],
+				"forbid_types": [
+					"soda-can-side"
+				],
+				"not_missing": [
+					"tennis ball",
+					"soda can",
+					"can",
+					"book"
+				],
+				"relations": [
+					{
+						"rel": "on",
+						"a": "tennis-ball",
+						"b": "soda-can"
+					},
+					{
+						"rel": "on",
+						"a": "soda-can",
+						"b": "hardcover-book"
+					},
+					{
+						"rel": "on_table",
+						"a": "hardcover-book"
+					},
+					{
+						"rel": "x_near",
+						"a": "tennis-ball",
+						"b": "soda-can",
+						"max_m": 0.005
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "stays",
+						"of": [
+							"tennis-ball",
+							"soda-can",
+							"hardcover-book"
+						],
+						"max_m": 0.01,
+						"max_deg": 5
+					}
+				],
+				"rubric": "Book flat on the table, the can upright on the book, the tennis ball resting exactly centred on the can's top so it stays balanced for the whole run. Precise placement matters."
+			}
+		},
+		{
+			"id": "v1-motor-car-cereal",
+			"category": "vehicles",
+			"mode": "new",
+			"prompt": "A motorized toy car drives into three cereal boxes standing in a row and knocks them over.",
+			"expect": {
+				"must_types": [
+					"motor-car",
+					"cereal-box"
+				],
+				"not_missing": [
+					"car",
+					"toy car",
+					"cereal box",
+					"box"
+				],
+				"counts": [
+					{
+						"of": "cereal-box",
+						"eq": 3
+					}
+				],
+				"relations": [
+					{
+						"rel": "on_table",
+						"a": "cereal-box",
+						"all": true
+					},
+					{
+						"rel": "upright",
+						"a": "cereal-box",
+						"all": true,
+						"max_deg": 3
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "motor-car",
+						"b": "cereal-box"
+					},
+					{
+						"kind": "topples",
+						"of": "cereal-box",
+						"min_fraction": 0.66,
+						"deg": 45
+					}
+				],
+				"rubric": "A motor car (self-propelled) on the table pointed at a row of three upright cereal boxes, spaced so one falling box hits the next. The car drives the right way (towards the boxes) and the boxes fall like dominoes. (Motion is in one plane: boxes stood edge-on — their narrow 6.3 cm side along the row — tip easily; seen broadside, 19 cm wide, a toy car only shoves them.)"
+			}
+		},
+		{
+			"id": "v2-skateboard-cone",
+			"category": "vehicles",
+			"mode": "new",
+			"prompt": "A skateboard rolls down a long ramp and crashes into a traffic cone.",
+			"expect": {
+				"must_types": [
+					"skateboard",
+					"@ramp",
+					"traffic-cone"
+				],
+				"not_missing": [
+					"skateboard",
+					"ramp",
+					"traffic cone",
+					"cone"
+				],
+				"relations": [
+					{
+						"rel": "over",
+						"a": "skateboard",
+						"b": "@ramp"
+					},
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"min_deg": 3,
+						"max_deg": 40
+					}
+				],
+				"prop_checks": [
+					{
+						"of": "@ramp",
+						"prop": "length",
+						"min": 1.0,
+						"soft": true
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "skateboard",
+						"b": "traffic-cone"
+					}
+				],
+				"rubric": "A long ramp (well over the 80 cm skateboard's length), the skateboard on it at the top, the cone standing on the table in its path past the bottom. The board rolls down on its wheels and hits the cone."
+			}
+		},
+		{
+			"id": "m1-pendulum-golf",
+			"category": "mechanisms",
+			"mode": "new",
+			"prompt": "A pendulum with a 40 cm string swings down and knocks a golf ball off a wooden block.",
+			"expect": {
+				"must_types": [
+					[
+						"pendulum",
+						"rope-pendulum"
+					],
+					"golf-ball",
+					"wooden-block"
+				],
+				"not_missing": [
+					"pendulum",
+					"golf ball",
+					"wooden block",
+					"block",
+					"string"
+				],
+				"prop_checks": [
+					{
+						"of": [
+							"pendulum",
+							"rope-pendulum"
+						],
+						"prop": "length",
+						"min": 0.38,
+						"max": 0.42
+					}
+				],
+				"relations": [
+					{
+						"rel": "on",
+						"a": "golf-ball",
+						"b": "wooden-block"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "@pendulum",
+						"b": "golf-ball"
+					},
+					{
+						"kind": "leaves",
+						"of": "golf-ball",
+						"from": "wooden-block"
+					}
+				],
+				"rubric": "A 40 cm pendulum released from an angle, its bob reaching the golf ball at the bottom of its swing; the golf ball sits on top of a wooden block at that height and is knocked off it."
+			}
+		},
+		{
+			"id": "m2-seesaw-catapult",
+			"category": "mechanisms",
+			"mode": "new",
+			"prompt": "Drop a heavy steel weight onto one end of a seesaw to launch a ping-pong ball from the other end into a basket.",
+			"expect": {
+				"must_types": [
+					"@lever",
+					"@weight",
+					"ping-pong-ball",
+					"basket"
+				],
+				"not_missing": [
+					"seesaw",
+					"steel weight",
+					"weight",
+					"ping-pong ball",
+					"ping pong ball",
+					"basket"
+				],
+				"relations": [
+					{
+						"rel": "on",
+						"a": "ping-pong-ball",
+						"b": "@lever"
+					},
+					{
+						"rel": "over",
+						"a": "@weight",
+						"b": "@lever"
+					},
+					{
+						"rel": "height_above_table",
+						"a": "@weight",
+						"min": 0.1
+					},
+					{
+						"rel": "opposite_sides",
+						"a": "@weight",
+						"b": "ping-pong-ball",
+						"c": "@lever"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "@weight",
+						"b": "@lever"
+					},
+					{
+						"kind": "rises",
+						"of": "ping-pong-ball",
+						"min_m": 0.1
+					},
+					{
+						"kind": "in",
+						"item": "ping-pong-ball",
+						"container": "basket",
+						"soft": true
+					}
+				],
+				"rubric": "A seesaw with the ping-pong ball on its lowered end, the steel weight held above the raised end on the other side of the pivot; the weight drops, the ball is flung up and lands in a basket placed where its arc ends."
+			}
+		},
+		{
+			"id": "m3-pulley-lift",
+			"category": "mechanisms",
+			"mode": "new",
+			"prompt": "Use a pulley with a heavier counterweight to lift a cup up off the table.",
+			"expect": {
+				"must_types": [
+					[
+						"pulley-lift",
+						"atwood-machine"
+					]
+				],
+				"not_missing": [
+					"pulley",
+					"counterweight",
+					"cup",
+					"weight"
+				],
+				"outcomes": [
+					{
+						"kind": "rises",
+						"of": "@pulley",
+						"min_m": 0.05
+					}
+				],
+				"rubric": "A pulley (the pulley lift, whose cup hangs on one side) with a counterweight clearly heavier than the cup, so the counterweight sinks and the cup rises off the table. If an Atwood machine is used instead, the lighter side must be described as the cup and must rise."
+			}
+		},
+		{
+			"id": "m4-conveyor-oranges",
+			"category": "mechanisms",
+			"mode": "new",
+			"prompt": "A conveyor belt carries three oranges and drops them into a basket at the end.",
+			"expect": {
+				"must_types": [
+					"conveyor-belt",
+					"orange",
+					"basket"
+				],
+				"not_missing": [
+					"conveyor",
+					"conveyor belt",
+					"orange",
+					"basket"
+				],
+				"counts": [
+					{
+						"of": "orange",
+						"eq": 3
+					}
+				],
+				"relations": [
+					{
+						"rel": "on",
+						"a": "orange",
+						"b": "conveyor-belt",
+						"all": true
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "in",
+						"item": "orange",
+						"container": "basket",
+						"all": true
+					}
+				],
+				"rubric": "Three oranges resting on the belt's top, spaced out; the basket on the table just past the end the belt runs towards, so each orange falls in. All three end in the basket."
+			}
+		},
+		{
+			"id": "m5-trampoline-bucket",
+			"category": "mechanisms",
+			"mode": "new",
+			"prompt": "Drop a basketball onto a trampoline so it bounces up and lands in a bucket.",
+			"expect": {
+				"must_types": [
+					"trampoline",
+					"basketball",
+					"bucket"
+				],
+				"not_missing": [
+					"trampoline",
+					"basketball",
+					"bucket"
+				],
+				"relations": [
+					{
+						"rel": "over",
+						"a": "basketball",
+						"b": "trampoline"
+					},
+					{
+						"rel": "height_above_table",
+						"a": "basketball",
+						"min": 0.5
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "basketball",
+						"b": "trampoline"
+					},
+					{
+						"kind": "in",
+						"item": "basketball",
+						"container": "bucket",
+						"soft": true
+					}
+				],
+				"rubric": "The basketball held well above the trampoline mat (slightly off-centre or angled so its bounce carries it sideways), a bucket beside the trampoline where the bounce comes down. The ball ends in the bucket (the bucket may be made wider; the basketball is 24 cm)."
+			}
+		},
+		{
+			"id": "m6-spring-launcher-cup",
+			"category": "mechanisms",
+			"mode": "new",
+			"prompt": "A spring launcher shoots a golf ball over a wall of three stacked bricks into a cup.",
+			"expect": {
+				"must_types": [
+					"spring-launcher",
+					"golf-ball",
+					"brick",
+					"@cup"
+				],
+				"not_missing": [
+					"spring launcher",
+					"spring",
+					"golf ball",
+					"brick",
+					"cup"
+				],
+				"counts": [
+					{
+						"of": "brick",
+						"eq": 3
+					}
+				],
+				"relations": [
+					{
+						"rel": "stack",
+						"a": "brick",
+						"min": 3
+					},
+					{
+						"rel": "between",
+						"a": "brick",
+						"b": "spring-launcher",
+						"c": "@cup"
+					},
+					{
+						"rel": "touching",
+						"a": "golf-ball",
+						"b": "spring-launcher"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "rises",
+						"of": "golf-ball",
+						"min_m": 0.2
+					},
+					{
+						"kind": "in",
+						"item": "golf-ball",
+						"container": "@cup"
+					}
+				],
+				"rubric": "Launcher angled up, golf ball resting in its cup/plate, a three-brick wall between it and the target cup; the ball clears the wall without touching it and lands in the cup. Tuning the launcher (angle, compression) or the cup's place is expected."
+			}
+		},
+		{
+			"id": "z1-steel-rubber-drop",
+			"category": "sizes-materials",
+			"mode": "new",
+			"prompt": "Drop a steel ball and a rubber ball together from 1 meter above the table.",
+			"expect": {
+				"must_types": [
+					"steel-ball",
+					"superball"
+				],
+				"not_missing": [
+					"steel ball",
+					"rubber ball",
+					"ball"
+				],
+				"relations": [
+					{
+						"rel": "same_height",
+						"a": "steel-ball",
+						"b": "superball",
+						"tol": 0.02
+					},
+					{
+						"rel": "height_above_table",
+						"a": "steel-ball",
+						"min": 0.9,
+						"max": 1.1
+					},
+					{
+						"rel": "height_above_table",
+						"a": "superball",
+						"min": 0.9,
+						"max": 1.1
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "steel-ball",
+						"b": "table"
+					},
+					{
+						"kind": "hits",
+						"a": "superball",
+						"b": "table"
+					}
+				],
+				"rubric": "A steel ball bearing and a rubber superball side by side (a clear gap between them), both released at the same moment from 1 m above the tabletop. Correct materials (steel, solid rubber) and realistic sizes; both land at the same time; the rubber ball bounces visibly higher."
+			}
+		},
+		{
+			"id": "z2-materials-ice-ramp",
+			"category": "sizes-materials",
+			"mode": "new",
+			"prompt": "Send a glass marble, a wooden ball and a rubber ball down the same ice ramp, one after another.",
+			"expect": {
+				"must_types": [
+					"glass-marble",
+					"wooden-ball",
+					"superball",
+					"ice-sheet"
+				],
+				"not_missing": [
+					"marble",
+					"wooden ball",
+					"rubber ball",
+					"ice",
+					"ramp"
+				],
+				"relations": [
+					{
+						"rel": "over",
+						"a": "glass-marble",
+						"b": "ice-sheet"
+					},
+					{
+						"rel": "over",
+						"a": "wooden-ball",
+						"b": "ice-sheet"
+					},
+					{
+						"rel": "over",
+						"a": "superball",
+						"b": "ice-sheet"
+					},
+					{
+						"rel": "angled",
+						"a": "ice-sheet",
+						"min_deg": 3,
+						"max_deg": 45
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "moves",
+						"of": "@three_balls",
+						"all": true,
+						"min_m": 0.05
+					}
+				],
+				"rubric": "One tilted ice sheet; the three balls (glass marble, wooden ball, rubber superball) spaced along its upper part or held above its top so they go down in turn without starting inside each other. Ice is slippery: they slide/roll down."
+			}
+		},
+		{
+			"id": "g1-fun-balls",
+			"category": "vague",
+			"mode": "new",
+			"prompt": "Something fun with balls.",
+			"expect": {
+				"must_types": [
+					"@ball"
+				],
+				"not_missing": [
+					"ball"
+				],
+				"counts": [
+					{
+						"of": "@ball",
+						"min": 2
+					}
+				],
+				"items": {
+					"min": 3
+				},
+				"outcomes": [
+					{
+						"kind": "moves",
+						"of": "@ball"
+					},
+					{
+						"kind": "chain_events",
+						"min": 1
+					}
+				],
+				"rubric": "A lively, readable scene where several different balls do something interesting (bounce, roll, collide, drop into something). Judge: is it fun and clear within a few seconds, does it use the catalog's variety well, does everything actually happen in the run? No missing items should be claimed."
+			}
+		},
+		{
+			"id": "g2-chain-reaction",
+			"category": "vague",
+			"mode": "new",
+			"prompt": "Make a cool chain reaction.",
+			"expect": {
+				"items": {
+					"min": 4
+				},
+				"min_families": 3,
+				"outcomes": [
+					{
+						"kind": "chain_events",
+						"min": 3
+					}
+				],
+				"rubric": "Several different kinds of parts (dominoes, balls, ramps, levers, pendulums, springs…) triggering each other in a clear sequence from one start, left to right, with a satisfying ending. Every stage really fires in the run."
+			}
+		},
+		{
+			"id": "i1-cat-water",
+			"category": "impossible",
+			"mode": "new",
+			"prompt": "A live cat knocks a glass of water off the table.",
+			"expect": {
+				"must_types": [
+					"@glass_like"
+				],
+				"must_missing": [
+					{
+						"what": "a live cat",
+						"match": [
+							"cat",
+							"kitten",
+							"feline",
+							"animal"
+						]
+					},
+					{
+						"what": "water",
+						"match": [
+							"water",
+							"liquid",
+							"fluid"
+						]
+					}
+				],
+				"may_missing": [
+					{
+						"what": "a glass that can be knocked over",
+						"match": [
+							"glass",
+							"drinking glass",
+							"tumbler"
+						]
+					},
+					{
+						"what": "a table edge to fall off",
+						"match": [
+							"edge",
+							"off the table",
+							"fall"
+						]
+					}
+				],
+				"not_missing": [
+					"table"
+				],
+				"rubric": "Must say plainly that there are no animals and no liquids in the library (and, ideally, that containers are fixed in place while a mug can move). A good answer substitutes clearly labelled stand-ins (e.g. a pendulum or a rolling ball as the 'cat', a coffee mug as the glass) or builds the nearest honest scene; it never pretends a cat or water is there."
+			}
+		},
+		{
+			"id": "i2-waterfall-wheel",
+			"category": "impossible",
+			"mode": "new",
+			"prompt": "A waterfall pours into a bucket and turns a water wheel.",
+			"expect": {
+				"must_types": [
+					"bucket"
+				],
+				"must_missing": [
+					{
+						"what": "a waterfall (flowing water)",
+						"match": [
+							"water",
+							"waterfall",
+							"liquid",
+							"fluid",
+							"stream"
+						]
+					}
+				],
+				"may_missing": [
+					{
+						"what": "a water wheel",
+						"match": [
+							"water wheel",
+							"waterwheel",
+							"wheel"
+						]
+					}
+				],
+				"not_missing": [
+					"bucket"
+				],
+				"rubric": "Honest that flowing water is not possible (no fluids). Acceptable: a stream of marbles or small balls down a staircase/ramps standing in for the water, landing in the bucket, with a wheel or motor spinner standing in for the water wheel, all called substitutes in the report. Using the staircase (tagged 'waterfall') without saying the water is missing is a failure."
+			}
+		},
+		{
+			"id": "i3-747",
+			"category": "impossible",
+			"mode": "new",
+			"prompt": "A 747 jumbo jet lands on a runway and taxis into a hangar.",
+			"expect": {
+				"must_missing": [
+					{
+						"what": "a 747 jumbo jet",
+						"match": [
+							"747",
+							"jet",
+							"plane",
+							"airplane",
+							"aeroplane",
+							"aircraft",
+							"boeing",
+							"airliner",
+							"jumbo"
+						]
+					}
+				],
+				"may_missing": [
+					{
+						"what": "a runway",
+						"match": [
+							"runway",
+							"airstrip",
+							"tarmac"
+						]
+					},
+					{
+						"what": "a hangar",
+						"match": [
+							"hangar",
+							"building",
+							"garage"
+						]
+					}
+				],
+				"rubric": "Says plainly that there is no aircraft (nor anything of that size: the table is 3.7 m); may offer a toy-scale stand-in (a toy car or truck rolling down a plank 'runway' into a box 'hangar') that is clearly labelled as a substitute. Never claims a 747 is in the scene."
+			}
+		},
+		{
+			"id": "d1-rube-more-dominoes",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:rube-goldberg",
+			"prompt": "Make the domino row about twice as long — roughly twice as many dominoes — and swap the first ball for a steel ball bearing.",
+			"expect": {
+				"must_types": [
+					"steel-ball",
+					"@domino"
+				],
+				"counts": [
+					{
+						"of": "@domino",
+						"min": 13,
+						"max": 15
+					}
+				],
+				"edit": {
+					"replaced": [
+						{
+							"id": "ball1",
+							"by": "steel-ball",
+							"near_m": 0.1
+						}
+					],
+					"preserve": [
+						"ramp1",
+						"ramp2",
+						"wall-left",
+						"wall-right",
+						"table"
+					]
+				},
+				"outcomes": [
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					},
+					{
+						"kind": "in",
+						"item": "#ball2",
+						"container": "#box",
+						"soft": true
+					}
+				],
+				"rubric": "About 14 dominoes (sizes kept sensible: a growing row must not reach giant heights — lower the growth or switch to a plain row), the first ball now a steel ball bearing at the same start. Other parts stay where they were unless they had to move to make room (then say so). The chain still runs through."
+			}
+		},
+		{
+			"id": "d2-wrecking-cardboard",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:wrecking-ball",
+			"prompt": "Replace the bricks with five cardboard boxes stacked the same way.",
+			"expect": {
+				"must_types": [
+					"cardboard-box",
+					"wrecking-ball"
+				],
+				"forbid_types": [
+					"brick"
+				],
+				"counts": [
+					{
+						"of": "cardboard-box",
+						"eq": 5
+					}
+				],
+				"relations": [
+					{
+						"rel": "stack",
+						"a": "cardboard-box",
+						"min": 5
+					}
+				],
+				"edit": {
+					"removed": [
+						"brick"
+					],
+					"preserve": [
+						"crane",
+						"table"
+					]
+				},
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "wrecking-ball",
+						"b": "cardboard-box"
+					}
+				],
+				"rubric": "The five bricks are gone; five cardboard boxes stand in one stack where the bricks were (each resting on the one below, no overlaps); the wrecking ball is unchanged and still hits the stack."
+			}
+		},
+		{
+			"id": "d3-trampoline-bowling",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:trampoline",
+			"prompt": "Take away the tennis ball and drop a bowling ball onto the middle of the trampoline instead.",
+			"expect": {
+				"must_types": [
+					"bowling-ball",
+					"trampoline"
+				],
+				"forbid_types": [
+					"tennis-ball"
+				],
+				"relations": [
+					{
+						"rel": "over",
+						"a": "bowling-ball",
+						"b": "trampoline"
+					},
+					{
+						"rel": "x_near",
+						"a": "bowling-ball",
+						"b": "trampoline",
+						"max_m": 0.1
+					}
+				],
+				"edit": {
+					"removed": [
+						"tennis-ball"
+					],
+					"preserve": [
+						"basketball",
+						"superball",
+						"trampoline",
+						"table"
+					],
+					"max_new_items": 1
+				},
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "bowling-ball",
+						"b": "trampoline"
+					}
+				],
+				"rubric": "Tennis ball removed, a bowling ball held above the middle of the mat (not overlapping the other balls), everything else unchanged."
+			}
+		},
+		{
+			"id": "d4-car-dog",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:car-ramp-dominoes",
+			"prompt": "Add a dog that chases the car.",
+			"expect": {
+				"must_missing": [
+					{
+						"what": "a dog",
+						"match": [
+							"dog",
+							"puppy",
+							"animal",
+							"pet",
+							"hound"
+						]
+					}
+				],
+				"not_missing": [
+					"car",
+					"toy car",
+					"ramp",
+					"domino"
+				],
+				"edit": {
+					"keep_others": true,
+					"max_new_items": 1
+				},
+				"rubric": "Must say there are no animals in the library. Either change nothing, or add one clearly labelled stand-in (e.g. a second toy car behind the first) and say it is a substitute. The existing car, ramp and dominoes stay exactly as they were."
+			}
+		},
+		{
+			"id": "d5-plinko-leftmost",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:plinko",
+			"prompt": "Move the ball so that it lands in the leftmost cup.",
+			"expect": {
+				"must_types": [
+					"golf-ball"
+				],
+				"counts": [
+					{
+						"of": "golf-ball",
+						"eq": 1
+					}
+				],
+				"edit": {
+					"preserve": [
+						"board",
+						"cup1",
+						"cup2",
+						"cup3",
+						"cup4",
+						"cup5",
+						"cup6",
+						"cup7",
+						"cup8",
+						"cup9",
+						"wall-left",
+						"wall-right",
+						"table"
+					],
+					"max_new_items": 0
+				},
+				"outcomes": [
+					{
+						"kind": "in",
+						"item": "golf-ball",
+						"container": "#cup1"
+					}
+				],
+				"rubric": "Only the ball's starting place changes (the board and cups stay), and in the run it ends in the leftmost cup. Finding that start needs the tuner (the pegs scatter it)."
+			}
+		},
+		{
+			"id": "d6-raise-bowling",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:ball-drop",
+			"prompt": "Raise the bowling ball to 1.5 m and leave the other balls where they are.",
+			"expect": {
+				"must_types": [
+					"bowling-ball"
+				],
+				"counts": [
+					{
+						"of": "@ball",
+						"eq": 6
+					}
+				],
+				"edit": {
+					"keep_others": true,
+					"max_new_items": 0,
+					"moved": [
+						{
+							"id": "bowling",
+							"dx": {
+								"min": -0.05,
+								"max": 0.05
+							},
+							"dy": {
+								"min": 0.35,
+								"max": 0.62
+							}
+						}
+					]
+				},
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "bowling-ball",
+						"b": "table"
+					}
+				],
+				"rubric": "Only the bowling ball moves: about 0.4-0.5 m higher (1.5 m up), same x, still held until the release; the five other balls stay exactly where they were. All balls still drop."
+			}
+		},
+		{
+			"id": "d7-longer-pendulum",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:pendulum-dominoes",
+			"prompt": "Make the pendulum's string 20 cm longer, and make sure it still knocks the dominoes over.",
+			"expect": {
+				"must_types": [
+					"pendulum",
+					"@domino"
+				],
+				"counts": [
+					{
+						"of": "@domino",
+						"eq": 7
+					}
+				],
+				"edit": {
+					"max_new_items": 0,
+					"props": [
+						{
+							"id": "pendulum",
+							"prop": "length",
+							"delta": {
+								"min": 0.17,
+								"max": 0.23
+							}
+						}
+					]
+				},
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "pendulum",
+						"b": "@domino"
+					},
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8
+					}
+				],
+				"rubric": "The pendulum is 0.8 m long now (was 0.6 m); its pivot is raised or the dominoes moved so the bob still sweeps through the first domino at the bottom of its swing, without starting inside anything. The seven dominoes still all fall."
+			}
+		},
+		{
+			"id": "d8-faster-belt",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:conveyor-delivery",
+			"prompt": "Make the conveyor belt run twice as fast.",
+			"expect": {
+				"must_types": [
+					"conveyor-belt",
+					"golf-ball",
+					"box"
+				],
+				"counts": [
+					{
+						"of": "golf-ball",
+						"eq": 3
+					}
+				],
+				"edit": {
+					"max_new_items": 0,
+					"preserve": [
+						"ball1",
+						"ball2",
+						"ball3"
+					],
+					"props": [
+						{
+							"id": "belt",
+							"prop": "speed",
+							"ratio": {
+								"min": 1.9,
+								"max": 2.1
+							}
+						}
+					]
+				},
+				"outcomes": [
+					{
+						"kind": "in",
+						"item": "golf-ball",
+						"container": "box",
+						"all": true,
+						"soft": true
+					}
+				],
+				"rubric": "The belt speed doubles (1 -> 2 m/s), same direction; the balls stay on the belt. Ideally the box is moved further out so the faster balls still land in it (the scene's goals); everything else unchanged."
+			}
+		},
+		{
+			"id": "d9-cradle-question",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:newtons-cradle",
+			"prompt": "How many balls does the cradle have?",
+			"expect": {
+				"must_types": [
+					"newtons-cradle"
+				],
+				"edit": {
+					"keep_others": true,
+					"max_new_items": 0,
+					"reply_match": "\\b(5|five)\\b"
+				},
+				"rubric": "A question, not a change: the answer is five balls (the cradle's count), and the scene is left exactly as it was."
+			}
+		},
+		{
+			"id": "d10-second-cup",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:spring-launch",
+			"prompt": "Add a second cup 30 cm to the right of the first one.",
+			"expect": {
+				"must_types": [
+					"spring-launcher",
+					"golf-ball"
+				],
+				"counts": [
+					{
+						"of": "@cup",
+						"eq": 2
+					}
+				],
+				"edit": {
+					"keep_others": true,
+					"max_new_items": 1,
+					"added": [
+						{
+							"of": "@cup",
+							"dx_from": "cup",
+							"dx": {
+								"min": 0.2,
+								"max": 0.45
+							}
+						}
+					]
+				},
+				"relations": [
+					{
+						"rel": "on_table",
+						"a": "@cup",
+						"all": true
+					}
+				],
+				"rubric": "One new cup standing on the table about 30 cm right of the existing cup (centre to centre, or a 30 cm gap), not overlapping anything; nothing else changes."
+			}
+		},
+		{
+			"id": "d11-remove-superball",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:trampoline",
+			"prompt": "Remove the superball.",
+			"expect": {
+				"must_types": [
+					"trampoline",
+					"basketball",
+					"tennis-ball"
+				],
+				"forbid_types": [
+					"superball"
+				],
+				"edit": {
+					"removed": [
+						"superball"
+					],
+					"keep_others": true,
+					"max_new_items": 0
+				},
+				"rubric": "The superball is gone; the trampoline, the basketball and the tennis ball are exactly where they were."
+			}
+		},
+		{
+			"id": "d12-ten-seconds",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:plinko",
+			"prompt": "Make the run last 10 seconds.",
+			"expect": {
+				"must_types": [
+					"peg-board",
+					"golf-ball"
+				],
+				"edit": {
+					"keep_others": true,
+					"max_new_items": 0,
+					"scene": {
+						"seconds": {
+							"min": 9.99,
+							"max": 10.01
+						}
+					}
+				},
+				"rubric": "The scene's duration becomes 10 s; nothing in the scene moves or changes."
+			}
+		},
+		{
+			"id": "d13-start-over",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:wrecking-ball",
+			"prompt": "Start over: just a tennis ball rolling down a ramp into a cup.",
+			"expect": {
+				"must_types": [
+					"tennis-ball",
+					"@ramp",
+					"@cup"
+				],
+				"forbid_types": [
+					"wrecking-ball",
+					"brick"
+				],
+				"items": {
+					"max": 6
+				},
+				"relations": [
+					{
+						"rel": "over",
+						"a": "tennis-ball",
+						"b": "@ramp"
+					},
+					{
+						"rel": "angled",
+						"a": "@ramp",
+						"min_deg": 3,
+						"max_deg": 45
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "moves",
+						"of": "tennis-ball",
+						"min_m": 0.1
+					},
+					{
+						"kind": "in",
+						"item": "tennis-ball",
+						"container": "@cup",
+						"soft": true
+					}
+				],
+				"rubric": "A whole new scene replaces the wrecking ball and bricks: a tennis ball held at the top of a ramp that rolls down and lands in a cup big enough for it (the 6.7 cm ball needs a wider cup than the default 8 cm one, or a goal + tuning). Nothing of the old scene remains."
+			}
+		},
+		{
+			"id": "d14-steeper-ramp",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "reference:s1-ball-ramp",
+			"prompt": "Make the ramp steeper.",
+			"expect": {
+				"must_types": [
+					"golf-ball",
+					"plank"
+				],
+				"counts": [
+					{
+						"of": "golf-ball",
+						"eq": 1
+					}
+				],
+				"edit": {
+					"max_new_items": 3,
+					"moved": [
+						{
+							"id": "ramp",
+							"dabs_angle": {
+								"min": 2.5,
+								"max": 30
+							}
+						}
+					]
+				},
+				"relations": [
+					{
+						"rel": "over",
+						"a": "golf-ball",
+						"b": "plank"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "moves",
+						"of": "golf-ball",
+						"min_m": 0.1
+					},
+					{
+						"kind": "descends",
+						"of": "golf-ball",
+						"min_m": 0.03
+					}
+				],
+				"rubric": "The ramp's slope is clearly steeper (e.g. raised on more books — one or two more — or a higher support), it still rests on real supports, and the ball still starts at its top and rolls down."
+			}
+		},
+		{
+			"id": "d15-ball-on-books",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "reference:k1-book-stack",
+			"prompt": "Put a tennis ball on top of the stack.",
+			"expect": {
+				"must_types": [
+					"tennis-ball",
+					"@book"
+				],
+				"counts": [
+					{
+						"of": "@book",
+						"eq": 4
+					}
+				],
+				"edit": {
+					"keep_others": true,
+					"max_new_items": 1
+				},
+				"relations": [
+					{
+						"rel": "on",
+						"a": "tennis-ball",
+						"b": "@book"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "stays",
+						"of": [
+							"tennis-ball",
+							"@book"
+						],
+						"max_m": 0.01,
+						"max_deg": 5
+					}
+				],
+				"rubric": "A tennis ball resting on the top book, near its middle, so it stays put; the four books unchanged."
+			}
+		},
+		{
+			"id": "d16-four-oranges",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "reference:m4-conveyor-oranges",
+			"prompt": "Use four oranges instead of three.",
+			"expect": {
+				"must_types": [
+					"conveyor-belt",
+					"orange",
+					"basket"
+				],
+				"counts": [
+					{
+						"of": "orange",
+						"eq": 4
+					}
+				],
+				"edit": {
+					"max_new_items": 1,
+					"preserve": [
+						"basket"
+					]
+				},
+				"relations": [
+					{
+						"rel": "on",
+						"a": "orange",
+						"b": "conveyor-belt",
+						"all": true
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "in",
+						"item": "orange",
+						"container": "basket",
+						"all": true,
+						"soft": true
+					}
+				],
+				"rubric": "A fourth orange on the belt (spaced like the others, not overlapping), all four carried into the basket."
+			}
+		},
+		{
+			"id": "d17-drop-50cm",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "reference:z1-steel-rubber-drop",
+			"prompt": "Drop them from 50 cm instead.",
+			"expect": {
+				"must_types": [
+					"steel-ball",
+					"superball"
+				],
+				"counts": [
+					{
+						"of": "steel-ball",
+						"eq": 1
+					},
+					{
+						"of": "superball",
+						"eq": 1
+					}
+				],
+				"edit": {
+					"max_new_items": 0
+				},
+				"relations": [
+					{
+						"rel": "height_above_table",
+						"a": "steel-ball",
+						"min": 0.42,
+						"max": 0.56
+					},
+					{
+						"rel": "height_above_table",
+						"a": "superball",
+						"min": 0.42,
+						"max": 0.56
+					},
+					{
+						"rel": "same_height",
+						"a": "steel-ball",
+						"b": "superball",
+						"tol": 0.02
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "steel-ball",
+						"b": "table"
+					},
+					{
+						"kind": "hits",
+						"a": "superball",
+						"b": "table"
+					}
+				],
+				"rubric": "Both balls now start 50 cm above the table (instead of 1 m), side by side at the same height, still released together."
+			}
+		},
+		{
+			"id": "d18-bigger-seesaw-ball",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:rube-goldberg",
+			"prompt": "Make the yellow ball on the seesaw twice as big.",
+			"expect": {
+				"must_types": [
+					"plastic-ball",
+					"seesaw"
+				],
+				"edit": {
+					"keep_others": true,
+					"max_new_items": 0,
+					"props": [
+						{
+							"id": "ball2",
+							"prop": "diameter",
+							"ratio": {
+								"min": 1.85,
+								"max": 2.15
+							}
+						}
+					]
+				},
+				"relations": [
+					{
+						"rel": "on",
+						"a": "#ball2",
+						"b": "seesaw"
+					}
+				],
+				"rubric": "The plastic ball on the seesaw's low end (the yellow one) doubles in diameter (6 -> 12 cm) and still rests on the seesaw; the superball and everything else are unchanged."
+			}
+		},
+		{
+			"id": "d19-history-truck",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "reference:s3-car-ramp",
+			"history": [
+				{
+					"role": "user",
+					"text": "A toy car rolls down a ramp and onto the table."
+				},
+				{
+					"role": "assistant",
+					"text": "Built a toy car on a plank ramp propped on two books; it rolls down onto the table."
+				}
+			],
+			"prompt": "Make it a truck instead.",
+			"expect": {
+				"must_types": [
+					"truck",
+					"@ramp"
+				],
+				"forbid_types": [
+					"toy-car"
+				],
+				"counts": [
+					{
+						"of": "@vehicle",
+						"eq": 1
+					}
+				],
+				"edit": {
+					"replaced": [
+						{
+							"id": "car",
+							"by": "truck",
+							"near_m": 0.3
+						}
+					],
+					"max_new_items": 1
+				},
+				"relations": [
+					{
+						"rel": "over",
+						"a": "truck",
+						"b": "@ramp"
+					}
+				],
+				"outcomes": [
+					{
+						"kind": "descends",
+						"of": "truck",
+						"min_m": 0.02
+					}
+				],
+				"rubric": "'It' is the toy car: it becomes the catalog's truck at the top of the ramp (the ramp may be lengthened for the 50 cm truck), and it still rolls down onto the table."
+			}
+		},
+		{
+			"id": "d20-starter-swap-balls",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:rube-goldberg",
+			"prompt": "Change the yellow ball to a tennis ball and the red ball to a basketball.",
+			"expect": {
+				"must_types": [
+					"tennis-ball",
+					"basketball"
+				],
+				"forbid_types": [
+					"superball",
+					"plastic-ball"
+				],
+				"edit": {
+					"replaced": [
+						{
+							"id": "ball2",
+							"by": "tennis-ball",
+							"near_m": 0.1
+						},
+						{
+							"id": "ball1",
+							"by": "basketball",
+							"near_m": 0.15
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 1,
+					"goals_kept": true
+				},
+				"rubric": "Only the two balls change kind, each where it was (the basketball still waiting at the top of ramp 1, the tennis ball on the seesaw's low end); the ramps, dominoes, seesaw and box stay exactly as they were. The box goal still happens, or the reply says it may not."
+			}
+		},
+		{
+			"id": "d21-starter-taller-dominoes",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:rube-goldberg",
+			"prompt": "Make the dominoes taller.",
+			"expect": {
+				"must_types": [
+					"domino-row"
+				],
+				"edit": {
+					"props": [
+						{
+							"id": "dominoes",
+							"prop": "first_height",
+							"ratio": {
+								"min": 1.15,
+								"max": 2.5
+							}
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 0,
+					"goals_kept": true
+				},
+				"outcomes": [
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8,
+						"soft": true
+					}
+				],
+				"rubric": "The domino row is clearly taller (first height up by 15-150 %), still standing where it was and still knocked over; nothing else moves."
+			}
+		},
+		{
+			"id": "d22-starter-move-box",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:rube-goldberg",
+			"prompt": "Move the box 20 cm to the right.",
+			"expect": {
+				"must_types": [
+					"box"
+				],
+				"edit": {
+					"moved": [
+						{
+							"id": "box",
+							"dx": {
+								"min": 0.15,
+								"max": 0.25
+							},
+							"dy": {
+								"min": -0.03,
+								"max": 0.03
+							}
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 0,
+					"goals_kept": true
+				},
+				"rubric": "Only the box moves, about 20 cm right at the same height. If the ball no longer lands in it, the reply says so (or suggests a fix) instead of moving other things unasked."
+			}
+		},
+		{
+			"id": "d23-starter-steel-box",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:rube-goldberg",
+			"prompt": "Make the box out of steel.",
+			"expect": {
+				"must_types": [
+					"box"
+				],
+				"edit": {
+					"props": [
+						{
+							"id": "box",
+							"prop": "material",
+							"eq": "steel"
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 0,
+					"goals_kept": true
+				},
+				"rubric": "The box's material becomes steel (it looks metal); its place and size and everything else stay; the ball still lands in it or the reply says it may bounce out."
+			}
+		},
+		{
+			"id": "d24-starter-new-scene-wording",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:rube-goldberg",
+			"prompt": "New scene: the same machine, but with a bowling ball instead of the red ball.",
+			"expect": {
+				"must_types": [
+					"bowling-ball",
+					"seesaw",
+					"domino-row"
+				],
+				"forbid_types": [
+					"superball"
+				],
+				"edit": {
+					"replaced": [
+						{
+							"id": "ball1",
+							"by": "bowling-ball",
+							"near_m": 0.15
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 1,
+					"goals_kept": true
+				},
+				"rubric": "Despite the words 'new scene', this asks for the same machine with one change: the red superball becomes a bowling ball at the top of ramp 1; nothing else is rebuilt."
+			}
+		},
+		{
+			"id": "d25-starter-make-it-work-again",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scene:rube-goldberg-box-high",
+			"prompt": "It stopped working: the ball misses the box. Make it work again.",
+			"expect": {
+				"must_types": [
+					"box",
+					"seesaw"
+				],
+				"edit": {
+					"preserve": [
+						"ramp1",
+						"ramp2",
+						"dominoes",
+						"ball1"
+					],
+					"tol_m": 0.005,
+					"max_new_items": 1
+				},
+				"outcomes": [
+					{
+						"kind": "in",
+						"item": "#ball2",
+						"container": "#box"
+					}
+				],
+				"rubric": "The box hangs 30 cm too high, so the seesaw's ball misses it. The ball lands in the box again, by moving the box (or changing the seesaw's throw) rather than rebuilding; the ramps, dominoes and first ball stay exactly as they were."
+			}
+		},
+		{
+			"id": "d26-car-add-dominoes",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:car-ramp-dominoes",
+			"prompt": "Add three more dominoes to the row.",
+			"expect": {
+				"must_types": [
+					"domino-row",
+					"toy-car"
+				],
+				"edit": {
+					"props": [
+						{
+							"id": "dominoes",
+							"prop": "count",
+							"delta": {
+								"min": 3,
+								"max": 3
+							}
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 0
+				},
+				"outcomes": [
+					{
+						"kind": "topples",
+						"of": "@domino",
+						"min_fraction": 0.8,
+						"soft": true
+					}
+				],
+				"rubric": "The row has three more dominoes (7 -> 10), starting where it did; the car and ramp are unchanged."
+			}
+		},
+		{
+			"id": "d27-conveyor-tennis-balls",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:conveyor-delivery",
+			"prompt": "Use tennis balls instead of the golf balls.",
+			"expect": {
+				"must_types": [
+					"tennis-ball",
+					"conveyor-belt",
+					"box"
+				],
+				"forbid_types": [
+					"golf-ball"
+				],
+				"counts": [
+					{
+						"of": "tennis-ball",
+						"eq": 3
+					}
+				],
+				"edit": {
+					"replaced": [
+						{
+							"id": "ball1",
+							"by": "tennis-ball",
+							"near_m": 0.1
+						},
+						{
+							"id": "ball2",
+							"by": "tennis-ball",
+							"near_m": 0.1
+						},
+						{
+							"id": "ball3",
+							"by": "tennis-ball",
+							"near_m": 0.1
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 0,
+					"goals_kept": true
+				},
+				"rubric": "Three tennis balls sit on the belt where the golf balls were (spaced so the bigger balls do not overlap: small shifts along the belt are fine); the belt and the box stay; all three still end in the box, or the reply says some may not."
+			}
+		},
+		{
+			"id": "d28-conveyor-make-it-work-again",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scene:conveyor-delivery-box-far",
+			"prompt": "The balls don't land in the box any more. Make it work again.",
+			"expect": {
+				"must_types": [
+					"conveyor-belt",
+					"box"
+				],
+				"counts": [
+					{
+						"of": "golf-ball",
+						"eq": 3
+					}
+				],
+				"edit": {
+					"preserve": [
+						"ball1",
+						"ball2",
+						"ball3"
+					],
+					"tol_m": 0.005,
+					"max_new_items": 1
+				},
+				"outcomes": [
+					{
+						"kind": "in",
+						"item": "golf-ball",
+						"container": "box",
+						"all": true
+					}
+				],
+				"rubric": "All three golf balls end in the box again (the box moved back under the belt's end, or the belt adjusted); the balls start where they were."
+			}
+		},
+		{
+			"id": "d29-trampoline-soccer",
+			"category": "edit",
+			"mode": "edit",
+			"base_scene": "scenario:trampoline",
+			"prompt": "Make the basketball a soccer ball.",
+			"expect": {
+				"must_types": [
+					"soccer-ball",
+					"trampoline"
+				],
+				"forbid_types": [
+					"basketball"
+				],
+				"edit": {
+					"replaced": [
+						{
+							"id": "basketball",
+							"by": "soccer-ball",
+							"near_m": 0.05
+						}
+					],
+					"keep_others": true,
+					"tol_m": 0.005,
+					"max_new_items": 0
+				},
+				"outcomes": [
+					{
+						"kind": "hits",
+						"a": "soccer-ball",
+						"b": "trampoline"
+					}
+				],
+				"rubric": "The basketball becomes a soccer ball at the same place, still held and dropped onto the trampoline; the other balls and the trampoline stay exactly."
+			}
+		}
+	]
+}

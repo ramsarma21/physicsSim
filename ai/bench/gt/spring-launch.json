@@ -1,0 +1,70 @@
+{
+ "version": 2,
+ "id": "spring-launch",
+ "name": "Spring launcher",
+ "seconds": 4,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.4,
+  "x1": 2.2,
+  "y0": -0.12,
+  "y1": 1.08
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "support",
+   "type": "plank",
+   "name": "Support plank",
+   "x": 0.6,
+   "y": 0.11384,
+   "angle": -45,
+   "props": {
+    "length": 0.3
+   }
+  },
+  {
+   "id": "launcher",
+   "type": "spring-launcher",
+   "name": "Spring launcher",
+   "x": 0.62227,
+   "y": 0.13612,
+   "angle": -45,
+   "props": {
+    "compression": 0.046
+   }
+  },
+  {
+   "id": "ball",
+   "type": "golf-ball",
+   "name": "Golf ball",
+   "x": 0.71692,
+   "y": 0.23077
+  },
+  {
+   "id": "cup",
+   "type": "cup",
+   "name": "Cup",
+   "x": 1.99,
+   "y": 0,
+   "props": {
+    "width": 0.12,
+    "wall": 0.12
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "in",
+   "item": "ball",
+   "container": "cup",
+   "label": "Golf ball ends in the cup"
+  }
+ ]
+}

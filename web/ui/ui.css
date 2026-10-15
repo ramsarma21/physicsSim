@@ -1,0 +1,279 @@
+/* The product layer (web/ui/ui.js): the first-run intro, the help and shortcuts sheet, the empty-table starts, the loading state, the phone's
+   "more" menu, and the layout fixes that must come after ai/ai.css and export/export.css (the AI drawer docks beside the picture on wide screens).
+   Built on style.css's tokens, light and dark. */
+
+/* ---------- shared bits ---------- */
+.ui-ic { display: inline-grid; place-items: center; flex: none; }
+.ui-ic svg { width: 18px; height: 18px; fill: currentColor; display: block; }
+kbd, .ui-kbd {
+	display: inline-flex; align-items: center; justify-content: center; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 6px;
+	font: 600 11.5px/1 var(--font); color: var(--ink-2); background: var(--card); border: 1px solid var(--line-2); box-shadow: 0 1px 0 var(--line-2);
+	white-space: nowrap;
+}
+.ui-link { border: 0; background: none; padding: 4px 2px; color: var(--ink-2); font-weight: 600; font-size: var(--fs-md); text-decoration: underline; text-decoration-color: var(--line-2); text-underline-offset: 3px; }
+.ui-link:hover { color: var(--ink); text-decoration-color: currentColor; }
+
+/* the top bar's own buttons (help; on phones, "more") */
+.ui-help-btn svg, .ui-more svg { width: 18px; height: 18px; fill: var(--ink-2); }
+.ui-more { display: none !important; }
+/* harmonise the AI and video buttons with the bar's 32 px controls */
+.top .ai-btn { height: var(--ctl-h); padding-top: 0; padding-bottom: 0; }
+.top .xv-open { height: var(--ctl-h); }
+/* 781–1361 px: the two headline actions keep their words (Build with AI, Export video); Clear and Reset go into ⋯ instead */
+@media (min-width: 781px) and (max-width: 1361px) {
+	#clear, #reset { display: none !important; }
+	.ui-more { display: inline-grid !important; }
+	.top .xv-open { width: auto; padding: 0 12px 0 9px; }
+	.top .xv-open span { display: inline; }
+}
+@media (max-width: 780px) { .top .xv-open { width: var(--ctl-h); } }
+@media (min-width: 641px) and (max-width: 900px) { .top .ai-btn { padding: 0 12px 0 8px; } .top .ai-btn .ai-btn-t { display: inline; } }
+
+/* ---------- dialogs (intro, help): a card on a soft scrim; a sheet from the bottom on phones ---------- */
+dialog.ui-dialog {
+	padding: 0; border: 0; background: transparent; color: var(--ink); max-width: none; max-height: none; overflow: visible;
+	width: min(var(--ui-w, 640px), calc(100vw - 32px)); margin: auto;
+}
+dialog.ui-dialog::backdrop { background: var(--scrim); backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); animation: ui-fade var(--dur-3) ease; }
+dialog.ui-dialog[open] .ui-card { animation: ui-pop var(--dur-3) var(--ease); }
+dialog.ui-dialog.ui-closing .ui-card { animation: ui-out 160ms ease-in forwards; }
+dialog.ui-dialog.ui-closing::backdrop { animation: ui-fade-out 160ms ease-in forwards; }
+@keyframes ui-fade { from { opacity: 0; } }
+@keyframes ui-fade-out { to { opacity: 0; } }
+@keyframes ui-pop { from { opacity: 0; transform: translateY(10px) scale(0.98); } }
+@keyframes ui-out { to { opacity: 0; transform: translateY(6px) scale(0.985); } }
+.ui-card {
+	position: relative; display: flex; flex-direction: column; max-height: calc(100dvh - 32px); overflow: hidden; outline: none;
+	background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-xl); box-shadow: var(--shadow-lg);
+}
+.ui-x {
+	position: absolute; top: 12px; right: 12px; z-index: 2; width: 34px; height: 34px; padding: 0; border: 1px solid transparent; border-radius: 10px;
+	display: grid; place-items: center; background: transparent; color: var(--ink-2);
+}
+.ui-x:hover { background: var(--card); border-color: var(--line); color: var(--ink); }
+.ui-x svg { width: 20px; height: 20px; fill: currentColor; }
+
+/* ---------- the intro ---------- */
+dialog.ui-intro { --ui-w: 680px; }
+.ui-intro .ui-card { overflow-y: auto; }
+.ui-hero {
+	position: relative; height: 168px; flex: none; overflow: hidden; border-bottom: 1px solid var(--line);
+	background:
+		radial-gradient(120% 90% at 85% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%),
+		radial-gradient(90% 80% at 0% 100%, color-mix(in srgb, #c8955a 20%, transparent), transparent 60%),
+		linear-gradient(180deg, var(--view-bg), color-mix(in srgb, var(--view-bg) 80%, var(--bg)));
+}
+.ui-hero svg { position: absolute; left: 0; right: 0; bottom: 0; display: block; width: 100%; max-width: 560px; height: auto; margin: 0 auto; }
+.ui-hero .wood { fill: #b98250; }
+.ui-hero .wood-2 { fill: #a06c3c; }
+.ui-hero .wood-3 { fill: #d0a26f; }
+.ui-hero .shade { fill: rgba(0, 0, 0, 0.12); }
+.ui-hero .ball { fill: #d8362a; }
+.ui-hero .ball-2 { fill: #e9a92a; }
+.ui-hero .shine { fill: rgba(255, 255, 255, 0.55); }
+.ui-hero .box { fill: #c38d55; stroke: #8b5e30; stroke-width: 1.2; stroke-linejoin: round; }
+/* the little machine (ui/hero.js works its motion out and plays it): the ball rolls down the ramp and drops to the table, the dominoes fall
+   one after another and come to rest leaning on each other, and the last one pushes the second ball off the block into the box. The dominoes
+   turn about their front foot; the balls roll about their centre. */
+.ui-hero .dom { transform-box: fill-box; transform-origin: 100% 100%; }
+.ui-hero .spin { transform-box: fill-box; transform-origin: center; }
+.ui-intro-body { padding: 22px 28px 8px; }
+.ui-eyebrow { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; font-size: var(--fs-sm); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.ui-eyebrow .logo { width: 20px; height: 20px; border-radius: 6px; }
+.ui-intro h2 { margin: 0 0 8px; font-size: var(--fs-2xl); line-height: 1.12; letter-spacing: -0.025em; font-weight: 750; text-wrap: balance; }
+.ui-intro h2 em { --em-end: #0f8a83; font-style: normal; background: linear-gradient(120deg, var(--accent), var(--em-end)); -webkit-background-clip: text; background-clip: text; color: transparent; } /* (both ends 4:1 or better on the card: large text needs 3:1) */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .ui-intro h2 em { --em-end: #12a8a0; } }
+:root[data-theme="dark"] .ui-intro h2 em { --em-end: #12a8a0; }
+.ui-lede { margin: 0 0 18px; max-width: 54ch; font-size: 15px; line-height: 1.55; color: var(--ink-2); text-wrap: pretty; }
+.ui-facts { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 20px; padding: 0; list-style: none; font-size: var(--fs-sm); color: var(--ink-2); }
+.ui-facts li { display: inline-flex; align-items: center; gap: 6px; }
+.ui-facts li::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--ok); }
+
+.ui-starts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ui-start {
+	position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-height: 124px; padding: 14px 14px 13px; text-align: left;
+	border: 1px solid var(--line-2); border-radius: var(--r-lg); background: var(--card); color: var(--ink);
+	transition: border-color var(--dur-1), box-shadow var(--dur-2), transform var(--dur-1);
+}
+.ui-start:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 14%, transparent); transform: translateY(-2px); }
+.ui-start:active { transform: translateY(0); }
+.ui-start b { font-size: var(--fs-base); font-weight: 700; letter-spacing: -0.005em; margin-top: 8px; }
+.ui-start > span:not(.ui-start-ic) { font-size: var(--fs-sm); line-height: 1.4; color: var(--ink-2); }
+.ui-start kbd { position: absolute; top: 12px; right: 12px; }
+.ui-start-ic { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.ui-start-ic svg { width: 19px; height: 19px; fill: currentColor; }
+.ui-start.ui-start-ai { border-color: transparent; background: linear-gradient(var(--card), var(--card)) padding-box, var(--ai-grad, linear-gradient(135deg, #6d4dff, #2c7bff 55%, #12a8a0)) border-box; }
+.ui-start.ui-start-ai .ui-start-ic { background: var(--ai-grad, linear-gradient(135deg, #6d4dff, #2c7bff 55%, #12a8a0)); color: #fff; box-shadow: 0 4px 14px color-mix(in srgb, #6d4dff 30%, transparent); }
+.ui-start.waiting { pointer-events: none; }
+.ui-start .ui-wait { display: none; font-size: var(--fs-xs); color: var(--ink-3); }
+.ui-start.waiting .ui-wait { display: block; }
+.ui-intro-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 28px 18px; font-size: var(--fs-sm); color: var(--ink-3); }
+.ui-intro-foot kbd { margin: 0 2px; }
+
+/* ---------- help and shortcuts ---------- */
+dialog.ui-help { --ui-w: 760px; }
+.ui-help-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 18px 60px 14px 22px; border-bottom: 1px solid var(--line); }
+.ui-help-head .ui-start-ic { flex: none; }
+.ui-help-head h2 { margin: 0; font-size: 18px; letter-spacing: -0.015em; }
+.ui-help-head p { margin: 1px 0 0; font-size: var(--fs-sm); color: var(--ink-3); }
+.ui-help-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 16px 22px 18px; }
+.ui-how { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+.ui-how section { padding: 12px 13px; border-radius: var(--r-md); background: var(--card); border: 1px solid var(--line); }
+.ui-how h3 { display: flex; align-items: center; gap: 8px; margin: 0 0 5px; font-size: var(--fs-md); }
+.ui-how h3 .ui-ic { width: 24px; height: 24px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); }
+.ui-how h3 .ui-ic svg { width: 15px; height: 15px; }
+.ui-how p { margin: 0; font-size: var(--fs-sm); line-height: 1.5; color: var(--ink-2); }
+.ui-keys { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 28px; }
+.ui-keys section { min-width: 0; margin-bottom: 10px; }
+.ui-keys h3 { margin: 0 0 4px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-3); }
+.ui-keys dl { margin: 0; }
+.ui-keys .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+.ui-keys .row:last-child { border-bottom: 0; }
+.ui-keys dt { order: 2; flex: none; display: flex; gap: 4px; align-items: center; color: var(--ink-3); font-size: var(--fs-xs); }
+.ui-keys dd { margin: 0; font-size: var(--fs-md); color: var(--ink); min-width: 0; }
+.ui-help-foot { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 22px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, var(--bg)); font-size: var(--fs-sm); color: var(--ink-3); }
+
+/* ---------- the empty table ---------- */
+.ui-empty {
+	position: absolute; left: 0; right: 0; top: max(56px, 18%); z-index: 4; margin: 0 auto; width: min(580px, calc(100% - 32px));
+	pointer-events: none; animation: ui-pop var(--dur-3) var(--ease);
+}
+.ui-empty-card {
+	pointer-events: auto; text-align: center; padding: 22px 22px 18px; border-radius: var(--r-xl);
+	background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); box-shadow: var(--shadow-lg);
+	backdrop-filter: blur(12px) saturate(1.1); -webkit-backdrop-filter: blur(12px) saturate(1.1);
+}
+.ui-empty h2 { margin: 0 0 4px; font-size: 19px; letter-spacing: -0.015em; }
+.ui-empty p { margin: 0 auto 16px; max-width: 42ch; font-size: var(--fs-md); line-height: 1.5; color: var(--ink-2); }
+.ui-empty-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.ui-empty-acts .ui-chip {
+	display: inline-flex; align-items: center; gap: 7px; height: 36px; padding: 0 14px 0 10px; border-radius: var(--r-pill); font-weight: 650; font-size: var(--fs-md);
+	border: 1px solid var(--line-2); background: var(--card); color: var(--ink); transition: border-color var(--dur-1), transform var(--dur-1), box-shadow var(--dur-1);
+}
+.ui-empty-acts .ui-chip:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-2)); box-shadow: var(--shadow); transform: translateY(-1px); }
+.ui-empty-acts .ui-chip .ui-ic { width: 22px; height: 22px; border-radius: 7px; background: var(--accent-soft); color: var(--accent); }
+.ui-empty-acts .ui-chip .ui-ic svg { width: 14px; height: 14px; }
+.ui-empty-acts .ui-chip.ai { border-color: transparent; background: linear-gradient(var(--card), var(--card)) padding-box, var(--ai-grad, linear-gradient(135deg, #6d4dff, #2c7bff)) border-box; }
+.ui-empty-acts .ui-chip.ai .ui-ic { background: var(--ai-grad, linear-gradient(135deg, #6d4dff, #2c7bff)); color: #fff; }
+.ui-empty .ui-tip { margin: 14px auto 0; max-width: none; font-size: var(--fs-sm); color: var(--ink-3); }
+
+/* ---------- the first picture is on its way (in the studio's own wall and table colours, light or dark, so it fades into the same picture) ---------- */
+.ui-boot {
+	position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; pointer-events: none; transition: opacity 360ms ease;
+	background: linear-gradient(180deg, #c6c4c0 0, #c2c0bc 74%, #a58b74 74%, #937762 100%);
+}
+.ui-boot::before {
+	content: ""; position: absolute; inset: 0;
+	background: linear-gradient(100deg, transparent 30%, color-mix(in srgb, var(--card) 45%, transparent) 50%, transparent 70%) -100% 0 / 50% 100% no-repeat;
+	animation: ui-sheen 1.6s ease-in-out infinite;
+}
+@keyframes ui-sheen { to { background-position: 250% 0; } }
+.ui-boot.gone { opacity: 0; }
+.ui-boot-in { position: relative; display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 16px 22px; border-radius: var(--r-lg); background: color-mix(in srgb, var(--panel) 80%, transparent); box-shadow: var(--shadow); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); }
+.ui-boot-in b { font-size: var(--fs-base); font-weight: 650; }
+.ui-dots { display: flex; gap: 6px; }
+.ui-dots i { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); animation: ui-dot 1s ease-in-out infinite; }
+.ui-dots i:nth-child(2) { animation-delay: 0.15s; }
+.ui-dots i:nth-child(3) { animation-delay: 0.3s; }
+@keyframes ui-dot { 0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; } 40% { transform: scale(1); opacity: 1; } }
+
+/* a toast that just went: it fades instead of vanishing */
+.toast.ui-toast-out { animation: ui-toast-out 180ms ease-in forwards; }
+@keyframes ui-toast-out { to { opacity: 0; transform: translate(-50%, 6px); } }
+
+/* ---------- the phone's "more" menu ---------- */
+.ui-menu {
+	position: fixed; z-index: 70; min-width: 236px; padding: 6px; border-radius: var(--r-lg); background: var(--panel); border: 1px solid var(--line); box-shadow: var(--shadow-lg);
+	animation: ui-menu-in 160ms var(--ease); transform-origin: top right;
+}
+@keyframes ui-menu-in { from { opacity: 0; transform: translateY(-4px) scale(0.98); } }
+.ui-menu button {
+	width: 100%; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 10px; border: 0; border-radius: var(--r-sm); background: transparent;
+	color: var(--ink); font-size: var(--fs-base); font-weight: 550; text-align: left;
+}
+.ui-menu button:hover:not(:disabled), .ui-menu button:focus-visible { background: var(--accent-soft); outline: none; }
+.ui-menu button:disabled { opacity: 0.45; cursor: default; }
+.ui-menu button .ui-ic { color: var(--ink-2); }
+.ui-menu hr { margin: 5px 4px; border: 0; border-top: 1px solid var(--line); }
+
+/* ---------- the AI drawer on a wide screen (1440 px up: the picture keeps 940 px or more) docks beside the picture instead of over it: the view
+   (and the transport under it) give it room, so a scene it builds is framed in the space that shows; the view re-frames when the drawer opens,
+   folds to its chip (the view has its full width again) and unfolds. Narrower, the drawer floats over the picture. Below 1600 px the settings
+   panel steps aside while the drawer is open, so the picture keeps 730 px or more (it comes back as it was when the drawer closes or folds). ---------- */
+@media (min-width: 1440px) {
+	body.ai-open:not(.ai-folded) .stage { padding-right: calc(min(var(--ai-w, 440px), 100vw - 28px) + 14px + 12px); }
+	body.ai-open:not(.ai-folded) .view-tools { right: 10px; transition: none; }
+	body.ai-open.panel-right:not(.panel-collapsed):not(.ai-folded) .view-tools { right: calc(var(--pw) + 10px); }
+	body.ai-open:not(.ai-folded) .ai-drawer:not(.mini) { bottom: 12px; }
+	body.ai-open:not(.ai-folded) .qual > span { display: none; } /* (the transport stays one row) */
+}
+@media (min-width: 901px) and (max-width: 1599px) {
+	body.ai-open:not(.ai-folded) .panel { display: none; }
+	body.ai-open:not(.ai-folded) .viewport .warnings { left: 12px; }
+}
+
+/* ---------- narrow bars: the file and scene actions go into "more" (the bar keeps to two lines) ---------- */
+@media (max-width: 780px) {
+	.top { padding: 8px 12px; gap: 8px; }
+	.top-right { width: 100%; flex-wrap: nowrap; gap: 4px; }
+	.top-right select { flex: 1 1 auto; min-width: 0; max-width: none; }
+	#save, #export, #import, #clear, #reset, .ui-help-btn { display: none !important; }
+	.ui-more { display: inline-grid !important; }
+	.stage { padding: 10px 12px 14px; }
+}
+
+/* ---------- phones ---------- */
+@media (max-width: 640px) {
+	.status { padding: 0; width: 26px; min-width: 26px; justify-content: center; gap: 0; border-color: transparent; background: transparent; }
+	.status b { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+	dialog.ui-dialog { width: 100%; margin: auto 0 0; }
+	dialog.ui-dialog .ui-card { border-radius: var(--r-xl) var(--r-xl) 0 0; border-bottom: 0; max-height: calc(100dvh - 24px); }
+	dialog.ui-dialog[open] .ui-card { animation-name: ui-up; }
+	.ui-hero { height: 128px; }
+	.ui-intro-body { padding: 18px 18px 4px; }
+	.ui-intro h2 { font-size: 24px; }
+	.ui-lede { font-size: 14px; margin-bottom: 14px; }
+	.ui-facts { margin-bottom: 14px; }
+	.ui-starts { grid-template-columns: 1fr; gap: 8px; }
+	.ui-start { min-height: 0; display: grid; grid-template-columns: auto 1fr; column-gap: 12px; align-items: center; padding: 12px; }
+	.ui-start .ui-start-ic { grid-row: span 2; }
+	.ui-start b { margin: 0; }
+	.ui-start kbd { display: none; }
+	.ui-intro-foot { padding: 12px 18px calc(14px + env(safe-area-inset-bottom)); }
+	.ui-intro-foot > span { display: none; }
+	.ui-help-head { padding: 14px 56px 12px 16px; }
+	.ui-help-body { padding: 14px 16px; }
+	.ui-how, .ui-keys { grid-template-columns: 1fr; }
+	.ui-help-foot { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+	.ui-empty { top: 52px; width: calc(100% - 20px); }
+	.ui-empty-card { padding: 16px 14px 14px; }
+	.ui-empty p { margin-bottom: 12px; }
+	.ui-empty .ui-tip { display: none; }
+}
+@media (max-width: 900px) and (min-width: 641px) {
+	.ui-starts { gap: 8px; }
+	.ui-how { grid-template-columns: 1fr; }
+}
+@keyframes ui-up { from { transform: translateY(40%); opacity: 0; } }
+/* words that differ by device (ui.js): a touch screen has no keys and no pointer to hover; a bar under 781 px keeps its file actions in ⋯ */
+.ui-touch, .ui-narrow { display: none; }
+@media (hover: none) {
+	.ui-start kbd, .ui-intro-foot > span, .ui-help-foot > span, .ui-keys, .ui-hover { display: none; }
+	.ui-touch { display: inline; }
+	.ui-how { margin-bottom: 0; }
+}
+@media (max-width: 780px) { .ui-wide { display: none; } .ui-narrow { display: inline; } }
+
+/* ---------- a run that failed: the banner offers a way on ---------- */
+.error:has(> .ui-err-acts) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; padding-top: 7px; padding-bottom: 7px; }
+.ui-err-acts { display: inline-flex; gap: 6px; margin-left: auto; }
+.ui-err-btn {
+	height: 28px; padding: 0 11px; border-radius: var(--r-sm); font-size: var(--fs-sm); font-weight: 650; white-space: nowrap;
+	color: var(--bad); background: var(--card); border: 1px solid color-mix(in srgb, var(--bad) 40%, transparent);
+}
+.ui-err-btn:hover { border-color: var(--bad); }
+.ui-err-btn[hidden] { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+	.ui-boot::before, .ui-dots i { animation: none !important; }
+}

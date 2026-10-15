@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "id": "wrecking-ball",
+  "name": "Wrecking ball",
+  "seconds": 5.0,
+  "release": 0.5,
+  "stage": {
+    "x0": -0.15,
+    "x1": 2.25,
+    "y0": -0.15,
+    "y1": 1.45
+  },
+  "items": [
+    {
+      "id": "table",
+      "type": "table",
+      "name": "Table",
+      "x": 1.3,
+      "y": 0.0
+    },
+    {
+      "id": "crane",
+      "type": "wrecking-ball",
+      "name": "Wrecking ball",
+      "x": 0.9,
+      "y": 1.1625,
+      "props": {
+        "bob_mass": 8.0,
+        "start_angle": -65.0
+      }
+    },
+    {
+      "id": "brick1",
+      "type": "brick",
+      "name": "Brick 1",
+      "x": 1.07,
+      "y": 0.0325
+    },
+    {
+      "id": "brick2",
+      "type": "brick",
+      "name": "Brick 2",
+      "x": 1.07,
+      "y": 0.098
+    },
+    {
+      "id": "brick3",
+      "type": "brick",
+      "name": "Brick 3",
+      "x": 1.07,
+      "y": 0.1635
+    },
+    {
+      "id": "brick4",
+      "type": "brick",
+      "name": "Brick 4",
+      "x": 1.07,
+      "y": 0.229
+    },
+    {
+      "id": "brick5",
+      "type": "brick",
+      "name": "Brick 5",
+      "x": 1.07,
+      "y": 0.2945
+    }
+  ],
+  "goals": []
+}

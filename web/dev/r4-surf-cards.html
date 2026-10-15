@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>R4 surfaces cards</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+:root { --view-bg: #f4f4f2; --card: #ffffff; }
+:root[data-theme="dark"] { --view-bg: #232220; --card: #24221f; color-scheme: dark; }
+body { margin: 0; background: var(--card); font: 12px system-ui; color: #888; }
+.grid { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px }
+.cell { background: var(--view-bg); border-radius: 6px; position: relative }
+.cell canvas { display: block }
+</style>
+</head>
+<body><div class="grid" id="grid"></div>
+<script type="module">
+// Round-3 contact sheet of every catalog card, as the app paints them (96 x 72 css px canvases at dpr 2 unless ?w= says otherwise).
+//   ?theme=light|dark  ?items=a,b,c (default all)  ?w=96 (css width)  ?cols=12
+//   window.sheet(name) -> saves web/dev/shots/<name>.png (a labelled sheet); window.cells = [[key, canvas]]
+const q = new URLSearchParams(location.search)
+const theme = q.get("theme") || "light"
+if (theme === "dark") document.documentElement.dataset.theme = "dark"
+const thumbs = await import("../thumbs3d.js")
+const catalog = await (await fetch("/api/catalog")).json()
+thumbs.setCatalog(catalog)
+const only = q.get("items") ? q.get("items").split(",") : null
+const cw = +(q.get("w") || 96)
+const ch = Math.round(cw * 0.75)
+const dpr = +(q.get("dpr") || 2)
+const grid = document.getElementById("grid")
+const cells = []
+const t0 = performance.now()
+for (const t of catalog.types) {
+  if (only && !only.includes(t.key)) continue
+  const cell = document.createElement("div")
+  cell.className = "cell"
+  const cv = document.createElement("canvas")
+  cv.width = Math.round(cw * dpr); cv.height = Math.round(ch * dpr)
+  cv.style.width = cw + "px"; cv.style.height = ch + "px"
+  cell.append(cv); grid.append(cell)
+  cells.push([t.key, cv])
+  cells[cells.length - 1].push(t.preview)
+  thumbs.drawPreview3D(cv, t.preview, catalog.looks, null)
+}
+window.cells = cells
+window.thumbs = thumbs
+window.pending = () => cells.filter(([, , p]) => !thumbs.hasShot(p)).map(([k]) => k)
+for (let i = 0; i < 1200 && window.pending().length; i++) await new Promise((r) => setTimeout(r, 250))
+window.renderMs = performance.now() - t0
+window.sheet = async (name, { cols = +(q.get("cols") || 12), label = true } = {}) => {
+  const pad = 6
+  const w = cells[0][1].width, h = cells[0][1].height
+  const out = document.createElement("canvas")
+  out.width = cols * (w + pad) + pad
+  out.height = Math.ceil(cells.length / cols) * (h + pad) + pad
+  const g = out.getContext("2d")
+  const css = getComputedStyle(document.documentElement)
+  const page = theme === "dark" ? "#24221f" : "#ffffff"
+  const bg = theme === "dark" ? "#232220" : "#f4f4f2"
+  g.fillStyle = page; g.fillRect(0, 0, out.width, out.height)
+  cells.forEach(([k, cv], i) => {
+    const x = pad + (i % cols) * (w + pad), y = pad + Math.floor(i / cols) * (h + pad)
+    g.fillStyle = bg; g.fillRect(x, y, w, h) // the card's own background behind the picture, as the app has
+    g.drawImage(cv, x, y)
+    if (label) { g.fillStyle = theme === "dark" ? "#bbb" : "#333"; g.font = `${Math.round(w / 14)}px system-ui`; g.fillText(k, x + 4, y + h - 5) }
+  })
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: out.toDataURL() }) })
+  return r.status
+}
+window.ready = true
+</script></body></html>

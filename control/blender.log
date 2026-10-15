@@ -1,0 +1,51 @@
+00:00.467  blend            | Read blend: "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ball-drop.blend"
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ball-drop.blend/sim_studio.py:111: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ball-drop.blend/sim_studio.py:90: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ball-drop.blend/sim_studio.py:288: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+playground bridge ready: /Users/ramsarma/Downloads/science-map-share/blender-playground/control/inbox
+05:11.134  blend            | Read blend: "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/three-balls.blend"
+register_class(...):
+Info: Registering operator class: 'SIM_OT_simulate', bl_idname 'sim.simulate' has been registered before, unregistering previous
+register_class(...):
+Info: Registering operator class: 'SIM_OT_rebuild', bl_idname 'sim.rebuild' has been registered before, unregistering previous
+register_class(...):
+Info: Registering panel class: 'SIM_PT_panel', bl_idname 'SIM_PT_panel' has been registered before, unregistering previous
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/three-balls.blend/sim_studio.py:111: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/three-balls.blend/sim_studio.py:90: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/three-balls.blend/sim_studio.py:288: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+11:17.350  blend            | Read blend: "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend"
+register_class(...):
+Info: Registering operator class: 'SIM_OT_simulate', bl_idname 'sim.simulate' has been registered before, unregistering previous
+register_class(...):
+Info: Registering operator class: 'SIM_OT_rebuild', bl_idname 'sim.rebuild' has been registered before, unregistering previous
+register_class(...):
+Info: Registering panel class: 'SIM_PT_panel', bl_idname 'SIM_PT_panel' has been registered before, unregistering previous
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend/sim_studio.py:111: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend/sim_studio.py:90: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend/sim_studio.py:288: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+12:54.019  blend            | Read blend: "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend"
+register_class(...):
+Info: Registering operator class: 'SIM_OT_simulate', bl_idname 'sim.simulate' has been registered before, unregistering previous
+register_class(...):
+Info: Registering operator class: 'SIM_OT_rebuild', bl_idname 'sim.rebuild' has been registered before, unregistering previous
+register_class(...):
+Info: Registering panel class: 'SIM_PT_panel', bl_idname 'SIM_PT_panel' has been registered before, unregistering previous
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend/sim_studio.py:111: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend/sim_studio.py:90: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend/sim_studio.py:288: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+47:47.557  blend            | Read blend: "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend"
+register_class(...):
+Info: Registering operator class: 'SIM_OT_simulate', bl_idname 'sim.simulate' has been registered before, unregistering previous
+register_class(...):
+Info: Registering operator class: 'SIM_OT_rebuild', bl_idname 'sim.rebuild' has been registered before, unregistering previous
+register_class(...):
+Info: Registering panel class: 'SIM_PT_panel', bl_idname 'SIM_PT_panel' has been registered before, unregistering previous
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py:111: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py:90: DeprecationWarning: 'Material.use_nodes' is expected to be removed in Blender 6.0
+/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py:288: DeprecationWarning: 'World.use_nodes' is expected to be removed in Blender 6.0
+Traceback (most recent call last):
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py", line 546, in execute
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py", line 197, in build
+KeyError: 'the length of IDProperty names is limited to 63 characters'
+01:36:14.739  bpy.rna          | ERROR Python script error in SIM_OT_rebuild.execute
+01:45:05.079  render           | Saved: '/var/folders/8c/mfv12x5x74d892l9p7r1nmbm0000gn/T/tmpbav379jb/thumb.png'

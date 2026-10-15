@@ -1,0 +1,367 @@
+{
+ "case": "d5-plinko-leftmost",
+ "notes": "ball moved from x=1.32 to x=0.92",
+ "plan": {
+  "title": "Plinko",
+  "items": [
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "props": {
+     "height": 1.3,
+     "invisible_in_3d": true
+    },
+    "place": {
+     "on": "table",
+     "x": 0.84
+    },
+    "why": "reference"
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "props": {
+     "height": 1.3,
+     "invisible_in_3d": true
+    },
+    "place": {
+     "on": "table",
+     "x": 1.76
+    },
+    "why": "reference"
+   },
+   {
+    "id": "board",
+    "type": "peg-board",
+    "name": "Peg board",
+    "props": {
+     "rows": 9,
+     "columns": 8,
+     "spacing": 0.09,
+     "peg_diameter": 0.01
+    },
+    "place": {
+     "on": "air",
+     "x": 1.3,
+     "y_m": 0.88354
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup1",
+    "type": "cup",
+    "name": "Cup 1",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 0.94
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup2",
+    "type": "cup",
+    "name": "Cup 2",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.03
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup3",
+    "type": "cup",
+    "name": "Cup 3",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.12
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup4",
+    "type": "cup",
+    "name": "Cup 4",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.21
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup5",
+    "type": "cup",
+    "name": "Cup 5",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.3
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup6",
+    "type": "cup",
+    "name": "Cup 6",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.39
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup7",
+    "type": "cup",
+    "name": "Cup 7",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.48
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup8",
+    "type": "cup",
+    "name": "Cup 8",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.57
+    },
+    "why": "reference"
+   },
+   {
+    "id": "cup9",
+    "type": "cup",
+    "name": "Cup 9",
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 1.66
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ball",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.92,
+     "y_m": 1.02489
+    },
+    "held": true,
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 6,
+  "notes": "ball moved from x=1.32 to x=0.92"
+ },
+ "scene": {
+  "version": 2,
+  "id": "plinko",
+  "name": "Plinko",
+  "seconds": 6,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.2,
+   "y0": -0.12,
+   "y1": 1.08
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "props": {
+     "width": 3.7,
+     "thickness": 0.15
+    }
+   },
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "x": 0.84,
+    "y": 0,
+    "props": {
+     "height": 1.3,
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 1.76,
+    "y": 0,
+    "props": {
+     "height": 1.3,
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "board",
+    "type": "peg-board",
+    "name": "Peg board",
+    "x": 1.3,
+    "y": 0.88354,
+    "props": {
+     "rows": 9,
+     "columns": 8,
+     "spacing": 0.09,
+     "peg_diameter": 0.01
+    }
+   },
+   {
+    "id": "cup1",
+    "type": "cup",
+    "name": "Cup 1",
+    "x": 0.94,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup2",
+    "type": "cup",
+    "name": "Cup 2",
+    "x": 1.03,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup3",
+    "type": "cup",
+    "name": "Cup 3",
+    "x": 1.12,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup4",
+    "type": "cup",
+    "name": "Cup 4",
+    "x": 1.21,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup5",
+    "type": "cup",
+    "name": "Cup 5",
+    "x": 1.3,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup6",
+    "type": "cup",
+    "name": "Cup 6",
+    "x": 1.39,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup7",
+    "type": "cup",
+    "name": "Cup 7",
+    "x": 1.48,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup8",
+    "type": "cup",
+    "name": "Cup 8",
+    "x": 1.57,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup9",
+    "type": "cup",
+    "name": "Cup 9",
+    "x": 1.66,
+    "y": 0,
+    "props": {
+     "width": 0.084,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "ball",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "x": 0.92,
+    "y": 1.02489,
+    "held": true
+   }
+  ],
+  "goals": []
+ }
+}

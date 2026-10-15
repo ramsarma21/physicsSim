@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>catalog drawer test</title>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../panels.css">
+<style>
+  body { display: block; }
+  #cat { position: absolute; left: 12px; top: 12px; bottom: 12px; width: var(--panel-w); z-index: 10; }
+  #drop { position: absolute; left: 372px; top: 12px; right: 372px; bottom: 12px; border: 2px dashed var(--line-2); border-radius: var(--radius); background: var(--view-bg); }
+  #drop p { margin: 12px; color: var(--ink-3); }
+  #drop i { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--accent); }
+  #drop i::after { content: attr(data-k); position: absolute; left: 18px; top: -2px; white-space: nowrap; font-size: 12px; font-style: normal; color: var(--ink-2); }
+  #side { position: absolute; right: 12px; top: 12px; bottom: 12px; width: 348px; display: flex; flex-direction: column; gap: 8px; }
+  #bar { display: flex; flex-wrap: wrap; gap: 6px; }
+  #log { flex: 1; margin: 0; overflow: auto; padding: 8px; font: 12px/1.4 ui-monospace, Menlo, monospace; background: var(--card); border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="cat"></div>
+<div id="drop"><p>Drop zone (a stand-in for the view): drag a card here. <b id="painter"></b></p></div>
+<div id="side">
+  <div id="bar">
+    <button class="ghost" id="b-open">open()</button>
+    <button class="ghost" id="b-close">close()</button>
+    <button class="ghost" id="b-toggle">toggle()</button>
+    <button class="ghost" id="b-theme">dark / light</button>
+  </div>
+  <pre id="log"></pre>
+</div>
+<script type="module">
+import { createCatalog, placeholderPreview } from "../catalog-ui.js"
+
+// The 2D view's drawPreview when it exists yet, else the plain placeholder painter.
+const view2d = await import("../view2d.js").catch(() => ({}))
+const drawPreview = view2d.drawPreview ?? placeholderPreview
+document.getElementById("painter").textContent = view2d.drawPreview ? "(painter: view2d.js)" : "(painter: placeholder)"
+
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+const logEl = document.getElementById("log")
+const logs = []
+const log = (s) => {
+  logs.unshift(s)
+  logEl.textContent = logs.slice(0, 60).join("\n")
+}
+const drop = document.getElementById("drop")
+const cat = createCatalog(document.getElementById("cat"), {
+  catalog,
+  drawPreview,
+  onAdd: (key) => log(`onAdd("${key}")`),
+  onDrop: (key, x, y) => {
+    const r = drop.getBoundingClientRect()
+    const inside = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom
+    log(`onDrop("${key}", ${Math.round(x)}, ${Math.round(y)}) ${inside ? "inside" : "outside"} the drop zone`)
+    if (inside) {
+      const dot = document.createElement("i")
+      dot.dataset.k = key
+      dot.style.left = x - r.left + "px"
+      dot.style.top = y - r.top + "px"
+      drop.append(dot)
+    }
+  },
+})
+window.cat = cat
+window.logs = logs
+window.catalog = catalog
+const $ = (id) => document.getElementById(id)
+$("b-open").onclick = () => cat.open()
+$("b-close").onclick = () => cat.close()
+$("b-toggle").onclick = () => cat.toggle()
+$("b-theme").onclick = () => {
+  const d = document.documentElement
+  d.dataset.theme = d.dataset.theme === "dark" ? "light" : "dark"
+}
+cat.open()
+</script>
+</body>
+</html>

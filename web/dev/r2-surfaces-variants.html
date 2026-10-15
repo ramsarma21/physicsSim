@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>R2 surfaces variants</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+</head>
+<body>
+<pre id="out">running</pre>
+<script type="module">
+// Fixer's page: every surfaces / rods / containers item built with every one of its materials (a smoke test for the shared lib):
+//   await window.variants(keys?) -> rows [{item, material, ms, tris, meshes, err}]; build errors are caught from console.warn ("model ... failed").
+const all = "plank,steel-beam,ice-sheet,glass-sheet,rubber-mat,carpet-strip,concrete-slab,peg,bumper,funnel,staircase,wooden-rod,steel-rod,pendulum,seesaw,lever,hinged-gate,newtons-cradle,peg-board,fan,box,cup,bucket,basket".split(",")
+const errs = []
+const w0 = console.warn.bind(console)
+console.warn = (...a) => { errs.push(a.map(String).join(" ")); w0(...a) }
+const { buildModel } = await import("../models3d.js")
+const catalog = await (await fetch("/api/catalog")).json()
+window.variants = async (keys = all) => {
+  const rows = []
+  for (const key of keys) {
+    const type = catalog.types.find((t) => t.key === key)
+    const mats = type.props.find((p) => p.key === "material")?.choices ?? [null]
+    for (const mat of mats) {
+      const props = mat ? { material: mat } : {}
+      const one = { version: 2, id: "x", name: "x", seconds: 0.1, release: 0.1, stage: { x0: -1, x1: 1, y0: -1, y1: 1 }, items: [{ id: "it", type: key, x: 0, y: 0, angle: 0, props }], goals: [] }
+      const lay = await (await fetch("/api/layout", { method: "POST", body: JSON.stringify({ scene: one }) })).json()
+      const res = lay.resolved?.it ?? {}
+      const n0 = errs.length
+      let tris = 0, meshes = 0
+      const t0 = performance.now()
+      for (const s of lay.doc.solids) {
+        const o = buildModel(s, { props: res, look: catalog.looks[s.look] ?? {} })
+        if (o) o.traverse((m) => {
+          if (!m.isMesh) return
+          meshes++
+          const g = m.geometry
+          tris += (g.index ? g.index.count / 3 : g.attributes.position.count / 3) * (m.isInstancedMesh ? m.count : 1)
+        })
+      }
+      rows.push({ item: key, material: mat, ms: Math.round(performance.now() - t0), tris: Math.round(tris), meshes, err: errs.slice(n0).join(" | ") || undefined })
+    }
+  }
+  document.getElementById("out").textContent = JSON.stringify(rows, null, 1)
+  return rows
+}
+window.ready = true
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+file: /Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/ramp-bounce.blend
+sliders: 20.1 0.45 0.05 1.0 0.0
+Info: Simulated 193 frames
+tab: bpy_struct: attribute "active_panel_category" from "Region" is read-only
+tab: UNSUPPORTED path: True

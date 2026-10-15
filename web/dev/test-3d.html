@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D view test</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #bar { position: fixed; left: 8px; top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; max-width: 80vw; background: #000a; padding: 6px 8px; border-radius: 6px; z-index: 2; }
+  #bar button, #bar select { font: inherit; padding: 3px 8px; cursor: pointer; }
+  #bar button.on { background: #fc6; }
+  #bar input[type=range] { width: 220px; }
+  #info { min-width: 90px; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="bar">
+  <select id="scene"></select>
+  <button data-cam="wide">wide</button><button data-cam="follow">follow</button><button data-cam="orbit">orbit</button>
+  <button id="play">pause</button>
+  <input id="scrub" type="range" min="0" max="1" step="0.001" value="0">
+  <button id="refl" class="on">reflection</button>
+  <span id="info"></span>
+</div>
+<script type="module">
+// Dev page for web/view3d.js.  ?scene=
+//   sample    web/sample/scene-sim.json (the starter, as the server simulated it)
+//   compose   a scene built from the live catalog: one or two of every category, simulated by POST /api/simulate
+//   synth     hand-made doc + track: every ball pattern, clay squash, steel, glass balls
+//   synth2    hand-made doc + track: logs / cylinders, glass / ice / tapered / coloured slabs, legs, cords, held ball + pin
+//   <id>      a built-in or saved scenario (GET /api/scenarios/<id>), simulated by POST /api/simulate
+// other params: cam=wide|follow|orbit  t=<s>  bar=0  refl=0
+// window.view, window.setT(t), window.snap(name) (saves the canvas to web/dev/shots/<name>.png), window.sim
+import { createView3D } from "../view3d.js"
+
+const q = new URLSearchParams(location.search)
+const sceneId = q.get("scene") || "sample"
+const info = document.getElementById("info")
+const say = (m) => (info.textContent = m)
+if (q.get("bar") === "0") document.getElementById("bar").style.display = "none"
+
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+
+// ---------------------------------------------------------------- compose: a scene from the catalog
+function compose(cat) {
+  const items = [{ id: "table", type: "table", name: "Table", x: 1.3, y: 0, props: { width: 3.7, thickness: 0.15 } }]
+  const skip = new Set(["table", "wall"])
+  const picked = []
+  const seen = {}
+  for (const t of cat.types) {
+    if (skip.has(t.key)) continue
+    seen[t.category] = (seen[t.category] ?? 0) + 1
+    if (seen[t.category] <= 3) picked.push(t)
+  }
+  const n = picked.length
+  const dx = Math.max(0.17, 3.3 / Math.max(1, n))
+  picked.forEach((t, i) => {
+    const base = /base|floor|bottom/.test(t.anchor)
+    const it = { id: `${t.key}-${i}`, type: t.key, name: t.name, x: -0.35 + i * dx, y: 0, angle: 0, props: {} }
+    if (t.dynamic) it.y = base ? 0 : 0.3 + 0.18 * (i % 3)
+    else if (!base) {
+      it.y = 0.3 + 0.1 * (i % 3)
+      it.angle = -10
+    }
+    items.push(it)
+  })
+  return { version: 2, id: "compose", name: "All the things", seconds: 4.5, release: 0.5, stage: { x0: -0.559, x1: 3.191, y0: -0.156, y1: 2.344 }, items, goals: [] }
+}
+
+// ---------------------------------------------------------------- synth: every path of view3d.js without needing the catalog to have it
+//   synth  = balls: every pattern, a clay ball with squash, steel, glass     synth2 = things: logs, glass / ice / tapered / coloured slabs, legs, cords, held ball + pin
+function synth(which) {
+  const looks = {
+    ...catalog.looks,
+    glass: { fill: "#bfe0ff", shade: "#8ab4e0", roughness: 0.03, metalness: 0, clearcoat: 0, transmission: 1, ior: 1.5 },
+    ice: { fill: "#d6ecff", shade: "#a9c9e6", roughness: 0.28, metalness: 0, clearcoat: 0, transmission: 0.9, ior: 1.31 },
+    felt: { fill: "#c8dc32", shade: "#9aae18", roughness: 0.95, metalness: 0, clearcoat: 0 },
+    leather: { fill: "#d8691e", shade: "#a04a10", roughness: 0.6, metalness: 0, clearcoat: 0.1 },
+    enamel: { fill: "#f4f4f0", shade: "#c8c8c4", roughness: 0.2, metalness: 0, clearcoat: 0.8 },
+    "red paint": { fill: "#d23a2a", shade: "#a02418", roughness: 0.4, metalness: 0, clearcoat: 0.3 },
+  }
+  const solids = []
+  const motion = [] // [id, (t) => {x,y,angle}]
+  const S = (o) => solids.push({ words: "", placeholder: { fill: "#888" }, render: { kind: "procedural" }, depth: 2, ...o })
+  S({ kind: "static", id: "table/top", item: "table", body: { kind: "slab", width: 3.7, height: 0.15, depth: 1.6 }, material: "varnished hardwood", look: "wood", at: { x: 1.3, y: -0.075 } })
+  const fall = (id, x, y0, R, spin = 0) => motion.push([id, (t) => ({ x, y: Math.max(R, y0 - 4.9 * t * t), angle: spin * t })])
+  const animated = []
+  let release
+  if (which === "balls") {
+    const balls = [
+      ["superball", "rubber", 0.03, null], ["pingpong", "plastic", 0.02, "#f4efe4"], ["tennis", "felt", 0.033, null], ["golf", "enamel", 0.0214, null],
+      ["baseball", "leather", 0.0375, "#f2eee2"], ["basketball", "leather", 0.06, null], ["soccer", "plastic", 0.055, "#f4f4f2"], ["bowling", "plastic", 0.07, "#1f2f7a"],
+      ["marble", "glass", 0.025, "#2a7de1"], ["beach", "plastic", 0.09, "#d83a2a"], ["billiard", "plastic", 0.0286, "#d4a017"], ["wooden", "wood", 0.04, null],
+    ]
+    balls.forEach(([pattern, look, R, color], i) => {
+      const x = -0.4 + i * 0.25
+      S({ kind: "dynamic", id: `b${i}/ball`, item: `b${i}`, body: { kind: "ball", radius: R }, material: "x", look, pattern, ...(color ? { color } : {}), ...(pattern === "billiard" ? { number: 9 } : {}), at: { x, y: 0.45 + 0.25 * (i % 3) } })
+      fall(`b${i}/ball`, x, 0.45 + 0.25 * (i % 3), R, -4 * (1 + 0.2 * i))
+    })
+    for (const [i, id, look, R] of [[12, "clay", "clay", 0.035], [13, "steel", "steel", 0.03], [14, "glass", "glass", 0.04]]) {
+      const x = -0.4 + i * 0.25
+      S({ kind: "dynamic", id: `${id}/ball`, item: id, body: { kind: "ball", radius: R }, material: "x", look, at: { x, y: 0.5 } })
+      fall(`${id}/ball`, x, 0.5, R, id === "steel" ? -1 : 0.5)
+    }
+  } else {
+    // logs: grain cylinder rolling, steel can, coloured plastic wheel
+    S({ kind: "dynamic", id: "log/body", item: "log", body: { kind: "ball", radius: 0.06 }, shape: "cylinder", depth3d: 0.3, material: "x", look: "wood", at: { x: 0.7, y: 0.06 } })
+    motion.push(["log/body", (t) => ({ x: 0.7 + 0.1 * t, y: 0.06, angle: -(0.1 * t) / 0.06 })])
+    S({ kind: "dynamic", id: "can/body", item: "can", body: { kind: "ball", radius: 0.04 }, shape: "cylinder", material: "x", look: "steel", at: { x: 1.1, y: 0.04 } })
+    motion.push(["can/body", (t) => ({ x: 1.1, y: 0.04, angle: -2 * t })])
+    S({ kind: "dynamic", id: "wheel/body", item: "wheel", body: { kind: "ball", radius: 0.05 }, shape: "cylinder", depth3d: 0.04, material: "x", look: "plastic", color: "#2a9d8f", at: { x: 1.45, y: 0.05 } })
+    motion.push(["wheel/body", (t) => ({ x: 1.45, y: 0.05, angle: 2 * t })])
+    // slabs
+    S({ kind: "static", id: "ice/block", item: "ice", body: { kind: "slab", width: 0.14, height: 0.14, depth: 0.14 }, material: "x", look: "ice", at: { x: 0.0, y: 0.07 } })
+    S({ kind: "static", id: "glass/block", item: "glassb", body: { kind: "slab", width: 0.1, height: 0.2, depth: 0.1 }, material: "x", look: "glass", at: { x: 0.32, y: 0.1 } })
+    S({ kind: "static", id: "cone/block", item: "cone", body: { kind: "slab", width: 0.12, height: 0.2, depth: 0.12, taper: 0.35 }, material: "x", look: "red paint", at: { x: 1.8, y: 0.1 } })
+    S({ kind: "dynamic", id: "blue/block", item: "blue", body: { kind: "slab", width: 0.08, height: 0.08, depth: 0.08 }, material: "x", look: "plastic", color: "#2f6fe0", at: { x: 2.05, y: 0.5 } })
+    motion.push(["blue/block", (t) => ({ x: 2.05, y: Math.max(0.04, 0.5 - 4.9 * t * t), angle: 0.8 * Math.min(t, 0.3) })])
+    S({ kind: "static", id: "wall/wall", item: "wall", body: { kind: "slab", width: 0.05, height: 1.4, depth: 0.3 }, material: "x", look: "wood", hidden_3d: true, at: { x: 3.12, y: 0.7 } })
+    // a legged ramp with a held ball (and its pull pin), a legged painted plank, a hung box with cords
+    S({ kind: "static", id: "ramp/plank", item: "ramp", body: { kind: "slab", width: 0.8, height: 0.022, depth: 0.2 }, material: "x", look: "wood", legs: true, at: { x: 2.5, y: 0.55 }, angle: -0.25 })
+    S({ kind: "dynamic", id: "held/ball", item: "held", body: { kind: "ball", radius: 0.03 }, material: "x", look: "rubber", pattern: "superball", at: { x: 2.2, y: 0.67 } })
+    motion.push(["held/ball", (t) => {
+      const x = 2.2 + 0.3 * Math.max(0, t - 0.5)
+      return { x, y: 0.67 - 0.255 * (x - 2.2), angle: -4 * Math.max(0, t - 0.5) }
+    }])
+    release = { parts: ["held/ball"], at: 0.5 }
+    S({ kind: "static", id: "plank2/plank", item: "plank2", body: { kind: "slab", width: 0.4, height: 0.03, depth: 0.5 }, material: "x", look: "light wood", legs: true, color: "#9b5de5", at: { x: 0.0, y: 0.35 }, angle: 0.1 })
+    S({ kind: "static", id: "box/floor", item: "box", body: { kind: "slab", width: 0.26, height: 0.012, depth: 0.12 }, material: "x", look: "wood", at: { x: 3.0, y: 0.5 } })
+    animated.push({ kind: "animated", id: "box/cord-l", sprite: "cord", item: "box", at: { x: 2.87, y: 0.56 } }, { kind: "animated", id: "box/cord-r", sprite: "cord", item: "box", at: { x: 3.13, y: 0.56 } })
+  }
+  const doc = { version: 1, id: which, camera: { canvas: { width: 1536, height: 1024 } }, solids, sprites: {}, seconds: 3, animated, ...(release ? { release } : {}) }
+  const mover = new Map(motion)
+  const frames = []
+  for (let k = 0; k <= 180; k++) {
+    const t = k / 60
+    const placements = {}
+    for (const s of solids) {
+      const f = mover.get(s.id)
+      placements[s.id] = f ? f(t) : { x: s.at.x, y: s.at.y, angle: s.angle ?? 0 }
+    }
+    if (placements["clay/ball"] && t > 0.3) placements["clay/ball"].squash = 1 - 0.3 * Math.exp(-(t - 0.3) * 8)
+    frames.push({ t, placements })
+  }
+  return { sim: { key: which, doc, track: { fps: 60, frames, impacts: [] }, summary: { goals: [], stories: [], events: [] }, warnings: [], resolved: {}, ms: 0 }, looks }
+}
+
+// ---------------------------------------------------------------- load the chosen scene
+const scenarios = await (await fetch("/api/scenarios")).json().catch(() => [])
+const sel = document.getElementById("scene")
+for (const id of ["sample", "compose", "synth", "synth2", ...scenarios.map((s) => s.id)]) sel.add(new Option(id, id, false, id === sceneId))
+sel.onchange = () => { const u = new URL(location.href); u.searchParams.set("scene", sel.value); location.href = u }
+
+let sim
+let looks = catalog.looks
+const t0 = performance.now()
+if (sceneId === "sample") sim = await (await fetch("/sample/scene-sim.json")).json()
+else if (sceneId === "synth" || sceneId === "synth2") ({ sim, looks } = synth(sceneId === "synth" ? "balls" : "things"))
+else {
+  const scene = sceneId === "compose" ? compose(catalog) : await (await fetch(`/api/scenarios/${sceneId}`)).json()
+  sim = await post("/api/simulate", { scene })
+  window.scene = scene
+}
+window.simMs = performance.now() - t0
+
+const view = createView3D(document.getElementById("stage"))
+window.view = view
+window.sim = sim
+view.setOptions({ looks })
+const tl = performance.now()
+view.load(sim, null)
+window.loadMs = performance.now() - tl
+if (q.get("cam")) view.setOptions({ camera: q.get("cam") })
+if (q.get("refl") === "0") view.setOptions({ reflections: false })
+
+const seconds = sim.doc.seconds
+let playing = !q.get("t") && q.get("pause") !== "1"
+let t = q.get("t") ? Number(q.get("t")) : 0
+let clock0 = performance.now() - t * 1000
+const scrub = document.getElementById("scrub")
+scrub.max = seconds
+const playBtn = document.getElementById("play")
+const camBtns = [...document.querySelectorAll("[data-cam]")]
+const markCam = (c) => camBtns.forEach((b) => b.classList.toggle("on", b.dataset.cam === c))
+markCam(q.get("cam") || "wide")
+
+window.setT = (v) => {
+  playing = false
+  playBtn.textContent = "play"
+  t = v
+  scrub.value = v
+  view.render(v)
+  say(`t ${v.toFixed(2)} s`)
+}
+// save the canvas as web/dev/shots/<name>.png (drawn just before, so the buffer is still valid)
+window.snap = async (name, tt = t) => {
+  view.render(tt)
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: view._debug.renderer.domElement.toDataURL() }) })
+  return r.status
+}
+// close-up: orbit camera at (x, y) from `dist` m in front, `az` radians around y (for looking at balls / cylinders)
+window.look = (x, y, dist = 0.4, az = 0, tt = t) => {
+  view.setOptions({ camera: "orbit" })
+  view.render(tt)
+  const d = view._debug
+  d.controls.target.set(x, y, 0)
+  d.orbitCam.position.set(x + dist * Math.sin(az), y + 0.04, dist * Math.cos(az))
+  d.controls.update()
+  view.render(tt)
+}
+playBtn.onclick = () => {
+  playing = !playing
+  playBtn.textContent = playing ? "pause" : "play"
+  clock0 = performance.now() - t * 1000
+}
+scrub.oninput = () => window.setT(Number(scrub.value))
+camBtns.forEach((b) => (b.onclick = () => { view.setOptions({ camera: b.dataset.cam }); markCam(b.dataset.cam); view.render(t) }))
+let reflOn = q.get("refl") !== "0"
+const reflBtn = document.getElementById("refl")
+reflBtn.classList.toggle("on", reflOn)
+reflBtn.onclick = () => { reflOn = !reflOn; reflBtn.classList.toggle("on", reflOn); view.setOptions({ reflections: reflOn }) }
+
+let frames = 0
+let fpsAt = performance.now()
+let fps = 0
+function loop(now) {
+  if (playing) {
+    t = ((now - clock0) / 1000) % seconds
+    scrub.value = t
+    view.render(t)
+    frames++
+    if (now - fpsAt > 1000) { fps = (frames * 1000) / (now - fpsAt); frames = 0; fpsAt = now }
+    say(`t ${t.toFixed(2)} s  ${fps.toFixed(0)} fps`)
+  } else if (view._debug.controls && view._debug.controls.enabled) {
+    view.render(t) // orbit damping
+  }
+  requestAnimationFrame(loop)
+}
+if (q.get("t")) window.setT(t)
+requestAnimationFrame(loop)
+window.addEventListener("error", (e) => say("ERROR " + e.message))
+window.ready = true
+</script>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Models: everyday silhouettes</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info"></div>
+<script type="module">
+// Dev page for the everyday-b models (web/models/everyday-b*.js).
+//   ?items=water-bottle,coffee-mug,...   catalog keys, laid out left to right on a table, each resting fixed on it (lowest point on the table top)
+//   ?outline=1                          also draws each solid's physics outline (a thin red line at the front face) to compare with the model
+//   window.shoot(name, {i, x, y, dist, az, el, fov})  aim the orbit camera at item i (or a point) and save web/dev/shots/<name>.png
+//   window.layout  [{id, type, x, y, w, h}]
+await Promise.all(["models3d.js", "view3d.js", "models/everyday-b.js", "models/everyday-b-lib.js", "models/everyday-b-bottles.js", "models/everyday-b-small.js", "models/everyday-b-shoe.js"].map((f) => fetch("../" + f, { cache: "reload" }).catch(() => null)))
+const THREE = await import("three")
+const { createView3D } = await import("../view3d.js")
+
+const q = new URLSearchParams(location.search)
+const keys = (q.get("items") || "water-bottle,coffee-mug").split(",")
+const info = document.getElementById("info")
+const say = (m) => (info.textContent = m)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+const byKey = new Map(catalog.types.map((t) => [t.key, t]))
+
+const STAGE = { x0: -2, x1: 2, y0: -0.15, y1: 1 }
+const mkScene = (items) => ({ version: 2, id: "models", name: "models", seconds: 1, release: 0.1, stage: STAGE, items, goals: [] })
+const tableItem = (w) => ({ id: "table", type: "table", name: "Table", x: 0, y: 0, angle: 0, props: { width: w, thickness: 0.15 } })
+
+// the world pose of every solid of a built item (children in their parent's frame), and its outline's extent
+const worldOf = (doc) => {
+  const by = new Map(doc.solids.map((s) => [s.id, s]))
+  const memo = new Map()
+  const pose = (s) => {
+    if (memo.has(s.id)) return memo.get(s.id)
+    const l = { x: s.at.x, y: s.at.y, a: s.angle ?? 0 }
+    let w = l
+    if (s.parent && by.has(s.parent)) {
+      const p = pose(by.get(s.parent))
+      const c = Math.cos(p.a), n = Math.sin(p.a)
+      w = { x: p.x + l.x * c - l.y * n, y: p.y + l.x * n + l.y * c, a: p.a + l.a }
+    }
+    memo.set(s.id, w)
+    return w
+  }
+  return (s) => pose(s)
+}
+const outlineOf = (s) => {
+  const b = s.body
+  if (b.kind === "polygon") return b.points.map((p) => [p.x, p.y])
+  if (b.kind === "slab") {
+    const hw = b.width / 2, hh = b.height / 2, t = b.taper
+    return t != null ? [[-hw * t, -hh], [hw * t, -hh], [hw, hh], [-hw, hh]] : [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]
+  }
+  return null // a ball
+}
+const extent = (doc) => {
+  const W = worldOf(doc)
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9
+  for (const s of doc.solids) {
+    const p = W(s)
+    const pts = outlineOf(s)
+    const add = (x, y) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y) }
+    if (pts) for (const [px, py] of pts) add(p.x + px * Math.cos(p.a) - py * Math.sin(p.a), p.y + px * Math.sin(p.a) + py * Math.cos(p.a))
+    else { add(p.x - s.body.radius, p.y - s.body.radius); add(p.x + s.body.radius, p.y + s.body.radius) }
+  }
+  return { x0, x1, y0, y1 }
+}
+
+// lay out each item alone at the origin to learn its extent, then place it on the table
+const items = [tableItem(6)]
+const layout = []
+let cursor = 0
+const GAP = Number(q.get("gap") || 0.05)
+const extra = JSON.parse(q.get("props") || "{}") // {key: {prop: value}}
+for (const k of keys) {
+  const t = byKey.get(k)
+  if (!t) { say("unknown type " + k); continue }
+  const lay = await post("/api/layout", { scene: mkScene([{ id: "a", type: k, x: 0, y: 0, angle: 0, props: extra[k] ?? {} }]) })
+  const e = extent(lay.doc)
+  const w = e.x1 - e.x0, h = e.y1 - e.y0
+  const x = cursor - e.x0
+  const y = -e.y0 + 0.0003
+  cursor += w + GAP
+  items.push({ id: k, type: k, name: t.name, x, y, angle: 0, fixed: true, props: extra[k] ?? {} })
+  layout.push({ id: k, type: k, x: x + (e.x0 + e.x1) / 2, y: y + (e.y0 + e.y1) / 2, w, h })
+}
+const shift = cursor / 2
+for (const it of items) if (it.id !== "table") it.x -= shift
+for (const l of layout) l.x -= shift
+items[0].props.width = Math.max(1.2, cursor + 0.8)
+const scene = mkScene(items)
+const sim = await post("/api/simulate", { scene })
+window.sim = sim
+window.layout = layout
+window.catalog = catalog
+
+const view = createView3D(document.getElementById("stage"))
+window.view = view
+view.setOptions({ looks: catalog.looks })
+view.load(sim, null)
+view.setOptions({ camera: "orbit" })
+view.render(0)
+const d = view._debug
+d.controls.minDistance = 0.004
+d.controls.maxPolarAngle = Math.PI * 0.499
+d.controls.enableDamping = false
+
+// the physics outlines, drawn as thin lines on the front face (z = +d/2) of every solid, to compare with the model
+if (q.get("outline")) {
+  const g = new THREE.Group()
+  const W = worldOf(sim.doc)
+  for (const s of sim.doc.solids) {
+    if (s.item === "table") continue
+    const p = W(s)
+    const pts = outlineOf(s)
+    const dz = s.body.depth ?? 2 * (s.body.radius ?? 0.05)
+    const mk = (z) => {
+      const loop = pts ? pts : Array.from({ length: 64 }, (_, i) => [s.body.radius * Math.cos((i / 64) * 2 * Math.PI), s.body.radius * Math.sin((i / 64) * 2 * Math.PI)])
+      const geo = new THREE.BufferGeometry().setFromPoints(loop.map(([x, y]) => new THREE.Vector3(x, y, z)))
+      const line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color: 0xff2a2a, depthTest: false, transparent: true }))
+      line.renderOrder = 999
+      line.position.set(p.x, p.y, 0)
+      line.rotation.z = p.a
+      return line
+    }
+    g.add(mk(dz / 2 + 0.0005))
+  }
+  view._debug.scene?.add(g)
+}
+
+window.aim = (opts = {}) => {
+  const L = opts.i !== undefined ? layout[opts.i] ?? layout.find((l) => l.id === opts.i) : null
+  const x = opts.x ?? (L ? L.x : 0)
+  const y = opts.y ?? (L ? L.y : 0.05)
+  const dist = opts.dist ?? (L ? 2.6 * Math.max(L.w, L.h) : 0.4)
+  const az = opts.az ?? 0.5
+  const el = opts.el ?? 0.45
+  d.orbitCam.fov = opts.fov ?? 28
+  d.orbitCam.near = Math.max(0.002, dist / 60)
+  d.orbitCam.far = 40
+  d.orbitCam.updateProjectionMatrix()
+  d.controls.minAzimuthAngle = -Infinity
+  d.controls.maxAzimuthAngle = Infinity
+  d.controls.target.set(x, y, opts.z ?? 0)
+  d.orbitCam.position.set(x + dist * Math.sin(az) * Math.cos(el), y + dist * Math.sin(el), (opts.z ?? 0) + dist * Math.cos(az) * Math.cos(el))
+  d.controls.update()
+  view.render(0)
+}
+window.shoot = async (name, opts = {}) => {
+  window.aim(opts)
+  view.render(0)
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: d.renderer.domElement.toDataURL() }) })
+  return r.status
+}
+window.ready = true
+say(`${layout.length} items`)
+window.addEventListener("error", (e) => say("ERROR " + e.message))
+</script>
+</body>
+</html>

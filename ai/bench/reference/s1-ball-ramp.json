@@ -1,0 +1,147 @@
+{
+ "case": "s1-ball-ramp",
+ "notes": "",
+ "plan": {
+  "title": "Ball down a ramp",
+  "items": [
+   {
+    "id": "book1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 0.6645
+    },
+    "why": "reference"
+   },
+   {
+    "id": "book2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "props": {},
+    "place": {
+     "on": "book1",
+     "x": 0.6645
+    },
+    "why": "reference"
+   },
+   {
+    "id": "book3",
+    "type": "hardcover-book",
+    "name": "Book 3",
+    "props": {},
+    "place": {
+     "on": "book2",
+     "x": 0.6645
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ramp",
+    "type": "plank",
+    "name": "Ramp",
+    "props": {
+     "legs": false,
+     "length": 0.9
+    },
+    "place": {
+     "on": "table",
+     "x": 0.99133,
+     "angle_deg": -9.5
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ball",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.63175,
+     "y_m": 0.18109
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 3,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-s1",
+  "name": "Ball down a ramp",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.45,
+   "x1": 2.2,
+   "y0": -0.12,
+   "y1": 0.9
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "book1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "x": 0.6645,
+    "y": 0.019
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "book2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "x": 0.6645,
+    "y": 0.0555
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "book3",
+    "type": "hardcover-book",
+    "name": "Book 3",
+    "x": 0.6645,
+    "y": 0.092
+   },
+   {
+    "angle": -9.5,
+    "id": "ramp",
+    "type": "plank",
+    "name": "Ramp",
+    "props": {
+     "legs": false,
+     "length": 0.9
+    },
+    "x": 0.99133,
+    "y": 0.08662
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "ball",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "x": 0.63175,
+    "y": 0.18109
+   }
+  ],
+  "goals": []
+ }
+}

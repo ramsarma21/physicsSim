@@ -1,0 +1,17 @@
+Error: Python: Traceback (most recent call last):
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py", line 546, in execute
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py", line 197, in build
+KeyError: 'the length of IDProperty names is limited to 63 characters'
+Location: <string>:89
+Traceback (most recent call last):
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/control/bridge.py", line 147, in poll
+    exec(open(path).read(), dict(G))
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 7, in <module>
+  File "<string>", line 89, in rebuild
+RuntimeError: Error: Python: Traceback (most recent call last):
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py", line 546, in execute
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.blend/sim_studio.py", line 197, in build
+KeyError: 'the length of IDProperty names is limited to 63 characters'
+Location: <string>:89
+

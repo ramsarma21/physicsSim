@@ -1,0 +1,251 @@
+{
+ "id": "vehicles",
+ "source": "arrangement (tools/make-gt-scenes.mjs)",
+ "description": "A cardboard box at the left with a wooden plank ramp leaning from its top down to the right; a small toy car sits near the top of the ramp, pointing down it; on the table to the right: a toy truck and then a skateboard.",
+ "scene": "gt/vehicles.json",
+ "shot": {
+  "t": 0,
+  "run_seconds_for_framing": 0.5,
+  "page": "http://localhost:8790/?profile=bench-gt&quality=high (chrome hidden, view 1280×720)"
+ },
+ "quality": {
+  "mode": "high",
+  "tier": "high",
+  "reason": "chosen"
+ },
+ "renders": [
+  {
+   "file": "gt/vehicles.png",
+   "camera": "wide",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     1.7146,
+     0.6586,
+     2.1962
+    ],
+    "direction": [
+     0,
+     -0.1191,
+     -0.9929
+    ],
+    "target": null,
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  },
+  {
+   "file": "gt/vehicles-b.png",
+   "camera": "orbit (azimuth +30°, raised 14°)",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     2.8206,
+     1.2372,
+     1.9156
+    ],
+    "direction": [
+     -0.4673,
+     -0.3558,
+     -0.8094
+    ],
+    "target": [
+     1.7146,
+     0.395,
+     0
+    ],
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": -0.55,
+    "y0": -0.15,
+    "x1": 3.15,
+    "y1": 0,
+    "w": 3.7,
+    "h": 0.15
+   },
+   "image_box": {
+    "gt/vehicles.png": null,
+    "gt/vehicles-b.png": null
+   }
+  },
+  {
+   "id": "box",
+   "type": "cardboard-box",
+   "name": "Cardboard box",
+   "x": 0.55,
+   "y": 0.1015,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.4,
+    "y0": 0.0015,
+    "x1": 0.7,
+    "y1": 0.2015,
+    "w": 0.3,
+    "h": 0.2
+   },
+   "image_box": {
+    "gt/vehicles.png": [
+     0.0554,
+     0.5991,
+     0.1893,
+     0.7394
+    ],
+    "gt/vehicles-b.png": [
+     0.2109,
+     0.4656,
+     0.3045,
+     0.5966
+    ]
+   }
+  },
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Ramp",
+   "x": 1.0645,
+   "y": 0.12346,
+   "angle": -14,
+   "props": {
+    "legs": false,
+    "length": 0.92
+   },
+   "held": false,
+   "box_m": {
+    "x0": 0.6155,
+    "y0": 0.0015,
+    "x1": 1.5135,
+    "y1": 0.24542,
+    "w": 0.89799,
+    "h": 0.24391
+   },
+   "image_box": {
+    "gt/vehicles.png": [
+     0.1347,
+     0.5793,
+     0.4373,
+     0.7323
+    ],
+    "gt/vehicles-b.png": [
+     0.2549,
+     0.4684,
+     0.4606,
+     0.6757
+    ]
+   }
+  },
+  {
+   "id": "car",
+   "type": "toy-car",
+   "name": "Toy car",
+   "x": 0.75666,
+   "y": 0.21305,
+   "angle": -14,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.6639,
+    "y0": 0.1973,
+    "x1": 0.86179,
+    "y1": 0.29386,
+    "w": 0.19789,
+    "h": 0.09656
+   },
+   "image_box": {
+    "gt/vehicles.png": [
+     0.1533,
+     0.5546,
+     0.2289,
+     0.6174
+    ],
+    "gt/vehicles-b.png": [
+     0.2664,
+     0.4598,
+     0.3185,
+     0.5174
+    ]
+   }
+  },
+  {
+   "id": "truck",
+   "type": "truck",
+   "name": "Truck",
+   "x": 1.8835,
+   "y": 0.0015,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 1.6335,
+    "y0": 0.0015,
+    "x1": 2.1335,
+    "y1": 0.24047,
+    "w": 0.5,
+    "h": 0.23897
+   },
+   "image_box": {
+    "gt/vehicles.png": [
+     0.4727,
+     0.578,
+     0.6411,
+     0.7392
+    ],
+    "gt/vehicles-b.png": [
+     0.4641,
+     0.5895,
+     0.6271,
+     0.7607
+    ]
+   }
+  },
+  {
+   "id": "skateboard",
+   "type": "skateboard",
+   "name": "Skateboard",
+   "x": 2.6335,
+   "y": 0.0015,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 2.2335,
+    "y0": 0.0015,
+    "x1": 3.0335,
+    "y1": 0.14372,
+    "w": 0.8,
+    "h": 0.14222
+   },
+   "image_box": {
+    "gt/vehicles.png": [
+     0.6599,
+     0.6303,
+     0.9446,
+     0.7394
+    ],
+    "gt/vehicles-b.png": [
+     0.6349,
+     0.6658,
+     0.9484,
+     0.9021
+    ]
+   }
+  }
+ ]
+}

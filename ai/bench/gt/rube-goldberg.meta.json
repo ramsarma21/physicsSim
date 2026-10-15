@@ -1,0 +1,379 @@
+{
+ "id": "rube-goldberg",
+ "source": "scenario:rube-goldberg (web/scenarios)",
+ "description": "The starter Rube Goldberg machine: a held superball at the top left above a short ramp, a long second ramp sloping down to the right, a row of seven growing dominoes, a seesaw with a plastic ball on its low right end, and an open box hanging above the seesaw (left and right see-through walls at the ends).",
+ "scene": "gt/rube-goldberg.json",
+ "shot": {
+  "t": 0,
+  "run_seconds_for_framing": 0.5,
+  "page": "http://localhost:8790/?profile=bench-gt&quality=high (chrome hidden, view 1280×720)"
+ },
+ "quality": {
+  "mode": "high",
+  "tier": "high",
+  "reason": "chosen"
+ },
+ "renders": [
+  {
+   "file": "gt/rube-goldberg.png",
+   "camera": "wide",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     1.4314,
+     0.8114,
+     2.5688
+    ],
+    "direction": [
+     0,
+     -0.1191,
+     -0.9929
+    ],
+    "target": null,
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  },
+  {
+   "file": "gt/rube-goldberg-b.png",
+   "camera": "orbit (azimuth +35°, raised 12°)",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     3.0394,
+     1.4599,
+     2.2964
+    ],
+    "direction": [
+     -0.5428,
+     -0.323,
+     -0.7753
+    ],
+    "target": [
+     1.4314,
+     0.5032,
+     0
+    ],
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   },
+   "held": false,
+   "box_m": {
+    "x0": -0.55,
+    "y0": -0.15,
+    "x1": 3.15,
+    "y1": 0,
+    "w": 3.7,
+    "h": 0.15
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": null,
+    "gt/rube-goldberg-b.png": null
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   },
+   "held": false,
+   "box_m": {
+    "x0": -0.545,
+    "y0": 0,
+    "x1": -0.495,
+    "y1": 1.4,
+    "w": 0.05,
+    "h": 1.4
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": null,
+    "gt/rube-goldberg-b.png": null
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   },
+   "held": false,
+   "box_m": {
+    "x0": 3.095,
+    "y0": 0,
+    "x1": 3.145,
+    "y1": 1.4,
+    "w": 0.05,
+    "h": 1.4
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": null,
+    "gt/rube-goldberg-b.png": null
+   }
+  },
+  {
+   "id": "ramp1",
+   "type": "plank",
+   "name": "Ramp 1",
+   "x": 0.17813,
+   "y": 0.60233,
+   "angle": -13.999994540903613,
+   "props": {
+    "length": 0.62
+   },
+   "held": false,
+   "box_m": {
+    "x0": -0.12532,
+    "y0": 0.51666,
+    "x1": 0.48158,
+    "y1": 0.688,
+    "w": 0.60691,
+    "h": 0.17134
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": [
+     0.0517,
+     0.4067,
+     0.2404,
+     0.4968
+    ],
+    "gt/rube-goldberg-b.png": [
+     0.2449,
+     0.3381,
+     0.3471,
+     0.4349
+    ]
+   }
+  },
+  {
+   "id": "ramp2",
+   "type": "plank",
+   "name": "Ramp 2",
+   "x": 1.1288,
+   "y": 0.20766,
+   "angle": -19.757017170598612,
+   "props": {
+    "length": 1.2898
+   },
+   "held": false,
+   "box_m": {
+    "x0": 0.51814,
+    "y0": -0.02069,
+    "x1": 1.73946,
+    "y1": 0.43601,
+    "w": 1.22131,
+    "h": 0.4567
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": [
+     0.2401,
+     0.5288,
+     0.586,
+     0.7614
+    ],
+    "gt/rube-goldberg-b.png": [
+     0.3357,
+     0.4562,
+     0.5689,
+     0.7493
+    ]
+   }
+  },
+  {
+   "id": "dominoes",
+   "type": "domino-row",
+   "name": "Dominoes",
+   "x": 1.822,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "count": 7,
+    "first_height": 0.098,
+    "growth": 1.193,
+    "spacing": 0.568
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.81384,
+    "y0": -0.00001,
+    "x1": 2.38862,
+    "y1": 0.28253,
+    "w": 0.57479,
+    "h": 0.28254
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": [
+     0.6034,
+     0.6008,
+     0.7718,
+     0.7531
+    ],
+    "gt/rube-goldberg-b.png": [
+     0.5746,
+     0.6776,
+     0.7319,
+     0.8384
+    ]
+   }
+  },
+  {
+   "id": "seesaw",
+   "type": "seesaw",
+   "name": "Seesaw",
+   "x": 2.713673797274697,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "length": 0.598,
+    "tilt": 12.452,
+    "pivot_offset": -0.046
+   },
+   "held": false,
+   "box_m": {
+    "x0": 2.46533,
+    "y0": -0.00001,
+    "x1": 3.05746,
+    "y1": 0.14066,
+    "w": 0.59213,
+    "h": 0.14066
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": [
+     0.7816,
+     0.6732,
+     0.9477,
+     0.7468
+    ],
+    "gt/rube-goldberg-b.png": [
+     0.7407,
+     0.7687,
+     0.9321,
+     0.9496
+    ]
+   }
+  },
+  {
+   "id": "ball2",
+   "type": "plastic-ball",
+   "name": "Ball 2",
+   "x": 3.02035,
+   "y": 0.04991,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 2.99035,
+    "y0": 0.01991,
+    "x1": 3.05035,
+    "y1": 0.07991,
+    "w": 0.06,
+    "h": 0.06
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": [
+     0.9215,
+     0.7006,
+     0.9477,
+     0.7373
+    ],
+    "gt/rube-goldberg-b.png": [
+     0.9064,
+     0.8892,
+     0.9306,
+     0.9382
+    ]
+   }
+  },
+  {
+   "id": "box",
+   "type": "box",
+   "name": "Box",
+   "x": 2.735,
+   "y": 0.19,
+   "angle": 0,
+   "props": {
+    "width": 0.26,
+    "wall": 0.13
+   },
+   "held": false,
+   "box_m": {
+    "x0": 2.605,
+    "y0": 0.178,
+    "x1": 2.865,
+    "y1": 0.32,
+    "w": 0.26,
+    "h": 0.142
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": [
+     0.8156,
+     0.5841,
+     0.9061,
+     0.6651
+    ],
+    "gt/rube-goldberg-b.png": [
+     0.7809,
+     0.698,
+     0.8813,
+     0.8374
+    ]
+   }
+  },
+  {
+   "id": "ball1",
+   "type": "superball",
+   "name": "Ball 1",
+   "x": 0,
+   "y": 0.749,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": -0.03,
+    "y0": 0.719,
+    "x1": 0.03,
+    "y1": 0.779,
+    "w": 0.06,
+    "h": 0.06
+   },
+   "image_box": {
+    "gt/rube-goldberg.png": [
+     0.0825,
+     0.3622,
+     0.1089,
+     0.3931
+    ],
+    "gt/rube-goldberg-b.png": [
+     0.2599,
+     0.3133,
+     0.2773,
+     0.3375
+    ]
+   }
+  }
+ ]
+}

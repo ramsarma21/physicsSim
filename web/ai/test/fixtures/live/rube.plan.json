@@ -1,0 +1,125 @@
+{
+ "title": "Ball, dominoes, ledge drop",
+ "seconds": 6,
+ "release": 0.5,
+ "items": [
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Ramp",
+   "place": {
+    "lean": {
+     "from": {
+      "on": "air",
+      "x": -0.45,
+      "y": 0.35
+     },
+     "to": {
+      "on": "table",
+      "x": 0.3
+     }
+    },
+    "on": "air"
+   },
+   "why": "A ramp that runs from 35 cm up down to the table, about 0.83 m long",
+   "props": {}
+  },
+  {
+   "id": "ball1",
+   "type": "billiard-ball",
+   "name": "First ball",
+   "place": {
+    "on": "ramp",
+    "x": -0.4
+   },
+   "held": true,
+   "why": "Waits at the top of the ramp, then rolls down. It is heavy enough (170 g) to tip the first domino",
+   "props": {}
+  },
+  {
+   "id": "dominoes",
+   "type": "domino-row",
+   "name": "Growing dominoes",
+   "props": {
+    "count": 8
+   },
+   "place": {
+    "on": "table",
+    "x": 0.5
+   },
+   "why": "Eight dominoes, each 1.19x the last, from 9.8 cm up to about 34 cm. The row ends at about x 1.23"
+  },
+  {
+   "id": "ledge",
+   "type": "plank",
+   "name": "Ledge",
+   "props": {
+    "length": 0.3,
+    "legs": false
+   },
+   "place": {
+    "on": "air",
+    "right_of": {
+     "id": "dominoes",
+     "gap_m": 0.12
+    },
+    "y_m": 0.189
+   },
+   "why": "A level shelf whose top is 20 cm up, 12 cm past the last domino, so the tall domino's upper part reaches the ball sitting on it. It has no legs, so nothing blocks the domino as it falls"
+  },
+  {
+   "id": "ball2",
+   "type": "wooden-ball",
+   "name": "Second ball",
+   "place": {
+    "on": "ledge",
+    "x": 1.38
+   },
+   "why": "Sits at the left end of the ledge. The falling last domino pushes it along the ledge and off the right end",
+   "props": {}
+  },
+  {
+   "id": "box",
+   "type": "box",
+   "name": "Box",
+   "props": {
+    "width": 0.34,
+    "hung": false
+   },
+   "place": {
+    "on": "table",
+    "x": 1.76
+   },
+   "why": "An open box standing on the table under the ledge's right end, where the ball drops off"
+  }
+ ],
+ "missing": [],
+ "goals": [
+  {
+   "label": "The second ball drops into the box",
+   "item": "ball2",
+   "container": "box",
+   "kind": "in"
+  }
+ ],
+ "tune": [
+  {
+   "id": "box",
+   "param": "x",
+   "min": 1.66,
+   "max": 1.95
+  },
+  {
+   "id": "ledge",
+   "param": "y",
+   "min": 0.16,
+   "max": 0.22
+  }
+ ],
+ "notes": "The billiard ball leaves the ramp at about 2.2 m/s and tips the first domino. The wave grows along the row, and the 34 cm last domino strikes the wooden ball about 27 cm along its length. The ball then rolls off the ledge's right end and falls about 20 cm into the box.",
+ "assumptions": [
+  "The ledge is a short floating wooden shelf without legs, so the falling domino only meets the ball and the shelf's edge",
+  "The box stands on the table instead of hanging",
+  "A billiard ball rolls down the ramp and a wooden ball waits on the ledge, since no ball types were given"
+ ]
+}

@@ -1,0 +1,195 @@
+{
+ "id": "conveyor-delivery",
+ "source": "scenario:conveyor-delivery (web/scenarios)",
+ "description": "A conveyor belt carrying three golf balls towards an open box on the table at its right end.",
+ "scene": "gt/conveyor-delivery.json",
+ "shot": {
+  "t": 0,
+  "run_seconds_for_framing": 0.5,
+  "page": "http://localhost:8790/?profile=bench-gt&quality=high (chrome hidden, view 1280×720)"
+ },
+ "quality": {
+  "mode": "high",
+  "tier": "high",
+  "reason": "chosen"
+ },
+ "renders": [
+  {
+   "file": "gt/conveyor-delivery.png",
+   "camera": "wide",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     1.1034,
+     0.3131,
+     1.0959
+    ],
+    "direction": [
+     0,
+     -0.1191,
+     -0.9929
+    ],
+    "target": null,
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": -0.55,
+    "y0": -0.15,
+    "x1": 3.15,
+    "y1": 0,
+    "w": 3.7,
+    "h": 0.15
+   },
+   "image_box": {
+    "gt/conveyor-delivery.png": null
+   }
+  },
+  {
+   "id": "belt",
+   "type": "conveyor-belt",
+   "name": "Conveyor belt",
+   "x": 1,
+   "y": 0.3,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.5,
+    "y0": 0.26,
+    "x1": 1.5,
+    "y1": 0.3,
+    "w": 1,
+    "h": 0.04
+   },
+   "image_box": {
+    "gt/conveyor-delivery.png": [
+     0.0522,
+     0.3596,
+     0.7891,
+     0.4185
+    ]
+   }
+  },
+  {
+   "id": "ball1",
+   "type": "golf-ball",
+   "name": "Golf ball 1",
+   "x": 0.62,
+   "y": 0.32185,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.59865,
+    "y0": 0.3005,
+    "x1": 0.64135,
+    "y1": 0.3432,
+    "w": 0.0427,
+    "h": 0.0427
+   },
+   "image_box": {
+    "gt/conveyor-delivery.png": [
+     0.158,
+     0.3093,
+     0.1989,
+     0.3612
+    ]
+   }
+  },
+  {
+   "id": "ball2",
+   "type": "golf-ball",
+   "name": "Golf ball 2",
+   "x": 0.73,
+   "y": 0.32185,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.70865,
+    "y0": 0.3005,
+    "x1": 0.75135,
+    "y1": 0.3432,
+    "w": 0.0427,
+    "h": 0.0427
+   },
+   "image_box": {
+    "gt/conveyor-delivery.png": [
+     0.2326,
+     0.3093,
+     0.2706,
+     0.3612
+    ]
+   }
+  },
+  {
+   "id": "ball3",
+   "type": "golf-ball",
+   "name": "Golf ball 3",
+   "x": 0.84,
+   "y": 0.32185,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.81865,
+    "y0": 0.3005,
+    "x1": 0.86135,
+    "y1": 0.3432,
+    "w": 0.0427,
+    "h": 0.0427
+   },
+   "image_box": {
+    "gt/conveyor-delivery.png": [
+     0.3071,
+     0.3093,
+     0.3423,
+     0.3612
+    ]
+   }
+  },
+  {
+   "id": "box",
+   "type": "box",
+   "name": "Box",
+   "x": 1.62,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "wall": 0.22,
+    "hung": false
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.49,
+    "y0": -0.012,
+    "x1": 1.75,
+    "y1": 0.22,
+    "w": 0.26,
+    "h": 0.232
+   },
+   "image_box": {
+    "gt/conveyor-delivery.png": [
+     0.7354,
+     0.4498,
+     0.9492,
+     0.7398
+    ]
+   }
+  }
+ ]
+}

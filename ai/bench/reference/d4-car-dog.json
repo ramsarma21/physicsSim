@@ -1,0 +1,107 @@
+{
+ "case": "d4-car-dog",
+ "notes": "",
+ "plan": {
+  "title": "Car, ramp and dominoes",
+  "items": [
+   {
+    "id": "ramp",
+    "type": "plank",
+    "name": "Ramp",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 0.66,
+     "angle_deg": -12
+    },
+    "why": "reference"
+   },
+   {
+    "id": "car",
+    "type": "toy-car",
+    "name": "Toy car",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.31015,
+     "angle_deg": -12,
+     "y_m": 0.20032
+    },
+    "why": "reference"
+   },
+   {
+    "id": "dominoes",
+    "type": "domino-row",
+    "name": "Dominoes",
+    "props": {
+     "first_height": 0.07
+    },
+    "place": {
+     "on": "table",
+     "x": 1.9
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [
+   {
+    "asked": "a dog",
+    "reason": "The library has no animals, so nothing was added.",
+    "substitute_type": null
+   }
+  ],
+  "goals": [],
+  "tune": [],
+  "seconds": 6,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "car-ramp-dominoes",
+  "name": "Car, ramp and dominoes",
+  "seconds": 6,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.1,
+   "x1": 2.6,
+   "y0": -0.15,
+   "y1": 1.5167
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "ramp",
+    "type": "plank",
+    "x": 0.66,
+    "y": 0.11472,
+    "angle": -12,
+    "name": "Ramp"
+   },
+   {
+    "id": "car",
+    "type": "toy-car",
+    "name": "Toy car",
+    "x": 0.31015,
+    "y": 0.20032,
+    "angle": -12
+   },
+   {
+    "id": "dominoes",
+    "type": "domino-row",
+    "name": "Dominoes",
+    "x": 1.9,
+    "y": 0,
+    "props": {
+     "first_height": 0.07
+    }
+   }
+  ],
+  "goals": []
+ }
+}

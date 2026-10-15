@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Physics Sandbox</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="panels.css">
+<link rel="stylesheet" href="ai/ai.css">
+<link rel="stylesheet" href="export/export.css">
+<link rel="stylesheet" href="ui/ui.css">
+<link rel="stylesheet" href="account/account.css">
+<script type="importmap">{"imports": {
+  "three": "./vendor/three/build/three.module.js",
+  "three/addons/": "./vendor/three/examples/jsm/",
+  "mediabunny": "./vendor/mediabunny/mediabunny.js",
+  "clerk-js": "./vendor/clerk/clerk.mjs"}}</script>
+</head>
+<body class="panel-collapsed">
+<header class="top">
+  <button id="toggle-panel" class="ghost icon-btn" title="Show or hide the settings panel" aria-label="Show or hide the settings panel" aria-expanded="false">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16v2H4zM4 11h10v2H4zM4 16h16v2H4z"/></svg>
+  </button>
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <h1>Physics Sandbox</h1>
+      <p class="sub" id="scene-name">Rube Goldberg machine</p>
+    </div>
+  </div>
+  <button id="new" class="ghost new-btn" title="New project: blank, built with AI, or an example (N)" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h8l6 6v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm7 1.5V9h5.5zM11 11v3H8v2h3v3h2v-3h3v-2h-3v-3z"/></svg><span>New</span></button>
+  <button id="add" class="primary add-btn" title="Add an item (/)"><svg viewBox="0 0 24 24"><path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/></svg>Add</button>
+  <button id="ai" class="ai-btn" title="Edit with AI: change this scene by asking, only what you ask changes (A)" aria-expanded="false" aria-controls="ai-drawer"><span class="ai-btn-ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z" opacity=".75"/></svg></span><span class="ai-btn-t">Edit with AI</span></button>
+  <div class="top-right">
+    <span id="status" class="status" data-state="idle"><i></i><b>Starting…</b></span>
+    <div class="history">
+      <button id="undo" class="ghost icon-btn" title="Undo (⌘Z)" aria-label="Undo" disabled><svg viewBox="0 0 24 24"><path d="M9 7 4 12l5 5v-3.5h6a3.5 3.5 0 0 1 0 7h-2v2h2a5.5 5.5 0 0 0 0-11H9z"/></svg></button>
+      <button id="redo" class="ghost icon-btn" title="Redo (⇧⌘Z)" aria-label="Redo" disabled><svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5v-3.5H9a3.5 3.5 0 0 0 0 7h2v2H9a5.5 5.5 0 0 1 0-11h6z"/></svg></button>
+    </div>
+    <select id="scenario" aria-label="Scenarios" title="Scenarios"><option value="" hidden>Edited scene</option></select>
+    <button id="save" class="ghost" title="Save this scene as a scenario">Save</button>
+    <button id="export" class="ghost icon-btn" title="Export this scene as a .json file" aria-label="Export this scene as a file"><svg viewBox="0 0 24 24"><path d="M5 20h14v-2H5zM19 9h-4V3H9v6H5l7 7z"/></svg></button>
+    <button id="import" class="ghost icon-btn" title="Import a scene from a .json file" aria-label="Import a scene from a file"><svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4zM5 18h14v2H5z"/></svg></button>
+    <input type="file" id="import-file" accept=".json,application/json" hidden>
+    <button id="clear" class="ghost" title="Remove everything but the table" hidden>Clear</button>
+    <button id="reset" class="ghost" title="Back to the starter machine" hidden>Reset</button>
+    <button id="export-video" class="ghost xv-open" title="Export video: available once the scene has run" aria-haspopup="dialog" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm0 2.5v2h1.8v-2zm12.2 0v2H19v-2zM5 9.5v2h1.8v-2zm12.2 0v2H19v-2zM5 13.5v2h1.8v-2zm12.2 0v2H19v-2zM5 17.5v1.5h1.8v-1.5zm12.2 0v1.5H19v-1.5zM8.6 5v14h6.8V5z"/></svg><span>Export video</span></button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="stage">
+    <div class="viewport">
+      <div class="view" id="view-3d"></div>
+      <aside class="panel" id="panel"></aside>
+      <div class="catalog-host" id="catalog" hidden></div>
+      <div class="edit-hint" id="edit-hint">Click a part to select it · drag to move · dots resize or turn · ⌫ deletes · / adds</div>
+      <div class="view-tools">
+        <div class="seg small" id="cam" role="radiogroup" aria-label="Camera">
+          <button data-cam="wide" aria-pressed="true">Wide</button>
+          <button data-cam="follow" aria-pressed="false">Follow</button>
+          <button data-cam="orbit" aria-pressed="false">Orbit</button>
+        </div>
+        <button class="chip-btn" id="frame" title="Fit everything in view">Fit</button>
+      </div>
+      <div class="busy-bar" id="busy-bar"></div>
+      <div class="error" id="error" hidden></div>
+      <div class="drop-hint" id="drop-hint" hidden>Drop to place it here</div>
+      <ul class="warnings" id="warnings" hidden></ul>
+    </div>
+
+    <div class="transport" id="transport">
+      <button id="play" class="icon" aria-label="Play">
+        <svg viewBox="0 0 24 24" class="i-play"><path d="M8 5v14l11-7z"/></svg>
+        <svg viewBox="0 0 24 24" class="i-pause"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>
+      </button>
+      <button id="restart" class="icon" aria-label="Back to start"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM9.5 12 19 5v14z"/></svg></button>
+      <div class="scrub">
+        <input type="range" id="time" min="0" max="4.5" step="0.001" value="0" aria-label="Time">
+        <div class="marks" id="marks"></div>
+      </div>
+      <span class="clock" id="clock">0.00 s</span>
+      <div class="seg small" id="speed" role="radiogroup" aria-label="Speed">
+        <button data-speed="0.25">¼×</button>
+        <button data-speed="0.5">½×</button>
+        <button data-speed="1" aria-pressed="true">1×</button>
+      </div>
+      <label class="chip-toggle" title="Play from the start every time a change re-runs it"><input type="checkbox" id="autoplay"><span>Auto-play</span></label>
+      <label class="chip-toggle"><input type="checkbox" id="loop" checked><span>Loop</span></label>
+      <div class="qual"><span>Quality</span>
+        <div class="seg small" id="quality" role="radiogroup" aria-label="Picture quality" title="Picture quality">
+          <button data-quality="auto" aria-pressed="true">Auto</button>
+          <button data-quality="high" aria-pressed="false">High</button>
+          <button data-quality="low" aria-pressed="false">Low</button>
+        </div>
+      </div>
+    </div>
+
+    <ol class="chain" id="chain" aria-label="What happened"></ol>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<script type="module" src="app.js"></script>
+<script type="module" src="ui/ui.js"></script>
+<script type="module" src="account/account.js"></script>
+</body>
+</html>

@@ -1,0 +1,77 @@
+{
+ "title": "Book stack with tennis ball",
+ "seconds": 3,
+ "release": 0.5,
+ "items": [
+  {
+   "id": "book1",
+   "type": "hardcover-book",
+   "name": "Hardcover book 1 (bottom)",
+   "place": {
+    "on": "table",
+    "x": 1.3
+   },
+   "why": "Bottom book of the stack, lying flat on the table",
+   "props": {}
+  },
+  {
+   "id": "book2",
+   "type": "hardcover-book",
+   "name": "Hardcover book 2",
+   "place": {
+    "on": "book1"
+   },
+   "why": "Second book, centred on the first",
+   "props": {}
+  },
+  {
+   "id": "book3",
+   "type": "hardcover-book",
+   "name": "Hardcover book 3",
+   "place": {
+    "on": "book2"
+   },
+   "why": "Third book, centred on the second",
+   "props": {}
+  },
+  {
+   "id": "book4",
+   "type": "hardcover-book",
+   "name": "Hardcover book 4",
+   "place": {
+    "on": "book3"
+   },
+   "why": "Fourth book, centred on the third",
+   "props": {}
+  },
+  {
+   "id": "book5",
+   "type": "hardcover-book",
+   "name": "Hardcover book 5 (top)",
+   "place": {
+    "on": "book4"
+   },
+   "why": "Top book of the stack",
+   "props": {}
+  },
+  {
+   "id": "ball",
+   "type": "tennis-ball",
+   "name": "Tennis ball",
+   "place": {
+    "on": "book5"
+   },
+   "why": "Rests in the middle of the top book, about 17.5 cm above the table",
+   "props": {}
+  }
+ ],
+ "missing": [],
+ "goals": [],
+ "tune": [],
+ "notes": "Five 35 mm hardcover books (650 g each) are stacked squarely, 17.5 cm tall in all. The 58 g tennis ball sits in the middle of the flat top cover. Nothing pushes anything, so the stack and the ball simply stay at rest.",
+ "assumptions": [
+  "The stack stands near the middle of the table at x = 1.3 m",
+  "All five books are the same standard size and are stacked squarely, with no offset",
+  "The ball sits in the middle of the top book"
+ ]
+}

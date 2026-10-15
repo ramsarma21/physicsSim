@@ -1,0 +1,431 @@
+{
+ "id": "plinko",
+ "source": "scenario:plinko (web/scenarios)",
+ "description": "A peg board between two see-through walls, a held golf ball above it, and nine cups in a row on the table under it.",
+ "scene": "gt/plinko.json",
+ "shot": {
+  "t": 0,
+  "run_seconds_for_framing": 0.5,
+  "page": "http://localhost:8790/?profile=bench-gt&quality=high (chrome hidden, view 1280×720)"
+ },
+ "quality": {
+  "mode": "high",
+  "tier": "high",
+  "reason": "chosen"
+ },
+ "renders": [
+  {
+   "file": "gt/plinko.png",
+   "camera": "wide",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     1.3,
+     0.7588,
+     1.5644
+    ],
+    "direction": [
+     0,
+     -0.1191,
+     -0.9929
+    ],
+    "target": null,
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   },
+   "held": false,
+   "box_m": {
+    "x0": -0.55,
+    "y0": -0.15,
+    "x1": 3.15,
+    "y1": 0,
+    "w": 3.7,
+    "h": 0.15
+   },
+   "image_box": {
+    "gt/plinko.png": null
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": 0.84,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "height": 1.3,
+    "invisible_in_3d": true
+   },
+   "held": false,
+   "box_m": {
+    "x0": 0.815,
+    "y0": 0,
+    "x1": 0.865,
+    "y1": 1.3,
+    "w": 0.05,
+    "h": 1.3
+   },
+   "image_box": {
+    "gt/plinko.png": null
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 1.76,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "height": 1.3,
+    "invisible_in_3d": true
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.735,
+    "y0": 0,
+    "x1": 1.785,
+    "y1": 1.3,
+    "w": 0.05,
+    "h": 1.3
+   },
+   "image_box": {
+    "gt/plinko.png": null
+   }
+  },
+  {
+   "id": "board",
+   "type": "peg-board",
+   "name": "Peg board",
+   "x": 1.3,
+   "y": 0.88354,
+   "angle": 0,
+   "props": {
+    "rows": 9,
+    "columns": 8,
+    "spacing": 0.09,
+    "peg_diameter": 0.01
+   },
+   "held": false,
+   "box_m": {
+    "x0": 0.98,
+    "y0": 0.255,
+    "x1": 1.62,
+    "y1": 0.88854,
+    "w": 0.64,
+    "h": 0.63354
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.3457,
+     0.2339,
+     0.6543,
+     0.7601
+    ]
+   }
+  },
+  {
+   "id": "cup1",
+   "type": "cup",
+   "name": "Cup 1",
+   "x": 0.94,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 0.89801,
+    "y0": -0.003,
+    "x1": 0.98199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.3174,
+     0.8408,
+     0.3624,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup2",
+   "type": "cup",
+   "name": "Cup 2",
+   "x": 1.03,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 0.98801,
+    "y0": -0.003,
+    "x1": 1.07199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.3583,
+     0.8408,
+     0.4013,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup3",
+   "type": "cup",
+   "name": "Cup 3",
+   "x": 1.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.07801,
+    "y0": -0.003,
+    "x1": 1.16199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.3991,
+     0.8408,
+     0.4403,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup4",
+   "type": "cup",
+   "name": "Cup 4",
+   "x": 1.21,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.16801,
+    "y0": -0.003,
+    "x1": 1.25199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.44,
+     0.8408,
+     0.4792,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup5",
+   "type": "cup",
+   "name": "Cup 5",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.25801,
+    "y0": -0.003,
+    "x1": 1.34199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.4809,
+     0.8408,
+     0.5191,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup6",
+   "type": "cup",
+   "name": "Cup 6",
+   "x": 1.39,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.34801,
+    "y0": -0.003,
+    "x1": 1.43199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.5208,
+     0.8408,
+     0.56,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup7",
+   "type": "cup",
+   "name": "Cup 7",
+   "x": 1.48,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.43801,
+    "y0": -0.003,
+    "x1": 1.52199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.5597,
+     0.8408,
+     0.6009,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup8",
+   "type": "cup",
+   "name": "Cup 8",
+   "x": 1.57,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.52801,
+    "y0": -0.003,
+    "x1": 1.61199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.5987,
+     0.8408,
+     0.6417,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "cup9",
+   "type": "cup",
+   "name": "Cup 9",
+   "x": 1.66,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 0.084,
+    "wall": 0.12
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.61801,
+    "y0": -0.003,
+    "x1": 1.70199,
+    "y1": 0.12016,
+    "w": 0.08398,
+    "h": 0.12316
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.6376,
+     0.8408,
+     0.6826,
+     0.96
+    ]
+   }
+  },
+  {
+   "id": "ball",
+   "type": "golf-ball",
+   "name": "Golf ball",
+   "x": 1.32,
+   "y": 1.02489,
+   "angle": 0,
+   "props": {},
+   "held": true,
+   "box_m": {
+    "x0": 1.29865,
+    "y0": 1.00354,
+    "x1": 1.34135,
+    "y1": 1.04624,
+    "w": 0.0427,
+    "h": 0.0427
+   },
+   "image_box": {
+    "gt/plinko.png": [
+     0.4994,
+     0.0978,
+     0.5199,
+     0.1411
+    ]
+   }
+  }
+ ]
+}

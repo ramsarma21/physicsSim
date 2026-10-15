@@ -1,0 +1,179 @@
+{
+ "case": "photo-books-can-ball",
+ "notes": "",
+ "plan": {
+  "title": "Mug, books, can, ball",
+  "items": [
+   {
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "Mug",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 0.741
+    },
+    "why": "reference"
+   },
+   {
+    "id": "b1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 0.9925
+    },
+    "why": "reference"
+   },
+   {
+    "id": "b2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "props": {},
+    "place": {
+     "on": "b1",
+     "x": 0.9925
+    },
+    "why": "reference"
+   },
+   {
+    "id": "b3",
+    "type": "hardcover-book",
+    "name": "Book 3",
+    "props": {},
+    "place": {
+     "on": "b2",
+     "x": 0.9925
+    },
+    "why": "reference"
+   },
+   {
+    "id": "b4",
+    "type": "hardcover-book",
+    "name": "Book 4",
+    "props": {},
+    "place": {
+     "on": "b3",
+     "x": 0.9925
+    },
+    "why": "reference"
+   },
+   {
+    "id": "can",
+    "type": "soda-can",
+    "name": "Soda can",
+    "props": {},
+    "place": {
+     "on": "b4",
+     "x": 1.0525
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ball",
+    "type": "tennis-ball",
+    "name": "Tennis ball",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.2005
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 3,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-photo-books-can-ball",
+  "name": "Mug, books, can, ball",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.6,
+   "x1": 2,
+   "y0": -0.12,
+   "y1": 0.8
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "Mug",
+    "x": 0.741,
+    "y": 0.049
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "x": 0.9925,
+    "y": 0.019
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "x": 0.9925,
+    "y": 0.0555
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b3",
+    "type": "hardcover-book",
+    "name": "Book 3",
+    "x": 0.9925,
+    "y": 0.092
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b4",
+    "type": "hardcover-book",
+    "name": "Book 4",
+    "x": 0.9925,
+    "y": 0.1285
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "can",
+    "type": "soda-can",
+    "name": "Soda can",
+    "x": 1.0525,
+    "y": 0.2087
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "ball",
+    "type": "tennis-ball",
+    "name": "Tennis ball",
+    "x": 1.2005,
+    "y": 0.035
+   }
+  ],
+  "goals": []
+ }
+}

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ball models test</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info"></div>
+<script type="module">
+// Dev page for web/models/balls.js.  ?only=<ball type key> (one ball), otherwise every ball in a row on the table.
+// window.look(x, y, dist, az), window.snap(name), window.ball(type) -> {x, y, r}, window.shot(type, name, {dist, az, up})
+import { createView3D } from "../view3d.js"
+
+const q = new URLSearchParams(location.search)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+const types = catalog.types.filter((t) => t.category === "Balls" && t.key !== "clay-ball")
+const only = q.get("only")
+const list = only ? types.filter((t) => only.split(",").includes(t.key)) : types
+const items = [{ id: "table", type: "table", name: "Table", x: 1.3, y: 0, props: { width: 3.7, thickness: 0.15 } }]
+const pos = {}
+let x = -0.35
+for (const t of list) {
+  const r = t.defaults.diameter / 2
+  x += r
+  items.push({ id: t.key, type: t.key, name: t.name, x, y: r + 0.0015, angle: Number(q.get("angle") ?? 0), props: {} })
+  pos[t.key] = { x, y: r, r }
+  x += r + 0.05
+}
+const scene = { version: 2, id: "balls", name: "balls", seconds: 0.6, release: 0.2, stage: { x0: -0.559, x1: 3.191, y0: -0.156, y1: 2.344 }, items, goals: [] }
+const sim = await post("/api/simulate", { scene })
+window.sim = sim
+if (q.get("number")) for (const s of sim.doc.solids) if (s.itemType === "billiard-ball") s.number = Number(q.get("number"))
+if (q.get("color")) for (const s of sim.doc.solids) if (s.itemType !== "table") s.color = "#" + q.get("color")
+const view = createView3D(document.getElementById("stage"))
+window.view = view
+view.setOptions({ looks: catalog.looks })
+const tl = performance.now()
+view.load(sim, null)
+window.loadMs = performance.now() - tl
+window.pos = pos
+window.setT = (v) => view.render(v)
+window.snap = async (name, tt = 0) => {
+  view.render(tt)
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: view._debug.renderer.domElement.toDataURL() }) })
+  return r.status
+}
+window.look = (x, y, dist = 0.4, az = 0, tt = 0, up = 0.04, fov = null) => {
+  view.setOptions({ camera: "orbit" })
+  view.render(tt)
+  const d = view._debug
+  d.controls.minDistance = 0.002 // close-ups of small balls
+  if (d.orbitCam.near > 0.003) { d.orbitCam.near = 0.003; d.orbitCam.updateProjectionMatrix() }
+  if (fov) { d.orbitCam.fov = fov; d.orbitCam.updateProjectionMatrix() }
+  d.controls.target.set(x, y, 0)
+  d.orbitCam.position.set(x + dist * Math.sin(az), y + up, dist * Math.cos(az))
+  d.controls.update()
+  view.render(tt)
+}
+// a close-up of one ball, saved as web/dev/shots/<name>.png
+window.shot = async (type, name, { dist, az = 0, up = 0.0, t = 0, fov = 24, k = 7.5 } = {}) => {
+  const p = pos[type]
+  window.look(p.x, p.y, dist ?? p.r * k, az, t, up * p.r, fov)
+  window.look(p.x, p.y, dist ?? p.r * k, az, t, up * p.r, fov)
+  return window.snap(name, t)
+}
+window.addEventListener("error", (e) => (document.getElementById("info").textContent = "ERROR " + e.message))
+document.getElementById("info").textContent = list.map((t) => t.key).join(" ")
+window.ready = true
+function loop() { view.render(0); requestAnimationFrame(loop) }
+if (q.get("loop") === "1") requestAnimationFrame(loop)
+else view.render(0)
+</script>
+</body>
+</html>

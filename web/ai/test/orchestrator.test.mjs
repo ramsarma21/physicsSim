@@ -1,0 +1,783 @@
+// The pipeline with the AI endpoints mocked (node --test web/ai/test/orchestrator.test.mjs): plan -> solve -> simulate -> refine (patches) -> tune -> report,
+// cancellation, retries and plain errors. The physics is the real engine (web/sim/engine-worker.js on this thread).
+import test from "node:test"
+import assert from "node:assert/strict"
+import { createOrchestrator, applyPatches, tune, goalDistance, digestScene, AiError, safeKnobs, describeDiff, describeRun, runProblems, lostStages, fmtLen, propChange } from "../orchestrator.js"
+import { solve, itemGeometry as itemGeo, shapesAt as shapesOf } from "../solver.js"
+const itemGeometryOf = (t, p = {}) => -Math.min(...shapesOf(itemGeo(t, p), 0, 0, 0).map((q) => q.y0)) // (how far below its anchor it reaches)
+const near = (a, b, tol, what = "") => assert.ok(Math.abs(a - b) <= tol, `${what} ${a} vs ${b}`)
+import { prepare, finish } from "../../sim/index.js"
+import { handle } from "../../sim/engine-worker.js"
+import { readFileSync, existsSync } from "node:fs"
+
+const simulate = async (scene, signal) => {
+	if (signal?.aborted) throw Object.assign(new Error("Cancelled"), { name: "AbortError" })
+	const { scene: s, doc, resolved } = prepare(scene)
+	const msg = handle({ id: 1, doc, rate: 120 })
+	if (msg.error !== undefined) throw new Error(msg.error)
+	const meta = finish(s, doc, resolved, msg.track)
+	return { key: "k", ms: msg.ms, track: msg.track, doc: meta.doc, summary: meta.summary, warnings: meta.warnings, resolved }
+}
+const rube = () => JSON.parse(readFileSync(new URL("./fixtures/rube.plan.json", import.meta.url)))
+/** A mock of the app's api(): /api/ai/<step> answers from `answers[step]` (a value or a function of the payload); /api/simulate runs the engine. */
+function mockApi(answers, log = []) {
+	return async (path, body, signal) => {
+		if (path === "/api/simulate") return simulate(body.scene, signal)
+		const step = path.replace("/api/ai/", "")
+		log.push({ step, payload: body.payload })
+		let a = answers[step]
+		if (typeof a === "function") a = await a(body.payload, log.filter((l) => l.step === step).length)
+		if (a instanceof Error) throw a
+		return { ok: true, result: a, model: `mock/${step}`, ms: 5, usage: { input_tokens: 10, output_tokens: 5 } }
+	}
+}
+/** A ball held over a box that misses it: the tuner's case. */
+const dropPlan = (x) => ({
+	title: "Drop into the box",
+	seconds: 2.5,
+	release: 0.3,
+	items: [
+		{ id: "box", type: "box", props: { hung: false }, place: { on: "table", x: 1.5 } },
+		{ id: "ball", type: "clay-ball", held: true, place: { on: "air", x, y_m: 0.6 } }
+	],
+	goals: [{ label: "The ball lands in the box", item: "ball", container: "box" }],
+	tune: [{ id: "ball", param: "x", min: 1.0, max: 2.0 }]
+})
+
+test("plan -> solve -> simulate -> refine done -> report", async () => {
+	const log = []
+	const ai = createOrchestrator({ api: mockApi({ plan: rube(), refine: { done: true, score_0_10: 9, issues: [], patches: [] } }, log) })
+	const events = []
+	const job = ai.build({ text: "a ball rolls down a ramp into dominoes" }, { onEvent: (e) => events.push(e) })
+	const r = await job.result
+	assert.equal(r.title, "Ramp, dominoes and a ball")
+	assert.ok(r.scene.items.length >= 6)
+	assert.ok(r.used.some((u) => u.type === "domino-row"))
+	assert.equal(r.score, 9)
+	assert.deepEqual(log.map((l) => l.step), ["plan", "refine"])
+	const rp = log[1].payload
+	assert.equal(rp.text, "a ball rolls down a ramp into dominoes")
+	assert.ok(rp.scene.items.length >= 6, "the critic gets the solved scene")
+	assert.ok(rp.sim.summary.events.length > 0, "and what happened in the run")
+	assert.deepEqual([rp.round, rp.rounds], [1, 3])
+	const steps = events.filter((e) => e.type === "step" && e.state === "done").map((e) => e.step)
+	assert.deepEqual(steps, ["plan", "solve", "simulate", "refine"])
+	assert.ok(r.timings.plan >= 0 && r.timings.simulate >= 0 && r.totalMs >= 0)
+	assert.deepEqual(r.models, ["mock/plan", "mock/refine"])
+})
+
+test("refine patches change the plan (never raw coordinates), re-solve and re-run; the round's changes are reported", async () => {
+	let n = 0
+	const ai = createOrchestrator({
+		api: mockApi({
+			plan: rube(),
+			refine: () => (++n === 1 ? { done: false, score_0_10: 5, issues: ["the dominoes are too far from the ramp"], patches: [{ op: "move", id: "row", dx: -0.05 }, { op: "set_props", id: "row", props: { count: 8 } }] } : { done: true, score_0_10: 8, issues: [], patches: [] })
+		})
+	})
+	const r = await ai.build({ text: "x" }).result
+	assert.equal(r.refine.length, 2)
+	// the changes as the scene shows them (solved before vs after), with units, not the plan's wording
+	assert.match(r.refine[0].changes.join(" | "), /Dominoes moved 5 cm left; count 6 → 8/)
+	assert.match(r.refine[0].planChanges.join(" | "), /gap to ramp now 10\.0 cm/, "(the plan's own change list is kept beside it)")
+	assert.equal(r.scene.items.find((i) => i.id === "row").props.count, 8)
+	assert.equal(r.score, 8)
+})
+
+test("applyPatches: every op, and what rested on a removed item moves to its support", () => {
+	const plan = rube()
+	const { plan: p, changes, skipped } = applyPatches(plan, [
+		{ op: "remove", id: "stand" },
+		{ op: "add", item: { id: "b2", type: "superball", place: { on: "table", x: 2 } } },
+		{ op: "replace_type", id: "target", type: "golf-ball" },
+		{ op: "set_place", id: "cup", place: { on: "table", x: 2.5 } },
+		{ op: "move", id: "b2", dx: 0.1 },
+		{ op: "move", id: "nope", dx: 1 },
+		{ op: "frobnicate" }
+	])
+	assert.equal(p.items.find((i) => i.id === "ramp").place.lean.from.on, "table")
+	assert.equal(p.items.find((i) => i.id === "b2").place.x, 2.1)
+	assert.equal(p.items.find((i) => i.id === "target").type, "golf-ball")
+	assert.equal(changes.length, 5)
+	assert.equal(skipped.length, 2)
+	assert.ok(rube().items.find((i) => i.id === "stand"), "the input plan is not changed")
+})
+
+test("tune: a missed drop is moved over the box within the budget, and the middle of the passing range is taken", async () => {
+	const plan = dropPlan(1.25)
+	const solved = solve(plan)
+	const sim = await simulate(solved.scene)
+	assert.equal(sim.summary.goals[0].ok, false, "misses at first")
+	const d0 = goalDistance(solved.scene, sim)
+	const r = await tune({ plan, scene: solved.scene, sim, simulate, maxRuns: 40, maxMs: 20000 })
+	assert.equal(r.passed, true, `passed after ${r.runs} runs`)
+	assert.ok(r.runs <= 40)
+	assert.equal(r.changed.length, 1)
+	assert.ok(Math.abs(r.changed[0].to - 1.5) < 0.06, `ball x ${r.changed[0].to} near the box's middle`)
+	assert.ok(goalDistance(r.scene, r.sim) < d0)
+})
+
+test("the pipeline tunes when goals fail and reports what it changed", async () => {
+	const ai = createOrchestrator({ api: mockApi({ plan: dropPlan(1.2), refine: { done: true, score_0_10: 7, issues: ["the ball misses the box"], patches: [] } }) })
+	const r = await ai.build({ text: "drop a ball into a box" }).result
+	assert.ok(r.tune && r.tune.changed.length === 1, JSON.stringify(r.tune))
+	assert.deepEqual(r.goals.map(({ label, ok }) => ({ label, ok })), [{ label: "The ball lands in the box", ok: true }])
+})
+
+test("edit mode: patches from the edit step apply to the plan of the scene on screen", async () => {
+	const base = solve(rube()).scene
+	const log = []
+	const ai = createOrchestrator({ api: mockApi({ edit: { patches: [{ op: "set_props", id: "row", props: { count: 10 } }], summary: "ten dominoes" }, refine: { done: true, score_0_10: 8, patches: [] } }, log) })
+	const r = await ai.build({ text: "use ten dominoes", mode: "edit", scene: base }).result
+	assert.equal(r.mode, "edit")
+	assert.equal(r.scene.items.find((i) => i.id === "row").props.count, 10)
+	assert.ok(log[0].payload.plan.items.length > 0, "the edit step sees the scene as a plan")
+	// what the scene shows: the longer row, and the ball it now reaches being moved out of its way (the solver's doing, so it is said)
+	assert.deepEqual(r.edit.changes, ["Dominoes: count 6 → 10", "Tennis ball moved 36 cm left"])
+})
+
+test("cancel stops the build with an AbortError", async () => {
+	const ai = createOrchestrator({ api: mockApi({ plan: () => new Promise((res) => setTimeout(() => res(rube()), 300)) }) })
+	const job = ai.build({ text: "x" })
+	setTimeout(() => job.cancel(), 20)
+	await assert.rejects(job.result, (e) => e.name === "AbortError")
+})
+
+test("errors are plain: a gateway failure is retried once, then reported; an empty plan is 'nothing buildable'", async () => {
+	let calls = 0
+	const fail = () => {
+		calls++
+		return Object.assign(new Error("upstream 503"), { status: 503 })
+	}
+	const ai = createOrchestrator({ api: mockApi({ plan: fail }) })
+	await assert.rejects(ai.build({ text: "x" }).result, (e) => e instanceof AiError && e.kind === "gateway" && e.retryable)
+	assert.equal(calls, 2, "one retry")
+	const empty = createOrchestrator({ api: mockApi({ plan: { title: "Nothing", items: [{ id: "u", type: "unicorn" }], missing: [{ asked: "a unicorn", reason: "not in the library" }] } }) })
+	await assert.rejects(empty.build({ text: "a unicorn" }).result, (e) => e instanceof AiError && e.kind === "nothing")
+	await assert.rejects(createOrchestrator({ api: mockApi({}) }).build({ text: "" }).result, (e) => e.kind === "input")
+})
+
+test("digestScene says what each item rests on", () => {
+	const s = solve(rube()).scene
+	const d = digestScene(s)
+	assert.equal(d.items.find((i) => i.id === "ball").rests_on, "ramp")
+	assert.equal(d.items.find((i) => i.id === "row").rests_on, "table")
+	assert.equal(d.items.find((i) => i.id === "ramp").rests_on, "stand")
+})
+
+test("refine issues may be objects ({severity, text, ids}); an edit that is only a question answers without rebuilding", async () => {
+	const ai = createOrchestrator({ api: mockApi({ plan: rube(), refine: { done: true, score_0_10: 9, issues: [{ severity: "low", text: "the cup is far away", ids: ["cup"] }], patches: [] } }) })
+	const r = await ai.build({ text: "x" }).result
+	assert.deepEqual(r.refine[0].issues, ["the cup is far away"])
+	const base = solve(rube()).scene
+	const q = createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "The ramp is 0.84 m long.", patches: [], missing: [] } }) })
+	const a = await q.build({ text: "how long is the ramp?", mode: "edit", scene: base }).result
+	assert.equal(a.replyOnly, true)
+	assert.equal(a.reply, "The ramp is 0.84 m long.")
+	assert.equal(a.scene, undefined, "nothing to apply")
+})
+
+test("images go to the server as data URLs, to observe and to plan", async () => {
+	const log = []
+	const img = { name: "photo.jpg", dataUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD", width: 10, height: 10, thumb: "" }
+	const ai = createOrchestrator({ api: mockApi({ observe: { objects: [], relations: [], motion_story: [], view: "side", scale_hint: null, uncertain: ["the ball's size"] }, plan: rube(), refine: { done: true, score_0_10: 8, patches: [] } }, log) })
+	const r = await ai.build({ text: "like this", images: [img] }).result
+	assert.equal(log[0].step, "observe")
+	assert.match(log[0].payload.images[0].data, /^data:image\/jpeg;base64,/)
+	assert.ok(log[1].payload.observation && log[1].payload.images.length === 1, "the planner sees the observation and the picture")
+	assert.deepEqual(r.unsure, ["A low-resolution picture: counts and sizes may be off", "the ball's size"], "what the picture left unsure is reported apart from the assumptions (a 10 px picture is said to be one)")
+})
+
+test("a refine change that loses the goal: the tuner gets to win it back; without knobs the earlier version is kept", async () => {
+	const critic = () => ({ done: false, score_0_10: 5, issues: ["it only works by luck"], patches: [{ op: "move", id: "ball", x: 1.25 }] })
+	const withKnob = createOrchestrator({ api: mockApi({ plan: dropPlan(1.5), refine: critic }) })
+	const a = await withKnob.build({ text: "drop a ball into a box" }, { refineRounds: 1 }).result
+	assert.ok(a.tune && a.tune.runs > 0, "the tuner ran on the changed version")
+	assert.deepEqual(a.goals.map(({ label, ok }) => ({ label, ok })), [{ label: "The ball lands in the box", ok: true }])
+	assert.ok(Math.abs(a.scene.items.find((i) => i.id === "ball").x - 1.25) > 0.05, "the changed version, re-aimed")
+	const noKnob = { ...dropPlan(1.5), tune: [] }
+	const b = await createOrchestrator({ api: mockApi({ plan: noKnob, refine: critic }) }).build({ text: "x" }, { refineRounds: 1 }).result
+	assert.deepEqual(b.goals.map(({ label, ok }) => ({ label, ok })), [{ label: "The ball lands in the box", ok: true }], "the earlier version, which met the goal")
+	assert.match(b.refine[0].rejected, /earlier version was kept/)
+})
+
+// ================================================================ the repairs (busy waits, honest scores, final check, undone rounds, floating guard, safe knobs, wording)
+const busyErr = (retryAfter = 0.05) => Object.assign(new Error("too many AI steps are running; try again in a moment"), { status: 429, body: { ok: false, code: "busy", retryable: true, retryAfter } })
+
+test("busy (429): the build waits for a free AI slot (telling the timeline), then goes on; cancel stops the wait", async () => {
+	let n = 0
+	const events = []
+	const ai = createOrchestrator({ api: mockApi({ plan: () => (++n <= 2 ? busyErr() : rube()), refine: { done: true, score_0_10: 9, patches: [] } }) })
+	const r = await ai.build({ text: "x" }, { onEvent: (e) => events.push(e) }).result
+	assert.equal(n, 3, "tried again after each busy answer")
+	assert.equal(r.score, 9)
+	const waits = events.filter((e) => e.type === "wait")
+	assert.deepEqual(waits.map((e) => [e.step, e.state]), [["plan", "start"], ["plan", "end"], ["plan", "start"], ["plan", "end"]])
+	// a long wait is cancellable
+	const slow = createOrchestrator({ api: mockApi({ plan: () => busyErr(20) }) })
+	const job = slow.build({ text: "x" })
+	setTimeout(() => job.cancel(), 50)
+	const t0 = Date.now()
+	await assert.rejects(job.result, (e) => e.name === "AbortError")
+	assert.ok(Date.now() - t0 < 2000, "stopped at once")
+})
+
+test("scores belong to the version they judged: patches after the last check get a final check; if it can't run, no number is claimed", async () => {
+	// round 1 scores 4 and patches; the final check of the patched version answers 8: that is the score shown
+	let n = 0
+	const critic = () => (++n === 1 ? { done: false, score_0_10: 4, issues: [{ severity: "high", text: "the dominoes are too far" }], patches: [{ op: "move", id: "cup", dx: 0.1 }] } : { done: true, score_0_10: 8, issues: [], patches: [] })
+	const a = await createOrchestrator({ api: mockApi({ plan: rube(), refine: critic }) }).build({ text: "x" }, { refineRounds: 1 }).result
+	assert.equal(a.refine.length, 2)
+	assert.equal(a.refine[1].final, true)
+	assert.equal(a.score, 8, "the final check's score, for the version on the table")
+	assert.equal(a.scoreState, "checked")
+	// the same, but the final check fails (J06: a 429 after round 1): the round-1 score is NOT shown as this scene's; the user is told
+	let m = 0
+	const failing = () => (++m === 1 ? { done: false, score_0_10: 4, issues: ["far"], patches: [{ op: "move", id: "cup", dx: 0.1 }] } : Object.assign(new Error("upstream 503"), { status: 503 }))
+	const b = await createOrchestrator({ api: mockApi({ plan: rube(), refine: failing }) }).build({ text: "x" }, { refineRounds: 1 }).result
+	assert.equal(b.score, null, "no score claimed for an unchecked version")
+	assert.equal(b.scoreState, "stale")
+	assert.equal(b.staleScore, 4)
+	assert.match(b.scoreNote, /not checked again/)
+	assert.ok(b.issues.some((i) => i.level === "warn" && i.code === "final_check_failed"), JSON.stringify(b.issues))
+	// a first check that can't run: the scene is applied, said to be unchecked
+	const c = await createOrchestrator({ api: mockApi({ plan: rube(), refine: () => Object.assign(new Error("upstream 503"), { status: 503 }) }) }).build({ text: "x" }).result
+	assert.equal(c.score, null)
+	assert.ok(c.issues.some((i) => i.code === "refine_failed" && /not checked by the AI/.test(i.text)))
+})
+
+test("a round that stops a stage that worked is undone, and the critic is told why in its next round", async () => {
+	const log = []
+	let n = 0
+	// round 1: move the dominoes 1.6 m away (the ball no longer reaches them; at 1.2 m it still does, late, and they end leaning past 45°); round 2: happy
+	const critic = () => (++n === 1 ? { done: false, score_0_10: 6, issues: ["x"], patches: [{ op: "move", id: "row", dx: 1.6 }] } : { done: true, score_0_10: 8, issues: [], patches: [] })
+	const r = await createOrchestrator({ api: mockApi({ plan: rube(), refine: critic }, log) }).build({ text: "x" }).result
+	assert.match(r.refine[0].rejected ?? "", /stopped what worked before \(Dominoes: 0 of 6 fall \(was [1-6] of 6 fall\)/)
+	const second = log.filter((l) => l.step === "refine")[1].payload
+	assert.ok(second.sim.warnings.some((w) => /were tried and undone/.test(w.text)), "the critic hears it")
+	assert.equal(r.scene.items.find((i) => i.id === "row").x < 1.5, true, "the dominoes stayed where they worked")
+	assert.equal(r.score, 8)
+})
+
+test("refine patches that would leave something floating are not applied (legs off a ramp in the air); the rest are", async () => {
+	const plan = { title: "Air ramp", seconds: 2, items: [
+		{ id: "ramp", type: "plank", name: "Feed ramp", place: { lean: { from: { on: "air", x: 0.6, y: 0.5 }, to: { on: "air", x: 1.1, y: 0.3 } } } },
+		{ id: "ball", type: "golf-ball", held: true, place: { on: "ramp", x: 0.65 } }
+	], goals: [], tune: [] }
+	let n = 0
+	const critic = () => (++n === 1 ? { done: false, score_0_10: 5, issues: ["legs"], patches: [{ op: "set_props", id: "ramp", props: { legs: false } }, { op: "replace_type", id: "ball", type: "tennis-ball" }] } : { done: true, score_0_10: 8, patches: [] })
+	const r = await createOrchestrator({ api: mockApi({ plan, refine: critic }) }).build({ text: "x" }).result
+	assert.notEqual(r.scene.items.find((i) => i.id === "ramp").props.legs, false, "the ramp keeps its legs")
+	assert.equal(r.scene.items.find((i) => i.id === "ball").type, "tennis-ball", "the other change is made")
+	assert.match(r.refine[0].skipped.join(" | "), /Feed ramp: not changed, the change would have left it floating/)
+})
+
+test("safeKnobs: a height knob on a cup in mid-air stays (the solver stands it on a stand at any height); on a cup standing on a shelf it moves the shelf", () => {
+	const air = { title: "t", items: [{ id: "cup", type: "cup", place: { on: "air", x: 1, y_m: 0.3 } }], tune: [{ id: "cup", param: "y", min: 0.1, max: 0.4 }, { id: "cup", param: "x", min: 0.8, max: 1.2 }] }
+	const a = safeKnobs(air, solve(air).scene)
+	assert.deepEqual(a.knobs.map((k) => k.param), ["y", "x"])
+	assert.deepEqual(a.notes, [])
+	// on a box on the table (not in the air on its own): lifting it off the box would leave it floating, so the knob is left out
+	const onBox = { title: "t", items: [{ id: "bx", type: "cardboard-box", place: { on: "table", x: 1 } }, { id: "cup", type: "cup", place: { on: "bx" } }], tune: [{ id: "cup", param: "y", min: 0.3, max: 0.5 }] }
+	const c = safeKnobs(onBox, solve(onBox).scene)
+	assert.equal(c.knobs.length, 0)
+	assert.match(c.notes[0], /height was left alone/)
+	const shelf = { title: "t", items: [{ id: "shelf", type: "plank", props: { length: 0.4 }, place: { on: "air", x: 1.5, y_m: 0.3 } }, { id: "cup", type: "cup", place: { on: "shelf" } }], tune: [{ id: "cup", param: "y", min: 0.2, max: 0.5 }] }
+	const sc = solve(shelf).scene
+	const b = safeKnobs(shelf, sc)
+	assert.equal(b.knobs.length, 1)
+	assert.equal(b.knobs[0].id, "shelf")
+	const d = sc.items.find((i) => i.id === "shelf").y - sc.items.find((i) => i.id === "cup").y
+	assert.ok(Math.abs(b.knobs[0].min - (0.2 + d)) < 1e-9 && Math.abs(b.knobs[0].max - (0.5 + d)) < 1e-9)
+	// a hung box holds itself up: its height knob stays
+	const hung = { title: "t", items: [{ id: "bx", type: "box", place: { on: "air", x: 1, y_m: 0.5 } }], tune: [{ id: "bx", param: "y", min: 0.3, max: 0.6 }] }
+	assert.equal(safeKnobs(hung, solve(hung).scene).knobs[0].id, "bx")
+})
+
+test("check mode: the scene on screen is checked again without planning; an edit's inherited notes are not shown as its own", async () => {
+	const base = solve(rube()).scene
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ refine: { done: true, score_0_10: 9, patches: [] } }, log) }).build({ mode: "check", text: "a ball rolls into dominoes", scene: base }).result
+	assert.equal(r.mode, "check")
+	assert.deepEqual(log.map((l) => l.step), ["refine"])
+	assert.deepEqual([log[0].payload.round, log[0].payload.rounds], [1, 1])
+	assert.equal(r.score, 9)
+	const withNotes = { ...rube(), notes: "The ball rolls 2 m and drops into the cup.", assumptions: ["a 1 m ramp"] }
+	const e = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Done.", patches: [{ op: "set_props", id: "row", props: { count: 8 } }] }, refine: { done: true, score_0_10: 8, patches: [] } }) })
+		.build({ text: "eight dominoes", mode: "edit", scene: solve(withNotes).scene, plan: withNotes, planScene: solve(withNotes).scene }).result
+	assert.equal(e.howItWorks, null, "the old plan's account is not this edit's")
+	assert.deepEqual(e.assumptions, [])
+	assert.match(e.happened, /^In the run: /)
+})
+
+test("wording: lengths and props with their units, moves as directions, the run told from its own events", () => {
+	assert.equal(fmtLen(0.0042), "4.2 mm")
+	assert.equal(fmtLen(-0.045), "4.5 cm")
+	assert.equal(fmtLen(0.3548), "35 cm")
+	assert.equal(fmtLen(1.254), "1.25 m")
+	assert.equal(propChange("steel-ball", "diameter", 0.1, 0.2), "diameter 10 → 20 cm")
+	assert.equal(propChange("plank", "legs", true, false), "legs under it: off")
+	const a = solve(rube()).scene
+	const b = JSON.parse(JSON.stringify(a))
+	const cup = b.items.find((i) => i.id === "cup")
+	cup.x += 0.3548
+	cup.y -= 0.15
+	b.items.find((i) => i.id === "ball").x += 0.0004 // under 1 mm: not a change
+	assert.deepEqual(describeDiff(a, b), ["Cup moved 35 cm right and 15 cm down"])
+	// the whole layout shifted to stay on the table: said once; what moved differently is said on its own
+	const c = JSON.parse(JSON.stringify(a))
+	for (const it of c.items) if (it.type !== "table" && !(it.type === "wall" && it.props?.invisible_in_3d)) it.x -= 0.09
+	c.items.find((i) => i.id === "cup").x += 0.1
+	c.items.find((i) => i.id === "row").props = { ...c.items.find((i) => i.id === "row").props, count: 8 }
+	assert.deepEqual(describeDiff(a, c), ["Dominoes: count 6 → 8", "Cup moved 1 cm right", "Everything else moved 9 cm left (the layout was shifted to stay on the table)"])
+	const sim = { summary: { goals: [{ label: "Ball in the cup", ok: false }], stories: [{ item: "row", name: "Dominoes", text: "4 of 40 fall", ok: false, moved_at: 1 }], events: [{ t: 0.61, a: "ball", b: "ramp", text: "Ball hits Ramp" }, { t: 1.2, a: "ball", b: "table", text: "Ball hits Table" }, { t: 1.94, a: "ball", b: "row", text: "Ball hits Dominoes" }] } }
+	assert.equal(describeRun(sim, a), "In the run: Ball hits Ramp (0.61 s) → Ball hits Dominoes (1.94 s). Dominoes: 4 of 40 fall.")
+	assert.deepEqual(runProblems(sim), ["Not met: Ball in the cup", "Dominoes: only 4 of 40 fall"])
+	assert.deepEqual(lostStages({ summary: { stories: [{ item: "row", name: "Dominoes", text: "12 of 12 fall", ok: true }] } }, { summary: { stories: [{ item: "row", name: "Dominoes", text: "3 of 12 fall", ok: false }] } }), ["Dominoes: 3 of 12 fall (was 12 of 12 fall)"])
+})
+
+test("a 'done' verdict with something still floating gets one more round (the critic is told); the report says what floats", async () => {
+	// (a loose box under the whole funnel: the solver can't stand posts under its rim, so it still floats)
+	const plan = { title: "Funnel", seconds: 2, items: [
+		{ id: "funnel", type: "funnel", name: "Funnel", place: { on: "air", x: 1.2, y_m: 0.45 } },
+		{ id: "cup", type: "cardboard-box", name: "Box", props: { width: 0.55, height: 0.1 }, place: { on: "table", x: 1.2 } },
+		{ id: "m", type: "glass-marble", held: true, place: { on: "air", x: 1.2, y_m: 0.7 } }
+	], goals: [], tune: [] }
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ plan, refine: { done: true, score_0_10: 8, issues: [], patches: [] } }, log) }).build({ text: "a marble through a funnel into a cup" }).result
+	const calls = log.filter((l) => l.step === "refine")
+	assert.equal(calls.length, 2, "asked once more")
+	assert.ok(calls[1].payload.sim.warnings.some((w) => /Not done yet: Nothing holds Funnel up/.test(w.text)), "told what floats")
+	assert.ok(calls[0].payload.sim.warnings.some((w) => /placing: Nothing holds Funnel up/.test(w.text)), "the first look already had the solver's warning")
+	assert.equal(r.refine[0].continued?.length > 0, true)
+	assert.ok(r.problems.some((p) => /^Nothing holds Funnel up: it floats/.test(p)), JSON.stringify(r.problems))
+})
+
+// ================================================================ round 2 (ai2-client): goal kinds, quick edits, picture coverage, live preview, busy queue
+test("goal kinds: a 'falls' goal is checked on the run itself (every domino of the row), with what the run shows", async () => {
+	const plan = { ...rube(), goals: [{ kind: "falls", items: ["row"], label: "all the dominoes fall" }, { kind: "hits", item: "ball", target: "row", label: "the ball hits the dominoes" }] }
+	const r = await createOrchestrator({ api: mockApi({ plan, refine: { done: true, score_0_10: 9, patches: [] } }) }).build({ text: "x" }).result
+	const falls = r.goals.find((g) => g.kind === "falls")
+	assert.ok(falls && typeof falls.ok === "boolean", JSON.stringify(r.goals))
+	assert.match(falls.detail, /of \d+ (tipped over|fell)/)
+	const hits = r.goals.find((g) => g.kind === "hits")
+	assert.equal(hits.ok, true, JSON.stringify(hits))
+	assert.equal(r.scene.goals.length, 0, "the scene itself carries only 'in' goals")
+})
+
+test("quick edits: a simple change that breaks nothing skips the critic and the tuner; one that asks to check, or breaks a goal, gets them", async () => {
+	const base = solve(rube()).scene
+	const log = []
+	const edit = { mode: "patch", reply: "Done.", patches: [{ op: "set_props", id: "row", props: { count: 8 } }] }
+	const q = await createOrchestrator({ api: mockApi({ edit, refine: { done: true, score_0_10: 8, patches: [] } }, log) }).build({ text: "eight dominoes", mode: "edit", scene: base }).result
+	assert.deepEqual(log.map((l) => l.step), ["edit"], "no critic")
+	assert.equal(q.quick, true)
+	assert.equal(q.scoreState, "quick")
+	assert.equal(q.score, null)
+	assert.match(q.scoreNote, /simple change/)
+	assert.equal(q.edit.changes[0], "Dominoes: count 6 → 8")
+	const log2 = []
+	const c = await createOrchestrator({ api: mockApi({ edit, refine: { done: true, score_0_10: 8, patches: [] } }, log2) }).build({ text: "eight dominoes, and check it still works", mode: "edit", scene: base }).result
+	assert.deepEqual(log2.map((l) => l.step), ["edit", "refine"], "asked to check: the critic looks")
+	assert.equal(c.quick, false)
+	// a goal that worked before the edit and fails after it: the critic looks (and the tuner may run)
+	const dp = dropPlan(1.5)
+	const s0 = solve(dp)
+	const sim0 = await simulate(s0.scene)
+	assert.equal(sim0.summary.goals[0].ok, true)
+	const log3 = []
+	const g = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Moved.", patches: [{ op: "move", id: "box", x: 2.6 }] }, refine: { done: true, score_0_10: 6, patches: [] } }, log3) })
+		.build({ text: "move the box to the far right", mode: "edit", scene: s0.scene, plan: dp, planScene: s0.scene, sim: sim0 }).result
+	assert.ok(log3.some((l) => l.step === "refine"), "the broken goal brings the critic")
+	assert.equal(g.quick, false)
+})
+
+test("an edit that answers undo is a reply, nothing rebuilt; an edit with no visible effect says so", async () => {
+	const base = solve(rube()).scene
+	const u = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Press Undo to go back.", patches: [], undo: true } }) }).build({ text: "put it back", mode: "edit", scene: base }).result
+	assert.equal(u.replyOnly, true)
+	assert.equal(u.undo, true)
+	const same = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Done.", patches: [{ op: "set_props", id: "row", props: { count: 6 } }] } }) }).build({ text: "six dominoes", mode: "edit", scene: base }).result
+	assert.equal(same.edit.noChange, true)
+	assert.deepEqual(same.edit.changes, [])
+})
+
+test("pictures: objects the observation saw but the plan left out (or built too few of) get ONE targeted fix before the critic, and the report says what was matched", async () => {
+	const img = { name: "photo.jpg", dataUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD", width: 1200, height: 900, thumb: "" }
+	const observation = { objects: [{ label: "bricks", count: 4 }, { label: "steel ball", count: 1 }], relations: [], motion_story: [], view: { camera: "side" }, scale_hint: null, uncertain: [] }
+	const plan = { title: "Bricks", seconds: 2, items: [
+		{ id: "b1", type: "brick", place: { on: "table", x: 1 } },
+		{ id: "b2", type: "brick", place: { on: "b1" } },
+		{ id: "ball", type: "steel-ball", place: { on: "table", x: 0.5 } }
+	], covers: [{ label: "bricks", ids: ["b1", "b2"] }, { label: "steel ball", ids: ["ball"] }], missing: [], goals: [], tune: [] }
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ observe: observation, plan, edit: { mode: "patch", reply: "Added two bricks.", patches: [{ op: "add", item: { id: "b3", type: "brick", place: { on: "b2" } } }, { op: "add", item: { id: "b4", type: "brick", place: { on: "b3" } } }] }, refine: { done: true, score_0_10: 9, patches: [] } }, log) })
+		.build({ text: "like this", images: [img] }).result
+	assert.deepEqual(log.map((l) => l.step), ["observe", "plan", "edit", "refine"])
+	assert.match(log[2].payload.text, /shows 4 "bricks" but the scene builds 2 \(b1, b2\)/)
+	assert.equal(r.scene.items.filter((i) => i.type === "brick").length, 4)
+	assert.deepEqual(r.coverage.fixed, ["2 of the 4 “bricks” were built"])
+	assert.deepEqual(r.coverage.remaining, [])
+	assert.match(r.coverage.changes.join(" | "), /Added/)
+	assert.ok(log[3].payload.observation, "the critic gets the observation as its checklist")
+	assert.ok(Array.isArray(log[3].payload.sim.final), "and where things ended")
+	// all accounted for: no fix call
+	const log2 = []
+	await createOrchestrator({ api: mockApi({ observe: { ...observation, objects: [{ label: "steel ball", count: 1 }] }, plan, refine: { done: true, score_0_10: 9, patches: [] } }, log2) }).build({ text: "like this", images: [img] }).result
+	assert.deepEqual(log2.map((l) => l.step), ["observe", "plan", "refine"])
+})
+
+test("live preview: the first version is shown placed (before its run), then running; differences are reported up front", async () => {
+	const events = []
+	const plan = { ...rube(), differences: ["The ramp is shorter than asked so it fits"], assumptions: ["The whole machine is mirrored left to right: the seesaw only tilts one way", "Dominoes are 6 cm"] }
+	const r = await createOrchestrator({ api: mockApi({ plan, refine: { done: true, score_0_10: 9, patches: [] } }) }).build({ text: "x" }, { onEvent: (e) => events.push(e) }).result
+	const kinds = events.filter((e) => e.type === "draft" || (e.type === "step" && e.step === "simulate" && e.state === "active")).map((e) => (e.type === "draft" ? `draft:${e.stage ?? "run"}` : "simulate"))
+	assert.deepEqual(kinds.slice(0, 3), ["draft:layout", "simulate", "draft:run"])
+	assert.ok(events.find((e) => e.stage === "layout").scene.items.length > 3)
+	assert.deepEqual(r.differences, ["The ramp is shorter than asked so it fits", "The whole machine is mirrored left to right: the seesaw only tilts one way"])
+	assert.deepEqual(r.assumptions, ["Dominoes are 6 cm"], "the mirrored note is not buried in the assumptions")
+	// a stand the solver added is a difference too
+	const air = { title: "Cup", seconds: 1, items: [{ id: "cup", type: "cup", place: { on: "air", x: 1, y_m: 0.2 } }, { id: "b", type: "golf-ball", place: { on: "table", x: 0.4 } }], goals: [], tune: [] }
+	const a = await createOrchestrator({ api: mockApi({ plan: air, refine: { done: true, score_0_10: 9, patches: [] } }) }).build({ text: "x" }).result
+	assert.match(a.differences.join(" | "), /Nothing held Cup up in mid-air, so a wooden stand 20 cm tall was put under it/)
+})
+
+test("busy: Retry-After from the server's header is used, and a build waits for as long as the queue takes (it never fails for being busy)", async () => {
+	let n = 0
+	const events = []
+	const busy = () => Object.assign(new Error("the AI is busy"), { status: 429, retryAfter: "0.01", body: { ok: false, code: "busy", retryable: true } })
+	const r = await createOrchestrator({ api: mockApi({ plan: () => (++n <= 4 ? busy() : rube()), refine: { done: true, score_0_10: 9, patches: [] } }) }).build({ text: "x" }, { onEvent: (e) => events.push(e) }).result
+	assert.equal(n, 5)
+	assert.equal(r.score, 9)
+	const waits = events.filter((e) => e.type === "wait" && e.state === "start")
+	assert.equal(waits.length, 4)
+	assert.ok(waits.slice(0, 3).every((w) => w.ms >= 400 && w.ms <= 700), `waits follow Retry-After (0.5 s at least): ${waits.map((w) => w.ms)}`)
+	assert.ok(waits[3].ms >= 800 && waits[3].ms <= 1300, "and back off once it keeps being busy")
+})
+
+test("edit pictures go to the edit step itself (no observe)", async () => {
+	const img = { name: "photo.jpg", dataUrl: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD", width: 800, height: 600, thumb: "" }
+	const log = []
+	const base = solve(rube()).scene
+	await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "ok", patches: [{ op: "set_props", id: "row", props: { count: 9 } }] } }, log) }).build({ text: "more dominoes like in this photo", mode: "edit", scene: base, images: [img] }).result
+	assert.deepEqual(log.map((l) => l.step), ["edit"])
+	assert.equal(log[0].payload.images.length, 1)
+})
+
+test("an edit that breaks a goal: the tuner runs first and wins it back without undoing the edit (the moved thing stays where it was put); no critic needed", async () => {
+	const dp = { ...dropPlan(1.5), tune: [{ id: "box", param: "x", min: 1.0, max: 2.5 }, { id: "ball", param: "x", min: 1.0, max: 2.5 }] }
+	const s0 = solve(dp)
+	const sim0 = await simulate(s0.scene)
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Moved.", patches: [{ op: "move", id: "box", x: 1.9 }] }, refine: { done: true, score_0_10: 8, patches: [] } }, log) })
+		.build({ text: "move the box to x 1.9", mode: "edit", scene: s0.scene, plan: dp, planScene: s0.scene, sim: sim0 }).result
+	assert.deepEqual(log.map((l) => l.step), ["edit"], "the physics says it works: no critic")
+	assert.ok(Math.abs(r.scene.items.find((i) => i.id === "box").x - 1.9) < 1e-6, "the box stays where it was put")
+	assert.ok(r.goals.every((g) => g.ok === true), JSON.stringify(r.goals))
+	assert.equal(r.quick, true)
+	assert.match(r.scoreNote, /tuner made it work again/)
+	assert.match(r.tune.skipped.join(" "), /Open box kept where you put it/)
+	assert.match(r.tune.changes.join(" "), /clay ball moved/i)
+})
+
+test("progress: while a model step runs, the server's word on it (queue place, then tokens) comes as ai-progress events; a server without the endpoint is asked no more", async () => {
+	const base = mockApi({ plan: () => new Promise((res) => setTimeout(() => res(rube()), 2600)), refine: { done: true, score_0_10: 9, patches: [] } })
+	let polls = 0
+	const api = async (path, body, signal) => {
+		if (String(path).startsWith("/api/ai/progress")) {
+			polls++
+			if (polls === 1) throw Object.assign(new Error("no such AI request (or it finished long ago)"), { status: 404, body: { ok: false, error: "no such AI request (or it finished long ago)" } })
+			return polls === 2 ? { ok: true, state: "waiting", position: 2 } : { ok: true, state: "running", model: "m", attempt: 1, phase: "thinking", tokens: 120 * polls }
+		}
+		return base(path, body, signal)
+	}
+	const events = []
+	await createOrchestrator({ api, progress: true }).build({ text: "x" }, { onEvent: (e) => events.push(e) }).result
+	const pr = events.filter((e) => e.type === "ai-progress" && e.step === "plan")
+	assert.ok(pr.length >= 1 && pr[0].state === "waiting" && pr[0].position === 2, JSON.stringify(pr))
+	// a static host: 404 pages, never JSON: three misses and it stops for good
+	let staticPolls = 0
+	const api2 = async (path, body, signal) => {
+		if (String(path).startsWith("/api/ai/progress")) {
+			staticPolls++
+			throw Object.assign(new Error("Not Found"), { status: 404 })
+		}
+		return base(path, body, signal)
+	}
+	const ai2 = createOrchestrator({ api: api2, progress: true })
+	await ai2.build({ text: "x" }).result
+	await ai2.build({ text: "x" }).result
+	assert.equal(staticPolls, 3, "three misses in a row, then never again")
+	await ai2.build({ text: "x" }).result
+	assert.equal(staticPolls, 3)
+})
+
+test("a score beside a failing goal is at most 7 (and says why); 'done' while a goal fails gets one more round, the critic told which goal", async () => {
+	const miss = { ...dropPlan(2.4), tune: [] } // the ball falls far from the box: the goal fails, no knobs
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ plan: miss, refine: { done: true, score_0_10: 9, issues: [], patches: [] } }, log) }).build({ text: "drop the ball into the box" }).result
+	assert.equal(r.goals[0].ok, false)
+	assert.equal(r.score, 7, "capped")
+	assert.match(r.refine[0].capped, /scored it 9\/10, but a goal fails/)
+	assert.equal(r.refine[0].rawScore, 9)
+	const calls = log.filter((l) => l.step === "refine")
+	assert.equal(calls.length, 2, "asked once more")
+	assert.ok(calls[1].payload.sim.warnings.some((w) => /the goal “The ball lands in the box” FAILS/.test(w.text)))
+	assert.match(r.refine[0].continued, /goal still fails/)
+	// a met goal is not capped
+	const ok = await createOrchestrator({ api: mockApi({ plan: dropPlan(1.5), refine: { done: true, score_0_10: 9, patches: [] } }) }).build({ text: "x" }).result
+	assert.equal(ok.score, 9)
+	assert.equal(ok.refine[0].capped, undefined)
+})
+
+test("an edit's 'What changed' is the net change on the table (the critic's later moves included), not just the first version's", async () => {
+	const base = solve(rube()).scene
+	let n = 0
+	const critic = () => (++n === 1 ? { done: false, score_0_10: 6, issues: ["the box is too close"], patches: [{ op: "move", id: "cup", dx: 0.1 }] } : { done: true, score_0_10: 8, patches: [] })
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "ok", patches: [{ op: "set_props", id: "row", props: { count: 8 } }] }, refine: critic }) })
+		.build({ text: "eight dominoes, and check it", mode: "edit", scene: base }).result
+	const all = r.edit.changes.join(" | ")
+	assert.match(all, /Dominoes: count 6 → 8/)
+	// (the critic's own move made no more goals happen, so it is not kept: an edit changes what was asked, and the reply offers the rest)
+	assert.doesNotMatch(all, /Cup moved/, all)
+	assert.equal(r.keptAsAsked, true)
+	assert.equal(r.refine[0].reverted, true)
+	assert.equal(r.edit.firstScene, undefined)
+})
+
+// ================================================================ repair (ai2-client, after the verifier): quick edits that change the run, whole-plan edits,
+// the knobs an edit set, one item's own hits, grown goals, renamed goals, things passing through each other, which version each check judged
+import { runChanges, innerHits } from "../orchestrator.js"
+const blocksPlan = () => ({
+	...dropPlan(1.5),
+	items: [
+		...dropPlan(1.5).items,
+		{ id: "base", type: "wooden-block", name: "Base block", place: { on: "table", x: 0.5 } },
+		{ id: "top", type: "wooden-block", name: "Top block", place: { on: "base" } },
+		{ id: "g", type: "golf-ball", name: "Golf ball", held: true, place: { on: "air", x: 0.5, y_m: 0.6 } }
+	],
+	tune: []
+})
+
+test("repair: an edit that changes hits between things it left alone is not quick (the critic looks, and is told what changed in the run)", async () => {
+	const p = blocksPlan()
+	const s0 = solve(p)
+	const sim0 = await simulate(s0.scene)
+	assert.equal(sim0.summary.goals[0].ok, true)
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Removed it.", patches: [{ op: "remove", id: "top" }] }, refine: { done: true, score_0_10: 8, patches: [] } }, log) })
+		.build({ text: "take the top block away", mode: "edit", scene: s0.scene, plan: p, planScene: s0.scene, sim: sim0 }).result
+	assert.equal(r.quick, false, "the golf ball now lands on the base block: not a simple change")
+	const calls = log.filter((l) => l.step === "refine")
+	assert.ok(calls.length >= 1, "the critic looks")
+	assert.ok(calls[0].payload.sim.warnings.some((w) => /Compared with the run before this edit: .*Golf ball now hits Base block/.test(w.text)), JSON.stringify(calls[0].payload.sim.warnings))
+	// the same scene with nothing changed in its run (only the goal's box made wider): quick, and the note says what the run showed, not "nothing broke"
+	const log2 = []
+	const q = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Wider.", patches: [{ op: "set_props", id: "box", props: { width: 0.3 } }] } }, log2) })
+		.build({ text: "make the box a little wider", mode: "edit", scene: s0.scene, plan: p, planScene: s0.scene, sim: sim0 }).result
+	assert.deepEqual(log2.map((l) => l.step), ["edit"])
+	assert.equal(q.quick, true)
+	assert.match(q.quickNote, /same hits and goal results as before/)
+	assert.doesNotMatch(q.quickNote, /nothing broke/)
+})
+
+test("repair: runChanges sees a falls goal's count drop (a goal that failed before and fails after is still worse), and new or lost hits", async () => {
+	const p = { ...rube(), items: [...rube().items, { id: "far", type: "domino-row", name: "Far dominoes", props: { count: 6, first_height: 0.06 }, place: { on: "table", x: 2.3 } }], goals: [{ kind: "falls", items: ["row", "far"], label: "All twelve dominoes fall" }] }
+	const a = solve(p)
+	const simA = await simulate(a.scene)
+	const pb = applyPatches(p, [{ op: "remove", id: "ball" }]).plan
+	const b = solve(pb)
+	const simB = await simulate(b.scene)
+	const rc = runChanges(simA, simB, a.scene, b.scene, b.goals)
+	assert.ok(rc.worse.some((w) => /All twelve dominoes fall: \d+ → 0 of 12 fell/.test(w)), JSON.stringify(rc))
+	assert.deepEqual(runChanges(simA, simA, a.scene, a.scene, a.goals), { contacts: [], worse: [], better: [] }, "a run against itself: nothing")
+})
+
+test("an edit never replaces the scene on screen: a 'new scene' answer (or a whole plan of other things) changes nothing and says to use New; a whole plan that keeps the scene gets the critic's full rounds", async () => {
+	const base = solve(rube()).scene
+	for (const edit of [{ mode: "new", reply: "Building a new scene: a ball dropped into a box.", why: "a different setup" }, { mode: "plan", reply: "A new scene.", plan: dropPlan(1.5) }]) {
+		const log = []
+		const r = await createOrchestrator({ api: mockApi({ edit, refine: { done: true, score_0_10: 8, patches: [] } }, log) }).build({ text: "how about a ball dropped into a box?", mode: "edit", scene: base }).result
+		assert.equal(r.replyOnly, true)
+		assert.equal(r.suggestNew, true)
+		assert.match(r.reply, /a whole new scene, so I left this one as it is: Edit with AI only changes the scene on screen/)
+		assert.deepEqual(log.map((l) => l.step), ["edit"])
+		assert.equal(log[0].payload.intent, "edit", "the edit step is told it is an edit")
+	}
+	// a whole plan that keeps the scene's things (a big change of this scene): built, with the full rounds
+	const keep = { ...rube(), items: rube().items.map((i) => (i.id === "row" ? { ...i, props: { ...i.props, count: 9 } } : i)) }
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "plan", reply: "Rebuilt.", plan: keep }, refine: { done: true, score_0_10: 8, patches: [] } }, log) }).build({ text: "rebuild it with nine dominoes", mode: "edit", scene: base, plan: rube(), planScene: base }).result
+	assert.equal(r.quick, false)
+	assert.equal(log.filter((l) => l.step === "refine")[0].payload.rounds, 3)
+	// and a new scene asks the planner with intent "new" (the scene on screen is not sent)
+	const log2 = []
+	await createOrchestrator({ api: mockApi({ plan: rube(), refine: { done: true, score_0_10: 9, patches: [] } }, log2) }).build({ text: "a ramp and dominoes", scene: base }).result
+	assert.equal(log2[0].payload.intent, "new")
+	assert.equal(log2[0].payload.scene, undefined)
+})
+
+test("repair: the tuner keeps only what an edit set: a cup made bigger may still be moved; a moved one stays put (and the notes say which)", async () => {
+	const p = { ...dropPlan(1.9), tune: [{ id: "box", param: "x", min: 1.0, max: 2.4 }] }
+	const s = solve(p)
+	const sim = await simulate(s.scene)
+	assert.equal(sim.summary.goals[0].ok, false)
+	const propsOnly = await tune({ plan: p, scene: s.scene, sim, exclude: new Map([["box", new Set(["width"])]]), simulate })
+	assert.ok(propsOnly.knobs.some((k) => k.id === "box" && k.param === "x"), "its place may still be tuned")
+	assert.ok(propsOnly.runs > 0)
+	assert.doesNotMatch(propsOnly.skipped.join(" "), /kept where you put it/)
+	const placed = await tune({ plan: p, scene: s.scene, sim, exclude: new Map([["box", new Set(["place"])]]), simulate })
+	assert.equal(placed.knobs.length, 0)
+	assert.equal(placed.runs, 0)
+	assert.match(placed.skipped.join(" "), /Open box kept where you put it/)
+	// (a Set of ids, as before: every knob of those items)
+	const all = await tune({ plan: p, scene: s.scene, sim, exclude: new Set(["box"]), simulate })
+	assert.equal(all.knobs.length, 0)
+})
+
+test("repair: one item's own parts striking each other (a Newton's cradle) are told, never 'moves but hits nothing'", async () => {
+	const sc = JSON.parse(readFileSync(new URL("../../scenarios/newtons-cradle.json", import.meta.url)))
+	const sim = await simulate(sc)
+	const inner = innerHits(sim)
+	assert.ok((inner.get("cradle")?.n ?? 0) >= 2, JSON.stringify([...inner]))
+	const words = describeRun(sim, sc)
+	assert.match(words, /Newton's cradle: its balls strike each other \d+ times \(first at [\d.]+ s\)/, words)
+	assert.doesNotMatch(words, /hits nothing/)
+})
+
+test("repair: a goal that grows (6 blocks to 10) is one goal changed, not a 'New goal' and a 'Goal dropped' with one name", async () => {
+	const blocks = (n) => Array.from({ length: n }, (_, i) => ({ id: `b${i + 1}`, type: "wooden-block", place: i ? { on: `b${i}` } : { on: "table", x: 1.5 } }))
+	const p = { title: "Tower", seconds: 2, items: blocks(6), goals: [{ kind: "falls", items: ["b1", "b2", "b3", "b4", "b5", "b6"], label: "The whole tower falls" }], tune: [] }
+	const s0 = solve(p)
+	const patches = [...blocks(10).slice(6).map((item) => ({ op: "add", item })), { op: "set_goals", goals: [{ kind: "falls", items: blocks(10).map((b) => b.id), label: "The whole tower falls" }] }]
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Taller.", patches }, refine: { done: true, score_0_10: 8, patches: [] } }) })
+		.build({ text: "make the tower 10 blocks tall", mode: "edit", scene: s0.scene, plan: p, planScene: s0.scene }).result
+	const all = r.edit.changes.join(" | ")
+	assert.match(all, /Goal “The whole tower falls” now covers 10 wooden blocks \(was 6\)/, all)
+	assert.doesNotMatch(all, /New goal|Goal dropped/)
+})
+
+test("repair: a swapped type renames the goals about it ('the bowling ball hits…' -> 'the tennis ball hits…')", () => {
+	const plan = { title: "x", items: [{ id: "ball", type: "bowling-ball", name: "Bowling ball", place: { on: "table", x: 0.5 } }, { id: "box", type: "box", place: { on: "table", x: 2 } }], goals: [{ kind: "hits", item: "ball", target: "box", label: "The bowling ball hits the box" }], tune: [] }
+	const r = applyPatches(plan, [{ op: "replace_type", id: "ball", type: "tennis-ball" }])
+	assert.equal(r.plan.goals[0].label, "The tennis ball hits the box")
+})
+
+test("repair: things passing through each other (the critic says so, however small it calls it) cap the score at 6 and are not 'done' while rounds are left", async () => {
+	const log = []
+	let n = 0
+	const critic = () => (++n === 1 ? { done: true, score_0_10: 8, issues: [{ severity: "low", text: "The top ramp's legs go down through the bottom ramp (a cosmetic flaw)." }], patches: [] } : { done: true, score_0_10: 9, issues: [], patches: [] })
+	const r = await createOrchestrator({ api: mockApi({ plan: dropPlan(1.5), refine: critic }, log) }).build({ text: "a ball into a box" }).result
+	assert.equal(r.refine[0].score, 6)
+	assert.match(r.refine[0].capped, /through each other/)
+	assert.match(r.refine[0].continued, /passes through/)
+	const calls = log.filter((l) => l.step === "refine")
+	assert.equal(calls.length, 2, "asked once more")
+	assert.ok(calls[1].payload.sim.warnings.some((w) => /Not done yet: The top ramp's legs go down through the bottom ramp/.test(w.text)))
+	assert.equal(r.score, 9, "the next check found nothing: its own score")
+	// motion through things is no pass-through
+	const r2 = await createOrchestrator({ api: mockApi({ plan: dropPlan(1.5), refine: { done: true, score_0_10: 9, issues: ["The marble passes through the funnel into the cup as planned"], patches: [] } }) }).build({ text: "x" }).result
+	assert.equal(r2.score, 9)
+})
+
+test("repair: each check says which version it judged and the report which one is on the table (a check of an undone version is told apart)", async () => {
+	let n = 0
+	const critic = () =>
+		++n === 1
+			? { done: false, score_0_10: 7, issues: ["move the ball"], patches: [{ op: "move", id: "ball", x: 2.6 }] }
+			: { done: false, score_0_10: 4, issues: ["the ball misses the box now"], patches: [{ op: "move", id: "ball", x: 2.7 }] }
+	const r = await createOrchestrator({ api: mockApi({ plan: { ...dropPlan(1.5), tune: [] }, refine: critic }) }).build({ text: "drop the ball in the box" }).result
+	assert.ok(Number.isInteger(r.version))
+	assert.equal(r.refine[0].version, r.version, "the first check judged the version on the table")
+	assert.ok(r.refine.slice(1).some((x) => x.version !== r.version), JSON.stringify(r.refine.map((x) => [x.round, x.version, x.score])))
+})
+
+// ================================================================ the user's regression set (2026-10-15): edits of the starter machine change what was asked, and
+// nothing else (every untouched item byte for byte as it was); what had to move to make room is said
+const starter = () => JSON.parse(readFileSync(new URL("../../scenarios/rube-goldberg.json", import.meta.url)))
+async function editStarter(patches, text) {
+	const scene = starter()
+	const sim = await simulate(scene)
+	const log = []
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Done.", patches }, refine: { done: true, score_0_10: 8, issues: [], patches: [] } }, log) })
+		.build({ text, mode: "edit", scene, sim }).result
+	const before = new Map(scene.items.map((i) => [i.id, JSON.stringify(i)]))
+	// (the invisible safety walls stand at the table's ends: they follow a widened table, which the card says)
+	const changed = r.scene.items.filter((i) => before.get(i.id) !== JSON.stringify(i) && !(i.type === "wall" && i.props?.invisible_in_3d)).map((i) => i.id)
+	const gone = [...before.keys()].filter((id) => !r.scene.items.some((i) => i.id === id))
+	return { r, scene, changed, gone, log }
+}
+const named = (r, id) => {
+	const it = r.scene.items.find((i) => i.id === id)
+	return it?.name ?? id
+}
+
+test("starter: 'replace the yellow ball with a tennis ball and the red ball with a basketball' changes those two balls only (the basketball keeps the red ball's place: its bottom where the red ball's was)", async () => {
+	const { r, scene, changed, gone, log } = await editStarter([{ op: "replace_type", id: "ball2", type: "tennis-ball" }, { op: "replace_type", id: "ball1", type: "basketball" }], "replace the yellow ball with a tennis ball and the red ball with a basketball")
+	assert.equal(log[0].payload.intent, "edit")
+	assert.deepEqual(gone, [])
+	assert.deepEqual(changed.sort(), ["ball1", "ball2"], `only the two balls changed: ${changed}`)
+	const b1 = r.scene.items.find((i) => i.id === "ball1")
+	const was = scene.items.find((i) => i.id === "ball1")
+	assert.equal(b1.type, "basketball")
+	assert.equal(b1.x, was.x, "same place along the table")
+	assert.equal(b1.held, true, "still held until the release (same role)")
+	const rad = (t, p = {}) => itemGeometryOf(t, p)
+	near(b1.y - rad("basketball"), was.y - rad("superball"), 1e-6, "its lowest point stays where the red ball's was")
+	assert.equal(r.scene.items.find((i) => i.id === "ball2").type, "tennis-ball")
+	assert.ok(r.edit.changes.some((c) => /Ball 1|Basketball/.test(c)) && r.edit.changes.some((c) => /tennis/i.test(c)), r.edit.changes.join(" | "))
+	assert.equal(r.edit.unchanged.same, 5, JSON.stringify(r.edit.unchanged))
+	assert.equal(r.edit.unchanged.of, 7)
+})
+
+test("starter: 'make the dominoes taller' changes the dominoes (and only what they now run into, said)", async () => {
+	const { r, changed } = await editStarter([{ op: "set_props", id: "dominoes", props: { first_height: 0.13 } }], "make the dominoes taller")
+	assert.ok(changed.includes("dominoes"))
+	for (const id of changed.filter((x) => x !== "dominoes")) assert.ok(r.edit.changes.some((c) => c.includes(named(r, id))), `${id} changed but the card doesn't say so: ${r.edit.changes.join(" | ")}`)
+	assert.equal(r.scene.items.find((i) => i.id === "dominoes").props.first_height, 0.13)
+})
+
+test("starter: 'move the box 10 cm left' moves the box only", async () => {
+	const { r, scene, changed } = await editStarter([{ op: "move", id: "box", dx: -0.1 }], "move the box 10 cm left")
+	assert.deepEqual(changed, ["box"])
+	near(r.scene.items.find((i) => i.id === "box").x, scene.items.find((i) => i.id === "box").x - 0.1, 1e-6, "box x")
+	assert.deepEqual(r.edit.changes, ["Box moved 10 cm left"])
+})
+
+test("starter: 'add 5 more dominoes' lengthens the row (and moves only what it runs into, said)", async () => {
+	const { r, changed } = await editStarter([{ op: "set_props", id: "dominoes", props: { count: 12 } }], "add 5 more dominoes")
+	assert.ok(changed.includes("dominoes"))
+	assert.equal(r.scene.items.find((i) => i.id === "dominoes").props.count, 12)
+	for (const id of changed.filter((x) => x !== "dominoes")) assert.ok(r.edit.changes.some((c) => c.includes(named(r, id))), `${id} changed but the card doesn't say so: ${r.edit.changes.join(" | ")}`)
+})
+
+test("starter: a check (or an edit with no effect) gives back the scene byte for byte", async () => {
+	const scene = starter()
+	const r = await createOrchestrator({ api: mockApi({ refine: { done: true, score_0_10: 8, patches: [] } }) }).build({ text: "check it", mode: "check", scene }).result
+	assert.equal(JSON.stringify(r.scene.items), JSON.stringify(scene.items))
+	const { changed } = await editStarter([{ op: "set_props", id: "dominoes", props: { count: 7 } }], "seven dominoes")
+	assert.deepEqual(changed, [])
+})
+
+test("Edit with AI: patches that take most of the scene away and add other things are a new scene: nothing applied, New offered", async () => {
+	const scene = starter()
+	const patches = [...["ramp1", "ramp2", "dominoes", "seesaw", "ball2", "box", "ball1"].map((id) => ({ op: "remove", id })), { op: "add", item: { id: "cat", type: "spring-catapult", place: { on: "table", x: 0.5 } } }]
+	const r = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Cleared it and built a catapult.", patches } }) }).build({ text: "start over: a catapult", mode: "edit", scene }).result
+	assert.equal(r.replyOnly, true)
+	assert.equal(r.suggestNew, true)
+	// removing things alone is an edit
+	const r2 = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Removed them.", patches: patches.slice(0, 5) }, refine: { done: true, score_0_10: 8, patches: [] } }) }).build({ text: "take most of it away", mode: "edit", scene }).result
+	assert.notEqual(r2.replyOnly, true)
+})
+
+test("the reply: one sentence in a person's words with the run's real outcome; next edits from the AI kept", async () => {
+	const { r } = await editStarter([{ op: "move", id: "box", dx: -0.1 }], "move the box 10 cm left")
+	assert.match(r.lead, /^I moved the box 10 cm left — but now “Ball 2 lands in the box” fails ✗ Want me to fix it\?$|^Done! I moved the box 10 cm left — Ball 2 lands in the box, as before ✓$/, r.lead)
+	assert.deepEqual(r.human, ["moved the box 10 cm left"])
+	const scene = starter()
+	const sug = [{ label: "Make the box catch it", prompt: "Move the box so Ball 2 lands in it" }, { bad: 1 }]
+	const q = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Lighter.", patches: [{ op: "replace_type", id: "ball2", type: "tennis-ball" }, { op: "set_props", id: "ball2", props: { wall: 0.0015 } }], suggestions: sug }, refine: { done: true, score_0_10: 8, patches: [] } }) })
+		.build({ text: "make the yellow ball a light tennis ball", mode: "edit", scene, sim: await simulate(scene) }).result
+	assert.deepEqual(q.suggestions, [{ label: "Make the box catch it", prompt: "Move the box so Ball 2 lands in it" }])
+	assert.match(q.lead, /swapped Ball 2 \(the hollow plastic ball\) for a tennis ball/)
+	assert.equal(q.planned, "Lighter.")
+})

@@ -1,0 +1,75 @@
+{
+ "version": 2,
+ "id": "ball-drop",
+ "name": "Ball drop: six balls from 1 m",
+ "seconds": 4.5,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "superball",
+   "type": "superball",
+   "name": "Superball",
+   "x": 0.3,
+   "y": 1.03,
+   "held": true
+  },
+  {
+   "id": "tennis",
+   "type": "tennis-ball",
+   "name": "Tennis ball",
+   "x": 0.8,
+   "y": 1.0335,
+   "held": true
+  },
+  {
+   "id": "basketball",
+   "type": "basketball",
+   "name": "Basketball",
+   "x": 1.3,
+   "y": 1.121,
+   "held": true
+  },
+  {
+   "id": "ping-pong",
+   "type": "ping-pong-ball",
+   "name": "Ping-pong ball",
+   "x": 1.8,
+   "y": 1.02,
+   "held": true
+  },
+  {
+   "id": "clay",
+   "type": "clay-ball",
+   "name": "Clay ball",
+   "x": 2.3,
+   "y": 1.03,
+   "held": true
+  },
+  {
+   "id": "bowling",
+   "type": "bowling-ball",
+   "name": "Bowling ball",
+   "x": 2.8,
+   "y": 1.109,
+   "held": true
+  }
+ ],
+ "goals": []
+}

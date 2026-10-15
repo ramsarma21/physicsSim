@@ -1,0 +1,209 @@
+{
+ "case": "d10-second-cup",
+ "notes": "hand-made edit (tools/make-edit-references.mjs)",
+ "plan": {
+  "title": "Spring launcher",
+  "seconds": 4,
+  "release": 0.5,
+  "items": [
+   {
+    "id": "support",
+    "type": "plank",
+    "name": "Support plank",
+    "props": {
+     "length": 0.3
+    },
+    "place": {
+     "on": "air",
+     "x": 0.6,
+     "y_m": 0.11384,
+     "angle_deg": -45,
+     "keep": true
+    }
+   },
+   {
+    "id": "launcher",
+    "type": "spring-launcher",
+    "name": "Spring launcher",
+    "props": {
+     "compression": 0.046
+    },
+    "place": {
+     "on": "air",
+     "x": 0.62227,
+     "y_m": 0.13612,
+     "angle_deg": -45,
+     "keep": true
+    }
+   },
+   {
+    "id": "ball",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.71692,
+     "y_m": 0.23077,
+     "angle_deg": 0,
+     "keep": true
+    }
+   },
+   {
+    "id": "cup",
+    "type": "cup",
+    "name": "Cup",
+    "props": {
+     "width": 0.12,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "air",
+     "x": 1.99,
+     "y_m": 0,
+     "angle_deg": 0,
+     "keep": true
+    }
+   },
+   {
+    "id": "cup2",
+    "type": "cup",
+    "name": "Second cup",
+    "props": {
+     "width": 0.12,
+     "wall": 0.12
+    },
+    "place": {
+     "on": "table",
+     "x": 2.29
+    }
+   }
+  ],
+  "goals": [
+   {
+    "label": "Golf ball ends in the cup",
+    "item": "ball",
+    "container": "cup"
+   }
+  ],
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.2,
+   "y0": -0.12,
+   "y1": 1.08
+  },
+  "table": {
+   "x": 1.3,
+   "props": {}
+  }
+ },
+ "scene": {
+  "version": 2,
+  "id": "spring-launcher",
+  "name": "Spring launcher",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.369983,
+   "y0": -0.12,
+   "y1": 1.08
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "support",
+    "type": "plank",
+    "name": "Support plank",
+    "x": 0.6,
+    "y": 0.11384,
+    "angle": -45,
+    "props": {
+     "length": 0.3
+    }
+   },
+   {
+    "id": "launcher",
+    "type": "spring-launcher",
+    "name": "Spring launcher",
+    "x": 0.62227,
+    "y": 0.13612,
+    "angle": -45,
+    "props": {
+     "compression": 0.046
+    }
+   },
+   {
+    "id": "ball",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "x": 0.71692,
+    "y": 0.23077,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "cup",
+    "type": "cup",
+    "name": "Cup",
+    "x": 1.99,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "width": 0.12,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "cup2",
+    "type": "cup",
+    "name": "Second cup",
+    "x": 2.29,
+    "y": 0.003,
+    "angle": 0,
+    "props": {
+     "width": 0.12,
+     "wall": 0.12
+    }
+   },
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "x": -0.52,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 3.12,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "in",
+    "item": "ball",
+    "container": "cup",
+    "label": "Golf ball ends in the cup"
+   }
+  ]
+ }
+}

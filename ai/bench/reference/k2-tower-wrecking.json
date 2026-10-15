@@ -1,0 +1,184 @@
+{
+ "case": "k2-tower-wrecking",
+ "notes": "",
+ "plan": {
+  "title": "Block tower and wrecking ball",
+  "items": [
+   {
+    "id": "crane",
+    "type": "wrecking-ball",
+    "name": "Wrecking ball",
+    "props": {
+     "start_angle": -60
+    },
+    "place": {
+     "on": "air",
+     "x": 0.9,
+     "y_m": 0.9
+    },
+    "why": "reference"
+   },
+   {
+    "id": "block1",
+    "type": "wooden-block",
+    "name": "Block 1",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1
+    },
+    "why": "reference"
+   },
+   {
+    "id": "block2",
+    "type": "wooden-block",
+    "name": "Block 2",
+    "props": {},
+    "place": {
+     "on": "block1",
+     "x": 1
+    },
+    "why": "reference"
+   },
+   {
+    "id": "block3",
+    "type": "wooden-block",
+    "name": "Block 3",
+    "props": {},
+    "place": {
+     "on": "block2",
+     "x": 1
+    },
+    "why": "reference"
+   },
+   {
+    "id": "block4",
+    "type": "wooden-block",
+    "name": "Block 4",
+    "props": {},
+    "place": {
+     "on": "block3",
+     "x": 1
+    },
+    "why": "reference"
+   },
+   {
+    "id": "block5",
+    "type": "wooden-block",
+    "name": "Block 5",
+    "props": {},
+    "place": {
+     "on": "block4",
+     "x": 1
+    },
+    "why": "reference"
+   },
+   {
+    "id": "block6",
+    "type": "wooden-block",
+    "name": "Block 6",
+    "props": {},
+    "place": {
+     "on": "block5",
+     "x": 1
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 5,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-k2",
+  "name": "Block tower and wrecking ball",
+  "seconds": 5,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.15,
+   "x1": 2.25,
+   "y0": -0.15,
+   "y1": 1.45
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {
+     "start_angle": -60
+    },
+    "id": "crane",
+    "type": "wrecking-ball",
+    "name": "Wrecking ball",
+    "x": 0.9,
+    "y": 0.9
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "block1",
+    "type": "wooden-block",
+    "name": "Block 1",
+    "x": 1,
+    "y": 0.0265
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "block2",
+    "type": "wooden-block",
+    "name": "Block 2",
+    "x": 1,
+    "y": 0.078
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "block3",
+    "type": "wooden-block",
+    "name": "Block 3",
+    "x": 1,
+    "y": 0.1295
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "block4",
+    "type": "wooden-block",
+    "name": "Block 4",
+    "x": 1,
+    "y": 0.181
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "block5",
+    "type": "wooden-block",
+    "name": "Block 5",
+    "x": 1,
+    "y": 0.2325
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "block6",
+    "type": "wooden-block",
+    "name": "Block 6",
+    "x": 1,
+    "y": 0.284
+   }
+  ],
+  "goals": []
+ }
+}

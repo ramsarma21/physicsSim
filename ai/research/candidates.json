@@ -1,0 +1,38 @@
+{
+	"observe": [
+		"gemini-group/gemini-4-argon",
+		"claude-group/claude-opus-5-5",
+		"openai-group/gpt-6-astra",
+		"openai-group/gpt-6.1-sol",
+		"gemini-group/gemini-3.8-flash"
+	],
+	"plan": [
+		"claude-group/claude-opus-5-5",
+		"claude-group/claude-fable-5-1",
+		"openai-group/gpt-6-astra",
+		"gemini-group/gemini-4-argon",
+		"claude-group/claude-sonnet-5-5",
+		"openai-group/gpt-6.1-sol"
+	],
+	"refine": [
+		"claude-group/claude-opus-5-5",
+		"gemini-group/gemini-4-argon",
+		"openai-group/gpt-6-astra",
+		"claude-group/claude-sonnet-5-5",
+		"openai-group/gpt-6.1-sol",
+		"gemini-group/gemini-3.8-flash"
+	],
+	"edit": [
+		"claude-group/claude-opus-5-5",
+		"claude-group/claude-sonnet-5-5",
+		"openai-group/gpt-6.1-sol",
+		"gemini-group/gemini-3.8-flash",
+		"claude-group/claude-haiku-5-5"
+	],
+	"judge": [
+		"gemini-group/gemini-4-argon",
+		"openai-group/gpt-6-astra",
+		"claude-group/claude-opus-5-5",
+		"claude-group/claude-fable-5-1"
+	]
+}

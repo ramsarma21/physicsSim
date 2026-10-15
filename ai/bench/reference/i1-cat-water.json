@@ -1,0 +1,102 @@
+{
+ "case": "i1-cat-water",
+ "notes": "",
+ "plan": {
+  "title": "Stand-in: a pendulum knocks a mug",
+  "items": [
+   {
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "Mug (stand-in for the glass)",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.35
+    },
+    "why": "reference"
+   },
+   {
+    "id": "pendulum",
+    "type": "pendulum",
+    "name": "Pendulum (stand-in for the cat's paw)",
+    "props": {
+     "length": 0.4,
+     "start_angle": -50
+    },
+    "place": {
+     "on": "air",
+     "x": 1.28,
+     "y_m": 0.47
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [
+   {
+    "asked": "a live cat",
+    "reason": "The library has no animals; a pendulum stands in for the cat's paw.",
+    "substitute_type": "pendulum"
+   },
+   {
+    "asked": "water",
+    "reason": "There are no liquids in the simulation; the mug is empty.",
+    "substitute_type": null
+   },
+   {
+    "asked": "a glass that can be knocked over",
+    "reason": "Glasses and cups are fixed containers; a coffee mug is used because it can move.",
+    "substitute_type": "coffee-mug"
+   }
+  ],
+  "goals": [],
+  "tune": [],
+  "seconds": 3,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-i1",
+  "name": "Stand-in: a pendulum knocks a mug",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.8,
+   "x1": 1.9,
+   "y0": -0.12,
+   "y1": 0.9
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "Mug (stand-in for the glass)",
+    "x": 1.35,
+    "y": 0.049
+   },
+   {
+    "angle": 0,
+    "props": {
+     "length": 0.4,
+     "start_angle": -50
+    },
+    "id": "pendulum",
+    "type": "pendulum",
+    "name": "Pendulum (stand-in for the cat's paw)",
+    "x": 1.28,
+    "y": 0.47
+   }
+  ],
+  "goals": []
+ }
+}

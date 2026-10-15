@@ -1,0 +1,32 @@
+tab: Tool sidebar: True
+release: time (s) = 0.5
+solid rubber on varnished hardwood: restitution = 0.86
+solid rubber on varnished hardwood: friction = 0.52
+solid rubber on varnished hardwood: rolling resistance = 0.012
+hollow plastic on varnished hardwood: restitution = 0.69
+hollow plastic on varnished hardwood: friction = 0.33
+hollow plastic on varnished hardwood: rolling resistance = 0.02
+modeling clay on varnished hardwood: restitution = 0.05
+modeling clay on varnished hardwood: friction = 0.9
+modeling clay on varnished hardwood: rolling resistance = 0.3
+varnished hardwood: density (kg/m³) = 700.0
+painted steel: density (kg/m³) = 7850.0
+solid rubber: density (kg/m³) = 906.0
+hollow plastic: density (kg/m³) = 950.0
+modeling clay: density (kg/m³) = 1570.0
+modeling clay: yield strength (kPa) = 120.0
+part clay | a green ball of modeling clay | modeling clay
+part clay-jaw-left | the left jaw of a steel claw gripper: a curved steel finger | 
+part clay-jaw-right | the right jaw of a steel claw gripper: a curved steel finger | 
+part clay-mount | the steel body of a claw gripper: a short rod down to a hub | 
+part floor | a varnished hardwood floor | varnished hardwood
+part plastic | a smooth yellow hollow plastic ball with no holes | hollow plastic
+part plastic-jaw-left | the left jaw of a steel claw gripper: a curved steel finger | 
+part plastic-jaw-right | the right jaw of a steel claw gripper: a curved steel finger | 
+part plastic-mount | the steel body of a claw gripper: a short rod down to a hub | 
+part rail | a painted steel rail | painted steel
+part rubber | a red solid rubber ball | solid rubber
+part rubber-jaw-left | the left jaw of a steel claw gripper: a curved steel finger | 
+part rubber-jaw-right | the right jaw of a steel claw gripper: a curved steel finger | 
+part rubber-mount | the steel body of a claw gripper: a short rod down to a hub | 
+playing

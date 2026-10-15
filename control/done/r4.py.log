@@ -1,0 +1,9 @@
+register_class(...):
+Info: Registering operator class: 'PG_OT_resimulate', bl_idname 'pg.resimulate' has been registered before, unregistering previous
+register_class(...):
+Info: Registering operator class: 'PG_OT_play', bl_idname 'pg.play' has been registered before, unregistering previous
+register_class(...):
+Info: Registering panel class: 'PG_PT_panel', bl_idname 'PG_PT_panel' has been registered before, unregistering previous
+Info: Simulated 193 frames
+tab set
+tab: Playground

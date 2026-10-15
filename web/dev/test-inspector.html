@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>inspector test</title>
+<link rel="stylesheet" href="../style.css">
+<link rel="stylesheet" href="../panels.css">
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+  .main pre { margin: 0; overflow: auto; padding: 8px; font: 12px/1.4 ui-monospace, Menlo, monospace; background: var(--card); border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; }
+  #log { flex: 1; min-height: 0; }
+  #json { flex: 1; min-height: 0; }
+  .bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<main class="layout">
+  <aside class="panel" id="insp"></aside>
+  <section class="main">
+    <div class="bar">
+      <label class="switch"><input type="checkbox" id="churn"><span></span>re-render every 80 ms (focus test)</label>
+      <button class="ghost" id="b-theme">dark / light</button>
+      <button class="ghost" id="b-none">select nothing</button>
+    </div>
+    <b>callbacks (newest first)</b>
+    <pre id="log"></pre>
+    <b>scene items</b>
+    <pre id="json"></pre>
+  </section>
+</main>
+<script type="module">
+import { createInspector } from "../inspector.js"
+
+const api = (path, body) => fetch(path, body ? { method: "POST", body: JSON.stringify(body) } : undefined).then((r) => r.json())
+const catalog = await api("/api/catalog?reload=1")
+const scene = await api("/api/scenarios/rube-goldberg")
+const types = new Map(catalog.types.map((t) => [t.key, t]))
+
+const state = { scene, selectedId: "ball1", resolved: null }
+const logs = []
+const logEl = document.getElementById("log")
+const log = (name, ...args) => {
+  logs.unshift(`${name}(${args.map((a) => JSON.stringify(a)).join(", ")})`)
+  logEl.textContent = logs.slice(0, 80).join("\n")
+}
+const same = (a, b) => (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) < 1e-9 : a === b)
+const item = (id) => state.scene.items.find((i) => i.id === id)
+const draw = () => insp.render(state.scene, state.selectedId, state.resolved)
+const showJson = () => {
+  document.getElementById("json").textContent = state.scene.items.map((i) => JSON.stringify(i)).join("\n") + "\n\n" + JSON.stringify({ ...state.scene, items: undefined })
+}
+let layoutBusy = false
+let layoutAgain = false
+async function relayout() {
+  // what the app does after an edit: ask /api/layout for the resolved props, then re-render (one call at a time, then once more if asked meanwhile)
+  if (layoutBusy) { layoutAgain = true; return }
+  layoutBusy = true
+  try {
+    state.resolved = (await api("/api/layout", { scene: state.scene })).resolved
+  } catch (e) { log("layout failed", String(e)) }
+  layoutBusy = false
+  draw()
+  if (layoutAgain) { layoutAgain = false; relayout() }
+}
+const insp = createInspector(document.getElementById("insp"), {
+  catalog,
+  onSelect: (id) => { log("onSelect", id); state.selectedId = id; draw() },
+  onChange: (id, patch, commit) => {
+    log("onChange", id, patch, commit)
+    const it = item(id)
+    const { props, ...rest } = patch
+    Object.assign(it, rest)
+    if (props) {
+      it.props = it.props ?? {}
+      for (const [k, v] of Object.entries(props)) {
+        if (same(v, types.get(it.type).defaults[k])) delete it.props[k]
+        else it.props[k] = v
+      }
+    }
+    draw(); showJson()
+    if (commit) relayout()
+  },
+  onScene: (patch, commit) => { log("onScene", patch, commit); Object.assign(state.scene, patch); draw(); showJson() },
+  onDelete: (id) => {
+    log("onDelete", id)
+    state.scene.items = state.scene.items.filter((i) => i.id !== id)
+    if (state.selectedId === id) state.selectedId = null
+    draw(); showJson()
+  },
+  onDuplicate: (id) => {
+    log("onDuplicate", id)
+    const it = item(id)
+    const copy = { ...structuredClone(it), id: it.id + "-copy" + state.scene.items.length, x: it.x + 0.1 }
+    if (copy.name) copy.name += " copy"
+    state.scene.items.push(copy)
+    state.selectedId = copy.id
+    draw(); showJson()
+  },
+})
+window.insp = insp
+window.state = state
+window.logs = logs
+window.redraw = draw
+await relayout()
+showJson()
+document.getElementById("b-theme").onclick = () => {
+  const d = document.documentElement
+  d.dataset.theme = d.dataset.theme === "dark" ? "light" : "dark"
+}
+document.getElementById("b-none").onclick = () => { state.selectedId = null; draw() }
+let timer = null
+document.getElementById("churn").onchange = (e) => {
+  clearInterval(timer)
+  if (e.target.checked) timer = setInterval(draw, 80)
+}
+</script>
+</body>
+</html>

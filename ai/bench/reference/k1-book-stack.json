@@ -1,0 +1,119 @@
+{
+ "case": "k1-book-stack",
+ "notes": "",
+ "plan": {
+  "title": "Four books",
+  "items": [
+   {
+    "id": "b1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.3
+    },
+    "why": "reference"
+   },
+   {
+    "id": "b2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "props": {},
+    "place": {
+     "on": "b1",
+     "x": 1.3
+    },
+    "why": "reference"
+   },
+   {
+    "id": "b3",
+    "type": "paperback-book",
+    "name": "Book 3",
+    "props": {},
+    "place": {
+     "on": "b2",
+     "x": 1.3
+    },
+    "why": "reference"
+   },
+   {
+    "id": "b4",
+    "type": "paperback-book",
+    "name": "Book 4",
+    "props": {},
+    "place": {
+     "on": "b3",
+     "x": 1.3
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 3,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-k1",
+  "name": "Four books",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.8,
+   "x1": 1.8,
+   "y0": -0.12,
+   "y1": 0.6
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "x": 1.3,
+    "y": 0.019
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "x": 1.3,
+    "y": 0.0555
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b3",
+    "type": "paperback-book",
+    "name": "Book 3",
+    "x": 1.3,
+    "y": 0.087
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "b4",
+    "type": "paperback-book",
+    "name": "Book 4",
+    "x": 1.3,
+    "y": 0.1135
+   }
+  ],
+  "goals": []
+ }
+}

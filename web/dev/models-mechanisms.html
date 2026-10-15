@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Models: mechanisms</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info"></div>
+<script type="module">
+// Dev page for the mechanisms models (web/models/mechanisms.js).
+//   ?items=hanging-spring,swing   catalog keys, each built alone on a table in a row (lowest point at the table top + ?lift)
+//   ?props={"swing":{"start_angle":0}}  props per key (JSON)
+//   window.aim({i|id, x, y, z, dist, az, el, fov})  put the orbit camera at the item (or a point)
+//   window.shoot(name, opts)  aim, render, save web/dev/shots/<name>.png
+//   window.layout  [{id, type, x, y, x0, x1, y0, y1}] world bounds of each item at t = 0
+import { createView3D } from "../view3d.js"
+
+const q = new URLSearchParams(location.search)
+const keys = (q.get("items") || "hanging-spring").split(",")
+const propsBy = q.get("props") ? JSON.parse(q.get("props")) : {}
+const info = document.getElementById("info")
+const say = (m) => (info.textContent = m)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+const byKey = new Map(catalog.types.map((t) => [t.key, t]))
+
+const items = [{ id: "table", type: "table", name: "Table", x: 0, y: 0, angle: 0, props: { width: 6, thickness: 0.15 } }]
+const layout = []
+let cursor = 0
+const GAP = Number(q.get("gap") || 0.25)
+const LIFT = Number(q.get("lift") || 0.0)
+for (const k of keys) {
+  const t = byKey.get(k)
+  if (!t) { say("unknown type " + k); continue }
+  // the preview: this item built alone at its anchor with the default props (props override: build a one-item scene to know its bounds)
+  const solo = await post("/api/layout", { scene: { version: 2, id: "b", name: "b", seconds: 1, release: 0.1, stage: { x0: -2, x1: 2, y0: -0.15, y1: 1 }, items: [{ id: k, type: k, x: 0, y: 0, angle: 0, props: propsBy[k] ?? {} }], goals: [] } })
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity
+  for (const s of solo.doc.solids) {
+    const a = s.at, ang = s.angle ?? 0
+    let hw, hh
+    if (s.body.kind === "ball") hw = hh = s.body.radius
+    else {
+      const c = Math.abs(Math.cos(ang)), sn = Math.abs(Math.sin(ang))
+      hw = c * s.body.width / 2 + sn * s.body.height / 2
+      hh = sn * s.body.width / 2 + c * s.body.height / 2
+    }
+    // parent-relative solids are drawn in the parent's frame: use the layout's own placements instead
+    const p = solo.track?.frames?.[0]?.placements?.[s.id] ?? a
+    x0 = Math.min(x0, p.x - hw); x1 = Math.max(x1, p.x + hw); y0 = Math.min(y0, p.y - hh); y1 = Math.max(y1, p.y + hh)
+  }
+  const w = x1 - x0
+  const ox = cursor - x0
+  const oy = LIFT - y0
+  cursor += w + GAP
+  items.push({ id: k, type: k, name: t.name, x: ox, y: oy, angle: 0, props: propsBy[k] ?? {} })
+  layout.push({ id: k, type: k, ox, oy, x0: x0 + ox, x1: x1 + ox, y0: y0 + oy, y1: y1 + oy })
+}
+const shift = cursor / 2
+for (const it of items) if (it.id !== "table") it.x -= shift
+for (const l of layout) { l.ox -= shift; l.x0 -= shift; l.x1 -= shift }
+items[0].x = 0
+items[0].props.width = Math.max(2.4, cursor + 1.2)
+const scene = { version: 2, id: "models", name: "models", seconds: 1, release: 0.1, stage: { x0: -2, x1: 2, y0: -0.15, y1: 1 }, items, goals: [] }
+const sim = await post("/api/simulate", { scene })
+window.sim = sim
+window.layout = layout
+window.catalog = catalog
+
+if (q.get("dbg")) { // report anything kit.geo makes that is not a BufferGeometry
+  const { kit } = await import("../models3d.js")
+  const orig = kit.geo
+  window.badGeo = []
+  kit.geo = (k, mk) => orig(k, () => { const g = mk(); if (!g || typeof g.dispose !== "function") window.badGeo.push(k + " -> " + g?.constructor?.name); return g })
+}
+const view = createView3D(document.getElementById("stage"))
+window.view = view
+view.setOptions({ looks: catalog.looks })
+view.load(sim, null)
+view.setOptions({ camera: "orbit" })
+view.render(0)
+const d = view._debug
+d.controls.minDistance = 0.004
+d.controls.maxPolarAngle = Math.PI * 0.499
+d.controls.enableDamping = false
+
+window.aim = (opts = {}) => {
+  const L = opts.i !== undefined ? layout[opts.i] : opts.id ? layout.find((l) => l.id === opts.id) : null
+  if (opts.solid) { // aim at a solid by id ("swing/seat"): its position at t = 0, a little dist by its size
+    const q = sim.track.frames[0].placements[opts.solid]
+    const sd = sim.doc.solids.find((o) => o.id === opts.solid)
+    if (q && sd) {
+      opts = { ...opts, x: opts.x ?? q.x, y: opts.y ?? q.y, dist: opts.dist ?? 3 * Math.max(sd.body.radius ? 2 * sd.body.radius : sd.body.width, sd.body.radius ? 0 : sd.body.height, 0.04) }
+    }
+  }
+  const cx = L ? (L.x0 + L.x1) / 2 : 0
+  const cy = L ? (L.y0 + L.y1) / 2 : 0.05
+  const size = L ? Math.max(L.x1 - L.x0, L.y1 - L.y0) : 0.4
+  const x = opts.x ?? cx
+  const y = opts.y ?? cy
+  const dist = opts.dist ?? 2.4 * size
+  const az = opts.az ?? 0.45
+  const el = opts.el ?? 0.35
+  const z = opts.z ?? 0
+  d.orbitCam.fov = opts.fov ?? 28
+  d.orbitCam.near = Math.max(0.002, dist / 60)
+  d.orbitCam.far = 40
+  d.orbitCam.updateProjectionMatrix()
+  d.controls.minAzimuthAngle = -Infinity
+  d.controls.maxAzimuthAngle = Infinity
+  d.controls.target.set(x, y, z)
+  d.orbitCam.position.set(x + dist * Math.sin(az) * Math.cos(el), y + dist * Math.sin(el), z + dist * Math.cos(az) * Math.cos(el))
+  d.controls.update()
+  view.render(opts.t ?? 0)
+}
+window.shoot = async (name, opts = {}) => {
+  window.aim(opts)
+  view.render(opts.t ?? 0)
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: d.renderer.domElement.toDataURL() }) })
+  return r.status
+}
+// bounds check: for every solid drawn by a model, the model's extents in the solid's own frame against its physics box
+window.checkBounds = (tol = 0.002) => {
+  const T = d.THREE
+  const rows = []
+  const run = d.run
+  const docById = new Map(sim.doc.solids.map((s) => [s.id, s]))
+  run.group.traverse((holder) => {
+    const s = docById.get(holder.name)
+    if (!s || !holder.isGroup) return
+    holder.updateMatrixWorld(true)
+    const inv = holder.matrixWorld.clone().invert()
+    const box = new T.Box3()
+    holder.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox()
+      const b = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld.clone().premultiply(inv))
+      box.union(b)
+    })
+    const ball = s.body.kind === "ball"
+    const hw = ball ? s.body.radius : s.body.width / 2
+    const hh = ball ? s.body.radius : s.body.height / 2
+    const hd = ball ? s.body.radius : (s.body.depth ?? 0.1) / 2
+    const dev = [box.min.x + hw, hw - box.max.x, box.min.y + hh, hh - box.max.y, box.min.z + hd, hd - box.max.z] // >0: inside the outline, <0: sticks out
+    const mm = (v) => Math.round(v * 10000) / 10 // 0.1 mm
+    rows.push({ id: s.id, want: [hw, hh, hd].map((v) => mm(2 * v)), got: [mm(box.max.x - box.min.x), mm(box.max.y - box.min.y), mm(box.max.z - box.min.z)], gapMm: dev.map(mm), flag: dev.some((v) => v < -tol) ? "OUT" : dev.slice(0, 4).some((v) => v > tol) ? "short" : "" })
+  })
+  return rows
+}
+// triangles per item (every mesh drawn by a model, counted once per use)
+window.triCount = () => {
+  const out = {}
+  d.run.group.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return
+    let h = o
+    while (h && !h.name) h = h.parent
+    const item = (h?.name ?? "?").split("/")[0]
+    const g = o.geometry
+    const n = (g.index ? g.index.count : g.attributes.position.count) / 3
+    out[item] = (out[item] ?? 0) + n
+  })
+  return out
+}
+window.ready = true
+say(`${layout.length} items`)
+window.addEventListener("error", (e) => say("ERROR " + e.message))
+</script>
+</body>
+</html>

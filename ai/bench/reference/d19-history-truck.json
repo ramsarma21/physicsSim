@@ -1,0 +1,136 @@
+{
+ "case": "d19-history-truck",
+ "notes": "hand-made edit (tools/make-edit-references.mjs)",
+ "plan": {
+  "title": "Toy car down a ramp",
+  "items": [
+   {
+    "id": "book1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": -0.3355
+    },
+    "why": "reference"
+   },
+   {
+    "id": "book2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "props": {},
+    "place": {
+     "on": "book1",
+     "x": -0.3355
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ramp",
+    "type": "plank",
+    "name": "Ramp",
+    "props": {
+     "legs": false,
+     "length": 1.1
+    },
+    "place": {
+     "on": "table",
+     "x": 0.00287,
+     "angle_deg": -8
+    },
+    "why": "reference"
+   },
+   {
+    "id": "car",
+    "type": "truck",
+    "props": {},
+    "place": {
+     "on": "ramp",
+     "x": -0.05
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 3,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "toy-car-down-a-ramp",
+  "name": "Toy car down a ramp",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.55908203125,
+   "x1": 3.19091796875,
+   "y0": -0.15625,
+   "y1": 2.34375
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "book1",
+    "type": "hardcover-book",
+    "name": "Book 1",
+    "x": -0.282192,
+    "y": 0.019,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "book2",
+    "type": "hardcover-book",
+    "name": "Book 2",
+    "x": -0.282192,
+    "y": 0.0555,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "ramp",
+    "type": "plank",
+    "name": "Ramp",
+    "x": 0.056178,
+    "y": 0.087438,
+    "angle": -8,
+    "props": {
+     "legs": false,
+     "length": 1.1
+    }
+   },
+   {
+    "id": "car",
+    "type": "truck",
+    "name": "Truck",
+    "x": 0.003308,
+    "y": 0.106477,
+    "angle": -7.999999999999996,
+    "props": {}
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 3.12,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   }
+  ],
+  "goals": []
+ }
+}

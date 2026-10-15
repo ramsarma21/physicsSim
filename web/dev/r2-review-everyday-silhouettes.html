@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2 review: everyday silhouettes</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+  .grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; background: #e8e8e4 } .grid canvas { width: 260px; height: 195px; background: #f4f4f2 }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info"></div>
+<script type="module">
+// Round-2 adversarial review page for the everyday-b models (copy of the test-3d.html / models-everyday-silhouettes.html approach).
+//   ?items=water-bottle,coffee-mug,...   lay the items out resting on a table (key@tag + ?props={"key@tag":{...}} for a second copy)
+//   ?mode=wide&items=...&xs=...          a normal scene (default stage, table at x 1.3, 3.7 m) seen with the Wide camera, items at the given x
+//   ?mode=cold&key=pencil&props={...}    cold build of one item's models (fresh page = fresh kit caches): window.cold = {ms, tris, meshes}
+//   ?mode=thumbs&items=...               catalog-card thumbnails through thumbs3d.drawPreview3D, window.sheet(name)
+//   window.shoot(name, {i, x, y, z, dist, az, el, fov}), window.outline(name, i, {...}), window.fit(), window.rest(), window.wideShot(name)
+window.__logs = []
+for (const k of ["warn", "error"]) { const o = console[k].bind(console); console[k] = (...a) => { window.__logs.push(k + ": " + a.map((x) => (x && x.stack) || String(x)).join(" ")); o(...a) } }
+window.addEventListener("error", (e) => window.__logs.push("error: " + e.message))
+const q = new URLSearchParams(location.search)
+const mode = q.get("mode") || "layout"
+const info = document.getElementById("info")
+const say = (m) => (info.textContent = m)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const save = async (name, canvas) => {
+  let png = canvas.toDataURL()
+  for (let s = 0.8; png.length > 7.4e6 && s > 0.3; s -= 0.15) {
+    const c2 = document.createElement("canvas")
+    c2.width = Math.round(canvas.width * s); c2.height = Math.round(canvas.height * s)
+    c2.getContext("2d").drawImage(canvas, 0, 0, c2.width, c2.height)
+    png = c2.toDataURL()
+  }
+  return (await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png }) })).status
+}
+const catalog = await (await fetch("/api/catalog")).json()
+window.catalog = catalog
+const byKey = new Map(catalog.types.map((t) => [t.key, t]))
+const STAGE = { x0: -2, x1: 2, y0: -0.15, y1: 1 }
+const mkScene = (items, stage = STAGE, seconds = Number(q.get("seconds") || 1.5)) => ({ version: 2, id: "r2", name: "r2", seconds, release: 0.1, stage, items, goals: [] })
+const extra = JSON.parse(q.get("props") || "{}")
+
+const triCount = (obj) => {
+  let tris = 0, meshes = 0
+  obj.traverse((o) => {
+    if (!o.isMesh || !o.geometry) return
+    meshes++
+    const g = o.geometry
+    let n = g.index ? g.index.count / 3 : g.attributes.position.count / 3
+    if (o.isInstancedMesh) n *= o.count
+    tris += n
+  })
+  return { tris: Math.round(tris), meshes }
+}
+
+if (mode === "cold") {
+  const t0 = performance.now()
+  const M = await import("../models3d.js")
+  const importMs = performance.now() - t0
+  const key = q.get("key")
+  const props = extra[key] ?? {}
+  const lay = await post("/api/layout", { scene: mkScene([{ id: "a", type: key, x: 0, y: 0.3, angle: 0, props }]) })
+  const res = { key, importMs: Math.round(importMs), parts: [], ms: 0, tris: 0, meshes: 0 }
+  for (const s of lay.doc.solids) {
+    if (s.item !== "a") continue
+    const tb = performance.now()
+    const mdl = M.buildModel(s, { props: lay.resolved?.a ?? {}, look: catalog.looks[s.look] ?? {} })
+    const ms = performance.now() - tb
+    const tc = mdl ? triCount(mdl) : { tris: 0, meshes: 0 }
+    res.parts.push({ part: s.part, kind: mdl === undefined ? "none" : mdl === null ? "null" : "model", ms: +ms.toFixed(1), ...tc })
+    res.ms += ms; res.tris += tc.tris; res.meshes += tc.meshes
+  }
+  // warm: the same again (cached prototypes are cloned)
+  const tw = performance.now()
+  for (const s of lay.doc.solids) if (s.item === "a") M.buildModel(s, { props: lay.resolved?.a ?? {}, look: catalog.looks[s.look] ?? {} })
+  res.warmMs = +(performance.now() - tw).toFixed(1)
+  // a resize (what one slider step does): the same item a little bigger, textures already baked
+  const t = byKey.get(key)
+  const sizeProp = t.props.find((p) => p.kind === "number" && ["width", "diameter", "length", "height"].includes(p.key))
+  if (sizeProp) {
+    const p2 = { ...props, [sizeProp.key]: +(sizeProp.default * 1.1).toFixed(4) }
+    const lay2 = await post("/api/layout", { scene: mkScene([{ id: "a", type: key, x: 0, y: 0.3, angle: 0, props: p2 }]) })
+    const tr = performance.now()
+    for (const s of lay2.doc.solids) if (s.item === "a") M.buildModel(s, { props: lay2.resolved?.a ?? {}, look: catalog.looks[s.look] ?? {} })
+    res.resizeMs = +(performance.now() - tr).toFixed(1)
+    res.resizeProp = sizeProp.key
+  }
+  res.ms = +res.ms.toFixed(1)
+  window.cold = res
+  say(JSON.stringify(res))
+  window.ready = true
+} else if (mode === "thumbs") {
+  document.getElementById("stage").remove()
+  const thumbs = await import("../thumbs3d.js")
+  thumbs.setCatalog(catalog)
+  if (q.get("glassfix") === "1") {
+    // trial of a thumbnail-only change: transmissive materials drawn as thin clear glass (no transmission pass) for the card photo
+    const M = await import("../models3d.js")
+    for (const k of ["water-bottle", "water-bottle-side", "glass-jar"]) {
+      const t = byKey.get(k)
+      for (const s of t.preview.solids) {
+        const mdl = M.buildModel(s, { props: t.defaults, look: catalog.looks[s.look] ?? {} })
+        mdl?.traverse((o) => { const m = o.material; if (m && m.transmission > 0 && !m.userData.r2) { m.userData.r2 = true; m.transmission = 0; m.transparent = true; m.opacity = 0.16; m.depthWrite = false; m.needsUpdate = true } })
+      }
+    }
+  }
+  const keys = (q.get("items") || "water-bottle,water-bottle-side,coffee-mug,rubber-duck,sneaker,egg,bowling-pin,traffic-cone,stapler,pencil,plastic-cup,glass-jar").split(",")
+  const grid = document.createElement("div")
+  grid.className = "grid"
+  document.body.append(grid)
+  const cvs = []
+  for (const k of keys) {
+    const t = byKey.get(k)
+    const cv = document.createElement("canvas")
+    cv.width = 520; cv.height = 390
+    grid.append(cv)
+    cvs.push([k, cv])
+    thumbs.drawPreview3D(cv, t.preview, catalog.looks, () => {})
+  }
+  await new Promise((r) => setTimeout(r, 1500))
+  for (let i = 0; i < 80; i++) {
+    const done = cvs.every(([, cv]) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data.some((v, j) => j % 4 === 3 && v > 0))
+    if (done) break
+    await new Promise((r) => setTimeout(r, 500))
+  }
+  window.sheet = async (name) => {
+    const cols = 4
+    const out = document.createElement("canvas")
+    out.width = cols * 520
+    out.height = Math.ceil(cvs.length / cols) * 390
+    const g = out.getContext("2d")
+    g.fillStyle = "#e8e8e4"
+    g.fillRect(0, 0, out.width, out.height)
+    cvs.forEach(([k, cv], i) => { g.drawImage(cv, (i % cols) * 520, Math.floor(i / cols) * 390); g.fillStyle = "#333"; g.font = "16px system-ui"; g.fillText(k, (i % cols) * 520 + 8, Math.floor(i / cols) * 390 + 20) })
+    return save(name, out)
+  }
+  window.ready = true
+} else {
+  const { createView3D } = await import("../view3d.js")
+  const worldOf = (doc) => {
+    const by = new Map(doc.solids.map((s) => [s.id, s]))
+    const memo = new Map()
+    const pose = (s) => {
+      if (memo.has(s.id)) return memo.get(s.id)
+      const l = { x: s.at.x, y: s.at.y, a: s.angle ?? 0 }
+      let w = l
+      if (s.parent && by.has(s.parent)) {
+        const p = pose(by.get(s.parent))
+        const c = Math.cos(p.a), n = Math.sin(p.a)
+        w = { x: p.x + l.x * c - l.y * n, y: p.y + l.x * n + l.y * c, a: p.a + l.a }
+      }
+      memo.set(s.id, w)
+      return w
+    }
+    return pose
+  }
+  const outlineOf = (s) => {
+    const b = s.body
+    if (b.kind === "polygon") return b.points.map((p) => [p.x, p.y])
+    if (b.kind === "slab") {
+      const hw = b.width / 2, hh = b.height / 2, t = b.taper
+      return t != null ? [[-hw * t, -hh], [hw * t, -hh], [hw, hh], [-hw, hh]] : [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]
+    }
+    return Array.from({ length: 96 }, (_, i) => [b.radius * Math.cos((i / 96) * 2 * Math.PI), b.radius * Math.sin((i / 96) * 2 * Math.PI)])
+  }
+  const extent = (doc, item) => {
+    const W = worldOf(doc)
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9
+    for (const s of doc.solids) {
+      if (item && s.item !== item) continue
+      const p = W(s)
+      for (const [px, py] of outlineOf(s)) {
+        const X = p.x + px * Math.cos(p.a) - py * Math.sin(p.a), Y = p.y + px * Math.sin(p.a) + py * Math.cos(p.a)
+        x0 = Math.min(x0, X); x1 = Math.max(x1, X); y0 = Math.min(y0, Y); y1 = Math.max(y1, Y)
+      }
+    }
+    return { x0, x1, y0, y1 }
+  }
+  const items = []
+  const layout = []
+  let scene
+  const fixed = q.get("fixed") === "1"
+  if (mode === "wide") {
+    // a normal scene: the default stage and the starter's table, the items standing on it at the given x
+    const keys = (q.get("items") || "").split(",")
+    const xs = (q.get("xs") || "").split(",").map(Number)
+    items.push({ id: "table", type: "table", name: "Table", x: 1.3, y: 0, angle: 0, props: { width: 3.7, thickness: 0.15 } })
+    for (let k = 0; k < keys.length; k++) {
+      const entry = keys[k], key = entry.split("@")[0], id = entry.replace("@", "-") + "-" + k
+      const props = extra[entry] ?? extra[key] ?? {}
+      const lay = await post("/api/layout", { scene: mkScene([{ id: "a", type: key, x: 0, y: 0, angle: 0, props }]) })
+      const e = extent(lay.doc)
+      items.push({ id, type: key, name: key, x: xs[k] ?? 0.2 * k, y: -e.y0 + 0.0015, angle: 0, props, fixed })
+      layout.push({ id, type: key, x: (xs[k] ?? 0.2 * k) + (e.x0 + e.x1) / 2, y: (e.y1 - e.y0) / 2, w: e.x1 - e.x0, h: e.y1 - e.y0, depth: 0.1 })
+    }
+    scene = mkScene(items, { x0: -0.559, x1: 3.191, y0: -0.156, y1: 2.344 }, Number(q.get("seconds") || 2))
+  } else {
+    const keys = (q.get("items") || "water-bottle,coffee-mug").split(",")
+    items.push({ id: "table", type: "table", name: "Table", x: 0, y: 0, angle: 0, props: { width: 6, thickness: 0.15 } })
+    let cursor = 0
+    const GAP = Number(q.get("gap") || 0.08)
+    for (const entry of keys) {
+      const k = entry.split("@")[0]
+      const id = entry.replace("@", "-")
+      const t = byKey.get(k)
+      if (!t) { say("unknown type " + k); continue }
+      const props = extra[entry] ?? extra[k] ?? {}
+      const lay = await post("/api/layout", { scene: mkScene([{ id: "a", type: k, x: 0, y: 0, angle: 0, props }]) })
+      const e = extent(lay.doc)
+      const w = e.x1 - e.x0, h = e.y1 - e.y0
+      const x = cursor - e.x0
+      const y = -e.y0 + Number(q.get("lift") ?? 0.0015)
+      cursor += w + GAP
+      items.push({ id, type: k, name: t.name, x, y, angle: 0, fixed: fixed && t.dynamic, props })
+      layout.push({ id, type: k, x: x + (e.x0 + e.x1) / 2, y: y + (e.y0 + e.y1) / 2, w, h, depth: Math.max(...lay.doc.solids.map((s) => s.body.depth ?? s.length ?? 2 * (s.body.radius ?? 0))) })
+    }
+    const shift = cursor / 2
+    for (const it of items) if (it.id !== "table") it.x -= shift
+    for (const l of layout) l.x -= shift
+    items[0].props.width = Math.max(1.2, cursor + 0.8)
+    scene = mkScene(items)
+  }
+  const sim = await post("/api/simulate", { scene })
+  window.sim = sim
+  window.layout = layout
+  window.scene = scene
+  const view = createView3D(document.getElementById("stage"))
+  window.view = view
+  view.setOptions({ looks: catalog.looks })
+  view.load(sim, null)
+  let T = Number(q.get("t") ?? sim.doc.seconds - 0.05)
+  const d = view._debug
+  window.setT = (t) => { T = t; view.render(t) }
+  if (mode === "wide") {
+    view.setOptions({ camera: "wide" })
+    view.render(T)
+  } else {
+    view.setOptions({ camera: "orbit" })
+    view.render(T)
+    d.controls.minDistance = 0.004
+    d.controls.maxPolarAngle = Math.PI * 0.499
+    d.controls.enableDamping = false
+  }
+  window.wideShot = async (name) => { view.setOptions({ camera: "wide" }); view.render(T); return save(name, d.renderer.domElement) }
+  // placements at time T (world): track.frames with the static ones only in frames[0]
+  const W0 = worldOf(sim.doc)
+  const poseAt = (s) => {
+    const fr = sim.track.frames
+    const k = Math.min(fr.length - 1, Math.max(0, Math.round(T * (sim.track.fps || 120))))
+    const p = fr[k]?.placements?.[s.id] ?? fr[0]?.placements?.[s.id]
+    if (p) return { x: p.x, y: p.y, a: p.angle ?? 0 }
+    return W0(s)
+  }
+  window.poseAt = poseAt
+  window.aim = (opts = {}) => {
+    const L = opts.i !== undefined ? (typeof opts.i === "number" ? layout[opts.i] : layout.find((l) => l.id === opts.i)) : null
+    const x = opts.x ?? (L ? L.x : 0)
+    const y = opts.y ?? (L ? L.y : 0.05)
+    const z = opts.z ?? 0
+    const dist = opts.dist ?? (L ? 2.6 * Math.max(L.w, L.h) : 0.4)
+    const az = opts.az ?? 0.5
+    const el = opts.el ?? 0.45
+    view.setOptions({ camera: "orbit" })
+    d.orbitCam.fov = opts.fov ?? 28
+    d.orbitCam.near = opts.near ?? Math.max(0.002, dist / 60)
+    d.orbitCam.far = opts.far ?? 40
+    d.orbitCam.updateProjectionMatrix()
+    d.controls.minAzimuthAngle = -Infinity
+    d.controls.maxAzimuthAngle = Infinity
+    d.controls.target.set(x, y, z)
+    d.orbitCam.position.set(x + dist * Math.sin(az) * Math.cos(el), y + dist * Math.sin(el), z + dist * Math.cos(az) * Math.cos(el))
+    d.controls.update()
+    view.render(T)
+  }
+  window.shoot = async (name, opts = {}) => {
+    window.aim(opts)
+    view.render(T)
+    return save(name, d.renderer.domElement)
+  }
+  const projPx = (x, y, z = 0) => {
+    const c = d.renderer.domElement
+    const v = new d.THREE.Vector3(x, y, z).project(d.orbitCam)
+    return [(v.x * 0.5 + 0.5) * c.width, (-v.y * 0.5 + 0.5) * c.height]
+  }
+  window.overlay = async (name, { ids = null, depthBox = true } = {}) => {
+    view.render(T)
+    const src = d.renderer.domElement
+    const c = document.createElement("canvas")
+    c.width = src.width
+    c.height = src.height
+    const g = c.getContext("2d")
+    view.render(T)
+    g.drawImage(src, 0, 0)
+    g.lineWidth = 2
+    for (const s of sim.doc.solids) {
+      if (s.item === "table") continue
+      if (ids && !ids.includes(s.item)) continue
+      const p = poseAt(s)
+      const hd = (s.body.depth ?? s.length ?? 2 * (s.body.radius ?? 0)) / 2
+      const layers = depthBox ? [[hd, "rgba(255,0,200,0.9)"], [-hd, "rgba(0,180,255,0.9)"], [0, "#00ff66"]] : [[0, "#00ff66"]]
+      for (const [z, col] of layers) {
+        g.strokeStyle = col
+        g.beginPath()
+        outlineOf(s).forEach(([lx, ly], k) => {
+          const X = p.x + lx * Math.cos(p.a) - ly * Math.sin(p.a), Y = p.y + lx * Math.sin(p.a) + ly * Math.cos(p.a)
+          const [px, py] = projPx(X, Y, z)
+          k ? g.lineTo(px, py) : g.moveTo(px, py)
+        })
+        g.closePath()
+        g.stroke()
+      }
+    }
+    return save(name, c)
+  }
+  window.outline = async (name, i, opts = {}) => {
+    const L = layout.find((l) => l.id === i) ?? layout[i]
+    const span = Math.max(L.w, L.h)
+    const fov = opts.fov ?? 3
+    const dist = opts.dist ?? (span * (opts.pad ?? 1.25)) / (2 * Math.tan((fov * Math.PI) / 360))
+    window.aim({ x: opts.x ?? L.x, y: opts.y ?? L.y, dist, az: opts.az ?? 0, el: opts.el ?? 0.0001, fov, near: dist * 0.5, far: dist * 2 })
+    return window.overlay(name, { ids: [L.id], depthBox: opts.depthBox ?? true })
+  }
+  const holderOf = (id) => { let h = null; d.scene.traverse((o) => { if (o.name === id) h = o }); return h }
+  // model bounding box vs the outline's extents at time T (mm; + sticks out, - falls short), and the model's lowest point over the table
+  window.fit = () => {
+    const B = d.THREE
+    const rows = []
+    for (const l of layout) {
+      const sols = sim.doc.solids.filter((s) => s.item === l.id)
+      const box = new B.Box3()
+      let ex = { x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9 }
+      for (const s of sols) {
+        const h = holderOf(s.id)
+        if (h) { h.updateWorldMatrix(true, true); box.union(new B.Box3().setFromObject(h, true)) }
+        const p = poseAt(s)
+        for (const [px, py] of outlineOf(s)) {
+          const X = p.x + px * Math.cos(p.a) - py * Math.sin(p.a), Y = p.y + px * Math.sin(p.a) + py * Math.cos(p.a)
+          ex.x0 = Math.min(ex.x0, X); ex.x1 = Math.max(ex.x1, X); ex.y0 = Math.min(ex.y0, Y); ex.y1 = Math.max(ex.y1, Y)
+        }
+      }
+      const mm = (v) => +(v * 1000).toFixed(2)
+      rows.push({ id: l.id, x: [mm(ex.x0 - box.min.x), mm(box.max.x - ex.x1)], y: [mm(ex.y0 - box.min.y), mm(box.max.y - ex.y1)], z: [mm(-l.depth / 2 - box.min.z), mm(box.max.z - l.depth / 2)], physLow: mm(ex.y0), modelLow: mm(box.min.y), tris: holderTris(sols) })
+    }
+    return rows
+  }
+  const holderTris = (sols) => { let t = 0; for (const s of sols) { const h = holderOf(s.id); if (h) t += triCount(h).tris } return t }
+  // sample the model's silhouette against the physics outline: for x columns across the item, the model's lowest/highest y vs the outline's (mm)
+  window.silhouette = (id, n = 40) => {
+    const B = d.THREE
+    const sols = sim.doc.solids.filter((s) => s.item === id)
+    const tris = []
+    for (const s of sols) {
+      const h = holderOf(s.id)
+      if (!h) continue
+      h.updateWorldMatrix(true, true)
+      h.traverse((o) => {
+        if (!o.isMesh || !o.geometry) return
+        const g = o.geometry, P = g.attributes.position, I = g.index
+        const v = new B.Vector3()
+        const pts = []
+        for (let k = 0; k < P.count; k++) { v.fromBufferAttribute(P, k).applyMatrix4(o.matrixWorld); pts.push([v.x, v.y, v.z]) }
+        tris.push(pts)
+      })
+    }
+    // the outline union's chord at x (convex pieces)
+    const polys = sols.map((s) => { const p = poseAt(s); return outlineOf(s).map(([lx, ly]) => [p.x + lx * Math.cos(p.a) - ly * Math.sin(p.a), p.y + lx * Math.sin(p.a) + ly * Math.cos(p.a)]) })
+    const chord = (poly, x) => { let lo = Infinity, hi = -Infinity; for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; if ((a[0] - x) * (b[0] - x) > 0) continue; if (Math.abs(b[0] - a[0]) < 1e-12) { lo = Math.min(lo, a[1], b[1]); hi = Math.max(hi, a[1], b[1]); continue } const t = (x - a[0]) / (b[0] - a[0]); const y = a[1] + t * (b[1] - a[1]); lo = Math.min(lo, y); hi = Math.max(hi, y) } return hi < lo ? null : [lo, hi] }
+    let x0 = Infinity, x1 = -Infinity
+    for (const p of polys) for (const [x] of p) { x0 = Math.min(x0, x); x1 = Math.max(x1, x) }
+    const out = []
+    const bw = (x1 - x0) / n
+    for (let k = 0; k <= n; k++) {
+      const x = x0 + 0.002 + (k / n) * (x1 - x0 - 0.004)
+      let lo = Infinity, hi = -Infinity
+      for (const p of polys) { const c = chord(p, x); if (c) { lo = Math.min(lo, c[0]); hi = Math.max(hi, c[1]) } }
+      let mlo = Infinity, mhi = -Infinity
+      for (const pts of tris) for (const [px, py] of pts) if (Math.abs(px - x) < bw * 0.25) { mlo = Math.min(mlo, py); mhi = Math.max(mhi, py) }
+      out.push([+(x * 1000).toFixed(1), lo === Infinity ? null : +((lo - mlo) * 1000).toFixed(1), hi === -Infinity ? null : +((mhi - hi) * 1000).toFixed(1)])
+    }
+    return out // [x mm, how far the model's bottom is below the outline's (+ sticks out), how far the model's top is above the outline's (+ sticks out)]
+  }
+  window.T = () => T
+  window.ready = true
+  say(`${layout.length} items, t ${T.toFixed(2)}`)
+  window.addEventListener("error", (e) => say("ERROR " + e.message))
+}
+</script>
+</body>
+</html>

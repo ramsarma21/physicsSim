@@ -1,0 +1,106 @@
+{
+ "version": 2,
+ "id": "desk-objects",
+ "name": "Desk objects",
+ "seconds": 4.5,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.55,
+  "x1": 2.05,
+  "y0": -0.12,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "bottle",
+   "type": "water-bottle",
+   "name": "Water bottle",
+   "x": 0.6525,
+   "y": 0.104
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "book",
+   "type": "hardcover-book",
+   "name": "Hardcover book",
+   "x": 0.86508,
+   "y": 0.019
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "phone",
+   "type": "smartphone",
+   "name": "Smartphone",
+   "x": 0.87508,
+   "y": 0.0419
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "mug",
+   "type": "coffee-mug",
+   "name": "Coffee mug",
+   "x": 1.08708,
+   "y": 0.049
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "can",
+   "type": "soda-can",
+   "name": "Soda can",
+   "x": 1.26758,
+   "y": 0.0627
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "tissues",
+   "type": "tissue-box",
+   "name": "Tissue box",
+   "x": 1.49019,
+   "y": 0.0365
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "cube",
+   "type": "rubiks-cube",
+   "name": "Rubik's cube",
+   "x": 1.72123,
+   "y": 0.03
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "apple",
+   "type": "apple",
+   "name": "Apple",
+   "x": 1.85463,
+   "y": 0.0395
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "candle",
+   "type": "candle",
+   "name": "Candle",
+   "x": 1.94763,
+   "y": 0.1285
+  }
+ ],
+ "goals": []
+}

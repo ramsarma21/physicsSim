@@ -1,0 +1,83 @@
+{
+ "title": "Toy car crashes into dominoes",
+ "seconds": 4.5,
+ "release": 0.5,
+ "items": [
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Steep ramp",
+   "place": {
+    "lean": {
+     "from": {
+      "on": "air",
+      "x": -0.42,
+      "y": 0.45
+     },
+     "to": {
+      "on": "table",
+      "x": 0.36
+     }
+    },
+    "on": "air"
+   },
+   "why": "A steep ramp of about 30\u00b0, from 45 cm up down to the table. Its length (about 0.9 m) follows from its two ends.",
+   "props": {}
+  },
+  {
+   "id": "car",
+   "type": "toy-car",
+   "name": "Toy car",
+   "place": {
+    "on": "ramp",
+    "x": -0.28
+   },
+   "held": true,
+   "why": "Waits near the top of the ramp, sitting flat on its slope, until the release.",
+   "props": {}
+  },
+  {
+   "id": "dominoes",
+   "type": "domino-row",
+   "name": "Long row of dominoes",
+   "props": {
+    "count": 30,
+    "first_height": 0.05,
+    "growth": 1,
+    "spacing": 0.6
+   },
+   "place": {
+    "on": "table",
+    "right_of": {
+     "id": "ramp",
+     "gap_m": 0.4
+    }
+   },
+   "why": "Thirty standard 5 cm dominoes, all the same size, spaced 3 cm apart. The row is about 0.9 m long."
+  },
+  {
+   "id": "end_wall",
+   "type": "wall",
+   "name": "Safety wall",
+   "props": {
+    "height": 0.3,
+    "invisible_in_3d": true
+   },
+   "place": {
+    "on": "table",
+    "x": 3.1
+   },
+   "why": "An unseen stop at the table's right end, so the car does not roll off."
+  }
+ ],
+ "missing": [],
+ "goals": [],
+ "tune": [],
+ "notes": "The car leaves the 45 cm ramp at roughly 2.5 m/s and rolls 40 cm along the table. Its 7 cm tall nose then hits the first domino, and the wave runs left to right down the whole 30-domino row in about a second. The car may plough a little way into the row as it falls.",
+ "assumptions": [
+  "'Steep' is taken as about 30\u00b0. Steeper ramps risk the car nosing into the table at the bottom.",
+  "The dominoes are standard 5 cm ones of equal size.",
+  "A 'long row' is taken as 30 dominoes, the most one row allows.",
+  "The car starts at rest near the top of the ramp and is released at 0.5 s."
+ ]
+}

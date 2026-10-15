@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Review: everyday shapes</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info"></div>
+<script type="module">
+// Visual REVIEW page for the everyday-shapes models (copy of models-everyday-shapes.html plus outline overlays).
+//   window.outline(name, i, {el, az, dist, fov})  near-orthographic frontal shot with the physics outline drawn over it
+//   window.ctxShot(name, {x, y, dist, az, el})  context shot
+//   ?items=hardcover-book,paperback-book,...   catalog keys, laid out left to right on a table, each resting fixed on it
+//   window.shoot(name, {i, x, y, dist, az, el, fov})  aim the orbit camera at item i (or a point) and save web/dev/shots/<name>.png
+//   window.layout  [{id, type, x, y, w, h}]
+// make sure the browser re-reads the model files (module imports are cached by url)
+await Promise.all(["models3d.js", "view3d.js", "models/everyday-a.js", "models/everyday-a-lib.js", "models/everyday-a-books.js", "models/everyday-a-flat.js", "models/everyday-a-small.js", "models/everyday-a-round.js"].map((f) => fetch("../" + f, { cache: "reload" }).catch(() => null)))
+const { createView3D } = await import("../view3d.js")
+
+const q = new URLSearchParams(location.search)
+const keys = (q.get("items") || "hardcover-book,paperback-book").split(",")
+const info = document.getElementById("info")
+const say = (m) => (info.textContent = m)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+const byKey = new Map(catalog.types.map((t) => [t.key, t]))
+
+// the items rest on the table top (y = 0) in a row, fixed so nothing moves
+const items = [{ id: "table", type: "table", name: "Table", x: 0, y: 0, angle: 0, props: { width: 6, thickness: 0.15 } }]
+const layout = []
+let cursor = 0
+const GAP = Number(q.get("gap") || 0.06)
+for (const k of keys) {
+  const t = byKey.get(k)
+  if (!t) { say("unknown type " + k); continue }
+  const D = t.defaults
+  const w = D.width ?? D.diameter ?? 0.1
+  const h = D.height ?? D.diameter ?? 0.1
+  const rolls = D.length !== undefined && D.height === undefined // a cylinder seen end-on
+  const y = h / 2
+  const x = cursor + w / 2
+  cursor += w + GAP
+  const rot = (q.get("rot") || "").split(",").map((e) => e.split(":")).find((e) => e[0] === k)
+  // ?lift=1 (default): raise each item to where the engine actually rests it on the table (slab ~2.0 mm, ball ~0.9 mm above y = 0)
+  const lift = q.get("lift") === "0" ? 0 : (D.length !== undefined && D.height === undefined) || (D.diameter !== undefined && D.height === undefined && D.width === undefined) ? 0.0009 : 0.002
+  items.push({ id: k, type: k, name: t.name, x, y: lift + (rot ? (w * Math.abs(Math.sin((Number(rot[1]) * Math.PI) / 180)) + h * Math.abs(Math.cos((Number(rot[1]) * Math.PI) / 180))) / 2 : y), angle: rot ? Number(rot[1]) : 0, fixed: true, props: {} })
+  layout.push({ id: k, type: k, x, y: y + lift, w, h })
+}
+const shift = cursor / 2
+for (const it of items) if (it.id !== "table") it.x -= shift
+for (const l of layout) l.x -= shift
+items[0].x = 0
+items[0].props.width = Math.max(1.2, cursor + 0.6)
+const scene = { version: 2, id: "models", name: "models", seconds: 1, release: 0.1, stage: { x0: -2, x1: 2, y0: -0.15, y1: 1 }, items, goals: [] }
+const sim = await post("/api/simulate", { scene })
+window.sim = sim
+window.layout = layout
+window.catalog = catalog
+
+// ?time=1: how long each model takes to build the first time (textures included)
+window.buildTimes = []
+if (q.get("time")) {
+  const m3 = await import("../models3d.js")
+  for (const s of sim.doc.solids) {
+    if (s.item === "table") continue
+    const t0 = performance.now()
+    const o = m3.buildModel(s, { props: sim.resolved?.[s.item] ?? {}, look: catalog.looks[s.look] ?? {} })
+    window.buildTimes.push([s.id, o === undefined ? "no model" : Math.round(performance.now() - t0)])
+  }
+}
+const view = createView3D(document.getElementById("stage"))
+window.view = view
+view.setOptions({ looks: catalog.looks })
+view.load(sim, null)
+view.setOptions({ camera: "orbit" })
+view.render(0)
+const d = view._debug
+d.controls.minDistance = 0.004
+d.controls.maxPolarAngle = Math.PI * 0.499
+d.controls.enableDamping = false
+
+window.aim = (opts = {}) => {
+  const L = opts.i !== undefined ? layout[opts.i] ?? layout.find((l) => l.id === opts.i) : null
+  const x = opts.x ?? (L ? L.x : 0)
+  const y = opts.y ?? (L ? L.y : 0.05)
+  const dist = opts.dist ?? (L ? 2.6 * Math.max(L.w, L.h) : 0.4)
+  const az = opts.az ?? 0.5
+  const el = opts.el ?? 0.45
+  d.orbitCam.fov = opts.fov ?? 28
+  d.orbitCam.near = Math.max(0.002, dist / 60)
+  d.orbitCam.far = 40
+  d.orbitCam.updateProjectionMatrix()
+  d.controls.minAzimuthAngle = -Infinity
+  d.controls.maxAzimuthAngle = Infinity
+  d.controls.target.set(x, y, opts.z ?? 0)
+  d.orbitCam.position.set(x + dist * Math.sin(az) * Math.cos(el), y + dist * Math.sin(el), (opts.z ?? 0) + dist * Math.cos(az) * Math.cos(el))
+  d.controls.update()
+  view.render(0)
+}
+window.shoot = async (name, opts = {}) => {
+  window.aim(opts)
+  view.render(0)
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: d.renderer.domElement.toDataURL() }) })
+  return r.status
+}
+// how well each model fills its physics outline: extents of the drawn model against the body's box (mm; + = sticks out, - = falls short)
+window.fit = () => {
+  const T = d.THREE
+  const rows = []
+  for (const s of sim.doc.solids) {
+    if (s.item === "table") continue
+    let holder = null
+    d.scene.traverse((o) => { if (o.name === s.id) holder = o })
+    if (!holder) { rows.push({ id: s.id, err: "no model drawn" }); continue }
+    holder.updateWorldMatrix(true, true)
+    const b = new T.Box3().setFromObject(holder)
+    const q = sim.track.frames[0].placements[s.id]
+    const ball = s.body.kind === "ball"
+    const hw = ball ? s.body.radius : s.body.width / 2
+    const hh = ball ? s.body.radius : s.body.height / 2
+    const hd = ball ? (s.shape === "cylinder" ? (s.length ?? 2 * s.body.radius) / 2 : s.body.radius) : s.body.depth / 2
+    const mm = (v) => +(v * 1000).toFixed(2)
+    rows.push({ id: s.id, x: [mm(b.min.x - q.x + hw), mm(b.max.x - q.x - hw)], y: [mm(b.min.y - q.y + hh), mm(b.max.y - q.y - hh)], z: [mm(b.min.z + hd), mm(b.max.z - hd)], tris: (() => { let n = 0; holder.traverse((o) => { if (o.isMesh) n += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 }); return Math.round(n) })() })
+  }
+  return rows
+}
+// a standard 3/4 view of each item (az, el, dist); review("pfx") saves pfx-<id>.png for all (or the given ids)
+const CAMS = {
+  "hardcover-book": [0.5, 0.4, 0.42], "paperback-book": [0.5, 0.45, 0.33], "cereal-box": [0.5, 0.25, 0.75], "tissue-box": [0.45, 0.5, 0.45],
+  "cutting-board": [0.45, 0.55, 0.75], sponge: [0.5, 0.45, 0.25], smartphone: [0.5, 0.6, 0.28], "laptop-closed": [0.5, 0.5, 0.65],
+  "tv-remote": [0.5, 0.6, 0.4], ruler: [0.4, 0.6, 0.45], chopstick: [0.4, 0.5, 0.28], eraser: [0.5, 0.5, 0.14], "coin-flat": [0.3, 0.7, 0.07],
+  "coin-edge": [0.3, 0.2, 0.07], die: [0.6, 0.5, 0.07], "lego-brick": [0.6, 0.5, 0.1], "rubiks-cube": [-0.5, 0.5, 0.16], pillow: [0.4, 0.45, 1.0],
+  "toilet-paper-roll": [0.7, 0.35, 0.35], "paper-towel-roll": [0.7, 0.35, 0.55], "cardboard-tube": [0.7, 0.4, 0.5], "soda-can": [0.5, 0.3, 0.4],
+  "soda-can-side": [0.5, 0.5, 0.3], apple: [0.5, 0.4, 0.25], orange: [0.5, 0.4, 0.22], candle: [0.4, 0.15, 0.7],
+}
+window.CAMS = CAMS
+window.review = async (prefix, ids) => {
+  const done = []
+  for (const l of layout) {
+    if (ids && !ids.includes(l.id)) continue
+    const c = CAMS[l.id] ?? [0.5, 0.45, 2.6 * Math.max(l.w, l.h)]
+    await window.shoot(`${prefix}-${l.id}`, { i: l.id, az: c[0], el: c[1], dist: c[2] })
+    done.push(l.id)
+  }
+  return done.length
+}
+// ?fuzz=1 style check: window.fuzz(factors) builds every item at scaled size props and reports exceptions / NaNs / empty models
+window.fuzz = async (factors = [0.45, 1.8]) => {
+  const m3 = await import("../models3d.js")
+  const out = []
+  for (const k of keys) {
+    const t = byKey.get(k)
+    const sizeKeys = t.props.filter((p) => ["width", "height", "depth", "diameter", "length", "hole", "thickness"].includes(p.key))
+    for (const f of factors) {
+      const props = {}
+      for (const p of sizeKeys) props[p.key] = Math.min(p.max ?? 1e9, Math.max(p.min ?? 0, t.defaults[p.key] * f))
+      const sc = { ...scene, items: [items[0], { id: "f", type: k, x: 0, y: 1, angle: 0, fixed: true, props }], goals: [] }
+      let r
+      try { r = await post("/api/simulate", { scene: sc }) } catch (e) { out.push(`${k} x${f}: simulate failed ${e.message}`); continue }
+      const sol = r.doc.solids.find((z) => z.item === "f")
+      const errs = []
+      const warn = console.warn
+      console.warn = (...a) => { errs.push(a.join(" ")); }
+      let o
+      try { o = m3.buildModel(sol, { props: r.resolved.f, look: catalog.looks[sol.look] ?? {} }) } catch (e) { errs.push("threw " + e.message) }
+      console.warn = warn
+      if (o === undefined) errs.push("no model")
+      else if (o) {
+        let bad = 0, tris = 0
+        o.traverse((m) => { if (m.isMesh) { const pa = m.geometry.attributes.position.array; for (let i = 0; i < pa.length; i++) if (!Number.isFinite(pa[i])) { bad++; break } tris += (m.geometry.index ? m.geometry.index.count : pa.length / 3) / 3 } })
+        if (bad) errs.push("NaN positions")
+        if (tris > 30000) errs.push("tris " + Math.round(tris))
+      }
+      out.push(`${k} x${f}: ${errs.length ? errs.join("; ") : "ok"}`)
+    }
+  }
+  return out
+}
+
+// ---------------------------------------------------------------- review additions: outlines over a snapshot
+const projPx = (x, y, z = 0) => {
+  const T = d.THREE
+  const c = d.renderer.domElement
+  const v = new T.Vector3(x, y, z).project(d.orbitCam)
+  return [(v.x * 0.5 + 0.5) * c.width, (-v.y * 0.5 + 0.5) * c.height]
+}
+function outlinePts(s, pl, z = 0) {
+  const b = s.body
+  const ca = Math.cos(pl.angle || 0), sa = Math.sin(pl.angle || 0)
+  const W = (lx, ly) => [pl.x + lx * ca - ly * sa, pl.y + lx * sa + ly * ca]
+  if (b.kind === "ball") {
+    const out = []
+    for (let k = 0; k < 96; k++) { const a = (k / 96) * Math.PI * 2; out.push(W(b.radius * Math.cos(a), b.radius * Math.sin(a))) }
+    return out
+  }
+  if (b.kind === "polygon") return b.points.map((p) => W(p.x, p.y))
+  const hw = b.width / 2, hh = b.height / 2
+  return [W(-hw, -hh), W(hw, -hh), W(hw, hh), W(-hw, hh)]
+}
+window.overlay = async (name, { color = "#00ff66", depthBox = true, ids = null } = {}) => {
+  view.render(0)
+  const src = d.renderer.domElement
+  const c = document.createElement("canvas")
+  c.width = src.width
+  c.height = src.height
+  const g = c.getContext("2d")
+  g.drawImage(src, 0, 0)
+  g.lineWidth = 1.5
+  for (const s of sim.doc.solids) {
+    if (s.item === "table") continue
+    if (ids && !ids.includes(s.item)) continue
+    const pl = sim.track.frames[0].placements[s.id]
+    const hd = s.body.kind === "ball" ? (s.shape === "cylinder" ? (s.length ?? s.depth3d ?? 2 * s.body.radius) / 2 : s.body.radius) : s.body.depth / 2
+    const layers = depthBox ? [[hd, "rgba(255,0,200,0.9)"], [-hd, "rgba(0,180,255,0.9)"], [0, color]] : [[0, color]]
+    for (const [z, col] of layers) {
+      g.strokeStyle = col
+      g.beginPath()
+      outlinePts(s, pl).forEach(([x, y], k) => { const [px, py] = projPx(x, y, z); k ? g.lineTo(px, py) : g.moveTo(px, py) })
+      g.closePath()
+      g.stroke()
+    }
+  }
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: c.toDataURL() }) })
+  return r.status
+}
+// frontal near-orthographic shot of item i with outline (z = 0 green, front face z = +d/2 magenta, back z = -d/2 cyan)
+window.outline = async (name, i, opts = {}) => {
+  const L = layout.find((l) => l.id === i) ?? layout[i]
+  const span = Math.max(L.w, L.h)
+  const fov = opts.fov ?? 3
+  const dist = opts.dist ?? (span * 1.25) / (2 * Math.tan((fov * Math.PI) / 360))
+  window.aim({ x: L.x, y: opts.y ?? L.y, dist, az: opts.az ?? 0, el: opts.el ?? 0.0001, fov })
+  d.orbitCam.near = dist * 0.5
+  d.orbitCam.far = dist * 2
+  d.orbitCam.updateProjectionMatrix()
+  view.render(0)
+  return window.overlay(name, { ids: [i], depthBox: opts.depthBox ?? true })
+}
+window.ctxShot = async (name, opts = {}) => window.shoot(name, opts)
+window.ready = true
+say(`${layout.length} items`)
+window.addEventListener("error", (e) => say("ERROR " + e.message))
+</script>
+</body>
+</html>

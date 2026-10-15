@@ -1,0 +1,147 @@
+{
+ "version": 2,
+ "id": "bowling-ball-versus-ten-pins",
+ "name": "Bowling ball versus ten pins",
+ "seconds": 6,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Long ramp",
+   "x": 0.065269,
+   "y": 0.309658,
+   "angle": -28.610459665965216,
+   "props": {
+    "length": 1.252996
+   }
+  },
+  {
+   "id": "ball",
+   "type": "bowling-ball",
+   "name": "Bowling ball",
+   "x": -0.369997,
+   "y": 0.684266,
+   "angle": 0,
+   "props": {},
+   "held": true
+  },
+  {
+   "id": "pin1",
+   "type": "bowling-pin",
+   "name": "Pin 1",
+   "x": 0.760003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin2",
+   "type": "bowling-pin",
+   "name": "Pin 2",
+   "x": 1.010003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin3",
+   "type": "bowling-pin",
+   "name": "Pin 3",
+   "x": 1.260003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin4",
+   "type": "bowling-pin",
+   "name": "Pin 4",
+   "x": 1.510003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin5",
+   "type": "bowling-pin",
+   "name": "Pin 5",
+   "x": 1.760003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin6",
+   "type": "bowling-pin",
+   "name": "Pin 6",
+   "x": 2.010003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin7",
+   "type": "bowling-pin",
+   "name": "Pin 7",
+   "x": 2.260003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin8",
+   "type": "bowling-pin",
+   "name": "Pin 8",
+   "x": 2.510003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin9",
+   "type": "bowling-pin",
+   "name": "Pin 9",
+   "x": 2.760003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "pin10",
+   "type": "bowling-pin",
+   "name": "Pin 10",
+   "x": 3.010003,
+   "y": 0.192,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": []
+}

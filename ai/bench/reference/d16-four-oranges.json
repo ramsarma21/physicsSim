@@ -1,0 +1,186 @@
+{
+ "case": "d16-four-oranges",
+ "notes": "hand-made edit (tools/make-edit-references.mjs)",
+ "plan": {
+  "title": "Oranges on a conveyor",
+  "items": [
+   {
+    "id": "belt",
+    "type": "conveyor-belt",
+    "name": "Conveyor belt",
+    "props": {
+     "length": 1,
+     "speed": 0.6
+    },
+    "place": {
+     "on": "air",
+     "x": 0.95,
+     "y_m": 0.3
+    },
+    "why": "reference"
+   },
+   {
+    "id": "orange1",
+    "type": "orange",
+    "name": "Orange 1",
+    "props": {},
+    "place": {
+     "on": "belt",
+     "x": 0.55
+    },
+    "why": "reference"
+   },
+   {
+    "id": "orange2",
+    "type": "orange",
+    "name": "Orange 2",
+    "props": {},
+    "place": {
+     "on": "belt",
+     "x": 0.69
+    },
+    "why": "reference"
+   },
+   {
+    "id": "orange3",
+    "type": "orange",
+    "name": "Orange 3",
+    "props": {},
+    "place": {
+     "on": "belt",
+     "x": 0.83
+    },
+    "why": "reference"
+   },
+   {
+    "id": "basket",
+    "type": "basket",
+    "name": "Basket",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.675
+    },
+    "why": "reference"
+   },
+   {
+    "id": "orange4",
+    "type": "orange",
+    "name": "Orange 4",
+    "props": {},
+    "place": {
+     "on": "belt",
+     "x": 0.41
+    }
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 6,
+  "notes": "basket 0 m past the belt's end, belt 0.6 m/s"
+ },
+ "scene": {
+  "version": 2,
+  "id": "oranges-on-a-conveyor",
+  "name": "Oranges on a conveyor",
+  "seconds": 6,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.55908203125,
+   "x1": 3.19091796875,
+   "y0": -0.15625,
+   "y1": 2.34375
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "belt",
+    "type": "conveyor-belt",
+    "name": "Conveyor belt",
+    "x": 0.95,
+    "y": 0.3,
+    "angle": 0,
+    "props": {
+     "speed": 0.6
+    }
+   },
+   {
+    "id": "orange1",
+    "type": "orange",
+    "name": "Orange 1",
+    "x": 0.55,
+    "y": 0.334,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "orange2",
+    "type": "orange",
+    "name": "Orange 2",
+    "x": 0.69,
+    "y": 0.334,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "orange3",
+    "type": "orange",
+    "name": "Orange 3",
+    "x": 0.83,
+    "y": 0.334,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "basket",
+    "type": "basket",
+    "name": "Basket",
+    "x": 1.675,
+    "y": 0.01,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "orange4",
+    "type": "orange",
+    "name": "Orange 4",
+    "x": 0.623,
+    "y": 0.334,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "x": -0.52,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 3.12,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   }
+  ],
+  "goals": []
+ }
+}

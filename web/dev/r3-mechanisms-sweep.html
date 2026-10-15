@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Mechanisms sweep r3</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>html,body{margin:0;height:100%;background:#222;color:#ddd;font:12px monospace} #stage{position:fixed;inset:0}</style></head>
+<body><div id="stage"></div>
+<script type="module">
+// Size sweep for the mechanisms models: for each case, /api/layout, view.load, then tris, bbox deviations against the physics outlines (mm), GPU texture count, ms.
+// window.runCases(cases) with cases = [{item, props}] -> rows; window.cases = the built-in list.
+window.__warn = []
+for (const k of ["warn", "error"]) { const o = console[k].bind(console); console[k] = (...a) => { window.__warn.push(k + ": " + a.map(String).join(" ")); o(...a) } }
+const { createView3D } = await import("../view3d.js")
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+const view = createView3D(document.getElementById("stage"))
+view.setOptions({ looks: catalog.looks })
+const post = async (url, body) => (await fetch(url, { method: "POST", body: JSON.stringify(body) })).json()
+const tris = (root) => { let n = 0; root.traverse((o) => { if (!o.isMesh || !o.geometry) return; const g = o.geometry; const c = g.index ? g.index.count / 3 : g.attributes.position.count / 3; n += o.isInstancedMesh ? c * o.count : c }); return Math.round(n) }
+const Y = { "hanging-spring": 1.2, "spring-launcher": 0, "bounce-pad": 0, trampoline: 0, "spring-bumper": 0.01, "spring-gate": 0.9, "spring-catapult": 0, "rope-pendulum": 1.2, "wrecking-ball": 1.6, swing: 1.2, "hanging-chain": 1.2, "atwood-machine": 1.2, "pulley-lift": 1.2, "motor-spinner": 0.5 }
+window.runCase = async ({ item, props = {} }) => {
+  const scene = { version: 2, id: "s", name: "s", seconds: 1, release: 0.5, stage: { x0: -0.7, x1: 1.9, y0: -0.156, y1: 2.5 }, items: [{ id: "table", type: "table", x: 0.6, y: 0, angle: 0, props: { width: 2.6, thickness: 0.15 } }, { id: "it", type: item, x: 0.6, y: Y[item] ?? 0.3, angle: 0, props }], goals: [] }
+  const r = await post("/api/layout", { scene })
+  if (r.error) return { item, props, error: r.error }
+  const sim = { key: "layout", doc: r.doc, track: { fps: 1, frames: [{ t: 0, placements: Object.fromEntries(r.doc.solids.map((s) => [s.id, { x: s.at.x, y: s.at.y, angle: s.angle || 0 }])) }] }, summary: { goals: [], stories: [], events: [] }, resolved: r.resolved }
+  const w0 = window.__warn.length
+  const t0 = performance.now()
+  view.load(sim, null, { keepCamera: true, rebuild: true })
+  view.render(0)
+  const ms = performance.now() - t0
+  const { THREE } = view._debug
+  const rows = []
+  let total = 0
+  for (const s of sim.doc.solids) {
+    if (s.item === "table") continue
+    const holder = view._debug.run.group.getObjectByName(s.id)
+    if (!holder) { rows.push({ id: s.id, nomodel: true }); continue }
+    holder.updateMatrixWorld(true)
+    const inv = new THREE.Matrix4().copy(holder.matrixWorld).invert()
+    const b = new THREE.Box3()
+    holder.traverse((o) => { if (!o.isMesh || !o.geometry) return; const pa = o.geometry.attributes.position; const m = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld); const v = new THREE.Vector3(); for (let i = 0; i < pa.count; i++) b.expandByPoint(v.fromBufferAttribute(pa, i).applyMatrix4(m)) })
+    const body = s.body, ball = body.kind === "ball"
+    let x0, x1, y0, y1
+    if (body.kind === "polygon") { x0 = Math.min(...body.points.map((p) => p.x)); x1 = Math.max(...body.points.map((p) => p.x)); y0 = Math.min(...body.points.map((p) => p.y)); y1 = Math.max(...body.points.map((p) => p.y)) }
+    else { const hw = ball ? body.radius : body.width / 2, hh = ball ? body.radius : body.height / 2; x0 = -hw; x1 = hw; y0 = -hh; y1 = hh }
+    const hd = ball ? (s.depth3d ?? (s.shape === "cylinder" ? 4 : 2) * body.radius) / 2 : body.depth / 2
+    const f = (v) => +(v * 1000).toFixed(1)
+    const t = tris(holder); total += t
+    rows.push({ id: s.id.replace("it/", ""), dx: [f(x0 - b.min.x), f(b.max.x - x1)], dy: [f(y0 - b.min.y), f(b.max.y - y1)], dz: [f(-b.min.z - hd), f(b.max.z - hd)], tris: t })
+  }
+  // worst overshoot (+ = sticks out) and worst shortfall (- = falls short) over all solids and axes
+  let out = -1e9, short = 1e9, outId = "", shortId = ""
+  for (const r of rows) for (const k of ["dx", "dy", "dz"]) for (const v of r[k] ?? []) { if (v > out) { out = v; outId = r.id + "." + k } if (v < short) { short = v; shortId = r.id + "." + k } }
+  return { item, props, ms: +ms.toFixed(0), tris: total, tex: view._debug.renderer.info.memory.textures, out: [out, outId], short: [short, shortId], warn: window.__warn.slice(w0), rows }
+}
+window.runCases = async (cases) => { const res = []; for (const c of cases) res.push(await window.runCase(c)); return res }
+window.ready = true
+document.body.append("ready")
+</script></body></html>

@@ -1,0 +1,14 @@
+[
+ {"id":"rube-goldberg","name":"Rube Goldberg machine","builtin":true,"items":10},
+ {"id":"empty","name":"Empty table","builtin":true,"items":1},
+ {"id":"atwood","name":"Atwood machine","builtin":true,"items":2},
+ {"id":"ball-drop","name":"Ball drop: six balls from 1 m","builtin":true,"items":7},
+ {"id":"car-ramp-dominoes","name":"Car, ramp and dominoes","builtin":true,"items":4},
+ {"id":"conveyor-delivery","name":"Conveyor delivery","builtin":true,"items":6},
+ {"id":"newtons-cradle","name":"Newton's cradle","builtin":true,"items":2},
+ {"id":"pendulum-dominoes","name":"Pendulum and dominoes","builtin":true,"items":3},
+ {"id":"plinko","name":"Plinko","builtin":true,"items":14},
+ {"id":"spring-launch","name":"Spring launcher","builtin":true,"items":5},
+ {"id":"trampoline","name":"Trampoline","builtin":true,"items":5},
+ {"id":"wrecking-ball","name":"Wrecking ball","builtin":true,"items":7}
+]

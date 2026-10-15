@@ -1,0 +1,119 @@
+{
+ "case": "e2-tallest-to-shortest",
+ "notes": "",
+ "plan": {
+  "title": "Tallest to shortest",
+  "items": [
+   {
+    "id": "candle",
+    "type": "candle",
+    "name": "candle",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.011
+    },
+    "why": "reference"
+   },
+   {
+    "id": "bottle",
+    "type": "water-bottle",
+    "name": "water-bottle",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.1145
+    },
+    "why": "reference"
+   },
+   {
+    "id": "can",
+    "type": "soda-can",
+    "name": "soda-can",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.2401
+    },
+    "why": "reference"
+   },
+   {
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "coffee-mug",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.3742
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 3,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-e2",
+  "name": "Tallest to shortest",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.8,
+   "x1": 1.9,
+   "y0": -0.12,
+   "y1": 0.6
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "candle",
+    "type": "candle",
+    "name": "candle",
+    "x": 1.011,
+    "y": 0.1285
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "bottle",
+    "type": "water-bottle",
+    "name": "water-bottle",
+    "x": 1.1145,
+    "y": 0.104
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "can",
+    "type": "soda-can",
+    "name": "soda-can",
+    "x": 1.2401,
+    "y": 0.0627
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "coffee-mug",
+    "x": 1.3742,
+    "y": 0.049
+   }
+  ],
+  "goals": []
+ }
+}

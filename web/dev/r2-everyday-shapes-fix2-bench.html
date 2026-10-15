@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>R2 fix2 bench: everyday shapes</title></head>
+<body style="font:12px system-ui;background:#222;color:#ddd">
+<pre id="o">?keys=a,b,c then window.runAll(n) -> cold builds (fresh iframe each), median ms and triangles</pre>
+<script>
+// Cold build cost of each item in a fresh document (a fresh iframe each time, so no kit cache is shared), via r2-everyday-shapes-fix.html?bench=<key>.
+const PRE = new URLSearchParams(location.search).get("pre") || ""
+const keys = (new URLSearchParams(location.search).get("keys") || "").split(",").filter(Boolean)
+const runOne = (key) => new Promise((res) => {
+  const f = document.createElement("iframe")
+  f.style.cssText = "position:fixed;left:0;top:0;width:800px;height:600px;opacity:0"
+  f.src = "r2-everyday-shapes-fix2.html?bench=" + key + (PRE ? "&pre=" + PRE : "")
+  const h = (e) => { if (e.source === f.contentWindow && e.data && e.data.bench) { window.removeEventListener("message", h); f.remove(); res(e.data.bench) } }
+  window.addEventListener("message", h)
+  document.body.appendChild(f)
+})
+window.runAll = async (n = 3) => {
+  const out = {}
+  for (const k of keys) {
+    const runs = []
+    for (let i = 0; i < n; i++) runs.push(await runOne(k))
+    const ms = runs.map((r) => r.ms).sort((a, b) => a - b)
+    out[k] = { median: ms[Math.floor(ms.length / 2)], all: ms, tris: runs[0].tris, meshes: runs[0].meshes }
+  }
+  window.results = out
+  document.getElementById("o").textContent = JSON.stringify(out, null, 1)
+  return out
+}
+</script></body></html>

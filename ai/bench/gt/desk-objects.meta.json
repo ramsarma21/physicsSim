@@ -1,0 +1,376 @@
+{
+ "id": "desk-objects",
+ "source": "arrangement (tools/make-gt-scenes.mjs)",
+ "description": "Everyday things standing in a row on the table, left to right: a water bottle, a hardcover book lying flat with a smartphone on it, a coffee mug, a soda can, a tissue box, a Rubik's cube, an apple and a tall candle.",
+ "scene": "gt/desk-objects.json",
+ "shot": {
+  "t": 0,
+  "run_seconds_for_framing": 0.5,
+  "page": "http://localhost:8790/?profile=bench-gt&quality=high (chrome hidden, view 1280×720)"
+ },
+ "quality": {
+  "mode": "high",
+  "tier": "high",
+  "reason": "chosen"
+ },
+ "renders": [
+  {
+   "file": "gt/desk-objects.png",
+   "camera": "wide",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     1.2845,
+     0.2775,
+     1.0998
+    ],
+    "direction": [
+     0,
+     -0.1191,
+     -0.9929
+    ],
+    "target": null,
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  },
+  {
+   "file": "gt/desk-objects-b.png",
+   "camera": "orbit (azimuth -25°, raised 20°)",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     0.8063,
+     0.7182,
+     1.0255
+    ],
+    "direction": [
+     0.3771,
+     -0.4515,
+     -0.8087
+    ],
+    "target": [
+     1.2845,
+     0.1455,
+     0
+    ],
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": -0.55,
+    "y0": -0.15,
+    "x1": 3.15,
+    "y1": 0,
+    "w": 3.7,
+    "h": 0.15
+   },
+   "image_box": {
+    "gt/desk-objects.png": null,
+    "gt/desk-objects-b.png": null
+   }
+  },
+  {
+   "id": "bottle",
+   "type": "water-bottle",
+   "name": "Water bottle",
+   "x": 0.6525,
+   "y": 0.104,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.62,
+    "y0": 0.0015,
+    "x1": 0.685,
+    "y1": 0.2065,
+    "w": 0.065,
+    "h": 0.205
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.0547,
+     0.4283,
+     0.1258,
+     0.6726
+    ],
+    "gt/desk-objects-b.png": [
+     0.0743,
+     0.5718,
+     0.1462,
+     0.8265
+    ]
+   }
+  },
+  {
+   "id": "book",
+   "type": "hardcover-book",
+   "name": "Hardcover book",
+   "x": 0.86508,
+   "y": 0.019,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.75058,
+    "y0": 0.0015,
+    "x1": 0.97958,
+    "y1": 0.0365,
+    "w": 0.229,
+    "h": 0.035
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.1311,
+     0.6065,
+     0.3165,
+     0.6861
+    ],
+    "gt/desk-objects-b.png": [
+     0.1835,
+     0.6263,
+     0.3475,
+     0.8137
+    ]
+   }
+  },
+  {
+   "id": "phone",
+   "type": "smartphone",
+   "name": "Smartphone",
+   "x": 0.87508,
+   "y": 0.0419,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.80128,
+    "y0": 0.038,
+    "x1": 0.94888,
+    "y1": 0.0458,
+    "w": 0.1476,
+    "h": 0.0078
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.1781,
+     0.6053,
+     0.2903,
+     0.6314
+    ],
+    "gt/desk-objects-b.png": [
+     0.2179,
+     0.6462,
+     0.3202,
+     0.7355
+    ]
+   }
+  },
+  {
+   "id": "mug",
+   "type": "coffee-mug",
+   "name": "Coffee mug",
+   "x": 1.08708,
+   "y": 0.049,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 1.04608,
+    "y0": 0.0015,
+    "x1": 1.16408,
+    "y1": 0.0965,
+    "w": 0.118,
+    "h": 0.095
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.3395,
+     0.5487,
+     0.423,
+     0.6752
+    ],
+    "gt/desk-objects-b.png": [
+     0.3634,
+     0.5579,
+     0.4397,
+     0.7024
+    ]
+   }
+  },
+  {
+   "id": "can",
+   "type": "soda-can",
+   "name": "Soda can",
+   "x": 1.26758,
+   "y": 0.0627,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 1.23448,
+    "y0": 0.0015,
+    "x1": 1.30068,
+    "y1": 0.1239,
+    "w": 0.0662,
+    "h": 0.1224
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.4665,
+     0.5197,
+     0.5108,
+     0.6728
+    ],
+    "gt/desk-objects-b.png": [
+     0.4669,
+     0.5036,
+     0.5164,
+     0.6512
+    ]
+   }
+  },
+  {
+   "id": "tissues",
+   "type": "tissue-box",
+   "name": "Tissue box",
+   "x": 1.49019,
+   "y": 0.0365,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 1.37019,
+    "y0": 0.0015,
+    "x1": 1.61019,
+    "y1": 0.0715,
+    "w": 0.24,
+    "h": 0.07
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.5523,
+     0.5725,
+     0.7226,
+     0.681
+    ],
+    "gt/desk-objects-b.png": [
+     0.5267,
+     0.482,
+     0.6683,
+     0.6333
+    ]
+   }
+  },
+  {
+   "id": "cube",
+   "type": "rubiks-cube",
+   "name": "Rubik's cube",
+   "x": 1.72123,
+   "y": 0.03,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 1.69273,
+    "y0": 0.0015,
+    "x1": 1.74973,
+    "y1": 0.0585,
+    "w": 0.057,
+    "h": 0.057
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.7557,
+     0.593,
+     0.8083,
+     0.6714
+    ],
+    "gt/desk-objects-b.png": [
+     0.6712,
+     0.4806,
+     0.7146,
+     0.5546
+    ]
+   }
+  },
+  {
+   "id": "apple",
+   "type": "apple",
+   "name": "Apple",
+   "x": 1.85463,
+   "y": 0.0395,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 1.81663,
+    "y0": 0.0015,
+    "x1": 1.89263,
+    "y1": 0.0775,
+    "w": 0.076,
+    "h": 0.076
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.8319,
+     0.5702,
+     0.9057,
+     0.6743
+    ],
+    "gt/desk-objects-b.png": [
+     0.7176,
+     0.4471,
+     0.7706,
+     0.5301
+    ]
+   }
+  },
+  {
+   "id": "candle",
+   "type": "candle",
+   "name": "Candle",
+   "x": 1.94763,
+   "y": 0.1285,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 1.93663,
+    "y0": 0.0015,
+    "x1": 1.95863,
+    "y1": 0.2555,
+    "w": 0.022,
+    "h": 0.254
+   },
+   "image_box": {
+    "gt/desk-objects.png": [
+     0.9147,
+     0.3717,
+     0.9488,
+     0.6664
+    ],
+    "gt/desk-objects-b.png": [
+     0.7667,
+     0.2997,
+     0.8033,
+     0.507
+    ]
+   }
+  }
+ ]
+}

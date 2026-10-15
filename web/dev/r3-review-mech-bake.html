@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Mechanisms bake costs</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script></head>
+<body style="font:12px monospace;background:#222;color:#ddd"><pre id="out">running</pre>
+<script type="module">
+// reviewer's page: time each texture bake of mechanisms-lib.js in a fresh document (first call, no JIT warm-up)
+import * as THREE from "three"
+const M = await import("../models3d.js")
+const { makeLib } = await import("../models/mechanisms-lib.js")
+const L = makeLib(M.kit, THREE)
+const rows = []
+const t = (name, fn) => { const a = performance.now(); fn(); rows.push([name, +(performance.now() - a).toFixed(1)]) }
+const q = new URLSearchParams(location.search)
+const order = (q.get("order") || "wood,woodN,end,brushed,forgedN,forgedR,wood2").split(",")
+for (const k of order) {
+  if (k === "wood") t("woodTex #b07a46x", () => L.woodTex("#b07a47"))
+  if (k === "wood2") t("woodTex 2nd colour", () => L.woodTex("#8a5a30"))
+  if (k === "woodN") t("woodNormal", () => L.woodNormal ? L.woodNormal() : L.woodSide("#b07a48"))
+  if (k === "end") t("endTex", () => L.endTex("#b07a47", 2))
+  if (k === "brushed") t("brushed 0.28", () => L.brushedTex(0.281))
+  if (k === "forgedN") t("forgedNormal", () => L.forgedNormal())
+  if (k === "forgedR") t("forged()", () => L.forged())
+}
+const bench = () => { const a = performance.now(); let s = 0; for (let i = 0; i < 2e7; i++) s += Math.sin(i * 0.001) * 0.5; return +(performance.now() - a).toFixed(1) }
+rows.push(["bench 2e7 sin", bench()])
+window.rows = rows
+window.done = true
+document.getElementById("out").textContent = rows.map((r) => r.join("  ")).join("\n")
+</script></body></html>

@@ -1,0 +1,2326 @@
+import {
+	AABB,
+	type Body,
+	BoxShape,
+	CircleShape,
+	CollidePolygonCircle,
+	CollidePolygons,
+	Fixture,
+	Manifold,
+	Joint as PlanckJoint,
+	PolygonShape,
+	RevoluteJoint,
+	RopeJoint,
+	type Contact as Touch,
+	Settings,
+	type TimeStep,
+	Transform,
+	Vec2,
+	Vec3,
+	WheelJoint,
+	World
+} from "planck"
+import {
+	compose,
+	type Contact,
+	HITBOX_DEPTH,
+	hitboxEdgeAt,
+	type Joint,
+	type Material,
+	type Motor,
+	mass,
+	polygonArea,
+	polygonCentroid,
+	type Pose,
+	type SimScene,
+	type SolidPart,
+	type Stream,
+	streams,
+	type Vec,
+	volume,
+	worldPose
+} from "#sim/part.ts"
+
+/**
+ * The simulation, with the corrections the Prism mechanics lab
+ * (prism-labs/apps/labs/mechanics-lab, src/lib/units.ts and world.ts) found planck 1.5 needs to keep
+ * classroom-sized bodies honest. Everything outside this module is meters, kilograms and seconds.
+ * Where planck's own pieces fall short of the physics, this module has its own, solved inside planck's
+ * step: weld groups as one rigid body each (`simulate`), springs that no setting can blow up
+ * (`SpringLink`), a pulley rope that only pulls and jams at its wheels (`RopePulley`), hinges and ropes
+ * that keep a swing's energy (`Hinge`, `Cord`), hinge friction, and chains that things land on
+ * (`ChainTouch`). research/rw-validate-p3.ts checks each against theory.
+ */
+
+/** Standard gravity, m/s². */
+const GRAVITY = 9.81
+
+/**
+ * Internal planck length units per meter: Box2D's solver constants (5 mm linear slop, sleep and
+ * velocity tolerances) are tuned for shapes 0.1 to 10 units across, so a 6 cm ball is simulated
+ * 0.6 units across.
+ */
+const LENGTH_SCALE = 10
+
+/**
+ * The fixed step, s: 480 Hz, twenty steps to each 24 fps frame. The Prism lab steps at 120 Hz; at
+ * that rate a ball landing from 1 m overlaps the floor by up to 12 mm, which a drawn contact frame
+ * shows as the ball sinking in. At 480 Hz the overlap is a few millimeters at most.
+ */
+const STEP = 1 / 480
+
+/**
+ * Below this normal approach speed (m/s) a bounce is inelastic. planck's 1 m/s would kill a ball's
+ * later bounces; resting contacts re-approach at one step of gravity (0.02 m/s at 480 Hz), well
+ * under it, so they settle instead of micro-bouncing.
+ */
+const VELOCITY_THRESHOLD = 0.2
+
+/** Air density at room temperature, kg/m³. */
+const AIR_DENSITY = 1.2
+
+/** Drag coefficient of a sphere at the speeds of a classroom drop (Reynolds number 10³ to 10⁵). */
+const SPHERE_DRAG = 0.47
+
+/** Drag coefficient of a box moving broadside on. */
+const BOX_DRAG = 1.05
+
+/** Drag coefficient of a cylinder moving broadside on (its axis across the flow), Reynolds number 10³ to 10⁵. */
+const CYLINDER_DRAG = 1.1
+
+/**
+ * A round free jet's development, after Rajaratnam (Turbulent Jets, 1976): the outlet's speed holds
+ * along the axis for its potential core, about 6.2 diameters, then falls as 1/x; across the axis
+ * the speed falls as a Gaussian whose half-speed radius grows about 0.094 per unit of distance.
+ * @limitKind derived
+ * @owner lesson-art simulated demonstrations
+ * @unit outlet diameters; meters per meter
+ * @scope every airflow in a simulated demonstration
+ * @derivation measured constants of a round turbulent jet; a fan's swirl and hub are not modeled
+ */
+const JET = { core: 6.2, spread: 0.094 } as const
+
+/** The air's velocity at a point: the sum of every stream there, still air elsewhere. */
+export const airAt = (flows: readonly Stream[], p: { readonly x: number; readonly y: number }) => {
+	let x = 0
+	let y = 0
+	for (const f of flows) {
+		const ux = Math.cos(f.direction)
+		const uy = Math.sin(f.direction)
+		const along = (p.x - f.at.x) * ux + (p.y - f.at.y) * uy
+		if (along <= 0) continue
+		const across = Math.abs(-(p.x - f.at.x) * uy + (p.y - f.at.y) * ux)
+		const center = f.speed * Math.min(1, (JET.core * f.diameter) / along)
+		const halfSpeed = Math.max(f.diameter / 2, JET.spread * along)
+		const speed = center * Math.exp(-Math.LN2 * (across / halfSpeed) ** 2)
+		x += speed * ux
+		y += speed * uy
+	}
+	return { x, y }
+}
+
+/**
+ * Mean contact pressure of a fully plastic dent over the material's yield strength: Tabor's
+ * hardness relation, about 3.
+ */
+const DENT_PRESSURE = 3
+
+/** Spin below this (rad/s) gets no rolling resistance, so a resting ball is left alone. */
+const ROLLING_OMEGA_FLOOR = 0.01
+
+const applySettings = () => {
+	// Positions are already multiplied by LENGTH_SCALE, so planck's own unit stays at 1: its 0.005
+	// slop is then 0.5 mm and its polygon skin 1 mm. Scaling it by LENGTH_SCALE as well made the slop
+	// 5 mm against a 1 mm skin, so a leaning domino froze on its edge and impacts sank in 4.5 mm.
+	Settings.lengthUnitsPerMeter = 1
+	Settings.velocityThreshold = VELOCITY_THRESHOLD * LENGTH_SCALE
+	// Clamps raised out of reach so they never silently change a fast body's motion.
+	Settings.maxTranslation = 12 * LENGTH_SCALE
+	Settings.maxRotation = 4 * Math.PI
+}
+
+/** A part's position and angle (radians, counterclockwise) at one moment, in meters. */
+export interface Placement {
+	readonly x: number
+	readonly y: number
+	readonly angle: number
+	/**
+	 * A flat spot a dented body keeps, as the fraction of its height left (1 is undented), measured
+	 * from where it touches down.
+	 */
+	readonly squash?: number
+}
+
+/**
+ * The parts' placements at each frame. A frame's `t` is the moment it shows: frames fall every 1/fps
+ * seconds, except that the frame nearest each impact shows the impact itself, so every contact is
+ * drawn (at 24 fps a fast ball is otherwise caught centimeters short of what it hits).
+ */
+export interface Track {
+	readonly fps: number
+	readonly frames: readonly { readonly t: number; readonly placements: Readonly<Record<string, Placement>> }[]
+	/** Each impact: when, the two solids' ids, and the speed they met at (m/s). */
+	readonly impacts?: readonly { readonly t: number; readonly a: string; readonly b: string; readonly speed: number }[]
+}
+
+interface Tag {
+	readonly part: SolidPart
+}
+
+const isTag = (value: unknown): value is Tag => typeof value === "object" && value !== null && "part" in value
+
+/** The contact between two materials, matched by name so a scene read back from JSON still finds it. */
+const contactOf = (scene: SimScene<string>, a: Material, b: Material): Contact | undefined =>
+	scene.contacts.find(
+		(c) =>
+			(c.between[0].words === a.words && c.between[1].words === b.words) ||
+			(c.between[0].words === b.words && c.between[1].words === a.words)
+	)
+
+/**
+ * Runs the scene: every dynamic part rests where it is specified until the release, then moves under
+ * gravity from rest. Nothing about the outcome is specified. Placements are sampled at `fps`.
+ */
+export const simulate = (scene: SimScene<string>, fps: number): Track => {
+	applySettings()
+	const world = new World({ gravity: new Vec2(0, -GRAVITY * LENGTH_SCALE) })
+	const start = (id: string) => worldPose(scene, id, 0)
+
+	/**
+	 * Weld groups. A part with a parent and no pivot is fixed to its parent, so a part, its welded children,
+	 * theirs and so on are one rigid object: ONE planck body with a fixture per part (each with its own
+	 * material, so its own friction and restitution), whose mass, centre of mass and rotational inertia
+	 * are those of all its parts. A weld then never gives, however heavy one part is against another
+	 * (a planck weld joint stretched centimetres under a 10 kg bob on a 2 g rod), and the parts of one
+	 * group never collide with each other. The group's body stands where its root (the part the welds
+	 * lead up to) does; each part's placement is the body's pose composed with the part's own pose in the
+	 * root's frame, so the track still has every part's own pose under its own id. A group with a fixed
+	 * (static) part is fixed, as a weld to a fixed part was.
+	 */
+	const solidById = new Map(scene.solids.map((p) => [p.id, p]))
+	const welded = (part: SolidPart) => part.parent !== undefined && part.pivot === undefined && solidById.has(part.parent)
+	const rootOf = (part: SolidPart): SolidPart => (welded(part) ? rootOf(solidById.get(part.parent as string) as SolidPart) : part)
+	/** A part's pose in its group root's frame (meters, radians): its own composed down from the root. */
+	const poseInRoot = (part: SolidPart): Pose =>
+		welded(part) ? compose(poseInRoot(solidById.get(part.parent as string) as SolidPart), { at: part.at, angle: part.angle ?? 0 }) : IDENTITY
+	const groupOf = new Map<string, SolidPart[]>()
+	for (const part of scene.solids) {
+		const root = rootOf(part)
+		groupOf.set(root.id, [...(groupOf.get(root.id) ?? []), part])
+	}
+	const members: Member[] = []
+	const memberOf = new Map<string, Member>()
+	const madeBodies = new Map<string, Body>()
+	for (const part of scene.solids) {
+		const root = rootOf(part)
+		const parts = groupOf.get(root.id) ?? [part]
+		let body = madeBodies.get(root.id)
+		if (body !== undefined) continue
+		const kind = parts.some((p) => p.kind === "static") ? "static" : "dynamic"
+		body = world.createBody({
+			type: kind,
+			position: new Vec2(start(root.id).at.x * LENGTH_SCALE, start(root.id).at.y * LENGTH_SCALE),
+			angle: start(root.id).angle,
+			// Continuous collision on every moving body, so nothing tunnels through a thin surface.
+			bullet: kind === "dynamic"
+		})
+		madeBodies.set(root.id, body)
+		const lone = parts.length === 1
+		const group: Member[] = []
+		for (const p of parts) {
+			const local = p === root ? IDENTITY : poseInRoot(p)
+			const fixture = addFixture(body, p, local, kind === "dynamic", lone)
+			const m: Member = { part: p, body, local, fixture, lone, center: memberCenter(p, local) }
+			group.push(m)
+			members.push(m)
+			memberOf.set(p.id, m)
+		}
+		// A group of several parts: its mass, centre and inertia summed from its parts' own (a ball's as a
+		// lone ball's below, a slab's or a polygon's as planck reckons its fixture's).
+		if (kind === "dynamic" && !lone) body.setMassData(groupMass(group))
+		// Angular damping (a solid's `angularDamping`, 1/s, the largest of its group's): its turning slows as dω/dt = −c·ω, planck's own
+		// implicit damping (ω ÷ (1 + c·h) each step), as a raw egg's liquid slows its rocking. None unless set.
+		const spin = Math.max(0, ...parts.map((p) => p.angularDamping ?? 0))
+		if (spin > 0) body.setAngularDamping(spin)
+	}
+	// (`members` is in the order the scene lists its solids.)
+	members.sort((a, b) => scene.solids.indexOf(a.part) - scene.solids.indexOf(b.part))
+	const bodies = members
+	// A clip layer's hitbox is a kinematic body: it moves exactly as the clip's leading edge does,
+	// and nothing it touches moves it. It carries a stand-in part so contacts find its material.
+	const hitboxes = scene.layers.flatMap((layer) => {
+		const hitbox = layer.hitbox
+		if (hitbox === undefined) return []
+		const height = hitbox.to - hitbox.from
+		const side = hitbox.edge === "right" ? -1 : 1
+		// Set back by the gap Box2D keeps between two polygons, so the clip's drawn edge meets what it pushes.
+		const skin = (2 * Settings.polygonRadius - Settings.linearSlop) / LENGTH_SCALE
+		const centerAt = (t: number) => {
+			const edge = hitboxEdgeAt(layer, hitbox, t)
+			return edge === undefined
+				? undefined
+				: { x: layer.at.x + edge + side * (HITBOX_DEPTH / 2 + skin), y: layer.at.y + (hitbox.from + hitbox.to) / 2 }
+		}
+		const start = centerAt(0)
+		const part: SolidPart = {
+			kind: "static",
+			id: `${layer.id}-hitbox`,
+			words: layer.words,
+			sprite: `${layer.id}-hitbox`,
+			body: { kind: "slab", width: HITBOX_DEPTH, height, depth: 0.1 },
+			material: hitbox.material,
+			at: start ?? { x: 0, y: 0 },
+			placeholder: { fill: "#888" },
+			render: { kind: "procedural", shade: "#888" },
+			depth: layer.depth
+		}
+		const from = start ?? { x: 0, y: 0 }
+		const body = world.createBody({ type: "kinematic", position: new Vec2(from.x * LENGTH_SCALE, from.y * LENGTH_SCALE) })
+		body.createFixture(new BoxShape((HITBOX_DEPTH / 2) * LENGTH_SCALE, (height / 2) * LENGTH_SCALE), { userData: { part } })
+		body.setActive(start !== undefined)
+		return [{ body, centerAt }]
+	})
+	/**
+	 * Each hitbox's velocity for the coming step, so it arrives where the clip's edge will be; off
+	 * while the subject is out of its band, and placed where it comes back in.
+	 */
+	const steerHitboxes = (t: number) => {
+		for (const { body, centerAt } of hitboxes) {
+			const next = centerAt(t + STEP)
+			if (next === undefined) {
+				body.setActive(false)
+				continue
+			}
+			if (!body.isActive()) {
+				body.setTransform(new Vec2(next.x * LENGTH_SCALE, next.y * LENGTH_SCALE), 0)
+				body.setLinearVelocity(new Vec2(0, 0))
+				body.setActive(true)
+				continue
+			}
+			const p = body.getPosition()
+			body.setLinearVelocity(new Vec2((next.x * LENGTH_SCALE - p.x) / STEP, (next.y * LENGTH_SCALE - p.y) / STEP))
+		}
+	}
+
+	// A pivoted part turns on a frictionless hinge at its pivot, joined to its parent's body or to the
+	// world; a part with a parent and no pivot is part of its parent's body (its weld group, above).
+	const world0 = world.createBody()
+	// A motor's torque in planck's units: newton-meters times LENGTH_SCALE² (force and arm both scale).
+	const driven = (motor: Motor | undefined) =>
+		motor === undefined ? {} : { enableMotor: true, motorSpeed: motor.speed, maxMotorTorque: motor.torque * LENGTH_SCALE * LENGTH_SCALE }
+	/**
+	 * Two solids joined directly by a joint (a hinge, a rope, a pin, a wheel's axle) never collide, as planck
+	 * keeps two jointed bodies apart. A joint between two lone parts is left to planck; one that reaches into a
+	 * weld group keeps only those two parts apart, not the whole groups (a pinned arm still lands on a stop
+	 * welded to the post it turns on): its pair is listed here and filtered fixture by fixture.
+	 */
+	const apart = new Set<string>()
+	const pairKey = (a: string, b: string) => (a < b ? `${a}\u0000${b}` : `${b}\u0000${a}`)
+	/** Whether a joint between these two solids (null: the world) keeps them apart in planck's own way, true, or needs `apart`. */
+	const lonePair = (a: string | null, b: string | null) => {
+		const ma = a === null ? undefined : memberOf.get(a)
+		const mb = b === null ? undefined : memberOf.get(b)
+		if ((ma === undefined || ma.lone) && (mb === undefined || mb.lone)) return true
+		if (a !== null && b !== null) apart.add(pairKey(a, b))
+		return false
+	}
+	for (const { part, body } of bodies) {
+		if (part.pivot === undefined) continue
+		const to = part.parent === undefined ? world0 : memberOf.get(part.parent)?.body
+		if (to === undefined) continue
+		// (A pivoted part is the root of its group, so its own frame is its body's.)
+		const anchor = body.getWorldPoint(new Vec2(part.pivot.x * LENGTH_SCALE, part.pivot.y * LENGTH_SCALE))
+		const lone = lonePair(part.parent ?? null, part.id)
+		world.createJoint(new Hinge({ ...driven(part.motor), ...(lone ? {} : { collideConnected: true }) }, to, body, anchor))
+	}
+
+	// The document's joints. A solid side is its group's body, the world side `world0`, whose frame is the
+	// world's, so a world anchor scales straight into its local frame; a solid's anchor is in its own frame,
+	// carried into its group body's by its pose in the group.
+	const bodyOf = (id: string | null) => (id === null ? world0 : (memberOf.get(id)?.body ?? world0))
+	const local = (p: Vec) => new Vec2(p.x * LENGTH_SCALE, p.y * LENGTH_SCALE)
+	/** A point given in a solid's own frame (or, for the world, a world point) in its body's frame, planck units. */
+	const anchorOn = (id: string | null, p: Vec) => {
+		const m = id === null ? undefined : memberOf.get(id)
+		return m === undefined || m.local === IDENTITY ? local(p) : local(compose(m.local, { at: p, angle: 0 }).at)
+	}
+	/** A direction given in a solid's own frame, in its body's frame. */
+	const directionOn = (id: string | null, d: Vec) => {
+		const m = id === null ? undefined : memberOf.get(id)
+		if (m === undefined || m.local === IDENTITY) return new Vec2(d.x, d.y)
+		const c = Math.cos(m.local.angle)
+		const s = Math.sin(m.local.angle)
+		return new Vec2(d.x * c - d.y * s, d.x * s + d.y * c)
+	}
+	/** Whether both ends are parts of one rigid body: a joint between them does nothing (and planck cannot join a body to itself). */
+	const oneBody = (a: string | null, b: string | null) => a !== null && b !== null && memberOf.get(a) !== undefined && memberOf.get(a)?.body === memberOf.get(b)?.body
+	const inverseMass = (body: Body) => (body.isDynamic() ? 1 / body.getMass() : 0)
+	const inverseInertia = (body: Body) => {
+		if (!body.isDynamic()) return 0
+		const c = body.getLocalCenter()
+		const spin = body.getInertia() - body.getMass() * Vec2.dot(c, c)
+		return spin > 0 ? 1 / spin : 0
+	}
+	/** The mass a pull along `u` at world point `p` on these bodies meets, kg (lever arms in planck's units cancel). */
+	const massAlong = (ends: readonly { body: Body; p: Vec2 }[], u: Vec2) => {
+		const inverse = ends.reduce(
+			(sum, { body, p }) => sum + inverseMass(body) + inverseInertia(body) * Vec2.cross(Vec2.sub(p, body.getWorldCenter()), u) ** 2,
+			0
+		)
+		return inverse > 0 ? 1 / inverse : Number.POSITIVE_INFINITY
+	}
+	const joints = scene.joints ?? []
+	const parentLinks = scene.solids.flatMap((s) => (s.parent === undefined ? [] : [[s.id, s.parent] as const]))
+	const jointLinks = joints.flatMap((j) => {
+		const [p, q] = j.kind === "wheel" ? [j.chassis, j.wheel] : [j.a, j.b]
+		return p === null || q === null ? [] : [[p, q] as const]
+	})
+	/** Every dynamic solid linked to a part through these links (the part's own included). */
+	const joined = (part: SolidPart, links: readonly (readonly [string, string])[]) => {
+		const members = new Set([part.id])
+		for (let grew = true; grew; ) {
+			grew = false
+			for (const [p, q] of links) {
+				if (members.has(p) === members.has(q)) continue
+				members.add(p)
+				members.add(q)
+				grew = true
+			}
+		}
+		return scene.solids.filter((s) => members.has(s.id) && s.kind === "dynamic")
+	}
+	/** The weight of every dynamic solid linked to a part through these links, N. */
+	const weightJoined = (part: SolidPart, links: readonly (readonly [string, string])[]) => joined(part, links).reduce((sum, s) => sum + massOf(s), 0) * GRAVITY
+	/**
+	 * The static load each wheel of a moving chassis carries on level ground, kg, by its joint's id: the weight of what the chassis
+	 * carries (its assembly, wheels apart) shared so that the wheels hold it level, as springs of the same sag would. x is a place
+	 * along the chassis, across the wheels' suspension axis (its frame's x for the usual upright axis), so the springs are the
+	 * vehicle's own, as a real car's, whatever slope it starts on. The shares are a straight line in x, add up to the whole and
+	 * have no moment about the centre of mass: W_i = W·(1/n + (x_i − x̄)(x_cg − x̄)/Σ(x_j − x̄)²); for two wheels the lever
+	 * rule, W·(x_cg − x_other)/(x_i − x_other). A centre of mass beyond the wheels would tip the vehicle: no wheel is given less
+	 * than 2% of the whole (a spring that holds).
+	 */
+	const wheelLoads = (() => {
+		const loads = new Map<string, number>()
+		const byChassis = new Map<string, Extract<Joint, { kind: "wheel" }>[]>()
+		for (const j of joints) if (j.kind === "wheel" && j.chassis !== null && !oneBody(j.chassis, j.wheel)) byChassis.set(j.chassis, [...(byChassis.get(j.chassis) ?? []), j])
+		for (const [id, wheels] of byChassis) {
+			const chassis = solidById.get(id)
+			if (chassis === undefined || chassis.kind !== "dynamic") continue
+			const carried = joined(chassis, parentLinks)
+			const total = carried.reduce((sum, s) => sum + massOf(s), 0)
+			// its centre of mass, from each part's own middle where it starts (world, m)
+			let mx = 0
+			let my = 0
+			for (const part of carried) {
+				const m = memberOf.get(part.id)
+				if (m === undefined) continue
+				const p = m.body.getWorldPoint(m.center)
+				mx += massOf(part) * (p.x / LENGTH_SCALE)
+				my += massOf(part) * (p.y / LENGTH_SCALE)
+			}
+			// its centre of mass in the chassis's frame, and the direction across the (first) wheel's suspension axis there
+			const pose = start(id)
+			const cx = (total > 0 ? mx / total : pose.at.x) - pose.at.x
+			const cy = (total > 0 ? my / total : pose.at.y) - pose.at.y
+			const c = Math.cos(pose.angle)
+			const sn = Math.sin(pose.angle)
+			const cg = { x: cx * c + cy * sn, y: -cx * sn + cy * c }
+			const axis = wheels[0]?.axis ?? { x: 0, y: 1 }
+			const norm = Math.hypot(axis.x, axis.y)
+			const across = { x: axis.y / norm, y: -axis.x / norm }
+			const xcg = cg.x * across.x + cg.y * across.y
+			const xs = wheels.map((w) => w.anchor.x * across.x + w.anchor.y * across.y)
+			const n = wheels.length
+			const mean = xs.reduce((a, b) => a + b, 0) / n
+			const spread = xs.reduce((a, x) => a + (x - mean) * (x - mean), 0)
+			wheels.forEach((w, i) => {
+				const x = xs[i] as number
+				const share = n === 1 || spread < 1e-12 ? 1 / n : 1 / n + ((x - mean) * (xcg - mean)) / spread
+				loads.set(w.id, total * Math.max(0.02, share))
+			})
+		}
+		return loads
+	})()
+	/**
+	 * The shortest a pulley's run can get by default, m: hauled straight up its run (toward its ground point `g`), its
+	 * body (every part of its weld group) first meets its wheel there, a circle of `wheel` radius at the ground point's
+	 * height, its rim on the run (it hangs inboard of it, toward the other run's ground point `other`); with no wheel radius,
+	 * where its top reaches the ground point's height. The run never gets shorter than 1 mm.
+	 */
+	const ropeEndClearance = (id: string | null, anchor: Vec2, g: Vec2, other: Vec2, wheel: number | undefined) => {
+		const m = id === null ? undefined : memberOf.get(id)
+		if (m === undefined) return 0.001
+		const body = m.body
+		const p = body.getWorldPoint(anchor)
+		const run = Vec2.distance(p, g)
+		if (run === 0) return 0.001
+		// w: up the run, from the anchor toward the ground point; the wheel's centre inboard of the run by its radius
+		const w = new Vec2((g.x - p.x) / run, (g.y - p.y) / run)
+		const R = (wheel ?? 0) * LENGTH_SCALE
+		const side = other.x === g.x ? 1 : Math.sign(other.x - g.x)
+		const o = new Vec2(g.x + side * R, g.y)
+		let rise = run
+		for (const q of members.filter((x) => x.body === body)) {
+			const pose = { at: { x: body.getPosition().x / LENGTH_SCALE, y: body.getPosition().y / LENGTH_SCALE }, angle: body.getAngle() }
+			const inWorld = compose(pose, q.local)
+			const outline =
+				q.part.body.kind === "ball"
+					? [{ x: 0, y: 0 }]
+					: outlineOf(q.part.body).flatMap((a, k, all) => {
+							const b = all[(k + 1) % all.length] ?? a
+							const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / 0.001))
+							return Array.from({ length: n }, (_, i) => ({ x: a.x + ((b.x - a.x) * i) / n, y: a.y + ((b.y - a.y) * i) / n }))
+						})
+			const grow = q.part.body.kind === "ball" ? q.part.body.radius * LENGTH_SCALE : 0
+			for (const pt of outline) {
+				const at = compose(inWorld, { at: pt, angle: 0 }).at
+				const x = at.x * LENGTH_SCALE - o.x
+				const y = at.y * LENGTH_SCALE - o.y
+				if (R + grow > 0) {
+					// the first t ≥ 0 at which |q + t·w − o| = R (+ a ball's radius): t² + 2bt + c = 0
+					const b = x * w.x + y * w.y
+					const c = x * x + y * y - (R + grow) * (R + grow)
+					if (c <= 0) continue
+					const disc = b * b - c
+					if (disc < 0 || -b - Math.sqrt(disc) < 0) continue
+					rise = Math.min(rise, -b - Math.sqrt(disc))
+				} else {
+					// no wheel: its top meets the ground point's height
+					rise = Math.min(rise, Math.max(0, (g.x - at.x * LENGTH_SCALE) * w.x + (g.y - at.y * LENGTH_SCALE) * w.y))
+				}
+			}
+		}
+		return Math.max(0.001, (run - rise) / LENGTH_SCALE)
+	}
+	const springJoints: SpringLink[] = []
+	const chains: ChainRope[] = []
+	for (const joint of joints) {
+		const [sideA, sideB] = joint.kind === "wheel" ? [joint.chassis, joint.wheel] : [joint.a, joint.b]
+		// Both ends on one rigid body: its parts cannot move against each other, so the joint has nothing to do.
+		if (oneBody(sideA, sideB)) continue
+		if (joint.kind === "spring") {
+			const a = bodyOf(joint.a)
+			const b = bodyOf(joint.b)
+			const la = anchorOn(joint.a, joint.anchorA)
+			const lb = anchorOn(joint.b, joint.anchorB)
+			if (!a.isDynamic() && !b.isDynamic()) continue
+			const link = world.createJoint(new SpringLink(a, b, la, lb, joint)) as SpringLink
+			springJoints.push(link)
+			// A spring the step follows only roughly is said once, so a scene that relies on its period can be softened (or what it moves made
+			// heavier): from ω·dt 0.35 the explicit step's period is over 0.5% short, 1 − ω·dt/(2·asin(ω·dt/2)), and its swing reaches
+			// 1/√(1 − (ω·dt/2)²) of its release on the far side; past ω·dt √2 (a = 2, `tuneSprings`) a share of it is solved implicitly,
+			// steady at any stiffness, but its bounce is slowed and damped.
+			const pa = a.getWorldPoint(la)
+			const pb = b.getWorldPoint(lb)
+			const line = Vec2.sub(pb, pa)
+			const u = line.length() > 0 ? Vec2.mul(1 / line.length(), line) : new Vec2(0, 1)
+			const m = massAlong([{ body: a, p: pa }, { body: b, p: pb }], u)
+			const omegaDt = Math.sqrt(joint.stiffness / m) * STEP
+			if (omegaDt > Math.SQRT2) {
+				console.warn(
+					`spring ${joint.id}: ${joint.stiffness} N/m on ${m.toPrecision(3)} kg is too stiff for ${Math.round(1 / STEP)} Hz steps to keep its period ` +
+						`(ω·dt ${omegaDt.toFixed(2)}, followed up to 1.41): it stays steady (part of it is solved implicitly), but its bounce is slowed and damped. Soften it or make what it moves heavier.`
+				)
+			} else if (omegaDt > 0.35) {
+				const short = 1 - omegaDt / (2 * Math.asin(omegaDt / 2))
+				const over = 1 / Math.sqrt(1 - (omegaDt / 2) ** 2) - 1
+				console.warn(
+					`spring ${joint.id}: ${joint.stiffness} N/m on ${m.toPrecision(3)} kg swings fast for ${Math.round(1 / STEP)} Hz steps (ω·dt ${omegaDt.toFixed(2)}): ` +
+						`its period comes out ${(short * 100).toFixed(1)}% short and its swing up to ${(over * 100).toFixed(1)}% wide. Soften it or make what it moves heavier for a true period.`
+				)
+			}
+		} else if (joint.kind === "rope") {
+			const lone = lonePair(joint.a, joint.b)
+			const A = bodyOf(joint.a)
+			const B = bodyOf(joint.b)
+			const la = anchorOn(joint.a, joint.anchorA)
+			const lb = anchorOn(joint.b, joint.anchorB)
+			world.createJoint(new Cord({ bodyA: A, bodyB: B, localAnchorA: la, localAnchorB: lb, maxLength: joint.length * LENGTH_SCALE, ...(lone ? {} : { collideConnected: true }) }))
+			// a chain (or a rope flagged to) collides: a band as wide as the view draws its face-on links (1.775 wire diameters each side
+			// of its line, the wire 1.5 × its thickness, 4 to 12 mm), or, for a rope, its thickness
+			const chain = joint.render?.style === "chain"
+			if (chain || joint.collide === true) {
+				const t = joint.thickness ?? 0.004
+				const radius = chain ? 1.775 * Math.max(0.004, Math.min(0.012, 1.5 * t)) : t / 2
+				chains.push({ A, B, la, lb, length: joint.length * LENGTH_SCALE, radius: radius * LENGTH_SCALE, carrier: B.isDynamic() ? B : A, touches: new Map() })
+			}
+		} else if (joint.kind === "pin") {
+			const lone = lonePair(joint.a, joint.b)
+			world.createJoint(
+				new Hinge({
+					bodyA: bodyOf(joint.a),
+					bodyB: bodyOf(joint.b),
+					localAnchorA: anchorOn(joint.a, joint.anchorA),
+					localAnchorB: anchorOn(joint.b, joint.anchorB),
+					...driven(joint.motor),
+					...(joint.friction === undefined ? {} : { friction: joint.friction }),
+					...(joint.damping === undefined ? {} : { damping: joint.damping }),
+					...(joint.limits === undefined ? {} : { enableLimit: true, lowerAngle: joint.limits.lower, upperAngle: joint.limits.upper }),
+					...(lone ? {} : { collideConnected: true })
+				})
+			)
+		} else if (joint.kind === "wheel") {
+			const chassis = bodyOf(joint.chassis)
+			const wheel = bodyOf(joint.wheel)
+			const lone = lonePair(joint.chassis, joint.wheel)
+			const hub = anchorOn(joint.wheel, { x: 0, y: 0 })
+			const at = {
+				bodyA: chassis,
+				bodyB: wheel,
+				localAnchorA: anchorOn(joint.chassis, joint.anchor),
+				localAnchorB: hub,
+				...driven(joint.motor),
+				...(lone ? {} : { collideConnected: true })
+			}
+			if (joint.frequency <= 0) {
+				world.createJoint(new Hinge(at))
+				continue
+			}
+			// planck's suspension frequency is that of the chassis and wheel bouncing on each other along the
+			// axis; the document's is that of the load the wheel carries (its share of a moving chassis, or the
+			// wheel on a fixed one), so its stiffness is k = load·(2πf)², and it is rescaled to planck's.
+			const given = directionOn(joint.chassis, joint.axis)
+			const axis = Vec2.mul(1 / Math.hypot(given.x, given.y), given)
+			const u = chassis.getWorldVector(axis)
+			const centre = wheel.getWorldPoint(hub)
+			const inverse = 1 / massAlong([{ body: chassis, p: centre }, { body: wheel, p: centre }], u)
+			const load = wheelLoads.get(joint.id) ?? wheel.getMass()
+			const scale = inverse > 0 && load > 0 ? Math.sqrt(load * inverse) : 1
+			world.createJoint(
+				new WheelJoint({ ...at, localAxisA: axis, frequencyHz: joint.frequency * scale, dampingRatio: joint.damping * scale })
+			)
+		} else {
+			const a = bodyOf(joint.a)
+			const b = bodyOf(joint.b)
+			const la = anchorOn(joint.a, joint.anchorA)
+			const lb = anchorOn(joint.b, joint.anchorB)
+			const ga = local(joint.groundA)
+			const gb = local(joint.groundB)
+			// how short each run may get: the document's, else where its body, hauled straight up its run, first meets its wheel
+			const minA = joint.minLengthA ?? ropeEndClearance(joint.a, la, ga, gb, joint.wheelRadius)
+			const minB = joint.minLengthB ?? ropeEndClearance(joint.b, lb, gb, ga, joint.wheelRadius)
+			world.createJoint(new RopePulley(a, b, ga, gb, la, lb, joint.ratio, minA * LENGTH_SCALE, minB * LENGTH_SCALE))
+		}
+	}
+	// Hinges with friction or damping joined to other hinges through moving bodies (an arm's shoulder and elbow): solved together (`HingeGroup`).
+	groupHinges(world)
+	// The pairs a joint keeps apart inside weld groups: each of their fixtures refuses the other's.
+	for (const id of new Set([...apart].flatMap((k) => k.split("\u0000")))) {
+		const fixture = memberOf.get(id)?.fixture
+		if (fixture === undefined) continue
+		fixture.shouldCollide = function (this: Fixture, that: Fixture) {
+			const a = this.getUserData()
+			const b = that.getUserData()
+			if (isTag(a) && isTag(b) && apart.has(pairKey(a.part.id, b.part.id))) return false
+			return Fixture.prototype.shouldCollide.call(this, that)
+		}
+	}
+
+	const pairOf = (touch: Touch) => {
+		const a = touch.getFixtureA().getUserData()
+		const b = touch.getFixtureB().getUserData()
+		return isTag(a) && isTag(b) ? { a: a.part, b: b.part, contact: contactOf(scene, a.part.material, b.part.material) } : undefined
+	}
+
+	/**
+	 * Box2D computes a rebound from the velocity after this step's gravity, so every bounce off fixed
+	 * ground gains a step of gravity and a bouncy ball would never come to rest. The restitution is
+	 * rescaled so the rebound is e times the approach speed actually sampled (the Prism lab's
+	 * compensation), and approaches below the threshold are inelastic.
+	 */
+	let continuous = false
+	// A bullet's impact found by planck's continuous (time-of-impact) pass is solved after the step's
+	// gravity is already in its velocity, so its sampled approach needs no correction.
+	const solver = (world as unknown as { m_solver: { solveWorldTOI: (step: unknown) => void } }).m_solver
+	const solveTOI = solver.solveWorldTOI.bind(solver)
+	solver.solveWorldTOI = (step) => {
+		// The time-of-impact pass ignores joints, so it would solve a hinged part's impacts as if it were
+		// loose. Its contacts sit this pass out (each step re-enables them before the main solve, which
+		// keeps the hinge); at 480 Hz nothing jointed moves far enough in one step to pass through anything.
+		// (A spring, or a chain a body touches, is no hinge: a sprung plate keeps its continuous collision.)
+		for (let c = world.getContactList(); c !== null; c = c.getNext()) {
+			if (hinged(c.getFixtureA().getBody()) || hinged(c.getFixtureB().getBody())) c.setEnabled(false)
+		}
+		continuous = true
+		try {
+			solveTOI(step)
+		} finally {
+			continuous = false
+		}
+	}
+	const compensated = (touch: Touch, e: number) => {
+		const wm = touch.getWorldManifold(null)
+		if (e === 0 || (wm === null || wm === undefined) || wm.pointCount === 0) return e
+		const bodyA = touch.getFixtureA().getBody()
+		const bodyB = touch.getFixtureB().getBody()
+		let approach = 0
+		for (let i = 0; i < wm.pointCount; i++) {
+			const point = wm.points[i]
+			if (point === undefined) continue
+			const va = bodyA.getLinearVelocityFromWorldPoint(point)
+			const vb = bodyB.getLinearVelocityFromWorldPoint(point)
+			approach = Math.max(approach, -((vb.x - va.x) * wm.normal.x + (vb.y - va.y) * wm.normal.y))
+		}
+		// A contact that is not closing (at rest, or parting) has nothing to rebound: Box2D would apply e to
+		// the approach left once this step's forces have acted, bouncing a body a spring pushes every step.
+		if (approach <= 0) return 0
+		if (approach < VELOCITY_THRESHOLD * LENGTH_SCALE) return 0
+		const injection = continuous
+			? 0
+			: GRAVITY * LENGTH_SCALE * STEP * wm.normal.y * ((bodyB.isDynamic() ? 1 : 0) - (bodyA.isDynamic() ? 1 : 0))
+		if (injection < 0 && approach < VELOCITY_THRESHOLD * LENGTH_SCALE - injection) return 0
+		if (approach + injection <= 0) return e
+		return Math.max(0, Math.min(1, (e * approach) / (approach + injection)))
+	}
+
+	/**
+	 * Steps at which a moving part struck another, with the speed it struck at (m/s). A resting contact
+	 * that lets go and touches again from one step to the next is no impact.
+	 */
+	const impacts = new Map<number, number>()
+	/** Every impact, with the two solids and the speed they met at: what happened, in order. */
+	const hits: { t: number; a: string; b: string; speed: number }[] = []
+	/** The placements at the instant of contact, for impacts the time-of-impact pass found. */
+	const touching = new Map<number, Record<string, Placement>>()
+	let stepIndex = 0
+	/**
+	 * Flat spots, from a dented body's first hard landing: the landing's kinetic energy does the
+	 * plastic work of a dent, E = p·π·R·δ², with p the dent pressure, so δ = √(E / (p·π·R)).
+	 */
+	const dents = new Map<string, number>()
+	world.on("begin-contact", (touch) => {
+		const pair = pairOf(touch)
+		if (pair === undefined || (!touch.getFixtureA().getBody().isDynamic() && !touch.getFixtureB().getBody().isDynamic())) return
+		const wm = touch.getWorldManifold(null)
+		let approach = 0
+		for (let i = 0; wm !== null && wm !== undefined && i < wm.pointCount; i++) {
+			const point = wm.points[i]
+			if (point === undefined) continue
+			const va = touch.getFixtureA().getBody().getLinearVelocityFromWorldPoint(point)
+			const vb = touch.getFixtureB().getBody().getLinearVelocityFromWorldPoint(point)
+			approach = Math.max(approach, -((vb.x - va.x) * wm.normal.x + (vb.y - va.y) * wm.normal.y) / LENGTH_SCALE)
+		}
+		if (approach >= VELOCITY_THRESHOLD) hits.push({ t: stepIndex * STEP, a: pair.a.id, b: pair.b.id, speed: Math.round(approach * 1000) / 1000 })
+		if (approach >= VELOCITY_THRESHOLD && approach > (impacts.get(stepIndex) ?? 0)) {
+			impacts.set(stepIndex, approach)
+			// Found by the time-of-impact pass, the bodies stand at the moment they meet: kept, as the step's
+			// end has the rebound already under way and would show the ball turning back short of what it hit.
+			if (continuous) touching.set(stepIndex, placements())
+		}
+		const soft = [pair.a, pair.b].find(
+			(p) => p.kind === "dynamic" && p.body.kind === "ball" && p.material.yieldStrength !== undefined
+		)
+		if (soft === undefined || soft.body.kind !== "ball" || dents.has(soft.id)) return
+		const m = memberOf.get(soft.id)
+		if (m === undefined || !m.body.isDynamic()) return
+		const v = velocityOf(m)
+		const speed = Math.hypot(v.x, v.y) / LENGTH_SCALE
+		const energy = 0.5 * massOf(soft) * speed * speed
+		const pressure = DENT_PRESSURE * (soft.material.yieldStrength ?? Number.POSITIVE_INFINITY)
+		const depth = Math.min(soft.body.radius, Math.sqrt(energy / (pressure * Math.PI * soft.body.radius)))
+		dents.set(soft.id, 1 - depth / (2 * soft.body.radius))
+	})
+
+	/** The force each contact pressed with in the last step, from its solved impulses, in newtons. */
+	const pressed = new Map<Touch, number>()
+	world.on("post-solve", (touch, impulse) => {
+		const total = impulse.normalImpulses.reduce((sum, i) => sum + i, 0)
+		pressed.set(touch, total / STEP / LENGTH_SCALE)
+		const spring = springs.get(touch)
+		if (spring !== undefined) {
+			spring.normalImpulse = total
+			// Box2D's tangent is the normal turned clockwise; the spring's is turned counterclockwise.
+			spring.tangentImpulse = -impulse.tangentImpulses.reduce((sum, i) => sum + i, 0)
+		}
+	})
+	world.on("end-contact", (touch) => {
+		pressed.delete(touch)
+	})
+
+	/**
+	 * Impacts that began this step on a contact with sideways restitution: where and how fast the
+	 * contact point was sliding as it struck, to be sprung back once the step has solved it.
+	 */
+	const springs = new Map<Touch, { armA: Vec2; armB: Vec2; normal: Vec2; slide: number; e: number; grip: number; normalImpulse: number; tangentImpulse: number }>()
+	/**
+	 * A conveyor's top carries what touches it: the contact's friction drives their relative sliding
+	 * toward the belt's speed along its +x, as Box2D's tangent speed (along its tangent, the normal
+	 * from fixture A to B turned clockwise, B's speed relative to A's).
+	 */
+	const belts = scene.solids.some((s) => s.surfaceSpeed !== undefined)
+	const carry = (touch: Touch) => {
+		const wm = touch.getWorldManifold(null)
+		let speed = 0
+		for (const [fixture, side] of [
+			[touch.getFixtureA(), 1],
+			[touch.getFixtureB(), -1]
+		] as const) {
+			const tag = fixture.getUserData()
+			if (wm === null || wm === undefined || !isTag(tag) || tag.part.surfaceSpeed === undefined) continue
+			// (its own angle: its body's, and for a belt welded into a group, turned by its pose in the group)
+			const angle = fixture.getBody().getAngle() + (memberOf.get(tag.part.id)?.local.angle ?? 0)
+			const along = { x: Math.cos(angle), y: Math.sin(angle) }
+			// The normal out of the belt (from A to B is out of A, into B) must leave through its top.
+			if (side * (-wm.normal.x * along.y + wm.normal.y * along.x) < 0.5) continue
+			speed += side * tag.part.surfaceSpeed * LENGTH_SCALE * (along.x * wm.normal.y - along.y * wm.normal.x)
+		}
+		touch.setTangentSpeed(speed)
+	}
+	world.on("pre-solve", (touch, oldManifold) => {
+		if (belts) carry(touch)
+		const pair = pairOf(touch)
+		if (pair?.contact === undefined) return
+		touch.setFriction(pair.contact.friction)
+		touch.setRestitution(compensated(touch, pair.contact.restitution))
+		const e = pair.contact.tangentRestitution ?? 0
+		if (e <= 0 || oldManifold.pointCount > 0) return
+		const wm = touch.getWorldManifold(null)
+		if (wm === null || wm === undefined || wm.pointCount === 0) return
+		const point = wm.pointCount === 1 ? wm.points[0] : Vec2.mid(wm.points[0], wm.points[1])
+		if (point === undefined) return
+		const normal = Vec2.clone(wm.normal)
+		const va = touch.getFixtureA().getBody().getLinearVelocityFromWorldPoint(point)
+		const vb = touch.getFixtureB().getBody().getLinearVelocityFromWorldPoint(point)
+		const approach = -((vb.x - va.x) * normal.x + (vb.y - va.y) * normal.y)
+		if (approach < VELOCITY_THRESHOLD * LENGTH_SCALE) return
+		const slide = (vb.x - va.x) * -normal.y + (vb.y - va.y) * normal.x
+		// Each body's lever arm to the contact, kept as it was at the strike: the ball moves on within the step.
+		const armA = Vec2.sub(point, touch.getFixtureA().getBody().getWorldCenter())
+		const armB = Vec2.sub(point, touch.getFixtureB().getBody().getWorldCenter())
+		springs.set(touch, { armA, armB, normal, slide, e, grip: pair.contact.grip ?? pair.contact.friction, normalImpulse: 0, tangentImpulse: 0 })
+	})
+
+	/**
+	 * Garwin's rough-ball bounce. Box2D's friction can only stop the contact point sliding (the ball
+	 * leaves rolling); a superball's surface grips, winds up sideways and springs back, so the contact
+	 * point leaves sliding the other way at e_x of its striking speed. The extra sideways impulse that
+	 * does so is applied to both bodies, and the whole sideways impulse of the impact is held within
+	 * grip × its normal impulse.
+	 */
+	const springBack = () => {
+		for (const [touch, s] of springs) {
+			const bodyA = touch.getFixtureA().getBody()
+			const bodyB = touch.getFixtureB().getBody()
+			const t = new Vec2(-s.normal.y, s.normal.x)
+			const at = (body: Body, r: Vec2) => Vec2.add(body.getWorldCenter(), r)
+			const va = bodyA.getLinearVelocityFromWorldPoint(at(bodyA, s.armA))
+			const vb = bodyB.getLinearVelocityFromWorldPoint(at(bodyB, s.armB))
+			const slideNow = (vb.x - va.x) * t.x + (vb.y - va.y) * t.y
+			const reach = (body: Body, r: Vec2) => {
+				if (!body.isDynamic()) return 0
+				const arm = Vec2.cross(r, t)
+				const m = body.getMass()
+				const c = body.getLocalCenter()
+				const spin = body.getInertia() - m * Vec2.dot(c, c)
+				return 1 / m + (spin > 0 ? (arm * arm) / spin : 0)
+			}
+			const k = reach(bodyA, s.armA) + reach(bodyB, s.armB)
+			if (k === 0) continue
+			let extra = (-s.e * s.slide - slideNow) / k
+			const limit = s.grip * s.normalImpulse
+			const total = Math.max(-limit, Math.min(limit, s.tangentImpulse + extra))
+			extra = total - s.tangentImpulse
+			const j = Vec2.mul(extra, t)
+			bodyB.applyLinearImpulse(j, at(bodyB, s.armB), true)
+			bodyA.applyLinearImpulse(Vec2.neg(j), at(bodyA, s.armA), true)
+		}
+		springs.clear()
+	}
+
+	/**
+	 * Each damped pivot's torque, τ = −c·ω against its turning relative to what it hangs from, applied
+	 * to both, so the whole assembly it carries is slowed, as by a damper at the pivot.
+	 */
+	const dampPivots = () => {
+		for (const { part, body } of bodies) {
+			if (part.damping === undefined || part.pivot === undefined) continue
+			const parent = part.parent === undefined ? undefined : memberOf.get(part.parent)?.body
+			const turning = body.getAngularVelocity() - (parent?.getAngularVelocity() ?? 0)
+			const torque = -part.damping * turning * LENGTH_SCALE * LENGTH_SCALE
+			body.applyTorque(torque, true)
+			parent?.applyTorque(-torque, true)
+		}
+	}
+
+	/**
+	 * Before each step, each spring's share of implicit stiffness (`SpringLink.theta`): none while the springs on a body are slow
+	 * enough for the step to follow them steadily (a = h²·Σk/m ≤ 2: four and a half steps or more to a period, solved exactly as an
+	 * explicit force is; the explicit step is steady to a = 4), else θ = 1 − 2/a, so the explicit share the step follows is never
+	 * more than a = 2 and a swing the step cannot follow dies away (each step keeps at most 1/√(a − 1) of it) instead of rattling
+	 * from step to step. (From a = 1, θ = 1 − 1/a took 13 to 42% off a launcher's or a pad's throw at its stiffest setting, where
+	 * a ball on the plate makes the swing slow enough to follow.) Springs that share a moving body are reckoned together (a plate
+	 * on two springs, a mat on two), each at the mass it meets along its line, so the sum bounds their fastest swing. A spring that
+	 * pushes or pulls this step wakes its bodies, as a force would.
+	 */
+	const springGroups = (() => {
+		const groupOf = new Map<Body, number>()
+		const parent: number[] = springJoints.map((_, i) => i)
+		const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i] as number)))
+		springJoints.forEach((link, i) => {
+			for (const body of [link.getBodyA(), link.getBodyB()]) {
+				if (!body.isDynamic()) continue
+				const j = groupOf.get(body)
+				if (j === undefined) groupOf.set(body, i)
+				else parent[find(i)] = find(j)
+			}
+		})
+		const groups = new Map<number, SpringLink[]>()
+		springJoints.forEach((link, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), link]))
+		return [...groups.values()]
+	})()
+	/**
+	 * Before each step, who each taut chain may touch: every moving solid but its own two ends whose fixture's box comes within
+	 * 5 cm of its band gets a `ChainTouch` (which finds the actual contact points in the step), and one that has gone off loses it.
+	 */
+	const touchChains = () => {
+		for (const chain of chains) {
+			const pa = chain.A.getWorldPoint(chain.la)
+			const pb = chain.B.getWorldPoint(chain.lb)
+			const near = new Set<Body>()
+			if (chainTaut(chain, Vec2.distance(pa, pb))) {
+				const reach = chain.radius + CHAIN_MARGIN
+				const box = new AABB(new Vec2(Math.min(pa.x, pb.x) - reach, Math.min(pa.y, pb.y) - reach), new Vec2(Math.max(pa.x, pb.x) + reach, Math.max(pa.y, pb.y) + reach))
+				world.queryAABB(box, (fixture) => {
+					const body = fixture.getBody()
+					if (body.isDynamic() && body !== chain.A && body !== chain.B && !fixture.isSensor()) near.add(body)
+					return true
+				})
+			}
+			for (const [body, touch] of chain.touches) {
+				if (near.has(body)) continue
+				world.destroyJoint(touch)
+				chain.touches.delete(body)
+			}
+			// (in the order the scene lists its solids, so every run makes the same joints in the same order)
+			for (const m of members) {
+				if (!near.has(m.body) || chain.touches.has(m.body)) continue
+				chain.touches.set(m.body, world.createJoint(new ChainTouch(m.body, chain)) as ChainTouch)
+			}
+		}
+	}
+	const tuneSprings = () => {
+		for (const group of springGroups) {
+			let rate = 0
+			for (const link of group) rate += link.prepare()
+			const a = rate * STEP * STEP
+			const theta = a > 2 ? 1 - 2 / a : 0
+			for (const link of group) link.theta = theta
+		}
+	}
+
+	/** The weight of everything joined to a part: its whole assembly, and what joints join to it (a car's body to its wheels). */
+	const everyLink = [...parentLinks, ...jointLinks]
+	const assemblyWeight = (part: SolidPart) => weightJoined(part, everyLink)
+	/**
+	 * Rolling resistance τ = −C_rr·N·r·sign(ω) on a ball supported from below, ω its turning relative to
+	 * its support (a fixed part's is 0, a seesaw's or a cart's own turning is taken off), N the load it
+	 * presses down with (its own weight, or a car's share on a wheel), never more than its assembly's whole
+	 * weight (an impact's instant load is no rolling load), and never more than would stop their relative
+	 * turning in one step. A loose support gets the equal and opposite torque, so a ball rolling on a foam
+	 * block, a book or a seesaw slows, and what it rolls on is turned a little the other way.
+	 */
+	const rollingResistance = () => {
+		for (const { part, body, fixture } of bodies) {
+			if (part.kind !== "dynamic" || part.body.kind !== "ball" || !body.isDynamic()) continue
+			for (let edge = body.getContactList(); edge !== null; edge = edge.next) {
+				// (A weld group's body touches through all its parts' fixtures: only this ball's own count.)
+				if (!edge.contact.isTouching() || (edge.contact.getFixtureA() !== fixture && edge.contact.getFixtureB() !== fixture)) continue
+				const pair = pairOf(edge.contact)
+				const wm = edge.contact.getWorldManifold(null)
+				if (pair?.contact === undefined || (wm === null || wm === undefined) || wm.pointCount === 0) continue
+				const ballIsA = pair.a === part
+				const upward = ballIsA ? -wm.normal.y : wm.normal.y
+				if (upward <= 0.7) continue
+				const support = (ballIsA ? edge.contact.getFixtureB() : edge.contact.getFixtureA()).getBody()
+				const turning = body.getAngularVelocity() - support.getAngularVelocity()
+				if (Math.abs(turning) < ROLLING_OMEGA_FLOOR) continue
+				const load = Math.min(pressed.get(edge.contact) ?? massOf(part) * GRAVITY, assemblyWeight(part))
+				const magnitude = pair.contact.rollingResistance * load * part.body.radius
+				// The turning each unit of torque removes, per step: the ball's spin and the support's (planck's units).
+				const stops = Math.abs(turning) / ((inverseInertia(body) + inverseInertia(support)) * STEP * LENGTH_SCALE * LENGTH_SCALE)
+				const torque = -Math.sign(turning) * Math.min(magnitude, stops)
+				body.applyTorque(torque * LENGTH_SCALE * LENGTH_SCALE, true)
+				support.applyTorque(-torque * LENGTH_SCALE * LENGTH_SCALE, true)
+				break
+			}
+		}
+	}
+
+	/**
+	 * Air's buoyancy, ρ·g·V up on every body's solid volume V (a hollow ball's shell: the air inside it weighs
+	 * what it displaces). The air a ball carries was added to its mass so it is inertia, but Box2D's gravity
+	 * weighs all of its mass, so that weight is lifted off again. Never wakes a body that is asleep.
+	 */
+	const lifts = bodies.flatMap((m) =>
+		m.part.kind === "dynamic" && m.body.isDynamic() ? [{ m, lift: (airCarried(m.part) + AIR_DENSITY * solidVolume(m.part)) * GRAVITY * LENGTH_SCALE }] : []
+	)
+	const airLift = () => {
+		// (A part of a weld group is lifted where its own volume is, so a group of a dense part and a light one turns as it would.)
+		for (const { m, lift } of lifts) {
+			if (m.lone) m.body.applyForceToCenter(new Vec2(0, lift), false)
+			else m.body.applyForce(new Vec2(0, lift), m.body.getWorldPoint(m.center), false)
+		}
+	}
+
+	/**
+	 * Quadratic air drag on every moving body, against its velocity through the air where it is (still air, or a fan's stream):
+	 * negligible for a heavy ball, a quarter of the weight for a 6 g one at the speed it lands from 1 m. A sphere meets
+	 * F = −½·ρ·C_d·A·|v|·v on its disc, a cylinder (a log, a can or a wheel on its side) on its broadside diameter × length, at
+	 * its middle. A slab or a polygon meets it on each side that faces into the air, point by point along the side as the body
+	 * moves and turns (`outlineDrag`): moving straight, the sides it shows the air add up to its outline's width across the flow,
+	 * so it meets −½·ρ·C_d·(width across × depth)·|v|·v, flat or end-on as it is turned now (a plank falls end-first nearly as in
+	 * a vacuum, flat like a leaf); turning, each side's far parts meet more air than its near ones, which slows a spinning plank.
+	 */
+	const outlines = new Map(bodies.flatMap((m) => (m.part.body.kind === "ball" ? [] : [[m, outlineOf(m.part.body)] as const])))
+	const airDrag = () => {
+		const blowing = streams(scene, stepIndex * STEP, placements())
+		for (const m of bodies) {
+			const { part, body } = m
+			if (part.kind !== "dynamic" || !body.isDynamic()) continue
+			const outline = outlines.get(m)
+			if (outline !== undefined && part.body.kind !== "ball") {
+				// (the air at the part's middle, its stream taken as even across it)
+				const mid = m.lone ? body.getWorldCenter() : body.getWorldPoint(m.center)
+				const air = airAt(blowing, { x: mid.x / LENGTH_SCALE, y: mid.y / LENGTH_SCALE })
+				const drag = outlineDrag(body, m.local, outline, 0.5 * AIR_DENSITY * BOX_DRAG * part.body.depth, air)
+				if (drag === undefined) continue
+				body.applyForceToCenter(new Vec2(drag.fx * LENGTH_SCALE, drag.fy * LENGTH_SCALE), true)
+				body.applyTorque(drag.torque * LENGTH_SCALE * LENGTH_SCALE, true)
+				continue
+			}
+			// A lone ball: its body's motion and where it stands; a ball of a weld group: the motion of its own middle, where its drag acts.
+			const p = m.lone ? body.getPosition() : body.getWorldPoint(m.center)
+			const v = m.lone ? body.getLinearVelocity() : body.getLinearVelocityFromWorldPoint(p)
+			const air = airAt(blowing, { x: p.x / LENGTH_SCALE, y: p.y / LENGTH_SCALE })
+			const vx = v.x / LENGTH_SCALE - air.x
+			const vy = v.y / LENGTH_SCALE - air.y
+			const speed = Math.hypot(vx, vy)
+			if (speed === 0) continue
+			const length = cylinderLength(part)
+			const facing = length === undefined ? SPHERE_DRAG * Math.PI * part.body.radius ** 2 : CYLINDER_DRAG * 2 * part.body.radius * length
+			const k = 0.5 * AIR_DENSITY * facing * speed
+			const drag = new Vec2(-k * vx * LENGTH_SCALE, -k * vy * LENGTH_SCALE)
+			if (m.lone) body.applyForceToCenter(drag, true)
+			else body.applyForce(drag, p, true)
+		}
+	}
+
+	const placements = (): Record<string, Placement> =>
+		Object.fromEntries(
+			bodies.map(({ part, body, local: pose }) => {
+				// A group's part: its body's pose composed with its own pose in the group (the root's is the body's).
+				const p = pose === IDENTITY ? body.getPosition() : body.getWorldPoint(new Vec2(pose.at.x * LENGTH_SCALE, pose.at.y * LENGTH_SCALE))
+				const squash = dents.get(part.id)
+				return [
+					part.id,
+					{
+						x: p.x / LENGTH_SCALE,
+						y: p.y / LENGTH_SCALE,
+						angle: pose === IDENTITY ? body.getAngle() : body.getAngle() + pose.angle,
+						...(squash === undefined ? {} : { squash })
+					}
+				]
+			})
+		)
+
+	const stepsPerFrame = Math.round(1 / fps / STEP)
+	const releaseStep = Math.round(scene.release.at / STEP)
+	const lastStep = Math.round(scene.seconds / STEP)
+	const states: Record<string, Placement>[] = []
+	for (stepIndex = 0; stepIndex <= lastStep; stepIndex++) {
+		if (stepIndex > releaseStep) {
+			steerHitboxes(stepIndex * STEP)
+			dampPivots()
+			tuneSprings()
+			if (chains.length > 0) touchChains()
+			rollingResistance()
+			airLift()
+			airDrag()
+			world.step(STEP)
+			springBack()
+		}
+		states.push(touching.get(stepIndex) ?? placements())
+	}
+	const shown = new Map<number, number>()
+	for (let k = 0; k * stepsPerFrame <= lastStep; k++) shown.set(k, k * stepsPerFrame)
+	// The frame nearest each impact shows it; of two in one frame's reach, the harder.
+	const strongest = new Map<number, number>()
+	for (const [step, speed] of impacts) {
+		const k = Math.round(step / stepsPerFrame)
+		if (shown.has(k) && speed > (strongest.get(k) ?? 0)) {
+			strongest.set(k, speed)
+			shown.set(k, step)
+		}
+	}
+	const frames = [...shown.entries()]
+		.sort(([a], [b]) => a - b)
+		.map(([, step]) => ({ t: step * STEP, placements: states[step] ?? {} }))
+	return { fps, frames, impacts: hits }
+}
+
+const massOf = (part: SolidPart) => mass(part)
+
+/** A part's pose in its own group's root frame, when it is the root itself (or alone). */
+const IDENTITY: Pose = { at: { x: 0, y: 0 }, angle: 0 }
+
+/** A solid in the simulation: its part, the body of its weld group, and where it sits on that body. */
+interface Member {
+	readonly part: SolidPart
+	readonly body: Body
+	/** Its pose in its group root's frame (meters, radians); `IDENTITY` for the root. */
+	readonly local: Pose
+	readonly fixture: Fixture
+	/** Alone in its group: its body is exactly the part, as every body was before weld groups. */
+	readonly lone: boolean
+	/** Where its own mass is centred, in its body's frame (planck units). */
+	readonly center: Vec2
+}
+
+/** A point of a part's own frame in its body's frame (planck units), given its pose in the group. */
+const placeIn = (local: Pose, x: number, y: number) => {
+	if (local === IDENTITY) return new Vec2(x * LENGTH_SCALE, y * LENGTH_SCALE)
+	const c = Math.cos(local.angle)
+	const s = Math.sin(local.angle)
+	return new Vec2((local.at.x + x * c - y * s) * LENGTH_SCALE, (local.at.y + x * s + y * c) * LENGTH_SCALE)
+}
+
+/**
+ * A part's collision shape on its body, with its density (its mass over its area, so planck's mass is the
+ * specified one; 0 on a fixed body). A lone part is built exactly as it always was (a ball also gets its
+ * sphere's or shell's inertia here); a part of a weld group is the same shape carried to its pose in the
+ * group, and its group's mass is set from all of them afterwards (`groupMass`).
+ */
+const addFixture = (body: Body, part: SolidPart, local: Pose, dynamic: boolean, lone: boolean) => {
+	const tag: Tag = { part }
+	if (part.body.kind === "ball") {
+		const r = part.body.radius * LENGTH_SCALE
+		const fixture = body.createFixture(local === IDENTITY ? new CircleShape(r) : new CircleShape(placeIn(local, 0, 0), r), {
+			density: dynamic ? massOf(part) / (Math.PI * r * r) : 0,
+			userData: tag
+		})
+		if (dynamic && lone) {
+			// Box2D gives a circle a disk's rotational inertia; a ball is a sphere (2/5 m r²) or,
+			// hollow, a shell of its wall's thickness (2/3 m r² as the wall thins), which changes how
+			// it rolls. The air it carries adds to its inertial mass only (see `airLift`).
+			const k = part.body.inertia ?? ballInertia(part.body.radius, part.body.wall)
+			body.setMassData({ mass: massOf(part) + airCarried(part), center: new Vec2(0, 0), I: k * massOf(part) * r * r })
+		}
+		return fixture
+	}
+	if (part.body.kind === "polygon" || !lone) {
+		// Its outline as specified, like a slab's not shrunk by the skin, so it tips over its true corners.
+		// Its density makes planck's mass exactly the specified one: the area is planck's, from the same
+		// scaled points (a polygon square is then the very fixture its slab is). A slab in a weld group is
+		// its outline too, carried to where it sits in the group, as a polygon rectangle would be.
+		const points = outlineOf(part.body).map((p) => placeIn(local, p.x, p.y))
+		return body.createFixture(new PolygonShape(points), {
+			density: dynamic ? massOf(part) / polygonArea(points) : 0,
+			userData: tag
+		})
+	}
+	// Not shrunk by Box2D's 1 mm skin: the skin rounds a slab's corners about its true corners,
+	// so a domino still tips at atan(T/H); built smaller, a thin one would tip degrees early.
+	const hw = (part.body.width / 2) * LENGTH_SCALE
+	const hh = (part.body.height / 2) * LENGTH_SCALE
+	const taper = part.body.taper ?? 1
+	const shape =
+		part.body.taper === undefined
+			? new BoxShape(hw, hh)
+			: new PolygonShape([new Vec2(-hw * taper, -hh), new Vec2(hw * taper, -hh), new Vec2(hw, hh), new Vec2(-hw, hh)])
+	return body.createFixture(shape, {
+		density: dynamic ? massOf(part) / (2 * (1 + taper) * hw * hh) : 0,
+		userData: tag
+	})
+}
+
+/** A slab's or a polygon's outline in its own frame, meters, counterclockwise (a slab's from its bottom left corner). */
+const outlineOf = (body: Exclude<SolidPart["body"], { kind: "ball" }>): readonly Vec[] => {
+	if (body.kind === "polygon") return body.points
+	const w = body.width / 2
+	const h = body.height / 2
+	const t = body.taper ?? 1
+	return [
+		{ x: -w * t, y: -h },
+		{ x: w * t, y: -h },
+		{ x: w, y: h },
+		{ x: -w, y: h }
+	]
+}
+
+/** Where a part's own mass is centred, in its body's frame (planck units): a ball's or a slab's middle, a polygon's centroid. */
+const memberCenter = (part: SolidPart, local: Pose) => {
+	if (part.body.kind === "ball") return placeIn(local, 0, 0)
+	const c = polygonCentroid(outlineOf(part.body))
+	return placeIn(local, c.x, c.y)
+}
+
+/**
+ * A weld group's mass, centre of mass and rotational inertia about its body's origin (planck units): each
+ * ball as a lone ball (its sphere's or shell's inertia, and the air it carries as inertial mass), each slab
+ * or polygon as planck reckons its fixture, each moved to where it sits by the parallel-axis rule.
+ */
+const groupMass = (group: readonly Member[]) => {
+	let total = 0
+	let mx = 0
+	let my = 0
+	let inertia = 0
+	const own = { mass: 0, center: new Vec2(0, 0), I: 0 }
+	for (const m of group) {
+		const part = m.part
+		if (part.body.kind === "ball") {
+			const r = part.body.radius * LENGTH_SCALE
+			const k = part.body.inertia ?? ballInertia(part.body.radius, part.body.wall)
+			const c = m.center
+			const mass = massOf(part) + airCarried(part)
+			total += mass
+			mx += mass * c.x
+			my += mass * c.y
+			inertia += k * massOf(part) * r * r + mass * (c.x * c.x + c.y * c.y)
+		} else {
+			m.fixture.getMassData(own)
+			total += own.mass
+			mx += own.mass * own.center.x
+			my += own.mass * own.center.y
+			inertia += own.I
+		}
+	}
+	return { mass: total, center: new Vec2(total > 0 ? mx / total : 0, total > 0 ? my / total : 0), I: inertia }
+}
+
+/**
+ * planck's working state of a body during a step (its centre of mass and angle, its velocity, its inverse mass and
+ * rotational inertia), which a joint reads and writes while the step solves it.
+ */
+interface Solving {
+	readonly c_velocity: { v: Vec2; w: number }
+	readonly c_position: { c: Vec2; a: number }
+	readonly m_invMass: number
+	readonly m_invI: number
+}
+const solving = (body: Body) => body as unknown as Solving
+
+/** An impulse (planck units) along unit `u`, +j on B at arm rB and −j on A at arm rA, into their working velocities. */
+const impulseAlong = (A: Solving, B: Solving, rA: Vec2, rB: Vec2, u: Vec2, j: number) => {
+	const px = j * u.x
+	const py = j * u.y
+	A.c_velocity.v.x -= A.m_invMass * px
+	A.c_velocity.v.y -= A.m_invMass * py
+	A.c_velocity.w -= A.m_invI * (rA.x * py - rA.y * px)
+	B.c_velocity.v.x += B.m_invMass * px
+	B.c_velocity.v.y += B.m_invMass * py
+	B.c_velocity.w += B.m_invI * (rB.x * py - rB.y * px)
+}
+
+/**
+ * A spring between two bodies, F = −k(d − rest) − c·ḋ along the line between its anchors (a compress-only one only
+ * pushes), solved inside planck's step as a joint, so that no stiffness, damping or mass can make it gain energy.
+ * Its Hooke force is the step's impulse from the stretch at the step's start, exactly as a force applied before the
+ * step was. Its damping is the trapezoidal rule, half from the relative speed along it at the step's start and half
+ * from that at its end, solved as a soft velocity constraint (after Box2D's soft springs): second-order accurate, and
+ * when a step's damping would take more than the whole relative speed (c·h/m > 2: an explicit c·ḋ threw a 14 g plate
+ * off at 344 m/s) more of it is taken at the end, so it brings that speed to rest in the step and never reverses it.
+ * A spring too stiff for the step to follow takes a share `theta` of its stiffness implicitly as well, as damping of
+ * θ·h·k, which keeps it steady at any stiffness (see `tuneSprings`); so does the sideways stiffness T/d a stretched spring
+ * has (a taut string's: a 14 g plate between two 10⁷ N/m springs rings sideways faster than the step can follow), across
+ * its line. A pushed spring's sideways instability (a plate standing on two springs buckles sideways like a column, as a
+ * real one without guides would) is left as it is. With θ = 0 the stiffness is the symplectic step it always was: the
+ * same period, no energy drift. Its two bodies still collide, as without it.
+ */
+class SpringLink extends PlanckJoint {
+	/** The share of its stiffness solved implicitly this step (0 to 1), set before each step. */
+	theta = 0
+	private readonly k: number
+	private readonly c: number
+	private readonly rest: number
+	private readonly pushOnly: boolean
+	private readonly la: Vec2
+	private readonly lb: Vec2
+	private readonly u = new Vec2(0, 1)
+	private readonly rA = new Vec2(0, 0)
+	private readonly rB = new Vec2(0, 0)
+	private active = false
+	private stretch = 0
+	/** Its stretching speed along its line at the step's start, planck units. */
+	private rate0 = 0
+	private invMass = 0
+	private gamma = 0
+	private hooke = 0
+	private damper = 0
+	/** Across its line (its line turned a quarter counterclockwise): the taut spring's sideways stiffness T/d (N/m), its mass, damper and impulse. */
+	private side = 0
+	private invSide = 0
+	private gammaSide = 0
+	private across = 0
+	constructor(a: Body, b: Body, la: Vec2, lb: Vec2, spec: Extract<Joint, { kind: "spring" }>) {
+		super({ collideConnected: true }, a, b)
+		;(this as unknown as { m_type: string }).m_type = "spring-link"
+		this.k = spec.stiffness
+		this.c = spec.damping
+		this.rest = spec.rest
+		this.pushOnly = spec.compressOnly === true
+		this.la = la
+		this.lb = lb
+	}
+	/**
+	 * Its line, stretch and the mass along it, from where its bodies stand now (before the step); wakes its bodies when
+	 * it acts. Returns k / (that mass), 1/s², its share of how fast the springs on its bodies can swing them.
+	 */
+	prepare() {
+		const A = this.m_bodyA
+		const B = this.m_bodyB
+		const pa = A.getWorldPoint(this.la)
+		const pb = B.getWorldPoint(this.lb)
+		const dx = pb.x - pa.x
+		const dy = pb.y - pa.y
+		const d = Math.sqrt(dx * dx + dy * dy)
+		this.stretch = d / LENGTH_SCALE - this.rest
+		this.active = d / LENGTH_SCALE >= 1e-9 && !(this.pushOnly && this.stretch >= 0)
+		if (!this.active) return 0
+		this.u.x = dx / d
+		this.u.y = dy / d
+		const ca = A.getWorldCenter()
+		const cb = B.getWorldCenter()
+		this.rA.x = pa.x - ca.x
+		this.rA.y = pa.y - ca.y
+		this.rB.x = pb.x - cb.x
+		this.rB.y = pb.y - cb.y
+		const sa = solving(A)
+		const sb = solving(B)
+		const crA = this.rA.x * this.u.y - this.rA.y * this.u.x
+		const crB = this.rB.x * this.u.y - this.rB.y * this.u.x
+		this.invMass = sa.m_invMass + sa.m_invI * crA * crA + sb.m_invMass + sb.m_invI * crB * crB
+		// (its line turned counterclockwise: r × n = r · u)
+		const dnA = this.rA.x * this.u.x + this.rA.y * this.u.y
+		const dnB = this.rB.x * this.u.x + this.rB.y * this.u.y
+		this.invSide = sa.m_invMass + sa.m_invI * dnA * dnA + sb.m_invMass + sb.m_invI * dnB * dnB
+		this.side = this.stretch > 0 ? (this.k * this.stretch) / (d / LENGTH_SCALE) : 0
+		const va = A.getLinearVelocityFromWorldPoint(pa)
+		const vb = B.getLinearVelocityFromWorldPoint(pb)
+		this.rate0 = (vb.x - va.x) * this.u.x + (vb.y - va.y) * this.u.y
+		if (A.isDynamic() && !A.isAwake()) A.setAwake(true)
+		if (B.isDynamic() && !B.isAwake()) B.setAwake(true)
+		return this.k * this.invMass + this.side * this.invSide
+	}
+	initVelocityConstraints(step: TimeStep) {
+		this.damper = 0
+		if (!this.active || this.invMass === 0) return
+		const h = step.dt
+		// the share of the damping taken from the speed at the step's end: half (the trapezoidal rule), or more where half from the
+		// start would take more than that whole speed (β = c·h/m > 2)
+		const beta = this.c * h * this.invMass
+		const late = beta > 2 ? 1 - 1 / beta : 0.5
+		// the step's Hooke impulse (planck's force is newtons × LENGTH_SCALE) and the damping from the start's speed, +: pushes B away from A
+		this.hooke = -this.k * this.stretch * LENGTH_SCALE * h - (1 - late) * this.c * h * this.rate0
+		const soft = late * this.c + this.theta * h * this.k
+		this.gamma = soft > 0 ? 1 / (h * soft) : Number.POSITIVE_INFINITY
+		const softSide = this.theta * h * this.side
+		this.gammaSide = softSide > 0 ? 1 / (h * softSide) : Number.POSITIVE_INFINITY
+		this.across = 0
+		impulseAlong(solving(this.m_bodyA), solving(this.m_bodyB), this.rA, this.rB, this.u, this.hooke)
+	}
+	solveVelocityConstraints(_step: TimeStep) {
+		if (!this.active || this.invMass === 0) return
+		const A = solving(this.m_bodyA)
+		const B = solving(this.m_bodyB)
+		if (this.gamma !== Number.POSITIVE_INFINITY) {
+			const vA = A.c_velocity.v
+			const vB = B.c_velocity.v
+			const wA = A.c_velocity.w
+			const wB = B.c_velocity.w
+			const rate = this.u.x * (vB.x - wB * this.rB.y - vA.x + wA * this.rA.y) + this.u.y * (vB.y + wB * this.rB.x - vA.y - wA * this.rA.x)
+			let j = -(rate + this.gamma * this.damper) / (this.invMass + this.gamma)
+			// a compress-only spring's whole impulse only ever pushes
+			if (this.pushOnly) j = Math.max(this.damper + j, -this.hooke) - this.damper
+			this.damper += j
+			impulseAlong(A, B, this.rA, this.rB, this.u, j)
+		}
+		if (this.gammaSide !== Number.POSITIVE_INFINITY) {
+			const n = new Vec2(-this.u.y, this.u.x)
+			const vA = A.c_velocity.v
+			const vB = B.c_velocity.v
+			const wA = A.c_velocity.w
+			const wB = B.c_velocity.w
+			const rate = n.x * (vB.x - wB * this.rB.y - vA.x + wA * this.rA.y) + n.y * (vB.y + wB * this.rB.x - vA.y - wA * this.rA.x)
+			const j = -(rate + this.gammaSide * this.across) / (this.invSide + this.gammaSide)
+			this.across += j
+			impulseAlong(A, B, this.rA, this.rB, n, j)
+		}
+	}
+	solvePositionConstraints(_step: TimeStep) {
+		return true
+	}
+	getAnchorA() {
+		return this.m_bodyA.getWorldPoint(this.la)
+	}
+	getAnchorB() {
+		return this.m_bodyB.getWorldPoint(this.lb)
+	}
+	getReactionForce(inv_dt: number) {
+		return Vec2.mul((this.hooke + this.damper) * inv_dt, this.u)
+	}
+	getReactionTorque(_inv_dt: number) {
+		return 0
+	}
+}
+
+/**
+ * How far a point of a body moves in a step at its working velocity: its arm r from the centre of mass turns by φ = h·ω
+ * as the centre moves h·v, so d = h·v + (cos φ − 1)·r + sin φ·(ω̂ × r). The series for cos φ − 1 and sin φ (to φ⁷) keep it to
+ * plain arithmetic, the same bits on every machine, while a step turns a body under a radian (as it always does but at hundreds
+ * of turns a second); past that the series runs away (as φ⁸: a joint solve fed on it to NaN within one pass) and the exact cos
+ * and sin take over (the build's deterministic ones, `tools/fdlibm.ts`).
+ */
+const stepDrift = (body: Solving, r: Vec2, h: number) => {
+	const v = body.c_velocity.v
+	const f = h * body.c_velocity.w
+	const f2 = f * f
+	const big = f2 > 1
+	const cosm1 = big ? Math.cos(f) - 1 : f2 * (-1 / 2 + f2 * (1 / 24 + f2 * (-1 / 720 + f2 / 40320)))
+	const sin = big ? Math.sin(f) : f * (1 + f2 * (-1 / 6 + f2 * (1 / 120 + f2 * (-1 / 5040))))
+	return { x: h * v.x + cosm1 * r.x - sin * r.y, y: h * v.y + cosm1 * r.y + sin * r.x }
+}
+
+/**
+ * A body's working position of a point fixed in it (planck units): its centre and angle as the step has them now. A fixed body
+ * is where it always is (planck keeps no working position for one that no moving body's island reaches: a chain's post).
+ */
+const workingPoint = (body: Body, local: Vec2) => {
+	if (body.isStatic()) {
+		const p = body.getWorldPoint(local)
+		const c = body.getWorldCenter()
+		return { r: new Vec2(p.x - c.x, p.y - c.y), p }
+	}
+	const at = solving(body).c_position
+	const centre = body.getLocalCenter()
+	const c = Math.cos(at.a)
+	const s = Math.sin(at.a)
+	const x = local.x - centre.x
+	const y = local.y - centre.y
+	const r = new Vec2(c * x - s * y, s * x + c * y)
+	return { r, p: new Vec2(at.c.x + r.x, at.c.y + r.y) }
+}
+
+/**
+ * A rope over two pulley wheels: run A from ground point gA down to its body's anchor, run B from gB to its, with
+ * lengthA + ratio·lengthB at most what it starts at. Unlike planck's pulley (an equality) the rope only ever pulls: a
+ * pail that lands lets the weight it hauls fly on, its rope going slack, instead of the rope stopping it. And a rope's
+ * end jams at its wheel: run A is never shorter than `minA` (its body meets the wheel), and so, the rope being no longer
+ * than it is, run B never longer than (total − minA)/ratio; the same the other way. That cap holds the side that hauls
+ * directly (a 3 kg weight hauling a 50 g one up into its wheel is held by the axle, not through the light one, which
+ * the solver could not hold it by: it ran 26 mm on past its stop). Each is a one-sided constraint solved on where the
+ * step will leave the rope (its ends' paths over the step, turning included), so a swinging pail keeps its energy, and a
+ * rope end arriving at its stop stops there, dead, as a jammed rope end does. Its two bodies collide, as planck's do.
+ */
+class RopePulley extends PlanckJoint {
+	private readonly ga: Vec2
+	private readonly gb: Vec2
+	private readonly la: Vec2
+	private readonly lb: Vec2
+	private readonly ratio: number
+	private readonly total: number
+	private readonly minA: number
+	private readonly minB: number
+	/** Accumulated impulses this step (planck units, each ≥ 0): the rope's tension, the two stops and the two caps. */
+	private rope = 0
+	private stopA = 0
+	private stopB = 0
+	private capA = 0
+	private capB = 0
+	private readonly arms = { rA: new Vec2(0, 0), rB: new Vec2(0, 0), uA: new Vec2(0, 1), uB: new Vec2(0, 1), lenA: 0, lenB: 0, invA: 0, invB: 0 }
+	constructor(a: Body, b: Body, ga: Vec2, gb: Vec2, la: Vec2, lb: Vec2, ratio: number, minA: number, minB: number) {
+		super({ collideConnected: true }, a, b)
+		;(this as unknown as { m_type: string }).m_type = "rope-pulley"
+		this.ga = ga
+		this.gb = gb
+		this.la = la
+		this.lb = lb
+		this.ratio = ratio
+		const lenA = Vec2.distance(a.getWorldPoint(la), ga)
+		const lenB = Vec2.distance(b.getWorldPoint(lb), gb)
+		this.total = lenA + ratio * lenB
+		// (a body that starts nearer its wheel than its stop stops where it starts)
+		this.minA = Math.min(minA, lenA)
+		this.minB = Math.min(minB, lenB)
+	}
+	/** Both runs where the step has them now: arms, directions (from the ground point to the anchor), lengths and the masses along them. */
+	private measure() {
+		const A = this.m_bodyA
+		const B = this.m_bodyB
+		const a = workingPoint(A, this.la)
+		const b = workingPoint(B, this.lb)
+		const g = this.arms
+		g.rA = a.r
+		g.rB = b.r
+		const dax = a.p.x - this.ga.x
+		const day = a.p.y - this.ga.y
+		const dbx = b.p.x - this.gb.x
+		const dby = b.p.y - this.gb.y
+		g.lenA = Math.sqrt(dax * dax + day * day)
+		g.lenB = Math.sqrt(dbx * dbx + dby * dby)
+		g.uA = g.lenA > 0 ? new Vec2(dax / g.lenA, day / g.lenA) : new Vec2(0, 0)
+		g.uB = g.lenB > 0 ? new Vec2(dbx / g.lenB, dby / g.lenB) : new Vec2(0, 0)
+		const sa = solving(A)
+		const sb = solving(B)
+		const crA = g.rA.x * g.uA.y - g.rA.y * g.uA.x
+		const crB = g.rB.x * g.uB.y - g.rB.y * g.uB.x
+		g.invA = sa.m_invMass + sa.m_invI * crA * crA
+		g.invB = sb.m_invMass + sb.m_invI * crB * crB
+		return g
+	}
+	initVelocityConstraints(_step: TimeStep) {
+		this.measure()
+		this.rope = 0
+		this.stopA = 0
+		this.stopB = 0
+		this.capA = 0
+		this.capB = 0
+	}
+	/** An impulse along run A on its body (+: away from the ground point) and along run B on its (+: away from its ground point). */
+	private apply(ja: number, jb: number) {
+		const g = this.arms
+		const A = solving(this.m_bodyA)
+		const B = solving(this.m_bodyB)
+		if (ja !== 0) {
+			A.c_velocity.v.x += A.m_invMass * ja * g.uA.x
+			A.c_velocity.v.y += A.m_invMass * ja * g.uA.y
+			A.c_velocity.w += A.m_invI * ja * (g.rA.x * g.uA.y - g.rA.y * g.uA.x)
+		}
+		if (jb !== 0) {
+			B.c_velocity.v.x += B.m_invMass * jb * g.uB.x
+			B.c_velocity.v.y += B.m_invMass * jb * g.uB.y
+			B.c_velocity.w += B.m_invI * jb * (g.rB.x * g.uB.y - g.rB.y * g.uB.x)
+		}
+	}
+	solveVelocityConstraints(step: TimeStep) {
+		const g = this.arms
+		const h = step.dt
+		/**
+		 * The run lengths the step will leave if nothing more is done (each body's anchor moved by its path over the step), and
+		 * each run's length along its direction at the step's start (sa, sb): an end that would pass its ground point within the
+		 * step has a short or negative one there, where its length at the step's end may be long again, out the other side.
+		 */
+		const ends = () => {
+			const da = stepDrift(solving(this.m_bodyA), g.rA, h)
+			const db = stepDrift(solving(this.m_bodyB), g.rB, h)
+			const ax = g.uA.x * g.lenA + da.x
+			const ay = g.uA.y * g.lenA + da.y
+			const bx = g.uB.x * g.lenB + db.x
+			const by = g.uB.y * g.lenB + db.y
+			return {
+				a: Math.sqrt(ax * ax + ay * ay),
+				b: Math.sqrt(bx * bx + by * by),
+				sa: g.lenA + g.uA.x * da.x + g.uA.y * da.y,
+				sb: g.lenB + g.uB.x * db.x + g.uB.y * db.y
+			}
+		}
+		const r = this.ratio
+		// each one-sided limit: how far past it the step would end (beyond what it is past now, which the position pass removes)
+		// over h, times the mass along it, is the impulse it needs; its total stays ≥ 0. A stop reads its run by the run's length
+		// along its direction at the step's start (`ends`: never more than its length at the step's end), so a rope end hauled fast
+		// at its ground point stops there instead of passing through it within a step (a 45 g cube tied at its top, no wheel radius:
+		// it passed at 1.5 m/s, then both bodies were flung 8 m up on the pulley's turned-over runs).
+		if (g.invA > 0) {
+			const e = ends()
+			const over = (this.minA - Math.min(e.a, e.sa) - Math.max(0, this.minA - g.lenA)) / h
+			const j = Math.max(0, this.stopA + over / g.invA) - this.stopA
+			this.stopA += j
+			this.apply(j, 0)
+		}
+		if (g.invB > 0) {
+			const e = ends()
+			const over = (this.minB - Math.min(e.b, e.sb) - Math.max(0, this.minB - g.lenB)) / h
+			const j = Math.max(0, this.stopB + over / g.invB) - this.stopB
+			this.stopB += j
+			this.apply(0, j)
+		}
+		if (g.invB > 0 && r > 0) {
+			const cap = (this.total - this.minA) / r
+			const e = ends()
+			const over = (e.b - cap - Math.max(0, g.lenB - cap)) / h
+			const j = Math.max(0, this.capB + over / g.invB) - this.capB
+			this.capB += j
+			this.apply(0, -j)
+		}
+		if (g.invA > 0) {
+			const cap = this.total - r * this.minB
+			const e = ends()
+			const over = (e.a - cap - Math.max(0, g.lenA - cap)) / h
+			const j = Math.max(0, this.capA + over / g.invA) - this.capA
+			this.capA += j
+			this.apply(-j, 0)
+		}
+		const inv = g.invA + r * r * g.invB
+		if (inv > 0) {
+			const e = ends()
+			const over = (e.a + r * e.b - this.total - Math.max(0, g.lenA + r * g.lenB - this.total)) / h
+			const j = Math.max(0, this.rope + over / inv) - this.rope
+			this.rope += j
+			this.apply(-j, -r * j)
+		}
+	}
+	solvePositionConstraints(_step: TimeStep) {
+		const slop = Settings.linearSlop
+		const most = Settings.maxLinearCorrection
+		let worst = 0
+		/** Moves the bodies (their working positions) along the runs by position impulses ja and jb (+: away from the ground points). */
+		const shift = (ja: number, jb: number) => {
+			const g = this.arms
+			for (const [body, j, u, rr] of [
+				[this.m_bodyA, ja, g.uA, g.rA],
+				[this.m_bodyB, jb, g.uB, g.rB]
+			] as const) {
+				if (j === 0) continue
+				const sb = solving(body)
+				sb.c_position.c.x += sb.m_invMass * j * u.x
+				sb.c_position.c.y += sb.m_invMass * j * u.y
+				sb.c_position.a += sb.m_invI * j * (rr.x * u.y - rr.y * u.x)
+			}
+		}
+		let g = this.measure()
+		const r = this.ratio
+		// (each: how far past its limit it is, corrected up to `most` at a time, as planck's rope does)
+		const stopA = this.minA - g.lenA
+		if (stopA > 0 && g.invA > 0) shift(Math.min(stopA, most) / g.invA, 0)
+		g = this.measure()
+		const stopB = this.minB - g.lenB
+		if (stopB > 0 && g.invB > 0) shift(0, Math.min(stopB, most) / g.invB)
+		g = this.measure()
+		const capB = g.lenB - (this.total - this.minA) / r
+		if (capB > 0 && g.invB > 0) shift(0, -Math.min(capB, most) / g.invB)
+		g = this.measure()
+		const capA = g.lenA - (this.total - r * this.minB)
+		if (capA > 0 && g.invA > 0) shift(-Math.min(capA, most) / g.invA, 0)
+		g = this.measure()
+		const rope = g.lenA + r * g.lenB - this.total
+		const inv = g.invA + r * r * g.invB
+		if (rope > 0 && inv > 0) shift(-Math.min(rope, most) / inv, (-r * Math.min(rope, most)) / inv)
+		g = this.measure()
+		worst = Math.max(this.minA - g.lenA, this.minB - g.lenB, g.lenB - (this.total - this.minA) / r, g.lenA - (this.total - r * this.minB), g.lenA + r * g.lenB - this.total)
+		return worst < slop
+	}
+	getAnchorA() {
+		return this.m_bodyA.getWorldPoint(this.la)
+	}
+	getAnchorB() {
+		return this.m_bodyB.getWorldPoint(this.lb)
+	}
+	getReactionForce(inv_dt: number) {
+		return Vec2.mul(this.rope * inv_dt, this.arms.uB)
+	}
+	getReactionTorque(_inv_dt: number) {
+		return 0
+	}
+}
+
+/**
+ * How far a point's path bends away from its velocity over a step, over h (planck units): where the step will really
+ * leave the anchor of a turning body, against where its velocity points. A velocity constraint that leaves this out
+ * (planck's revolute and rope joints) puts the anchor on the tangent each step and pulls it back onto the circle by
+ * position correction, losing a little of the speed every step: a pendulum lost 9° of a 150° swing in its first half
+ * swing, a gate 150° → 137.6° in 3 s, a wrecking ball a quarter degree a swing.
+ */
+const bendOf = (w: number, r: Vec2, h: number) => {
+	const f = h * w
+	const f2 = f * f
+	// (the series under a radian a step, as `stepDrift`; the exact cos and sin past it, where the series would run away)
+	const big = f2 > 1
+	const cosm1 = big ? Math.cos(f) - 1 : f2 * (-1 / 2 + f2 * (1 / 24 + f2 * (-1 / 720 + f2 / 40320)))
+	const sinm = big ? Math.sin(f) - f : f * f2 * (-1 / 6 + f2 * (1 / 120 + f2 * (-1 / 5040)))
+	return { x: (cosm1 * r.x - sinm * r.y) / h, y: (cosm1 * r.y + sinm * r.x) / h }
+}
+
+/** planck's revolute joint's solver state (private in its typings). */
+interface RevoluteState {
+	m_bodyA: Body
+	m_bodyB: Body
+	m_invMassA: number
+	m_invMassB: number
+	m_invIA: number
+	m_invIB: number
+	m_rA: Vec2
+	m_rB: Vec2
+	m_mass: { ez: { x: number; y: number }; solve22: (v: Vec2) => Vec2; solve33: (v: Vec3) => Vec3 }
+	m_motorMass: number
+	m_motorImpulse: number
+	m_motorSpeed: number
+	m_maxMotorTorque: number
+	m_enableMotor: boolean
+	m_enableLimit: boolean
+	m_limitState: number
+	m_impulse: Vec3
+}
+
+/**
+ * A hinge: planck's revolute joint (its motor, limits and position pass unchanged) whose point constraint asks that the
+ * two anchors END the step together, their paths over the step turning included (`bendOf`), instead of that their
+ * velocities agree at its start. That is the constrained step that keeps a swing's energy (SHAKE's): an undamped
+ * pendulum keeps a 150° swing to a thousandth of a degree, where planck's loses 9° in half a swing.
+ * It may also have friction (a pin joint's `friction` and `damping`): a Coulomb torque of at most `friction` N·m against
+ * the two bodies' relative turning (it holds them still while what turns them is less), and a viscous one, −c·Δω,
+ * implicit (a soft velocity constraint), so it never reverses the turning however light the parts. Each is solved with
+ * the point constraint as one 3×3 block (planck's K, as its limit is), its impulse kept and carried from step to step:
+ * so it meets the inertia the two bodies turn with while their anchors stay together (a bob far below its pin turns with
+ * all of m·L², not its own small spin), and a pin in a chain of joints (a double pendulum's elbow) is held, or slowed,
+ * as a lone one is. (Solved apart from the point constraint, the friction crept and fell where it should hold, and
+ * damping on a chain blew up to NaN within 0.05 s.) While a limit is at its stop, the friction and damping are solved
+ * ahead of it, each with the point impulse that keeps the anchors as they were.
+ */
+class Hinge extends RevoluteJoint {
+	/** Its Coulomb friction torque and viscous damping, in planck's units (N·m and N·m·s, × LENGTH_SCALE²). */
+	private readonly rub: number
+	private readonly viscous: number
+	/** This step's friction and damping angular impulses while a limit is at its stop (solved ahead of the limit). */
+	private rubbed = 0
+	private damped = 0
+	/** Their angular impulses solved with the point constraint (no limit at its stop), carried over from step to step. */
+	private rubImpulse = 0
+	private dampImpulse = 0
+	/** Whether this step solves its friction and damping with the point constraint (`rubImpulse`, `dampImpulse`). */
+	private block = false
+	/** The hinges it is solved together with, when it is one of a chain (`groupHinges`). */
+	group: HingeGroup | undefined = undefined
+	/** Whether it has friction or damping. */
+	get rubs() {
+		return this.rub > 0 || this.viscous > 0
+	}
+	constructor(def: ConstructorParameters<typeof RevoluteJoint>[0] & { friction?: number; damping?: number }, a?: Body, b?: Body, anchor?: Vec2) {
+		super(def, a as Body, b as Body, anchor as Vec2)
+		this.rub = (def.friction ?? 0) * LENGTH_SCALE * LENGTH_SCALE
+		this.viscous = (def.damping ?? 0) * LENGTH_SCALE * LENGTH_SCALE
+	}
+	initVelocityConstraints(step: TimeStep) {
+		super.initVelocityConstraints(step)
+		this.rubbed = 0
+		this.damped = 0
+		if (this.group !== undefined) this.group.calls = 0
+		const j = this as unknown as RevoluteState
+		const iA = j.m_invIA
+		const iB = j.m_invIB
+		const stopped = j.m_enableLimit && j.m_limitState !== LIMIT_INACTIVE
+		this.block = (this.rub > 0 || this.viscous > 0) && iA + iB > 0 && !stopped
+		if (!this.block || !step.warmStarting) {
+			this.rubImpulse = 0
+			this.dampImpulse = 0
+			return
+		}
+		// last step's friction and damping impulses as this one's first guess (as planck carries its own), ...
+		this.rubImpulse *= step.dtRatio
+		this.dampImpulse *= step.dtRatio
+		const turn = this.rubImpulse + this.dampImpulse
+		if (turn === 0) return
+		// ... applied as planck applies its own: −on A, +on B
+		const A = solving(j.m_bodyA)
+		const B = solving(j.m_bodyB)
+		A.c_velocity.w -= iA * turn
+		B.c_velocity.w += iB * turn
+	}
+	solveVelocityConstraints(step: TimeStep) {
+		const group = this.group
+		if (group === undefined) {
+			this.solveRows(step)
+			return
+		}
+		// one of a chain: the first of its hinges planck comes to in each of its passes over the joints solves them all, HINGE_SWEEPS times over
+		if (group.calls++ % group.members.length !== 0) return
+		for (let k = 0; k < HINGE_SWEEPS; k++) for (const hinge of group.members) hinge.solveRows(step)
+	}
+	/** One pass over its constraints: its friction and damping, its motor, and its point constraint (with its limit). */
+	solveRows(step: TimeStep) {
+		const j = this as unknown as RevoluteState
+		const A = solving(j.m_bodyA)
+		const B = solving(j.m_bodyB)
+		const vA = A.c_velocity.v
+		let wA = A.c_velocity.w
+		const vB = B.c_velocity.v
+		let wB = B.c_velocity.w
+		const mA = j.m_invMassA
+		const mB = j.m_invMassB
+		const iA = j.m_invIA
+		const iB = j.m_invIB
+		const fixedRotation = iA + iB === 0
+		if (!this.block && !fixedRotation && (this.viscous > 0 || this.rub > 0)) {
+			// (a limit at its stop) The friction's torque turns the two bodies about the hinge, so it meets the inertia they turn with
+			// while their anchors stay together: S, the relative turning one unit of angular impulse gives once the point impulse q that
+			// keeps the anchors together goes with it.
+			const k = j.m_mass as unknown as { ex: { x: number; y: number }; ey: { x: number; y: number }; ez: { x: number; y: number; z: number } }
+			const q = j.m_mass.solve22(new Vec2(k.ez.x, k.ez.y))
+			const S = k.ez.z - (k.ez.x * q.x + k.ez.y * q.y)
+			const turn = (impulse: number) => {
+				// the angular impulse with the point impulse −q·impulse that keeps the anchors' relative velocity as it was
+				const px = -q.x * impulse
+				const py = -q.y * impulse
+				vA.x -= mA * px
+				vA.y -= mA * py
+				wA -= iA * (j.m_rA.x * py - j.m_rA.y * px + impulse)
+				vB.x += mB * px
+				vB.y += mB * py
+				wB += iB * (j.m_rB.x * py - j.m_rB.y * px + impulse)
+			}
+			if (S > 0 && this.viscous > 0) {
+				// −c·Δω at the step's end: Δω + γ·(its impulse) = 0, γ = 1/(h·c)
+				const gamma = 1 / (step.dt * this.viscous)
+				const impulse = -(wB - wA + gamma * this.damped) / (S + gamma)
+				this.damped += impulse
+				turn(impulse)
+			}
+			if (S > 0 && this.rub > 0) {
+				// as far toward no relative turning as `friction` × h of angular impulse goes
+				const most = step.dt * this.rub
+				const old = this.rubbed
+				this.rubbed = Math.max(-most, Math.min(most, old - (wB - wA) / S))
+				turn(this.rubbed - old)
+			}
+		}
+		if (j.m_enableMotor && j.m_limitState !== LIMIT_EQUAL && !fixedRotation) {
+			const Cdot = wB - wA - j.m_motorSpeed
+			let impulse = -j.m_motorMass * Cdot
+			const old = j.m_motorImpulse
+			const most = step.dt * j.m_maxMotorTorque
+			j.m_motorImpulse = Math.max(-most, Math.min(most, old + impulse))
+			impulse = j.m_motorImpulse - old
+			wA -= iA * impulse
+			wB += iB * impulse
+		}
+		/** A point impulse (px, py) and an angular one, az, on the two bodies: −on A, +on B. */
+		const apply = (px: number, py: number, az: number) => {
+			vA.x -= mA * px
+			vA.y -= mA * py
+			wA -= iA * (j.m_rA.x * py - j.m_rA.y * px + az)
+			vB.x += mB * px
+			vB.y += mB * py
+			wB += iB * (j.m_rB.x * py - j.m_rB.y * px + az)
+		}
+		/** The anchors' relative velocity, and how far their paths bend from it over the step. */
+		const pointRate = () => {
+			const bA = bendOf(wA, j.m_rA, step.dt)
+			const bB = bendOf(wB, j.m_rB, step.dt)
+			return { cx: vB.x - wB * j.m_rB.y - vA.x + wA * j.m_rA.y + bB.x - bA.x, cy: vB.y + wB * j.m_rB.x - vA.y - wA * j.m_rA.x + bB.y - bA.y }
+		}
+		if (this.block) {
+			const k = j.m_mass as unknown as Mat33
+			if (this.viscous > 0) {
+				// the damping: Δω at the step's end + γ·(its impulse) = 0, γ = 1/(h·c), with the anchors kept together, one 3×3 solve
+				const gamma = 1 / (step.dt * this.viscous)
+				const { cx, cy } = pointRate()
+				const imp = solveSoft33(k, gamma, -cx, -cy, -(wB - wA + gamma * this.dampImpulse))
+				this.dampImpulse += imp.z
+				j.m_impulse.x += imp.x
+				j.m_impulse.y += imp.y
+				apply(imp.x, imp.y, imp.z)
+			}
+			if (this.rub > 0) {
+				// the friction: toward no relative turning with the anchors kept together, its whole impulse within `friction` × h; where
+				// that cuts it, the point impulse is solved again for the angular one it has (as Box2D's limit does at its stop)
+				const { cx, cy } = pointRate()
+				const imp = j.m_mass.solve33(new Vec3(-cx, -cy, -(wB - wA)))
+				const most = step.dt * this.rub
+				const total = Math.max(-most, Math.min(most, this.rubImpulse + imp.z))
+				const dz = total - this.rubImpulse
+				this.rubImpulse = total
+				let px = imp.x
+				let py = imp.y
+				if (dz !== imp.z) {
+					const reduced = j.m_mass.solve22(new Vec2(-cx - k.ez.x * dz, -cy - k.ez.y * dz))
+					px = reduced.x
+					py = reduced.y
+				}
+				j.m_impulse.x += px
+				j.m_impulse.y += py
+				apply(px, py, dz)
+			}
+			A.c_velocity.w = wA
+			B.c_velocity.w = wB
+			return
+		}
+		const { cx, cy } = pointRate()
+		if (j.m_enableLimit && j.m_limitState !== LIMIT_INACTIVE && !fixedRotation) {
+			const Cdot2 = wB - wA
+			const impulse = Vec3.neg(j.m_mass.solve33(new Vec3(cx, cy, Cdot2)))
+			if (j.m_limitState === LIMIT_EQUAL) {
+				j.m_impulse.add(impulse)
+			} else if ((j.m_limitState === LIMIT_LOWER && j.m_impulse.z + impulse.z < 0) || (j.m_limitState === LIMIT_UPPER && j.m_impulse.z + impulse.z > 0)) {
+				const reduced = j.m_mass.solve22(new Vec2(-cx + j.m_impulse.z * j.m_mass.ez.x, -cy + j.m_impulse.z * j.m_mass.ez.y))
+				impulse.x = reduced.x
+				impulse.y = reduced.y
+				impulse.z = -j.m_impulse.z
+				j.m_impulse.x += reduced.x
+				j.m_impulse.y += reduced.y
+				j.m_impulse.z = 0
+			} else {
+				j.m_impulse.add(impulse)
+			}
+			apply(impulse.x, impulse.y, impulse.z)
+		} else {
+			const impulse = j.m_mass.solve22(new Vec2(-cx, -cy))
+			j.m_impulse.x += impulse.x
+			j.m_impulse.y += impulse.y
+			apply(impulse.x, impulse.y, 0)
+		}
+		A.c_velocity.w = wA
+		B.c_velocity.w = wB
+	}
+}
+
+/**
+ * Hinges solved as one: a hinge with friction or damping and every hinge joined to it through moving bodies (a double pendulum's shoulder
+ * and elbow, an arm's joints). planck solves its joints one after another, a few passes a step; through a chain, a friction torque at one
+ * hinge reaches the other bodies only pass by pass, so a held elbow slipped 4.8° as its arm swung, and a chain held by friction gave 0.4°
+ * before it held. Its hinges are solved HINGE_SWEEPS times over in each of planck's passes (contacts and other joints as before).
+ */
+interface HingeGroup {
+	readonly members: readonly Hinge[]
+	/** How many of its hinges planck has come to this step: each pass comes to all of them once. */
+	calls: number
+}
+/** How many times over a chain of hinges is solved in each of planck's passes (`HingeGroup`): with planck's 8 passes, 192 in all. */
+const HINGE_SWEEPS = 24
+
+/** Finds the chains of hinges (`HingeGroup`) among a world's joints: hinges joined through moving bodies, one of them with friction or damping. */
+const groupHinges = (world: World) => {
+	const hinges: Hinge[] = []
+	for (let j = world.getJointList(); j !== null; j = j.getNext()) if (j instanceof Hinge) hinges.push(j)
+	// (in the order they were made, so every run solves them in the same order)
+	hinges.reverse()
+	const parent = hinges.map((_, i) => i)
+	const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i] as number)))
+	const byBody = new Map<Body, number>()
+	hinges.forEach((hinge, i) => {
+		for (const body of [hinge.getBodyA(), hinge.getBodyB()]) {
+			if (!body.isDynamic()) continue
+			const k = byBody.get(body)
+			if (k === undefined) byBody.set(body, i)
+			else parent[find(i)] = find(k)
+		}
+	})
+	const chains = new Map<number, Hinge[]>()
+	hinges.forEach((hinge, i) => chains.set(find(i), [...(chains.get(find(i)) ?? []), hinge]))
+	for (const members of chains.values()) {
+		if (members.length < 2 || !members.some((h) => h.rubs)) continue
+		const group: HingeGroup = { members, calls: 0 }
+		for (const h of members) h.group = group
+	}
+}
+
+/** planck's 3×3 joint mass (its Mat33: columns ex, ey, ez), symmetric. */
+interface Mat33 {
+	readonly ex: { readonly x: number; readonly y: number; readonly z: number }
+	readonly ey: { readonly x: number; readonly y: number; readonly z: number }
+	readonly ez: { readonly x: number; readonly y: number; readonly z: number }
+}
+/** Solves (K + γ·e₃e₃ᵀ)·x = b (a soft angular row on planck's 3×3 K) by Cramer's rule, as planck's own solve33 does. */
+const solveSoft33 = (k: Mat33, gamma: number, bx: number, by: number, bz: number) => {
+	// K's columns, its last diagonal entry softened by γ
+	const e1 = k.ex
+	const e2 = k.ey
+	const e3 = { x: k.ez.x, y: k.ez.y, z: k.ez.z + gamma }
+	// e2 × e3, and the determinant e1 · (e2 × e3)
+	const crossX = e2.y * e3.z - e2.z * e3.y
+	const crossY = e2.z * e3.x - e2.x * e3.z
+	const crossZ = e2.x * e3.y - e2.y * e3.x
+	let det = e1.x * crossX + e1.y * crossY + e1.z * crossZ
+	if (det !== 0) det = 1 / det
+	return {
+		// b · (e2 × e3), e1 · (b × e3), e1 · (e2 × b)
+		x: det * (bx * crossX + by * crossY + bz * crossZ),
+		y: det * (e1.x * (by * e3.z - bz * e3.y) + e1.y * (bz * e3.x - bx * e3.z) + e1.z * (bx * e3.y - by * e3.x)),
+		z: det * (e1.x * (e2.y * bz - e2.z * by) + e1.y * (e2.z * bx - e2.x * bz) + e1.z * (e2.x * by - e2.y * bx))
+	}
+}
+/** planck's limit states (its LimitState). */
+const LIMIT_INACTIVE = 0
+const LIMIT_LOWER = 1
+const LIMIT_UPPER = 2
+const LIMIT_EQUAL = 3
+
+/** planck's rope joint's solver state (private in its typings). */
+interface RopeState {
+	m_bodyA: Body
+	m_bodyB: Body
+	m_invMassA: number
+	m_invMassB: number
+	m_invIA: number
+	m_invIB: number
+	m_rA: Vec2
+	m_rB: Vec2
+	m_u: Vec2
+	m_length: number
+	m_maxLength: number
+	m_mass: number
+	m_impulse: number
+}
+
+/**
+ * A rope: planck's rope joint (slack until taut, never longer than its length), its velocity pass asking that the rope
+ * be no longer than its length where the step will LEAVE its ends (their paths over the step, turning included), so a
+ * bob swinging on a taut rope keeps its energy as a hinged one does (`Hinge`), and a slack rope still pulls only once
+ * it would end the step past its length.
+ */
+class Cord extends RopeJoint {
+	solveVelocityConstraints(step: TimeStep) {
+		const j = this as unknown as RopeState
+		if (j.m_mass === 0) return
+		const A = solving(j.m_bodyA)
+		const B = solving(j.m_bodyB)
+		const h = step.dt
+		const dA = stepDrift(A, j.m_rA, h)
+		const dB = stepDrift(B, j.m_rB, h)
+		const x = j.m_u.x * j.m_length + dB.x - dA.x
+		const y = j.m_u.y * j.m_length + dB.y - dA.y
+		// how far past its length it would end, beyond how far past it is now (the position pass takes that), per step
+		const over = (Math.sqrt(x * x + y * y) - Math.max(j.m_length, j.m_maxLength)) / h
+		const old = j.m_impulse
+		j.m_impulse = Math.min(0, old - j.m_mass * over)
+		const impulse = j.m_impulse - old
+		const px = impulse * j.m_u.x
+		const py = impulse * j.m_u.y
+		A.c_velocity.v.x -= j.m_invMassA * px
+		A.c_velocity.v.y -= j.m_invMassA * py
+		A.c_velocity.w -= j.m_invIA * (j.m_rA.x * py - j.m_rA.y * px)
+		B.c_velocity.v.x += j.m_invMassB * px
+		B.c_velocity.v.y += j.m_invMassB * py
+		B.c_velocity.w += j.m_invIB * (j.m_rB.x * py - j.m_rB.y * px)
+	}
+}
+
+/**
+ * A rope that collides (a rope joint drawn as a chain, `render.style: "chain"`, or one with `collide: true`): while it is taut,
+ * a band `radius` wide each side of the straight line between its anchors, which moving solids (not its own two ends, not
+ * fixed parts) land on, rest on and are pushed by. `carrier` is the end a touching body's constraint is joined to.
+ */
+interface ChainRope {
+	readonly A: Body
+	readonly B: Body
+	readonly la: Vec2
+	readonly lb: Vec2
+	/** Its length and the band's half-width, planck units. */
+	readonly length: number
+	readonly radius: number
+	readonly carrier: Body
+	readonly touches: Map<Body, ChainTouch>
+}
+/** A friction of steel links on what lands on them (wood, brick, steel: 0.4 to 0.6), and no bounce: provisional. */
+const CHAIN_FRICTION = 0.5
+
+/** How far beyond a chain's band its touches are looked for, planck units: 5 cm, as far as `touchChains` reaches. */
+const CHAIN_MARGIN = 0.05 * LENGTH_SCALE
+
+/** Whether a chain is taut: no shorter than its length less what would sag it by its own half-width (a parabola's 8f²/3L), or 1 mm. */
+const chainTaut = (chain: ChainRope, d: number) => chain.length - d <= Math.max((8 * chain.radius * chain.radius) / (3 * chain.length), 0.001 * LENGTH_SCALE)
+
+/**
+ * What a body touching a chain meets: for each point where it touches the chain's band (planck's own polygon test, the band a
+ * thin box along the line), a contact that keeps it out of the band and rubs along it (Coulomb, `CHAIN_FRICTION`), solved
+ * against the line's motion at that point, which moves as the line between its two ends does: a fraction t along it moves as
+ * (1 − t) of end A's anchor and t of end B's, and takes the same shares of the push, as a light rigid line between them
+ * would (a brick resting on a wrecking ball's chain bears on the ball and on the hook in the ratio of the distances). One
+ * constraint over the three bodies, so a heavy brick on a light chain end is held in one solve, not through a light middle body.
+ */
+class ChainTouch extends PlanckJoint {
+	private readonly x: Body
+	private readonly chain: ChainRope
+	private points: {
+		readonly n: Vec2
+		readonly tangent: Vec2
+		readonly rX: Vec2
+		readonly rA: Vec2
+		readonly rB: Vec2
+		readonly t: number
+		readonly sep: number
+		readonly localX: Vec2
+		readonly mass: number
+		readonly tmass: number
+		normal: number
+		rub: number
+	}[] = []
+	constructor(x: Body, chain: ChainRope) {
+		super({ collideConnected: true }, x, chain.carrier)
+		;(this as unknown as { m_type: string }).m_type = "chain-touch"
+		this.x = x
+		this.chain = chain
+	}
+	/** Each body's inverse mass along direction n at arm r. */
+	private static along(body: Body, r: Vec2, n: Vec2) {
+		const sb = solving(body)
+		const cr = r.x * n.y - r.y * n.x
+		return sb.m_invMass + sb.m_invI * cr * cr
+	}
+	initVelocityConstraints(_step: TimeStep) {
+		this.points = []
+		const c = this.chain
+		const a = workingPoint(c.A, c.la)
+		const b = workingPoint(c.B, c.lb)
+		const dx = b.p.x - a.p.x
+		const dy = b.p.y - a.p.y
+		const d = Math.sqrt(dx * dx + dy * dy)
+		if (d < 1e-6 || !chainTaut(c, d)) return
+		// The band grown all round by a speculative margin (the reach `touchChains` looks within): a body that will reach the band within
+		// the step is met where it is now, its approach cut to its real gap (sep, below), instead of being found only once it is inside
+		// the band's 1 mm skin, or past its middle, and pushed out the far side (a 5 mm ball fell through a 4 mm rope from 0.5 m).
+		const margin = CHAIN_MARGIN
+		const band = new BoxShape(d / 2 + margin, c.radius + margin)
+		const xf = new Transform(new Vec2((a.p.x + b.p.x) / 2, (a.p.y + b.p.y) / 2), Math.atan2(dy, dx))
+		const xfX = this.x.getTransform()
+		const centre = this.x.getWorldCenter()
+		for (let f = this.x.getFixtureList(); f !== null; f = f.getNext()) {
+			if (f.isSensor()) continue
+			const shape = f.getShape()
+			const manifold = new Manifold()
+			if (shape.getType() === "circle") CollidePolygonCircle(manifold, band, xf, shape as CircleShape, xfX)
+			else if (shape.getType() === "polygon") CollidePolygons(manifold, band, xf, shape as PolygonShape, xfX)
+			if (manifold.pointCount === 0) continue
+			const wm = manifold.getWorldManifold(null, xf, band.getRadius(), xfX, shape.getRadius())
+			if (wm === undefined) continue
+			const n = new Vec2(wm.normal.x, wm.normal.y)
+			const tangent = new Vec2(-n.y, n.x)
+			for (let i = 0; i < wm.pointCount; i++) {
+				const mid = wm.points[i] as Vec2
+				const grown = wm.separations[i] as number
+				// the point on the body's own surface (the manifold's point is midway between the two surfaces), and its gap to the band
+				// itself, less the slop Box2D's contacts rest within (so it rests on the band as a body rests on a floor)
+				const px = new Vec2(mid.x + 0.5 * grown * n.x, mid.y + 0.5 * grown * n.y)
+				const sep = grown + margin + Settings.linearSlop
+				const t = Math.max(0, Math.min(1, ((px.x - a.p.x) * dx + (px.y - a.p.y) * dy) / (d * d)))
+				const rX = new Vec2(px.x - centre.x, px.y - centre.y)
+				const k = (dir: Vec2) => ChainTouch.along(this.x, rX, dir) + (1 - t) * (1 - t) * ChainTouch.along(c.A, a.r, dir) + t * t * ChainTouch.along(c.B, b.r, dir)
+				const kn = k(n)
+				const kt = k(tangent)
+				this.points.push({ n, tangent, rX, rA: a.r, rB: b.r, t, sep, localX: this.x.getLocalPoint(px), mass: kn > 0 ? 1 / kn : 0, tmass: kt > 0 ? 1 / kt : 0, normal: 0, rub: 0 })
+			}
+		}
+	}
+	/** An impulse j along u on the touching body at its point, and its shares, −(1 − t)·j and −t·j, on the chain's two ends. */
+	private push(p: (typeof this.points)[number], u: Vec2, j: number) {
+		const X = solving(this.x)
+		const A = solving(this.chain.A)
+		const B = solving(this.chain.B)
+		for (const [body, r, share] of [
+			[X, p.rX, j],
+			[A, p.rA, -(1 - p.t) * j],
+			[B, p.rB, -p.t * j]
+		] as const) {
+			if (share === 0) continue
+			body.c_velocity.v.x += body.m_invMass * share * u.x
+			body.c_velocity.v.y += body.m_invMass * share * u.y
+			body.c_velocity.w += body.m_invI * share * (r.x * u.y - r.y * u.x)
+		}
+	}
+	/** The touching point's velocity relative to the chain's line at its point, along u. */
+	private slip(p: (typeof this.points)[number], u: Vec2) {
+		const at = (body: Body, r: Vec2) => {
+			const v = solving(body).c_velocity
+			return { x: v.v.x - v.w * r.y, y: v.v.y + v.w * r.x }
+		}
+		const x = at(this.x, p.rX)
+		const a = at(this.chain.A, p.rA)
+		const b = at(this.chain.B, p.rB)
+		return (x.x - (1 - p.t) * a.x - p.t * b.x) * u.x + (x.y - (1 - p.t) * a.y - p.t * b.y) * u.y
+	}
+	solveVelocityConstraints(step: TimeStep) {
+		for (const p of this.points) {
+			if (p.mass === 0) continue
+			// friction first, within what the last pass pressed with (as planck's contacts do)
+			const most = CHAIN_FRICTION * p.normal
+			const rub = Math.max(-most, Math.min(most, p.rub - this.slip(p, p.tangent) * p.tmass))
+			this.push(p, p.tangent, rub - p.rub)
+			p.rub = rub
+			// no closing on the band: a gap may close only as far as it is (so it lands on it, dead), an overlap not at all
+			const closing = this.slip(p, p.n) + Math.max(p.sep, 0) * step.inv_dt
+			const normal = Math.max(0, p.normal - closing * p.mass)
+			this.push(p, p.n, normal - p.normal)
+			p.normal = normal
+		}
+	}
+	solvePositionConstraints(_step: TimeStep) {
+		let worst = 0
+		const c = this.chain
+		for (const p of this.points) {
+			if (p.mass === 0) continue
+			const x = workingPoint(this.x, p.localX)
+			const a = workingPoint(c.A, c.la)
+			const b = workingPoint(c.B, c.lb)
+			const dx = b.p.x - a.p.x
+			const dy = b.p.y - a.p.y
+			const d = Math.sqrt(dx * dx + dy * dy)
+			if (d < 1e-6) continue
+			// the band's side the body is on now, and how far into it the body's surface point is
+			let nx = -dy / d
+			let ny = dx / d
+			if (nx * p.n.x + ny * p.n.y < 0) {
+				nx = -nx
+				ny = -ny
+			}
+			const sep = (x.p.x - a.p.x - p.t * dx) * nx + (x.p.y - a.p.y - p.t * dy) * ny - c.radius - Settings.polygonRadius
+			worst = Math.min(worst, sep)
+			const C = Math.max(-Settings.maxLinearCorrection, Math.min(0, 0.2 * (sep + Settings.linearSlop)))
+			if (C === 0) continue
+			const n = new Vec2(nx, ny)
+			const k =
+				ChainTouch.along(this.x, x.r, n) + (1 - p.t) * (1 - p.t) * ChainTouch.along(c.A, a.r, n) + p.t * p.t * ChainTouch.along(c.B, b.r, n)
+			if (k === 0) continue
+			const j = -C / k
+			for (const [body, r, share] of [
+				[this.x, x.r, j],
+				[c.A, a.r, -(1 - p.t) * j],
+				[c.B, b.r, -p.t * j]
+			] as const) {
+				const sb = solving(body)
+				sb.c_position.c.x += sb.m_invMass * share * n.x
+				sb.c_position.c.y += sb.m_invMass * share * n.y
+				sb.c_position.a += sb.m_invI * share * (r.x * n.y - r.y * n.x)
+			}
+		}
+		return worst >= -3 * Settings.linearSlop
+	}
+	getAnchorA() {
+		return this.x.getWorldCenter()
+	}
+	getAnchorB() {
+		return this.chain.carrier.getWorldCenter()
+	}
+	getReactionForce(inv_dt: number) {
+		let x = 0
+		let y = 0
+		for (const p of this.points) {
+			x += (p.normal * p.n.x + p.rub * p.tangent.x) * inv_dt
+			y += (p.normal * p.n.y + p.rub * p.tangent.y) * inv_dt
+		}
+		return new Vec2(x, y)
+	}
+	getReactionTorque(_inv_dt: number) {
+		return 0
+	}
+}
+
+/** Whether a body hangs on a joint other than a spring: the time-of-impact pass would solve its impacts as if it were loose. */
+const hinged = (body: Body) => {
+	for (let edge = body.getJointList(); edge !== null; edge = edge.next) if (!(edge.joint instanceof SpringLink) && !(edge.joint instanceof ChainTouch)) return true
+	return false
+}
+
+/** The velocity of a part's own middle (planck units): its body's, for a lone part. */
+const velocityOf = (m: Member) => (m.lone ? m.body.getLinearVelocity() : m.body.getLinearVelocityFromWorldPoint(m.body.getWorldPoint(m.center)))
+
+/**
+ * A ball's rotational inertia over m·r²: 2/5 solid; a shell of thickness `wall` has (2/5)(1−q⁵)/(1−q³),
+ * q the inner over the outer radius, written as the equal (2/5)(1+q+q²+q³+q⁴)/(1+q+q²) so a thin wall
+ * loses no digits: 2/3 as the wall thins, 2/5 as it fills the ball.
+ */
+const ballInertia = (radius: number, wall: number | undefined) => {
+	if (wall === undefined) return 2 / 5
+	const q = Math.max(0, radius - wall) / radius
+	return (2 / 5) * ((1 + q + q ** 2 + q ** 3 + q ** 4) / (1 + q + q ** 2))
+}
+
+/** A round body that is a cylinder along the depth axis, with its length known. */
+const cylinderLength = (part: SolidPart) => (part.body.kind === "ball" && part.shape === "cylinder" ? part.length : undefined)
+
+/** The volume of solid the air flows around, m³: a cylinder's πr²·length, else what its mass is made of. */
+const solidVolume = (part: SolidPart) => {
+	const length = cylinderLength(part)
+	return length !== undefined && part.body.kind === "ball" ? Math.PI * part.body.radius ** 2 * length : volume(part.body)
+}
+
+/**
+ * The air a ball carries in its motion, kg: what a hollow one encloses (ρ·4/3·π·r³ inside its wall) and
+ * the half-displaced-volume of air a sphere drags along when it accelerates (½·ρ·V). It is inertia
+ * only: the enclosed air's weight cancels the buoyancy on the volume it fills, and added mass has no weight.
+ */
+const airCarried = (part: SolidPart) => {
+	if (part.body.kind !== "ball" || part.shape === "cylinder") return 0
+	const r = part.body.radius
+	const inner = Math.max(0, r - (part.body.wall ?? r))
+	return AIR_DENSITY * (4 / 3) * Math.PI * (inner ** 3 + 0.5 * r ** 3)
+}
+
+/**
+ * The air's drag on a slab's or a polygon's outline (meters, its own frame, counterclockwise), set at `local` in its body, as the
+ * body moves and turns now through air moving at `air` (m/s): on each side facing into the air, each bit ds of it at velocity u
+ * through the air meets −k·(u·n)·u·ds, n the side's outward normal and k = ½·ρ·C_d·depth (Newton's flat-plate drag, side by
+ * side: for a body moving straight it is −k·(its width across the flow)·|u|·u). u varies linearly along a side as the body
+ * turns, so the force and its torque about the body's centre of mass are integrated exactly over the stretch where u·n > 0.
+ * Returns the force (N) and the torque (N·m), or nothing when the body is still in still air.
+ */
+const outlineDrag = (body: Body, local: Pose, outline: readonly Vec[], k: number, air: { readonly x: number; readonly y: number }) => {
+	const v = body.getLinearVelocity()
+	const w = body.getAngularVelocity()
+	const vx = v.x / LENGTH_SCALE - air.x
+	const vy = v.y / LENGTH_SCALE - air.y
+	if (vx === 0 && vy === 0 && w === 0) return undefined
+	const centre = body.getWorldCenter()
+	const cx = centre.x / LENGTH_SCALE
+	const cy = centre.y / LENGTH_SCALE
+	// the part's frame in the world: its origin and its angle (its body's, turned by its pose in the group)
+	const origin = local === IDENTITY ? body.getPosition() : body.getWorldPoint(new Vec2(local.at.x * LENGTH_SCALE, local.at.y * LENGTH_SCALE))
+	const ox = origin.x / LENGTH_SCALE
+	const oy = origin.y / LENGTH_SCALE
+	const angle = body.getAngle() + (local === IDENTITY ? 0 : local.angle)
+	const c = Math.cos(angle)
+	const s = Math.sin(angle)
+	let fx = 0
+	let fy = 0
+	let torque = 0
+	const n = outline.length
+	for (let i = 0; i < n; i++) {
+		const p = outline[i] as Vec
+		const q = outline[(i + 1) % n] as Vec
+		// the side from P to Q in the world: P's arm from the centre of mass, the side's vector e, its outward normal (e turned clockwise)
+		const rx = ox + p.x * c - p.y * s - cx
+		const ry = oy + p.x * s + p.y * c - cy
+		const ex = (q.x - p.x) * c - (q.y - p.y) * s
+		const ey = (q.x - p.x) * s + (q.y - p.y) * c
+		const length = Math.sqrt(ex * ex + ey * ey)
+		if (length === 0) continue
+		const nx = ey / length
+		const ny = -ex / length
+		// u(t) = u0 + t·u1 along the side (t from 0 at P to 1 at Q): the body's velocity there, turning included, through the air
+		const u0x = vx - w * ry
+		const u0y = vy + w * rx
+		const u1x = -w * ey
+		const u1y = w * ex
+		// u·n = a + b·t: the stretch [t0, t1] of the side facing into the air
+		const a = u0x * nx + u0y * ny
+		const b = u1x * nx + u1y * ny
+		let t0 = 0
+		let t1 = 1
+		if (b === 0) {
+			if (a <= 0) continue
+		} else {
+			const root = -a / b
+			if (b > 0) t0 = Math.max(0, root)
+			else t1 = Math.min(1, root)
+			if (t1 <= t0) continue
+		}
+		// ∫ (a + b·t)·tʲ dt over [t0, t1], j = 0, 1, 2
+		const d1 = t1 - t0
+		const d2 = (t1 * t1 - t0 * t0) / 2
+		const d3 = (t1 * t1 * t1 - t0 * t0 * t0) / 3
+		const d4 = (t1 * t1 * t1 * t1 - t0 * t0 * t0 * t0) / 4
+		const i0 = a * d1 + b * d2
+		const i1 = a * d2 + b * d3
+		const i2 = a * d3 + b * d4
+		// dF = −k·(u·n)·u·length·dt; its torque about the centre of mass, (r + t·e) × dF
+		const scale = -k * length
+		fx += scale * (u0x * i0 + u1x * i1)
+		fy += scale * (u0y * i0 + u1y * i1)
+		torque += scale * ((rx * u0y - ry * u0x) * i0 + (rx * u1y - ry * u1x + ex * u0y - ey * u0x) * i1 + (ex * u1y - ey * u1x) * i2)
+	}
+	// Over a step, the drag is the one of the motion at the step's start (exact, its steady speeds too) while it takes a small share ρ of
+	// that motion (velocity and spin, weighed by mass and inertia): ρ is thousandths for anything in a scene so far. A share over half
+	// would turn the motion back faster than it goes (a 0.3 g foam plate spun at a few hundred turns a second), so past ½ the drag is
+	// scaled by 1/(ρ + ½): the share it takes stays under 1, and the motion dies away instead of reversing.
+	const m = body.getMass()
+	const local0 = body.getLocalCenter()
+	const I = (body.getInertia() - m * (local0.x * local0.x + local0.y * local0.y)) / (LENGTH_SCALE * LENGTH_SCALE)
+	const moving = m * (vx * vx + vy * vy) + I * w * w
+	if (moving > 0) {
+		const share = (-(fx * vx + fy * vy + torque * w) * STEP) / moving
+		if (share > 0.5) {
+			const s = 1 / (share + 0.5)
+			fx *= s
+			fy *= s
+			torque *= s
+		}
+	}
+	return { fx, fy, torque }
+}

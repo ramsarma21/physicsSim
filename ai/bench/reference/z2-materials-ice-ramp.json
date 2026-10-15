@@ -1,0 +1,149 @@
+{
+ "case": "z2-materials-ice-ramp",
+ "notes": "",
+ "plan": {
+  "title": "Three balls on an ice ramp",
+  "items": [
+   {
+    "id": "box",
+    "type": "cardboard-box",
+    "name": "Box",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 0.65
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ice",
+    "type": "ice-sheet",
+    "name": "Ice ramp",
+    "props": {
+     "legs": false,
+     "length": 1.2
+    },
+    "place": {
+     "on": "table",
+     "x": 1.24975,
+     "angle_deg": -11
+    },
+    "why": "reference"
+   },
+   {
+    "id": "marble",
+    "type": "glass-marble",
+    "name": "Glass marble",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.71348,
+     "y_m": 0.25188
+    },
+    "why": "reference"
+   },
+   {
+    "id": "wood",
+    "type": "wooden-ball",
+    "name": "Wooden ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.81489,
+     "y_m": 0.24949
+    },
+    "why": "reference"
+   },
+   {
+    "id": "rubber",
+    "type": "superball",
+    "name": "Rubber ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.93364,
+     "y_m": 0.2315
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 4,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-z2",
+  "name": "Three balls on an ice ramp",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.4,
+   "y0": -0.12,
+   "y1": 0.9
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "box",
+    "type": "cardboard-box",
+    "name": "Box",
+    "x": 0.65,
+    "y": 0.1015
+   },
+   {
+    "angle": -11,
+    "id": "ice",
+    "type": "ice-sheet",
+    "name": "Ice ramp",
+    "props": {
+     "legs": false,
+     "length": 1.2
+    },
+    "x": 1.24975,
+    "y": 0.12678
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "marble",
+    "type": "glass-marble",
+    "name": "Glass marble",
+    "x": 0.71348,
+    "y": 0.25188
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "wood",
+    "type": "wooden-ball",
+    "name": "Wooden ball",
+    "x": 0.81489,
+    "y": 0.24949
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "rubber",
+    "type": "superball",
+    "name": "Rubber ball",
+    "x": 0.93364,
+    "y": 0.2315
+   }
+  ],
+  "goals": []
+ }
+}

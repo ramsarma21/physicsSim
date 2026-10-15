@@ -1,0 +1,23 @@
+<!doctype html><meta charset="utf-8"><title>vehicles cold all</title>
+<body style="font:12px monospace;background:#222;color:#ddd"><pre id="o">running</pre>
+<script>
+// loads r2-vehicles-fix.html?mode=cold&item=<k> in a fresh iframe for each vehicle item (fresh module state = cold caches) and collects window.cold
+const items = (new URLSearchParams(location.search).get("items") || "toy-car,motor-car,cart,skateboard,truck,wheel,bicycle-wheel,pinball-flipper").split(",")
+const rounds = Number(new URLSearchParams(location.search).get("rounds") || 1)
+window.results = []
+;(async () => {
+  for (let r = 0; r < rounds; r++) for (const it of items) {
+    const f = document.createElement("iframe")
+    f.style.cssText = "width:400px;height:300px;position:fixed;right:0;top:0;border:0"
+    f.src = `r2-vehicles-fix.html?mode=cold&prof=1&item=${it}&r=${Math.random()}`
+    document.body.appendChild(f)
+    for (let i = 0; i < 200; i++) { await new Promise((s) => setTimeout(s, 100)); try { if (f.contentWindow.cold) break } catch {} }
+    const c = f.contentWindow.cold
+    const tot = c?.parts?.find((p) => p.total !== undefined)
+    window.results.push({ item: it, ms: tot?.total, tris: tot?.tris, parts: c?.parts?.filter((p) => p.id).map((p) => `${p.id.split("/")[1]} ${p.ms}ms ${p.tris}t`), tex: c?.tex })
+    f.remove()
+    document.getElementById("o").textContent = JSON.stringify(window.results.map((x) => [x.item, x.ms, x.tris]))
+  }
+  window.done = true
+})()
+</script>

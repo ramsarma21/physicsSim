@@ -1,0 +1,310 @@
+{
+ "surfaces": {
+  "final": {
+   "pass": false,
+   "verdict": "Round 6 does not pass. The bucket major is fixed, but I found a new major physics bug the group can fix: the hinged gate hits its own hanger.\n\n**The gate bug.** The hanger is meant to be decoration. Its docstring says \"It never touches the part below\". In fact the gate's top corners strike it.\n- Default gate (20 mm thick): it swings only to about \u00b126\u00b0 and bounces off the bar. The swing period drops to about 0.6 s; it should be 1.04 s. The default 40\u00b0 start pose already overlaps the bar.\n- With `hanger: false`, it swings \u00b139.6\u00b0 with a 1.07 s period, as it should.\n- At 5 cm thick it is stuck within \u00b110\u00b0; at 10 cm, within \u00b16\u00b0.\n- Released at 150\u00b0, it climbs to 177\u00b0 and stays standing upright.\n- Outcomes change: a billiard ball opens the default gate to 26.4\u00b0 and bounces back. With no hanger the gate opens to 36.5\u00b0 and the ball goes through.\n\n**The bucket (the open major) holds at every size I tried:**\n- Sizes: 5\u00d74, 8\u00d76, 12\u00d710, 20\u00d712 cm with matching depth, the default, straight sides, 0.6\u00d70.16, depth 0.1 and 1.5\u00d71\u00d71.\n- The ears, wire and grip now scale with the pail. Below 4 cm tall or 5 cm wide it is a plain mini pail. Trays and troughs get no bail.\n- Nothing goes into the table, and the handle stays inside the depth (z 0.0/0.0 everywhere).\n- x is within 0.3 mm on tapered pails and 1.8 mm on straight ones. y is 1.7 mm over at the top: the rolled rim, after the view's 1 mm lift onto the table.\n- Wood, steel and cardboard pails look right.\n\n**The fixer's staircase and gate claims check out:**\n- Staircase outline is 0.0 at min, default and max, and it builds as one mesh.\n- The deep gate's knots vary per board.\n\n**Every item checked.** All 24 items at default and at their min and max, with ctx, ortho outline and two close-ups each. Outlines are within about 1 mm (details under 2 mm), apart from the small items listed below.\n\n**Build cost** (built-in browser, a fresh iframe per item):\n- Every default builds in 127 ms or less (steel-beam is the slowest).\n- The 20-step 0.3\u00d70.5\u00d71 staircase takes 147\u2013150 ms: right at the budget (the fixer measured 113 ms headless).\n- Triangles stay at 30.4k or fewer (peg-board 20\u00d720).\n- Slider sweeps bake nothing new: beam depth/thickness, bucket width/depth, cup width, staircase run, plank depth. The exception is carpet thickness, which re-bakes once about every 5 mm (one 111 ms step), already accepted in round 4.\n\n**Tests and scenarios:**\n- test_rg.py passes; test_catalog.py passes 139 of 139.\n- Scenarios using the group's items, all with 0 warnings: conveyor-delivery 3/3, rube-goldberg 1/1, spring-launch 1/1. Newton's cradle hands the swing to ball 5 correctly. Pendulum-dominoes topples all 7. Plinko runs.\n- Lever tips to 12.5\u00b0 against a geometric 12.7\u00b0; the free pendulum's period is within 1%.\n\n**Smaller problems (details below):**\n- Bucket: the bail hook ends poke 2 mm through the wall into the pail.\n- Steel pail: the zinc texture smears in a band about 3 cm deep under the rim.\n- Lever and seesaw: the pivot pin is a fixed size, so at the thinnest planks it is fatter than the plank.\n- Glass cup and glass funnel cast solid black shadows.\n- Paper cup: the side seam strip is drawn over the printed band.\n- Small box: the hanging-rod washers stick out 3.7 mm.\n- Funnels over about 1.55 m wide go through the room's back wall.\n- Lever fulcrum is 4.2 mm short of its depth on each side.\n- Leftovers from earlier rounds: the steel plate looks like camouflage, wide wood repeats in rows, and the smallest basket is a lump.\n\n**Where things are.** My page is `web/dev/r6rev-surfaces.html`, a copy of the fixer's page. Pictures are in `web/dev/shots/r6rv-surf-*.png`, e.g. `r6rv-surf-gate-hinge2-t06.png` and `-t09.png` at the bounce. I edited no project files.",
+   "findings": [
+    {
+     "item": "hinged-gate (physics: the decorative hanger collides with the gate)",
+     "severity": "major",
+     "where": "group",
+     "problem": "`build_gate` (machines/catalog_items.py:452) calls `_hanger(c, bar_depth=d)`. That puts a static 80\u00d712 mm slab with its underside only 6 mm above the gate's pivot. The gate is a th-wide slab pivoted at the middle of its top face, so its top corners swing on a circle of radius th/2. With Box2D's skin of about 2 mm they reach the bar once (th/2)\u00b7sin \u03b8 + 2 mm \u2265 6 mm.\n\nMeasured with /api/simulate (gate alone, 40 cm):\n- Default (th 0.02, start 40\u00b0): bounces off the bar at \u221226.7\u00b0 and +26.2\u00b0. Zero crossings at 0.467, 0.758, 1.067, 1.408 s, against 0.475, 1.008, 1.542 s with `hanger: false`, which swings \u00b139.6\u00b0 with T = 1.07 s (theory 1.04 s).\n- th 0.05: stuck within \u00b110\u00b0. th 0.1: within \u00b16\u00b0.\n- start_angle 150: the gate turns UP to 177\u00b0 and stays upright on the bar. With no hanger it swings down to \u2212135\u00b0 and back.\n- The default 40\u00b0 start pose already overlaps the bar: the corner rises 6.4 mm against a 6 mm gap.\n- Outcome change: a billiard ball rolled into the default gate opens it 26.4\u00b0 and bounces back to x 0.58. With no hanger the gate opens 36.5\u00b0 and the ball goes on to x 1.05.\n\nIn 3D the gate visibly bangs off the bar (r6rv-surf-gate-hinge2-t06/-t09.png). The catalog says it is \"a plank hinged at its top end \u2026 swings open when something hits it\", and the hanger docstring says it never touches the part below.\n\nThe pendulum has the same hanger. Its 4 mm rod only reaches the bar past about \u00b1100\u00b0 (start 150 bounces at \u2212113\u00b0 instead of \u2212141\u00b0), so that one is minor.",
+     "fix": "1. machines/catalog_items.py, `build_gate`: change the call to `_hanger(c, y=round(max(0.012, th / 2 + 0.0105), 5), bar_depth=d)`. This puts the bar's underside th/2 + 4.5 mm above the pivot, clear of the swept top corners plus the skin.\n2. Mirror it in web/sim/catalog-items.js line 639: `_hanger(c, { y: pyRound(Math.max(0.012, th / 2 + 0.0105), 5), bar_depth: d })`.\n3. web/models/rods.js, the `addModel(\"hinged-gate\", \"hanger\")` model: it hard-codes `py = -0.012 - 0.0005` and `gth = 0.02`. Derive both from ctx.props.thickness the same way (`yH = max(0.012, th/2 + 0.0105)`, `py = -yH - 0.0005`), so the pintle strap reaches down to the pin.\n4. Past about \u00b190\u00b0 the gate's body sweeps through the space above the pivot, so any bar there is hit. Either clamp start_angle to \u00b185\u00b0 while the hanger is on, or leave out the hanger's body for |start_angle| > 85\u00b0. A start pose must never overlap the bar.\n5. Run the parity tools (python_functions_changed: build_gate).\n6. Re-check: hanger on and off give the same swing for th 0.003\u20130.1 and start \u00b110\u2026\u00b185\u00b0, the billiard-ball push opens the gate past 36\u00b0, and test_rg/test_catalog still pass."
+    },
+    {
+     "item": "bucket (bail hooks)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "bailParts (web/models/containers.js) runs the hooked wire ends from `x0 = pr.rAt(yE) - 0.006*se`, which is 6 mm inside the wall's outer surface. Through a 4 mm wall that leaves 2 mm (\u00d7se) sticking into the pail. They show as two bright dots or tabs inside, just under the rim: r6rv-surf-bucket-alu-inside.png, -steel-inside.png, and the w60h16 close-ups. A real bail's hook bends back through the ear's hole and never goes through the wall.",
+     "fix": "Start the stub at the wall's outer surface: `x0 = pr.rAt(yE) + 0.0002`. Or bend it into a short J inside the ear plate (between the plate and the wall). If inside detail is wanted, draw two rivet heads inside the pail at the ear rivets' heights."
+    },
+    {
+     "item": "bucket (steel/galvanised) and cardboard tub: sheared texture on the lathe",
+     "severity": "minor",
+     "where": "group",
+     "problem": "`lathe(..., {seamless: true})` in web/models/surfaces-lib.js (line ~866) rounds the number of tiles round each ring separately when not swapped. On a tapered pail the count jumps between two neighbouring rings: 3 to 4 tiles at r \u2248 0.139 on the default pail. That band of triangles shears the texture by up to a whole tile.\n- On the galvanised pail the top ~3 cm of the outer wall shows diagonal smeared streaks instead of spangle (r6rv-surf-bucket-steel-top.png; faintly in the ctx shot).\n- The inner wall is a single band from rim to floor, so its spangles are sheared over the whole height (steel-inside).\n- Brushed aluminium hides it.",
+     "fix": "For a non-swapped seamless lathe, use one tile count for every ring, as the swapped branch already does: `circ = Math.max(1, Math.round((meanR * phi) / t0)) * t0`, the same for all i. The texture then stretches by \u00b112% on a 0.78 taper instead of shearing."
+    },
+    {
+     "item": "lever and seesaw (pivot hardware at thin planks)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The pivot hardware is a fixed size, the same class as the old bucket major:\n- Lever (rods.js lever fulcrum): pin r 3.2 mm, hex head 4.8 mm, gusset head r 7.5 mm.\n- Seesaw (pivotFork): bolt r 2.8 mm, head boltR\u00b71.5.\n- At lever thickness 0.005 (slider minimum) or seesaw plank_thickness 0.004, the 6.4 / 5.6 mm pin is fatter than the plank and shows as a rod lying across the plank's top. The heads and cheek tops tower over the plank (r6rv-surf-lever3 / seesaw2 crops, lever-min-pin.png).",
+     "fix": "Scale with the plank:\n- Lever: `pinR = Math.min(0.0032, 0.3 * th)`; hex head `Math.min(0.0048, 0.45 * th + 0.001)`; gusset head `hr = Math.min(0.0075, Math.max(pinR + 0.002, 0.6 * th))`.\n- Seesaw: pass `boltR = Math.min(0.0028, 0.3 * th)` to pivotFork, and size roundTop's head radius from it.\nThe pin must stay inside the plank at every thickness from 3 mm up."
+    },
+    {
+     "item": "cup (glass) and funnel (glass): opaque shadows",
+     "severity": "minor",
+     "where": "group",
+     "problem": "A clear glass cup and a glass funnel throw a solid dark shadow, as dark as wood (r6rv-surf-cup-glass-sheet, r6rv-surf-funnel-glass-sheet). The glass and ice sheets already use `L.lightShadow` (a faint dithered shadow).",
+     "fix": "In paperCup/roundVessel and the funnel, when the material is glass: build the meshes with `{ cast: false }` and add `L.lightShadow(<the outer lathe geometry>, 0.5)`, as sheetOf does."
+    },
+    {
+     "item": "cup / cardboard tub (side seam)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "paperExtras (containers.js) draws the glued seam as a 6 mm strip of light kraft (#c9a26b) from bottom to top, 0.05 mm proud of the printed band.\n- On the default cup, seen from behind (az \u22122.2), it reads as a strip of tape across the white dotted band (r6rv-surf-cup-seam--22.png). On a real cup the print runs over the overlap.\n- The strip is a fixed 6 mm on a constant angle, so at 1.5 m it becomes two tapering brown slivers through the band (cup-max close B).",
+     "fix": "Inside the band's heights, give the seam strip the band's material (or split it: kraft below and above the band, band texture across it). Keep only the thin shadow line at full height. Size the strip as `Math.min(0.006, 0.07 * rAt(H/2))` wide."
+    },
+    {
+     "item": "box (small sizes)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "At width 0.05, thickness 0.003, depth 0.02, wall 0.02, the hang-rod washers and nuts on the crate's top corners stick 3.7 mm out on each side in x (vbox). That is over the 2 mm allowed for details. They also look oversized on a 5 cm crate (r6rv-surf-box-min-sheet).",
+     "fix": "In crateParts, size the washer and nut from the corner post: `r = Math.min(<current>, 0.5 * thickness + 0.001)`, and keep the rod's axis at least that far inside the outer face, so they stay inside x \u00b1 w/2 + 1 mm."
+    },
+    {
+     "item": "funnel (mouth over ~1.55 m)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The funnel's depth is mouth + 2t (up to 2.1 m). The room's back wall stands at z = \u22120.8 (view3d), so a funnel wider than about 1.55 m is cut by the wall in a saddle curve. At the 2 m maximum half the back of the cone is missing (r6rv-surf-funnel-max-top.png).\n\nAlso, at every size the round rim falls 2.9 mm short of the physics depth on each side (z \u22122.9/\u22122.9), because the depth includes the walls' thickness.",
+     "fix": "Choose one:\n- In catalog_items.py (and its JS port), cap the funnel's depth at 1.5 m. Above that the model becomes an oval cone (z scale = 1.5 / (mouth + 2t)).\n- Or ask the view agent to place the wall behind the deepest item.\nIn the model, scale z so the rim reaches the physics depth: `zs = d / (2 * rimOuterRadius)`."
+    },
+    {
+     "item": "lever (fulcrum depth)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The lever fulcrum's physics body is 80 mm deep, but the model is 71.6 mm: the wood is `min(0.06, d - 0.01)` plus the 2.5 mm gussets and the pin heads. It falls 4.2 mm short on each side at every size (bbox2).",
+     "fix": "Make the wood fill the depth less the hardware: `dW = dBody - 2 * (t + 0.0026 + 0.0007)`. Or set the catalog fulcrum depth to 0.072 (the plank's 0.06 plus hardware), with the JS port mirrored."
+    },
+    {
+     "item": "steel-beam large plate, plank/staircase at max (carried over)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "Still from round 4, now better but not gone:\n- A 2\u00d71 m or 4\u00d71 m steel plate reads as camouflage: high-contrast blue-grey and light-grey blotches with stair-stepped, stretched edges (r6rv-surf-beam-plate.png, steel-beam-max-cAz).\n- A 2\u00d70.6 m plank and the 0.3\u00d70.5\u00d71 m staircase stringer show rows of near-identical cathedral arches with no visible board joints, so they read as a print (r6rv-surf-plank-wide-top, stair-max-ctx). Knots are no longer in columns, though.\nEverything looks right at default sizes.",
+     "fix": "Steel: bake the blotch mask at 1.2 m or larger with smooth edges (blur 2\u20133 px, or a bilinear field), and lower its contrast to about \u00b112%.\nWood panels: give each glued board a visibly different shade (\u00b16\u20138%) and a 0.3 mm darker glue line. Alternate the arch direction board to board (u \u2192 \u2212u, as already done for the stringer bands)."
+    },
+    {
+     "item": "basket (minimum size)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "At the slider minimum (0.03\u00d70.02, thickness 0.002, depth 0.02) the basket is a lumpy pillow: fat strands, a rim swirl standing proud, 1.8 mm out in x and z (r6rv-surf-basket-min-sheet). This is the round-4 \"extreme basket\" minor, unchanged.",
+     "fix": "As proposed in round 4: below W < 0.06 or H < 2.5\u00b7t, scale the strand and rim radii with the basket, or draw a plain woven block wrapped with a flat cap."
+    }
+   ]
+  },
+  "needs_elsewhere": [
+   "Nothing needed now for the mounts finding. view3d.js already draws the stands: the pendulum-dominoes hanger gets a retort stand, and a raised peg gets a post. A test with show(..., fixed: true) makes a hinged gate static, so the view sees the gate as holding up its hanger and draws no stand. That comes from the test page, not the view. The render-only plywood plates (peg, bumper, hanger wall plate) are still drawn: they now read as a board held by the stand. Removing them and shrinking _hanger's depth is optional follow-up for the group.",
+   "thumbs3d.js (app agent): no change needed. Catalog cards rebuild from the same models; only default looks moved slightly: the steel mill-scale layout, the staircase stringer and back board, and the cup band canvas height (at most 2 %)."
+  ]
+ },
+ "everyday-silhouettes": {
+  "final": {
+   "pass": false,
+   "verdict": "**Verdict: does not pass.** All three open majors are fixed, but one new major problem, fixable inside this group, remains. An egg wider than its length (width about 1.08 to 1.3 times the length) comes to rest in poses where a real egg would keep rolling.\n\n**The three open majors are fixed:**\n- **Traffic cone:** keeps its taper at every size. The top, collar and rim now scale with the cone. Shapes checked: min (61 \u00d7 91 mm), 0.3x, half size, default, squat (500 \u00d7 120 \u00d7 300), thin (61 \u00d7 457) and wide (305 \u00d7 91 \u00d7 61). The model is at most 0.73 mm outside the outline and at most 1.18 mm inside it; the 1.18 mm is at the rounded bottom edge of the base.\n- **Egg on its blunt end:** a hen's egg now falls over. I stood eggs on the blunt end at 88, 90 and 92 degrees, dropped from 0.5 mm and 3 cm, at width/length 0.5 to 0.813: 48 of 48 rolled to the true side rest (within 0.5 degrees) and lay still. Stood on the pointed end, they also fell over.\n  - The default egg settles 8.8 degrees off level in 0.9 s.\n  - Rounder eggs (width over 0.815 of the length, the shapes the fixer builds from balls) dropped 3 cm from 24 angles: 144 of 144 ended within 3 degrees of a true rest and still. These eggs stand on their blunt end correctly.\n  - Weight, centre of gravity and moment of inertia match the true egg (within 0.4 %) at 9 shapes.\n- **Glass jar:** no flange at widths 17.4, 20 and 30 mm. The thread stays below the rim at a 22.4 mm height. 15 mm glass with the lid fits the outline to within 1.34 mm.\n\n**Looks:**\n- All 12 items look right on the table at normal distance and in close-ups from two angles, at min, default and max size.\n- At default size the models are within 1.7 mm outside and 1.9 mm inside the outline; the 1.9 mm is the mug's rounded foot.\n- The light-colour catalog thumbnails now show the glass jar as clear glass.\n\n**Build cost** (headless browser, fresh page each time):\n\n| Item | Cold build (ms) | Triangles |\n|---|---|---|\n| rubber-duck | 60 | 27.8k |\n| sneaker | 34\u201339 | 29.4k |\n| traffic-cone | 17\u201334 | 9.2k |\n| egg | 20\u201328 | 9.2k |\n| glass-jar | 22\u201326 | 21.6k |\n| others | 5.5\u201323 | 14.5k\u201329.3k |\n\n- One resize step takes 0.4 to 1.5 ms for the egg, cone and jar, and no texture is redrawn (zero canvases created).\n- The server builds a new egg shape in 0.2 to 21 ms.\n\n**Tests:** test_rg.py passes; test_everyday.py passes 38 of 38. No file in web/scenarios uses these items.\n\n**The new major (wide eggs):** an egg 57 \u00d7 62.7 mm (width 1.1 times the length) set gently on the table (0.5 mm) stays put for 40 s at poses whose centre of gravity is 1.8 to 4.8 mm above the nearest true rest.\n- Set down level, it stays level; the real egg would roll 43 degrees to its rest.\n- Placed at 15, 30 or 150 degrees, it stays there too.\n- At width 1.14 times the length it stays 9 to 31 degrees from a rest, at 28.5, 57, 114 and 200 mm lengths.\n- At width 1.22 to 1.26 times the length (about 68 to 72 mm wide at the default 57 mm length) it rocks \u00b16 to 12 degrees with no sign of slowing for 40 s and creeps 10 mm sideways.\n- These shapes are a few steps of the width slider away from the default egg. The current tests check the outline mathematically but never drop eggs of these shapes.\n\n**Changes made:** none to project files. Shots are saved as web/dev/shots/r6-rv-es-*.png; scratch scripts and montages are in the session scratchpad under r6es/.",
+   "findings": [
+    {
+     "item": "egg (wider than long, width/length about 1.08 to 1.3)",
+     "severity": "major",
+     "where": "group",
+     "problem": "Built as a chain of convex pieces (machines/catalog_everyday.py: build_egg dispatch, _egg_chain, _egg_chain_at, _egg_spiral, _egg_bands, _egg_build_chain). Set down gently (0.5 mm drop, 40 s runs), the egg stays wherever it is put instead of rolling to the true curve's rest.\n- 57 x 62.7 mm (width 1.1x length): set down at 0 degrees it stays level (way down 270.4) with its centre of gravity 1.76 mm above the true rest at 313.3. Placed at 15, 30, 150 or 180 degrees it also stays put, 1.76 to 4.79 mm above a rest.\n- 24-angle sweeps at 57 x 62.7: 7 of 24 correct from 0.5 mm, 14 of 24 from 3 cm.\n- Width 1.14x length (57, 114, 28.5 and 200 mm long): held 9 to 31 degrees from a rest.\n- Width 1.2 to 1.26x length (68 to 72 mm at 57 mm long): rocks plus or minus 6 to 12 degrees with no decay for 40 s, drifting 10 mm sideways. The true curve is within 2 to 8 microns of level over plus or minus 6 degrees there, and with rolling resistance 0 nothing stops the rocking; a real egg would stop at once.\n- Width 1.4x: slowly tips 3.4 degrees over 14 s, lifting its centre of gravity 0.6 mm, then snaps back, every 16 s.\nThe support-function test passes; the engine's 0.5 mm slop is what holds these shapes. In the app an added egg is set down at rest, so widening it to about 63 mm reproduces the held case directly. The fixer's report calls this 'held or still rocking' and does not mention the poses 43 to 59 degrees off a rest or the rocking that never stops.",
+     "fix": "Build width/length 1.08 to 1.5 from balls as well: extend _egg_balls to more balls (for example two or three shoulder pairs plus the tip balls), with a hidden pin (render hinge none) between every overlapping pair, as the round egg already does. The fixer estimates 15 to 28 pins; pins cost little and the code already handles them. If that cannot be made to work before the engine's per-assembly collision filter lands, cap the egg's effective width at 1.08 x length in build_egg and in the model's B (web/models/everyday-b-small.js), and say so in the width prop's help (no real egg is wider than it is long). Either way, add test_everyday drops for widths 1.1, 1.14, 1.22 and 1.26 x 57 mm: from 0.5 mm at 0, 15, 30, 150, 180, 200 and 300 degrees, run 40 s, each ending within 3 degrees of a true rest and still. Mirror any machines/*.py change in web/sim/catalog-everyday.js (the Resync step)."
+    },
+    {
+     "item": "egg (round, just past width/length 0.815)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "57 x 46.6 and 57 x 46.7 mm eggs stood 5 degrees off upright on the blunt end are held 5.3 to 6.0 degrees tilted, still (true rest at 0 degrees; engine slop). At 0.816 stood upright they still rock 0.9 degrees after 12 s.",
+     "fix": "Covered if the ball fit's blunt-end crossing is made a little rounder near the threshold. Otherwise accept and note in the source text."
+    },
+    {
+     "item": "egg (round eggs built from balls)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "Long settle times because rolling resistance is 0. A 57 x 57 mm egg set down at 30 degrees settles only after 9.5 s, and a 57 x 54 mm one after 6.7 s. Set on the pointed end, 57 x 51.3 and 57 x 57 are still rocking at 8 s. A real egg stops within 1 to 2 s.",
+     "fix": "A small rolling resistance on the ball solids only (not the tip ball), or angular damping on the egg's root, chosen so that the tip-balance test still passes."
+    },
+    {
+     "item": "coffee-mug, water-bottle, sneaker, stapler, rubber-duck, egg at maximum size",
+     "severity": "minor",
+     "where": "group",
+     "problem": "Fixed-proportion foot roundings and polygon chords grow with size. At 5x (4x for the sneaker) the model misses the outline by: mug 9.7 mm (short) and 3.7 mm (out); water bottle 7.5 and 4.4; sneaker 7.1 and 6.8; stapler 4.4 and 5.3; duck 3.9 and 3.6; hen's egg at 285 x 220 about 3.5. The rule is 1 mm at every slider value. None of it shows at normal distance.",
+     "fix": "Cap the foot roundings at an absolute size (for example 2 mm), or add matching chamfer corners to the physics outlines at large sizes; add facets to the hen's egg pieces past 2x."
+    },
+    {
+     "item": "web/sim/catalog-everyday.js (browser port)",
+     "severity": "major",
+     "where": "elsewhere",
+     "problem": "The browser port is stale: the file is dated 07:37 against catalog_everyday.py at 11:30 UTC. The cone still has rt = min(0.025, 0.9 rb) (line 836), so its outline no longer matches the 3D model, which now scales. The egg is still the old two-half octagon, whose 'egg-top' part is not registered as a null model, so it would draw a stand-in shape. The sneaker ranges are old. Running node tools/parity/catalog.mjs --module catalog_everyday --quick --no-browser crashes at [catalog] (TypeError reading 'filter', catalog.mjs:398). The static build would ship the old cone and egg.",
+     "fix": "The Resync step ports every function in the fixer's python_functions_changed list (_egg_* , _weld_ball, _shares, _len, _box, build_cone, build_egg, _jar and the sneaker ranges). Then run tools/parity/run.sh, node tools/parity/catalog.mjs and node --no-warnings tools/parity/fuzz-live.mjs --n 300."
+    },
+    {
+     "item": "egg rest lowering (web/view3d.js)",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "The model branch ignores userData.restGrow. The hen's egg sits 0.5 mm into the tabletop at default size and 1.6 mm at 285 x 220, where a camera at tabletop level shows a visible flat at the contact.",
+     "fix": "In the model branch, use dynRest(s, mdl.userData?.restGrow ?? 0), as the fixer asked."
+    },
+    {
+     "item": "engine: welded assemblies colliding with themselves (tooling/src/sim/physics.ts)",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "Solids welded into one assembly collide with each other unless they are parent and child. That forces hidden pins (round eggs) or 1.2 mm slits elsewhere, and keeps eggs from width/length 1.08 to 1.5 from using a smooth outline made of balls.",
+     "fix": "A per-assembly collision filter (for example a negative filterGroupIndex per weld root)."
+    }
+   ]
+  },
+  "needs_elsewhere": [
+   "Resync (web/sim/catalog-everyday.js): port these exactly. _weld_poly's new optional at=(0.0, 0.0), which gives the same JSON by default. The module constants EGG_CURVE, EGG_MID, EGG_TIP, EGG_CAP, EGG_CAP_T, EGG_CG, EGG_I, EGG_TIP_SHARE, EGG_CAP_SHARE, EGG_SLIT, EGG_SKIN. The new helpers _egg_prof, _hull, _tidy, _plane, _egg_outline (written with explicit products and sqrt, no **2 or hypot, for parity). _fruit.build_egg and the egg's description and source text. The 'eggshell' material in _materials (rolling 0.0 and the new source text). _shapes.build_cone and the traffic-cone 'width' prop help and source text. Until this is ported, node tools/parity/fuzz-live.mjs crashes in web/sim/items.js summarize: the server's track has e/egg-end, e/egg-tip and e/egg-cap, but the port still builds e/egg and e/egg-top. The cone's top radius also differs (the port gives 25 mm at a 100 mm base; the server gives 8.2 mm).",
+   "web/view3d.js: rest lowering lowers a model by its polygon's gap alone (dynRest(s, 0) for models, around line 3135). The egg's shell reaches 0.52 mm below its physics resting flat, so it sits 0.5 mm into the tabletop. The egg model now sets out.userData.restGrow = 0.00052 * (width / 0.044). Please use dynRest(s, mdl.userData?.restGrow ?? 0) for model holders.",
+   "Engine (tooling/src/sim/physics.ts, planck): a polygon's contact counts corners up to 0.5 mm clear of the table as touching. The two-point manifold reaches out to the 2 mm total skin, less the slop. Small polygon items can therefore rest at tilts their true shape cannot, which is the egg's limit on small sizes. Separately, the old request still stands: if one welded compound ignored its own contacts, the egg's 1.2 mm slits would not be needed.",
+   "machines/items.py _world_poses and machines/rube.py _world resolve only one level of parent. A part welded to a welded part gets a wrong world pose in overlaps and warnings. The egg avoids this: its root is the ball and every piece is depth 1. Worth making them recursive like the engine's worldPose.",
+   "web/thumbs3d.js: the review's GLASS_VEIL light-card glass fix and key.shadow.normalBias = 0.002 are still open; not my files.",
+   "Resync (web/sim/catalog-everyday.js): port every Python function listed in python_functions_changed. Things to keep exact: (a) _egg_chain_at uses set(_hull(full)) membership on exact float tuples; (b) the scans in _egg_balls (insets 0.2, 0.35 and 0.5, then the free shoulder fit, and splits 0.25, 0.4 and 0.55) keep the first-best on ties, and _egg_spiral picks the first nearest sample; (c) _egg_cached is a pure memo and can be ported as a Map or dropped; (d) the order of keys in the solid dicts from _weld_ball, and the joints c.joint('pin', 'egg-hold{n}', ..., render={'hinge':'none'}) in creation order; (e) _len now takes hi, _box takes maxes, and the sneaker's ranges are 1.2, 0.44 and 0.42. Then run tools/parity/run.sh, node tools/parity/catalog.mjs and node --no-warnings tools/parity/fuzz-live.mjs --n 300.",
+   "web/view3d.js (3D-view agent): in the model branch use dynRest(s, mdl.userData?.restGrow ?? 0), so a resting egg is lowered by the polygon gap less the flat's inset. The model's restGrow now uses both stretches. Without this the hen's egg still sits about 0.5 mm into the tabletop at default and about 2.6 mm at 5x.",
+   "Engine (tooling/src/sim/physics.ts, owner): solids welded into one assembly collide with each other unless they are parent and child. The round egg works around this with hidden pins; other compounds use 1.2 mm slits. A filter so that one weld assembly never collides with itself (for example a negative filterGroupIndex per assembly) would remove both workarounds. It would also make smooth multi-ball outlines possible for eggs wider than long (1.08 to 1.5), which now use polygon pieces that the engine's 0.5 mm slop can hold. Also: buoyancy for open shells, so an enlarged sneaker displaces only its material."
+  ]
+ },
+ "mechanisms": {
+  "final": {
+   "pass": false,
+   "verdict": "Round 6 does not pass. The three open majors are fixed, but five new major problems remain in the group's own code.\n\nThe three open majors, all confirmed fixed:\n- **Spring catapult.** I checked 720 layouts across arm length, cocked angle, sweep and post height. The cocked arm is always at least 4.0 mm above the base, the lip at least 14 mm, and the arm at least 25 mm above the table. A stop is built for every end angle. At landing, the spring eye stays at or above the closed coil. The spring's foot is at least 30 mm inside the base.\n- **Spring bumper.** `pushed_in` is limited so the springs never get shorter than their closed length, and the guide pins stop the plate first.\n- **Spring gate.** Over 864 runs, the hanger keeps at least 3.15 mm of clearance and the post at least 3.0 mm. No swing goes past 86 degrees.\n\nOther fixer claims I checked and confirmed:\n- **Hanging spring:** 162 runs with no coil bind and no hit on the hanger.\n- **Rope pendulum and wrecking ball:** at the start angle limit the rope or chain line clears the hanger corner.\n- **Atwood machine:** one wheel, with the strings hanging straight.\n- **Spring launcher:** the plate stays at least 22 mm below the rail tops.\n- **Slider sweeps:** the texture count stays flat across them.\n\nTests and scenarios:\n- `test_rg` passes, and `test_mechanisms` passes 29 of 29.\n- The atwood, conveyor-delivery, spring-launch, trampoline and wrecking-ball scenarios keep their goals.\n- Cold builds take 35 ms or less per item, except the hanging spring at 94 ms as the first item in a fresh page. Group models stay at 30.9k triangles or less.\n\nThe five new majors:\n1. **Spring damping blows up on light parts.** The bounce pad, launcher, bumper, trampoline and gate explode at high damping with small parts, with nothing touching them:\n   - Bounce pad at depth 0.02 and damping 20: the plate leaves at 344 m/s and spins 2,976 degrees.\n   - Bumper at height 0.04, depth 0.02 and damping 30, not pushed in: the plate jumps 24 cm into the wall and spins 540 degrees.\n2. **Atwood machine and pulley lift at their default weights:** when the light side reaches its wheel, the 200 g weight flips on its side next to the wheel and keeps rocking about 50 degrees. The pail swings about 40 degrees for over 2 s.\n3. **Spring catapult:** the hinge's upper limit acts as an invisible catch. With a spring too weak for the load (stiffness 40 with a baseball), the arm and ball stay in the air at the cocked angle.\n4. **Rope pendulum:** bob weight does not follow bob size or material. One slider move gives an impossible ball, such as a 5 cm steel ball weighing 10 kg (153,000 kg/m\u00b3) or a 30 cm steel-looking ball weighing 0.5 kg.\n5. **Motor spinner:** the motor and paddle float in mid-air with no support drawn.\n\nOutside the group:\n- The JS port is stale: 10,536 mismatches. Until it is resynced, the static deploy runs the old builders.\n- The trampoline is 142.8k triangles at defaults and 170k at maximum size. The wrecking ball is 77.7k at defaults and 276.9k with a 3 m chain.\n- The Atwood catalog card (`thumbs3d.js`) still draws two touching wheels.\n\nEvidence is in `web/dev/shots/r6rev-*.png`. Key shots:\n- Atwood tumble: `r6rev-at-hi-1.2.png`, `r6rev-at-hi-1.5.png`\n- Pulley lift: `r6rev-pl-hi-*.png`\n- Catapult catch: `r6rev-sc-k40-ball-*.png`\n- Motor spinner: `r6rev-d-motor-spinner-*.png`\n- Catalog cards: `r6rev-cards.png`\n\nMy review pages are `web/dev/r6rev-mech.html` (with a `setup()` helper) and `web/dev/r6rev-mech-cold.html`. The sweep scripts and JSON results are in the session scratchpad: `cat_grid.py`, `cat_dyn.py`, `bump.py`, `damp.py`, `oat.py`, `pair.py`, `gate.py`, `hs.py`.",
+   "findings": [
+    {
+     "item": "bounce-pad / spring-launcher / spring-bumper / trampoline / spring-gate",
+     "severity": "major",
+     "where": "group",
+     "problem": "Spring damping is applied explicitly by the engine, and the catalog lets it be far more than a light part can take (c\u00b7dt/m > 1; the engine only logs 'it may blow up'). With nothing touching them:\n- Bounce pad at depth 0.02 and damping 20 (others default): the 14.5 g plate leaves at 0.556 s at 344 m/s and spins 2,976 degrees.\n- Bounce pad at width 0.06 and damping 20: flips 184 degrees.\n- Spring launcher at depth 0.02 and damping 20: 41 m/s, tilts 140 degrees.\n- Spring bumper at height 0.04, depth 0.02, damping 25 to 30, pushed_in 0: the plate jumps 24 cm into the wall in one frame and spins 540 to 32,000 degrees. The fixer's '6 of 5,760' count missed this; it fails at stiffness 20, 300 and 5000.\n- Trampoline at mat weight 0.03, stiffness 3000, damping 12, width 0.3 or 2: up to 2,300 m/s.\n- Spring gate at length 0.1, thickness 0.005, depth 0.02, damping 10: spins 36,000 degrees.\nIn a sweep of light-part settings, 98 of 216 launcher runs and 75 of 108 bounce-pad runs failed. Sweeping one slider at a time from the defaults is clean; two sliders, such as minimum depth with maximum damping, are enough to fail.",
+     "fix": "In `_sprung_plate`, `build_bumper`, `build_trampoline` and `build_gate`, work out the moving part's mass in the builder:\n- Plate: density\u00b7W\u00b7th\u00b7d.\n- Bumper plate: density\u00b7t\u00b7H\u00b7d.\n- Trampoline mat: mat_mass.\n- Gate: its effective mass at the spring, m\u00b7L\u00b2/3/(0.7L)\u00b2.\nThen clamp each joint so that, summed over the springs on that part, damping\u00b7(1/480)/m \u2264 1 and sqrt(k/m)\u00b7(1/480) \u2264 1.2 (the engine's own limits, physics.ts lines 332-339). Per spring that is c \u2264 480\u00b7m/n and k \u2264 m\u00b7576\u00b2/n. Report the built damping in resolved, and add 'at most what the plate's weight allows' to the help text. Mirror the change in `web/sim/catalog-mechanisms.js`. Re-run the corner sweep (min width/depth/height/mat weight \u00d7 max damping/stiffness): no part may pass 20 m/s or turn more than 90 degrees, and test_mechanisms must stay at 29 of 29."
+    },
+    {
+     "item": "atwood-machine / pulley-lift",
+     "severity": "major",
+     "where": "group",
+     "problem": "At default weights, whenever the light side reaches its wheel it hits the hidden wheel ball and tumbles. The pulley joint keeps pulling its anchor toward the run's end at axle height, against the round wheel.\n- Atwood, defaults, axle at 1.2 m: at 1.15 s the 200 g weight hits the wheel, flips 86 degrees on its side next to the wheel (rope pulled sideways), then rocks between about -5 and +68 degrees until the end. Drop 0.1 or 0.29 at axle height 0.8 m does the same (flips 103 and 145 degrees). Shots: `r6rev-at-hi-1.15/1.2/1.5/1.8/2.1.png`.\n- Pulley lift, defaults, bar at 1.4 m: the bail hits wheel2 at 1.1 s and the pail swings between about -37 and +36 degrees, moving 0.2 m sideways, for over 2 s (`r6rev-pl-hi-*.png`). Drop 0.2 at 0.9 m is the same.\nThe fixer listed this only for 3 kg against 0.05 kg; it happens at the defaults.",
+     "fix": "Replace the hidden wheel balls with hidden flat stops so the rising body jams square under its wheel and the pulley holds it there:\n- Atwood: a `hidden_3d` static slab 'stop' per run, centred on x = \u00b1d/2, as wide as that weight plus 1 cm. Its underside goes where the weight's inner top corner meets the rim: y = -sqrt(R\u00b2 - (d/2 - s/2)\u00b2), with R = d/2 - 0.5 mm.\n- Pulley lift: the same under wheel2 at the bail crown (top of the arch), and under wheel1 for the weight.\nMirror in the JS port. Then check defaults with the axle at 1.2 to 1.4 m and drop 0.1 to 0.3 for both items: the light body must stop under its wheel within 0.2 s, tilt less than 5 degrees and stay there."
+    },
+    {
+     "item": "spring-catapult",
+     "severity": "major",
+     "where": "group",
+     "problem": "The hinge's upper limit of 0 (relative to the cocked pose) works as an invisible catch for the whole run. The engine already freezes every dynamic part until the release, so the limit is not needed to keep the arm cocked. Afterwards it holds the arm against gravity whenever the spring cannot lift the load:\n- Default catapult at stiffness 40 with a baseball in the cup: 2 s after the release the arm and ball are still at exactly 25 degrees. The long end is about 2.3 cm above the base, with nothing under it (`r6rev-sc-k40-ball-t25.png` and `-ol.png`).\n- The same at stiffness 20 with an 0.8 m arm and a tennis ball, and in 30 of 108 empty-arm runs at stiffness 20.\n- With post height 0.6, the hovering end is about 45 cm above the base.\nA real arm would sag onto the base or the table.",
+     "fix": "In `build_catapult`, drop `upper` from the hinge limits, or set it to the angle u \u2265 0 at which the long end's lowest corner (and the lip) reaches the base top or the tabletop: bisect H0 - 0.7\u00b7L\u00b7sin(a+u) - (t/2)\u00b7cos(a+u) = 0.002 against the floor under that end. The arm can then fall onto the base when the spring is too weak. Mirror in the JS port. Re-run test_mechanisms (the throw is unchanged, because a working spring never turns the arm that way), then stiffness 40 with a baseball: the arm must come to rest on the base."
+    },
+    {
+     "item": "rope-pendulum",
+     "severity": "major",
+     "where": "group",
+     "problem": "Bob weight and bob diameter are separate sliders. The density is set to weight \u00f7 volume (`c.mat(density=...)`), so the material choice only changes the look, and one slider move from the defaults gives an impossible bob:\n- Weight 10 kg at the default 5 cm: 152,800 kg/m\u00b3, 19 times steel.\n- Diameter 0.3 m at the default 0.5 kg: a solid-steel-looking ball of 35 kg/m\u00b3 (`r6rev-x-rope-pendulum-big-c1.png`).\n- Material 'modeling clay' or 'dark wood' at the defaults: a 5 cm clay or wood ball weighing 0.5 kg (real: about 120 g and 45 g).\nThe period does not care, but every collision does: a marble-sized bob hits like a dumbbell.",
+     "fix": "Treat the bob as `ball_type` treats balls. Make `bob_mass` an auto prop that follows `bob_diameter` and material: a solid ball of the material, which gives 0.514 kg for 5 cm steel. A typed weight is clamped between a 1 mm shell and a solid ball of that size and material, and the help text says so. The alternative is to drop the diameter and derive the radius from the weight, as `build_wrecking` does. Mirror in the JS port, and update facts and test_mechanisms (period unchanged)."
+    },
+    {
+     "item": "motor-spinner",
+     "severity": "major",
+     "where": "group",
+     "problem": "The paddle is pivoted to the world, so no static part carries its hinge and view3d draws no support. At normal distance the paddle and the motor can on its front face float in mid-air with nothing holding them (`r6rev-d-motor-spinner-wide.png`, `-c2.png`, `r6rev-x-motor-spinner-*.png`). It does not look like a real motorised paddle.",
+     "fix": "In `build_spinner`, add a static 'hub' that carries the hinge:\n- `c.ball(\"hub\", 0.006, 0, 0, kind=\"static\", material=_steel(c), look=\"steel\", words=\"the motor's shaft\")`. It always stays inside the 2 cm paddle, so nothing else can reach it.\n- Replace the paddle's world `pivot`/`motor` with `_joint(c, \"pin\", \"hinge\", a=\"hub\", b=\"paddle\", anchorA=(0, 0), anchorB=(0, 0), motor={...})`, so the pair does not collide.\nview3d then draws the axle and motor housing on that pin and stands the hub on a retort stand, or a wall bracket above 1.3 m. Add a hub model in `mechanisms.js`, mirror in the JS port, and re-run test_mechanisms (6.283 rad/s)."
+    },
+    {
+     "item": "spring-catapult",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The landing does not settle cleanly at strong-spring or long-arm settings:\n- Overshoot into the stop polygon for one frame: up to 13.4 mm (arm 0.4, cocked 60, sweep 110, post 0.6, stiffness 3000) and 5.6 mm (arm 1.2, cocked 5, post 0.6, stiffness 3000). The fixer reported at most 4.3 mm.\n- Arm 0.3, cocked 5, sweep 70, post 0.6, stiffness 3000: the arm chatters on the stop at about 15 Hz, between -51 and -56 degrees, for the whole run.\n- Arm 0.8 or more on a raised post at stiffness 300 to 3000 (for example arm 0.8, cocked 25, sweep 110, post 0.08, stiffness 3000): the arm bobs between -62 and -73 degrees for over 3.5 s and never rests on its stop at -75. The spring is shorter than its rest length at the stop and pushes the arm back up.",
+     "fix": "Set the spring's rest length to at most its length at the landing pose minus 5 mm, so it stays in tension on the stop. Give the stop a dead rubber contact (restitution about 0.1), or set the hinge limit 1 degree past the stop, so the arm settles. Re-run the stiffness 3000 corner grid."
+    },
+    {
+     "item": "spring-gate / rope-pendulum / wrecking-ball / spring-catapult",
+     "severity": "minor",
+     "where": "group",
+     "problem": "Resolved props echo the slider value, not the angle that was built:\n- Spring gate: thickness 0.1 at 80 degrees resolves to 80 but is built at 80; length 1.5 at -80 is built at -18; spring reach 0.2 at 80 is built at 30.8.\n- Pendulum and wrecking ball: start angles are limited by `_swing_stop` and `a_max`.\nThe swing edit handle, at (L sin a, -L cos a) of the prop, then sits away from the plank or bob, and the inspector shows an angle the item does not have.",
+     "fix": "Write the built angle back (`P[\"start_angle\"] = round(a, 3)` in `build_gate` and `_bob`; the swept angle in `build_catapult`) so resolved and the handle match the item. Mirror in the JS port."
+    },
+    {
+     "item": "spring-catapult",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The model goes outside the physics outline by more than 2 mm: the post's fork top 9.0 mm above the post slab, the arm's spring eye 5.9 mm below the arm. A ball dropped on the post top passes 9 mm into the drawn fork.",
+     "fix": "Make the 'post' slab H0 + 0.009 tall (the hinge pair does not collide, so the arm is unaffected), and keep the eye within 2 mm, or add it as a welded child of the arm."
+    },
+    {
+     "item": "web/sim/catalog-mechanisms.js (Resync step)",
+     "severity": "major",
+     "where": "elsewhere",
+     "problem": "The JS port is still from 02:37. `node tools/parity/catalog.mjs --module catalog_mechanisms --no-browser` reports 10,536 mismatches, including help, description and source strings, the spring-launch scene body heights (0.2 vs 0.224), and the atwood material 'steel weight' that exists only in Python. On the static deploy (`?engine=browser`) none of rounds 4 to 6 applies: the catapult arm can start inside the table, the bumper's push is unlimited, gate corners go into the hanger, and so on.",
+     "fix": "Run the Resync step for every function the fixer listed (`build_catapult`, `build_bumper`, `build_gate` with `hill()`, `build_hanging`, `_bob`, `_sprung_plate`, `build_atwood`/`_rig`, `build_lift`, plus any fixes from this round). Then run `tools/parity/run.sh`, `node tools/parity/catalog.mjs` and `node --no-warnings tools/parity/fuzz-live.mjs --n 300` until they show zero mismatches."
+    },
+    {
+     "item": "trampoline / wrecking-ball (view3d.js)",
+     "severity": "major",
+     "where": "elsewhere",
+     "problem": "Triangle budget, still open:\n- Trampoline: 142,824 for the scene at defaults, 170,088 at width 2, depth 2, height 1.5 (row coils; the group models are 17.9k).\n- Wrecking ball: 77,724 at defaults and 276,854 with a 3 m chain and 0.2 kg (`buildChain`; group models 22.6k).\nThe budget is 30k, or 60k justified.",
+     "fix": "view3d.js: use one low-detail InstancedMesh coil for rows (6 cuts per turn, 4-sided wire, about 43k at 12 rows), and the `chainLinkGeometry(rw, tub, radial)` budgeting from the earlier needs_elsewhere (radial 5 when n > 60; tub = clamp(4\u00b7floor(24000/(n\u00b72\u00b7radial)/4), 12, 64)), so the chain stays near 24k at any length."
+    },
+    {
+     "item": "atwood-machine catalog card (thumbs3d.js)",
+     "severity": "major",
+     "where": "elsewhere",
+     "problem": "The catalog card still draws two flat wheels side by side, touching, with the weights hung from each (`r6rev-cards.png`). `thumbs3d.js` `pulleyRig` puts a wheel at each ground point and ignores `render.wheel 'single'` and `wheelRadius`. The 3D view now shows one wheel spanning both runs, so the card contradicts the item.",
+     "fix": "In `thumbs3d.js` `pulleyRig` and the card's hang-lift code (lines 826-1040), use view3d's mode rule (line 2751): if render.wheel is 'single', or the wheels would touch, draw ONE wheel of radius |dx|/2 centred between the ground points, with both runs straight down."
+    },
+    {
+     "item": "motor-spinner (view3d.js motor housing)",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "The motor can view3d draws on a world-pivot motor is about 45 mm across. On the minimum 0.1 m \u00d7 20 mm paddle it covers most of the paddle and reaches 12 mm or more outside its outline, terminal box included (`r6rev-x-motor-spinner-min-ol.png`). Balls passing the hub go through the drawn can.",
+     "fix": "Size the motor housing to the part (diameter at most 0.9 \u00d7 the paddle's height, at least 12 mm), or place it behind the part's back face where a stand will carry it (see the motor-spinner group fix)."
+    },
+    {
+     "item": "wrecking-ball scenario",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "In `web/scenarios/wrecking-ball.json`, Brick 1 still never moves: the summary says \"doesn't move\". The ball passes above it.",
+     "fix": "Lower the 'crane' item's y from 1.1625 to about 1.0925, as measured in round 2."
+    }
+   ]
+  },
+  "needs_elsewhere": [
+   "Resync (web/sim/catalog-mechanisms.js): a fully ported, verified copy is at /private/tmp/claude-501/-Users-ramsarma-Downloads-science-map-share/cb014d17-1cd6-4220-a508-cf6ce5539a35/scratchpad/r5mech/sim/catalog-mechanisms.js; the diff is in .../r5mech/catalog-mechanisms.port.diff. The live file has not changed since 02:37, so the copy can replace it directly. With PARITY_SIM pointed at that folder, tools/parity/mechanisms.mjs gives 13991 cases, 0 mismatches, live checks included. catalog.mjs (all three modules) and fuzz-live --n 300 differ only on traffic-cone/'vinyl rubber' (the everyday group's unsynced edits, not mine). Against the current web/sim, parity shows the expected diffs until this is copied.",
+   "web/view3d.js buildSpring: use a lower-detail coil for instanced rows (perTurn 6, radial 4, about 1.8k triangles for 38 turns). The default trampoline would then be about 54k triangles instead of 107k.",
+   "web/view3d.js buildChain: lower link detail as the link count rises (the earlier review's chainLinkGeometry(rw, tub, radial) plan). The default wrecking-ball scene is 77.7k triangles.",
+   "web/thumbs3d.js pulleyRig: honour render.wheel 'single' (one wheel of radius |GB-GA|/2 at the midpoint, as view3d does). The atwood-machine card still shows two wheels.",
+   "Vehicles group (catalog_mechanisms.py _vehicle; models are vehicles*.js): front and rear wheels overlap when the body is short and the wheels are large. Measured: toy-car at length 0.1 with wheels 0.068 overlaps 5 mm; cart at 0.11 with wheels 0.1 overlaps 25 mm; truck at 0.25 with wheels 0.2 overlaps 30 mm. The wheels are dynamic, so they collide with each other. Suggested: ax = max(axle*s, r_ + 0.003).",
+   "web/scenarios/wrecking-ball.json (scenario, not my file): brick 1 is still untouched. Lowering the crane item's y from 1.1625 to about 1.0925 was measured in round 2 to fix it.",
+   "view3d buildRope/buildPulley: the rope-end steel sphere still covers the swing's screw eye and the pail bail's crown (open since the last round).",
+   "Resync step: mirror every catalog_mechanisms.py change listed in python_functions_changed into web/sim/catalog-mechanisms.js. This includes the new prop ranges (spring-catapult arm_length min 0.3, sweep max 110; rope-pendulum and wrecking-ball start_angle +-90), the new help, description, source and anchor strings, the new solids (catapult base width/offset; bumper catch/lip/pin1/pin2; atwood stand hint and hidden wheel; pulley-lift wheel1/wheel2), and the gate's hill() walk. The Python uses x // y nowhere, only math.hypot, atan2, acos, sqrt, cos, sin and _bisect. Then run tools/parity/run.sh, node tools/parity/catalog.mjs and node --no-warnings tools/parity/fuzz-live.mjs --n 300. I did not run them, because the port is known to be stale (02:37) and will mismatch until it is resynced.",
+   "web/view3d.js (3D-view agent): trampoline row coils are 124.9k triangles (142.8k scene at default, 170k at max). The wrecking-ball chain is 170k at 3 m (77.7k scene at default). A single long coil over 24 turns at lower detail (10 cuts x 6 sides) would let hanging-spring and catapult springs go back to close-wound turn counts (180) within budget.",
+   "web/view3d.js coupling to note: the catalog's hidden pulley wheels assume buildPulley's sizes. Single wheel rim = |dx|/2 - 0.5 mm, because rc = dx/2 - 2*rho - 0.5 mm and Rout = rc + 2*rho. Two-wheel rim = wheelRadius, centred inboard by wheelRadius - 4 mm. If buildPulley's wheel sizing changes, catalog_mechanisms.py build_atwood/build_lift must follow.",
+   "web/CONTRACT.md line 229 says compressOnly is 'like a bounce pad's spring', but the bounce pad's springs are now two-way (bolted). Also worth documenting: hidden_3d static balls are used as the solid pulley wheels of atwood-machine and pulley-lift (not drawn, not picked, not mount supporters), and the Atwood bar carries a stand hint."
+  ]
+ },
+ "balls": {
+  "final": {
+   "pass": true,
+   "verdict": "PASS. No major problem that the group can fix is left in the 14 balls. I checked all three round-5 changes myself and they hold. (1) Beach-ball cold build is now 28.9 to 30.3 ms (3 fresh headless pages: Chromium, --use-angle=metal, Apple M5 Pro). It was about 140 ms. The ball looks right at 5 mm, 6 cm, 40 cm and 1 m from the front, from high up and at table level. The valve ring and stem dot show, and the weld lines sit on the geometry's seam dips. (2) Tennis ball: canvas alpha is 255 everywhere (the shot at k=3.6), so the pale outline round each fleck is gone. At the closest distance the app allows (k=3.6 for the 67 mm ball, because orbit minDistance is 0.12 m), the outline is a clean felt edge with a few sparse loose specks. In a k=2.2 macro view the outline frays like felt. Across 6 frames at 0.004 rad azimuth steps the specks stay sparse and stable, with no sparkle. At 1 m the outline is smooth, as expected. (3) Glass-marble vanes: the twisted cat's eye reads as coloured glass from the front, high, top and table-level side at 5, 16, 50 and 300 mm and at 1 m. The spine is deeper and the leaf edges lighter. The white rectangles over it are the glass shell's studio reflections, not the vane's own. The ball lens shows the background inverted, which is right. Every ball at the default size, 5 mm and 1 m (front view with the physics outline overlaid, plus a high view at another angle) is filled to its outline and looks like the real thing. Normal-distance lineup, context shots, the low tier (marble and tennis), and catalog cards in dark and light themes: all right. Geometry measured in the view: 0 mm outside the physics sphere for every ball at 5 mm, default and 1 m, except the baseball (0.04/0.54/0.58 mm, stitches) and the beach ball (0.02/1.61/1.60 mm, valve). Depth stays within d/2 (the baseball's stitches go 0.04 mm past d/2 at 74 mm, which is negligible). Triangles: tennis 27,072, bowling 24,312, baseball 21,984, beach 20,976, marble 19,712, all others 16,128. Cold build in ms, min to max over 3 fresh headless pages, load average 3.4 to 6: baseball 98-107, tennis 95-101, basketball 94-97, soccer 76-87, bowling 67-69, golf 54-56, ping-pong 41-46, wooden 33-34, beach 29-30, steel 23-28 (includes the studio bake), superball 19, plastic 18, billiard 15-16, marble 3.4-3.7 plus a first render of 35-490 ms (the first time the transmission shader compiles). All are under about 150 ms. Resizing re-bakes nothing: buildModel per size step over 27 sizes from 6 mm to 1 m averages 0.01 to 1.7 ms, with a maximum of 3.3 ms. Physics, as a drop from 25 cm onto the varnished table (first rebound \u00f7 drop height): superball 0.74, ping-pong 0.75, soccer 0.64, golf 0.64, billiard 0.64, basketball 0.59, tennis 0.555 (inside the ITF's 0.53-0.58), plastic 0.54, marble 0.44, wooden 0.39, steel 0.37, bowling 0.36, baseball 0.30, beach 0.28 (light, with drag). All are plausible, and the balls drop straight down with no sideways drift. python3 machines/test_rg.py: PASS (worst placement difference 0.0). node --check web/models/balls.js is clean. Console: no WebGL, shader or 404 errors; the only errors are the dev page's own 'thumbs mode' throws. No machines/ file changed, so no Resync or parity run is needed. Method: the fixer's page web/dev/r5-balls-fix.html with its loadSet/sheet/limbAt helpers, in my own built-in-browser tab (tab-71, 2048x1536 canvas), closed at the end. Headless cost runner: scratchpad r5rv/cost.cjs, which closed its browser. I edited no project files. Shots I looked at, all in web/dev/shots: r5-rv-default-view, r5-rv-lineup, r5-rv-def-front/-high, r5-rv-min-front/-high, r5-rv-max-0..3, r5-rv-tennis-k36, r5-rv-t67-k36/-limbR/-limbT, r5-rv-t1000-limbT, r5-rv-tseq-0..5, r5-rv-marble, r5-rv-m16-front/-high/-back, r5-rv-beach, r5-rv-ctx-*, r5-rv-ctxlow-*, r5-rv-thumbs-light (taken in the dark scheme) and r5-rv-thumbs-light2 (light scheme), r5-rv-contact.",
+   "findings": [
+    {
+     "item": "tennis-ball (outline at the app's closest view)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "At the closest distance the app allows (k=3.6 for the 67 mm ball), the felt fringe at the outline is only a scatter of single-device-pixel specks 1-2 px off a clean core edge (shots r5-rv-t67-k36, r5-rv-tseq-*). A real ball seen from 12 cm shows a soft, continuous fuzzy halo about 1 mm deep. The fibrous fringe the fixer describes only shows at k=2.2, which the orbit camera cannot reach. The specks are stable from frame to frame (no sparkle), the felt reads right, and the outline is within 1 mm, so this is cosmetic.",
+     "fix": "Optional: let the outer shell keep a little more coverage where the long axis grows, without dithering. For example, start the fzMax fade later (mlo about 1.2, mhi about 2.6), or add a third shell at r - 0.0002*kt with a lower cut (about 0.35), so the fringe is denser at k=3.6. Re-check k=3.6 and k=6.2 for speckle, and check that nothing goes outside r."
+    },
+    {
+     "item": "all balls (resting gap and table-reflection arc)",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "This is unchanged from round 4. Resting balls are still drawn about 0.9 mm above the tabletop: a thin strip of table shows between the tennis ball and its reflection at table level. In high views, small glossy balls (5 mm steel, 16 mm marble) still get a thin bright arc on the table just off their lower edge, which is their own planar reflection pushed out by the doubled gap (r5-rv-contact, r5-rv-min-high). View batch 2 now lifts round bodies that sink into the table, but it does not lower ones that hover in the skin.",
+     "fix": "web/view3d.js: extend roundLift so that a round body whose lowest point is less than 2 mm above the tabletop or a static slab, and is not moving away from it, is drawn lowered by that gap, as resting slabs already are. That also closes the gap in the planar reflection."
+    },
+    {
+     "item": "glass-marble (5 mm, table-level streak) and Wide view",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "Still open from round 4, unchanged by this round: the vanes' planar reflection is pulled up by the lens into a faint light-blue streak at the top of a small marble. The wide camera's horizontal FOV of about 69 degrees stretches balls near the frame edges.",
+     "fix": "web/view3d.js: leave a model's transparent-pass meshes (renderOrder > 0 with transparent materials, like the marble's vanes) out of the planar-reflection pass that feeds the transmission buffer. Frame the wide camera with a 30-35 degree vertical FOV and pull it back to fit the same stage."
+    },
+    {
+     "item": "glass-marble catalog card (light theme)",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "The light-theme marble card now shows a glass edge and the cat's eye (r5-rv-thumbs-light2), which is much better than round 4. There is still a faint lighter square of haze round the marble that the other cards do not have.",
+     "fix": "web/thumbs3d.js: for an item with transmission > 0, render the transmission pass over the same card colour and floor tone as the main pass (scene.background = the --card colour for that render), so no lighter square shows round the glass."
+    }
+   ]
+  },
+  "needs_elsewhere": [
+   "web/view3d.js (unchanged from the review): (1) the 5 mm marble's light-blue streak at the top of the glass is the vanes' planar reflection pulled up by the lens; leave a model's transparent-pass parts out of the planar reflection. (2) Round bodies resting under 2 mm above a slab should be drawn lowered by the 0.9 mm contact skin. (3) The wide camera's horizontal FOV is about 69 degrees. (4) The steel ball should get a per-ball CubeCamera envMap. web/thumbs3d.js: give the floor and backdrop tone in the light-theme transmission pass (marble card). Nothing new is needed elsewhere for this round's changes.",
+   "General note for any future model using alphaToCoverage (none outside balls.js today, by grep): a2c writes its partial alpha to the colour attachment. The view's context is alpha:false, so the on-screen composite should be opaque, but toDataURL snapshots and render-target alpha still carry it. Use the same alpha-preserving CustomBlending, or have the view force alpha to 1."
+  ]
+ }
+}

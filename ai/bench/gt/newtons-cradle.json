@@ -1,0 +1,38 @@
+{
+ "version": 2,
+ "id": "newtons-cradle",
+ "name": "Newton's cradle",
+ "seconds": 4.5,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.55,
+  "x1": 2.05,
+  "y0": -0.12,
+  "y1": 0.88
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "cradle",
+   "type": "newtons-cradle",
+   "name": "Newton's cradle",
+   "x": 1.178,
+   "y": 0.492,
+   "props": {
+    "ball_diameter": 0.06,
+    "length": 0.4
+   }
+  }
+ ],
+ "goals": []
+}

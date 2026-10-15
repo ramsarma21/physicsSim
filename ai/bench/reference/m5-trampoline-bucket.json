@@ -1,0 +1,116 @@
+{
+ "case": "m5-trampoline-bucket",
+ "notes": "ball 0.15 m right of centre at 1.1 m; bucket at +0.95 m",
+ "plan": {
+  "title": "Basketball bounce into a bucket",
+  "items": [
+   {
+    "id": "trampoline",
+    "type": "trampoline",
+    "name": "Trampoline",
+    "props": {
+     "width": 1,
+     "height": 0.4,
+     "stiffness": 400
+    },
+    "place": {
+     "on": "table",
+     "x": 1
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ball",
+    "type": "basketball",
+    "name": "Basketball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.15,
+     "y_m": 1.1
+    },
+    "held": true,
+    "why": "reference"
+   },
+   {
+    "id": "bucket",
+    "type": "bucket",
+    "name": "Bucket",
+    "props": {
+     "width": 0.4,
+     "wall": 0.3
+    },
+    "place": {
+     "on": "table",
+     "x": 1.95
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 6,
+  "notes": "ball 0.15 m right of centre at 1.1 m; bucket at +0.95 m"
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-m5",
+  "name": "Basketball bounce into a bucket",
+  "seconds": 6,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.1,
+   "x1": 2.6,
+   "y0": -0.15,
+   "y1": 1.6
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {
+     "width": 1,
+     "height": 0.4,
+     "stiffness": 400
+    },
+    "id": "trampoline",
+    "type": "trampoline",
+    "name": "Trampoline",
+    "x": 1,
+    "y": 0
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "ball",
+    "type": "basketball",
+    "name": "Basketball",
+    "held": true,
+    "x": 1.15,
+    "y": 1.1
+   },
+   {
+    "angle": 0,
+    "props": {
+     "width": 0.4,
+     "wall": 0.3
+    },
+    "id": "bucket",
+    "type": "bucket",
+    "name": "Bucket",
+    "x": 1.95,
+    "y": 0.0055
+   }
+  ],
+  "goals": []
+ }
+}

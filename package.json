@@ -1,0 +1,39 @@
+{
+	"name": "blender-playground",
+	"private": true,
+	"type": "module",
+	"description": "Machine Playground: the physics sandbox. The engine (tooling/src/sim, on planck.js) must run in the browser with exactly today's results.",
+	"engines": {
+		"node": ">=24"
+	},
+	"scripts": {
+		"build:engine": "node tools/build-engine.mjs",
+		"vendor:three": "node tools/vendor-three.mjs",
+		"vendor:three:check": "node tools/vendor-three.mjs --check",
+		"vendor:media": "node tools/vendor-media.mjs",
+		"vendor:media:check": "node tools/vendor-media.mjs --check",
+		"gen:scenarios": "node tools/gen-scenarios.mjs",
+		"gen:scenarios:check": "node tools/gen-scenarios.mjs --check",
+		"build:static": "node tools/build-static.mjs --regen",
+		"build:static:nogen": "node tools/build-static.mjs",
+		"preview:static": "node tools/build-static.mjs --serve-only",
+		"check:vercel": "node tools/build-static.mjs --vercel-check",
+		"vendor:clerk": "node tools/vendor-clerk.mjs",
+		"vendor:clerk:check": "node tools/vendor-clerk.mjs --check",
+		"test:accounts": "node --test web/account/test/server.test.mjs web/account/test/ai-function.test.mjs",
+		"test:ai": "node --test \"ai/test/*.test.mjs\"",
+		"smoke:ai": "zsh -c 'source ~/.config/truefoundry/env && node ai/test/live-smoke.mjs'",
+		"digest:ai": "node ai/catalog-digest.mjs --stats --rebuild"
+	},
+	"dependencies": {
+		"@neondatabase/serverless": "1.2.0",
+		"effect": "4.0.2",
+		"mediabunny": "1.61.0",
+		"planck": "1.5.0",
+		"three": "0.170.0"
+	},
+	"devDependencies": {
+		"@electric-sql/pglite": "0.5.8",
+		"esbuild": "0.28.2"
+	}
+}

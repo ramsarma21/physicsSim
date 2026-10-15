@@ -1,0 +1,103 @@
+{
+ "case": "photo-cradle-desk",
+ "notes": "",
+ "plan": {
+  "title": "Cradle, phone and mug",
+  "items": [
+   {
+    "id": "cradle",
+    "type": "newtons-cradle",
+    "name": "Newton's cradle",
+    "props": {
+     "count": 6
+    },
+    "place": {
+     "on": "table",
+     "x": 0.82808
+    },
+    "why": "reference"
+   },
+   {
+    "id": "phone",
+    "type": "smartphone",
+    "name": "Smartphone",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.37495
+    },
+    "why": "reference"
+   },
+   {
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "Coffee mug",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.53975
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 3,
+  "notes": ""
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-photo-cradle-desk",
+  "name": "Cradle, phone and mug",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.5,
+   "x1": 2,
+   "y0": -0.12,
+   "y1": 0.9
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {
+     "count": 6
+    },
+    "id": "cradle",
+    "type": "newtons-cradle",
+    "name": "Newton's cradle",
+    "x": 0.82808,
+    "y": 0.3835
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "phone",
+    "type": "smartphone",
+    "name": "Smartphone",
+    "x": 1.37495,
+    "y": 0.0054
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "mug",
+    "type": "coffee-mug",
+    "name": "Coffee mug",
+    "x": 1.53975,
+    "y": 0.049
+   }
+  ],
+  "goals": []
+ }
+}

@@ -1,0 +1,14 @@
+{
+ "title": "Ramp, dominoes and a ball",
+ "seconds": 4,
+ "items": [
+  {"id": "stand", "type": "cardboard-box", "name": "Stand", "place": {"on": "table", "x": 0.1}, "why": "holds the top of the ramp"},
+  {"id": "ramp", "type": "plank", "name": "Ramp", "place": {"lean": {"from": {"on": "stand", "x": 0.05}, "to": {"on": "table", "x": 0.9}}}},
+  {"id": "ball", "type": "billiard-ball", "name": "Ball", "held": true, "place": {"on": "ramp", "x": 0.15}},
+  {"id": "row", "type": "domino-row", "name": "Dominoes", "props": {"count": 6, "first_height": 0.06}, "place": {"on": "table", "right_of": {"id": "ramp", "gap_m": 0.15}}},
+  {"id": "target", "type": "tennis-ball", "name": "Tennis ball", "place": {"on": "table", "right_of": {"id": "row", "gap_m": 0.02}}},
+  {"id": "cup", "type": "cup", "name": "Cup", "place": {"on": "table", "x": 2.8}}
+ ],
+ "goals": [],
+ "tune": [{"id": "row", "param": "x", "min": 1.0, "max": 1.4}]
+}

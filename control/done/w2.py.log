@@ -1,0 +1,13 @@
+register_class(...):
+Info: Registering operator class: 'PG_OT_resimulate', bl_idname 'pg.resimulate' has been registered before, unregistering previous
+register_class(...):
+Info: Registering operator class: 'PG_OT_play', bl_idname 'pg.play' has been registered before, unregistering previous
+register_class(...):
+Info: Registering panel class: 'PG_PT_panel', bl_idname 'PG_PT_panel' has been registered before, unregistering previous
+Info: Simulated 193 frames
+Traceback (most recent call last):
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/control/bridge.py", line 147, in poll
+    exec(open(path).read(), dict(G))
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 11, in <module>
+AttributeError: bpy_struct: attribute "active_panel_category" from "Region" is read-only

@@ -1,0 +1,100 @@
+{
+ "title": "Golf ball, weight, cup",
+ "seconds": 3,
+ "release": 0.5,
+ "items": [
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Wooden ramp",
+   "place": {
+    "lean": {
+     "from": {
+      "on": "air",
+      "x": -0.3,
+      "y": 0.55
+     },
+     "to": {
+      "on": "air",
+      "x": 0.3,
+      "y": 0.35
+     }
+    },
+    "on": "air"
+   },
+   "why": "Wooden ramp from 55 cm down to 35 cm (about 18\u00b0). Its low end is in the air, so the ball flies off it",
+   "props": {}
+  },
+  {
+   "id": "ball",
+   "type": "golf-ball",
+   "name": "Golf ball",
+   "place": {
+    "on": "ramp",
+    "x": -0.25
+   },
+   "held": true,
+   "why": "Waits near the top of the ramp until the release",
+   "props": {}
+  },
+  {
+   "id": "weight",
+   "type": "steel-weight-5kg",
+   "name": "Steel weight",
+   "place": {
+    "on": "air",
+    "x": 0.543,
+    "y_m": 0.235
+   },
+   "fixed": true,
+   "why": "An 8.6 cm steel cube pinned in place like a stop. The ball hits its left face in mid-flight and bounces back",
+   "props": {}
+  },
+  {
+   "id": "cup",
+   "type": "cup",
+   "name": "Cup",
+   "place": {
+    "on": "table",
+    "x": 0.43
+   },
+   "why": "Catches the ball as it drops back down in front of the weight",
+   "props": {}
+  }
+ ],
+ "missing": [],
+ "goals": [
+  {
+   "label": "The golf ball lands in the cup",
+   "item": "ball",
+   "container": "cup",
+   "kind": "in"
+  }
+ ],
+ "tune": [
+  {
+   "id": "cup",
+   "param": "x",
+   "min": 0.35,
+   "max": 0.47
+  },
+  {
+   "id": "weight",
+   "param": "y",
+   "min": 0.2,
+   "max": 0.28
+  },
+  {
+   "id": "weight",
+   "param": "x",
+   "min": 0.52,
+   "max": 0.6
+  }
+ ],
+ "notes": "The ball leaves the ramp at about 1.7 m/s, 38 cm up. After about 0.13 s it hits the steel weight's left face about 23 cm above the table. The hard but poorly bouncing steel sends it back left at only about 0.6\u20130.8 m/s, so it falls almost straight down into the cup, 4\u20137 cm in front of the weight. The tuner can slide the cup to where the ball really drops.",
+ "assumptions": [
+  "The steel weight is pinned in mid-air (as if bolted to a post) so it does not slide away when the ball hits it. A 5 kg weight was chosen so it is big enough to be hit reliably",
+  "The ramp's height and angle were chosen freely, since the request gave none",
+  "A standard 8 cm cup on the table, since no size was given"
+ ]
+}

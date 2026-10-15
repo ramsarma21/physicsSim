@@ -1,0 +1,123 @@
+{
+ "case": "m2-seesaw-catapult",
+ "notes": "weight dropped from 0.45 m, basket 0 m past the seesaw",
+ "plan": {
+  "title": "Seesaw catapult",
+  "items": [
+   {
+    "id": "seesaw",
+    "type": "seesaw",
+    "name": "Seesaw",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 0.8
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ball",
+    "type": "ping-pong-ball",
+    "name": "Ping-pong ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.09379,
+     "y_m": 0.04346
+    },
+    "why": "reference"
+   },
+   {
+    "id": "weight",
+    "type": "steel-weight-5kg",
+    "name": "Steel weight",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.59166,
+     "y_m": 0.59013
+    },
+    "held": true,
+    "why": "reference"
+   },
+   {
+    "id": "basket",
+    "type": "basket",
+    "name": "Basket",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.36879
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [],
+  "goals": [],
+  "tune": [],
+  "seconds": 4,
+  "notes": "weight dropped from 0.45 m, basket 0 m past the seesaw"
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-m2",
+  "name": "Seesaw catapult",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.6,
+   "y0": -0.12,
+   "y1": 1.4
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "seesaw",
+    "type": "seesaw",
+    "name": "Seesaw",
+    "x": 0.8,
+    "y": 0
+   },
+   {
+    "id": "ball",
+    "type": "ping-pong-ball",
+    "name": "Ping-pong ball",
+    "angle": 0,
+    "props": {},
+    "x": 1.09379,
+    "y": 0.04346
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "weight",
+    "type": "steel-weight-5kg",
+    "name": "Steel weight",
+    "held": true,
+    "x": 0.59166,
+    "y": 0.59013
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "basket",
+    "type": "basket",
+    "name": "Basket",
+    "x": 1.36879,
+    "y": 0.0115
+   }
+  ],
+  "goals": []
+ }
+}

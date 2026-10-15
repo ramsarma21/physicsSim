@@ -1,0 +1,278 @@
+/* Export video (web/export/export-ui.js): the top-bar button and the dialog (desktop: a centred card; phone: a bottom sheet).
+   Built on style.css's tokens (--panel, --card, --ink…, --accent), so it follows light and dark with the rest of the page. */
+
+/* ---------- the top-bar button ---------- */
+.xv-open { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px 6px 9px; white-space: nowrap; font-weight: 600; }
+.xv-open svg { width: 17px; height: 17px; fill: var(--accent); flex: none; }
+.xv-open:disabled { opacity: 0.5; cursor: default; }
+.xv-open:disabled:hover { border-color: var(--line-2); }
+.xv-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* below 1362 px the label would squeeze the bar (the title wraps): the icon alone (34 px, not 131; the tooltip and aria-label name it);
+   where the bar is too full to show everything (it clips its right end there) it leads the right-hand group, so it is never cut off */
+@media (max-width: 1361px) { .xv-open { padding: 0; width: 34px; height: 34px; justify-content: center; } .xv-open span { display: none; } }
+@media (min-width: 901px) and (max-width: 1099px) { .xv-open { order: -1; } }
+@media (max-width: 900px) { .xv-open { width: 32px; height: 32px; } }
+
+/* ---------- the dialog ---------- */
+dialog.xv {
+	--xv-r: 16px;
+	--xv-pill: rgba(18, 16, 13, 0.58);
+	padding: 0; border: 0; background: transparent; color: var(--ink); overflow: visible;
+	width: min(940px, calc(100vw - 32px)); max-width: none; max-height: none;
+	/* the top edge stays put as the panes change height (settings, progress, done, error): no jumping; about centred for the tallest */
+	--xv-top: max(16px, calc(50dvh - 300px));
+	margin: var(--xv-top) auto auto;
+}
+dialog.xv::backdrop { background: rgba(18, 16, 13, 0.46); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+dialog.xv.xv-in::backdrop { animation: xv-fade 0.18s ease-out; }
+.xv-sheet {
+	position: relative; display: flex; flex-direction: column; max-height: calc(100dvh - var(--xv-top, 16px) - 16px); overflow: hidden; outline: none;
+	background: var(--panel); border: 1px solid var(--line); border-radius: var(--xv-r);
+	box-shadow: 0 28px 70px rgba(0, 0, 0, 0.3), 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+dialog.xv.xv-in .xv-sheet { animation: xv-pop 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.1); }
+@keyframes xv-pop { from { opacity: 0; transform: translateY(8px) scale(0.985); } }
+@keyframes xv-fade { from { opacity: 0; } }
+.xv-grab { display: none; }
+
+.xv-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px 14px; flex: none; }
+.xv-head-ic { width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; flex: none; background: var(--accent-soft); }
+.xv-head-ic svg { width: 20px; height: 20px; fill: var(--accent); }
+.xv-head-t { min-width: 0; flex: 1; }
+.xv-head h2 { margin: 0; font-size: 17px; line-height: 1.25; letter-spacing: -0.01em; }
+.xv-sub { margin: 1px 0 0; font-size: 12.5px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xv-x { width: 34px; height: 34px; padding: 0; border: 0; border-radius: 9px; background: transparent; display: grid; place-items: center; flex: none; }
+.xv-x svg { width: 20px; height: 20px; fill: var(--ink-2); }
+.xv-x:hover { background: var(--bg); }
+
+.xv-body { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 18px 16px; }
+.xv-lbl { font-size: 11.5px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.05em; }
+.xv-cap { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.xv-hint { margin: 7px 0 0; font-size: 12.5px; color: var(--ink-3); min-height: 1.4em; }
+
+/* settings: preview + length on the left, the choices on the right */
+.xv-settings { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+.xv-col { min-width: 0; }
+
+.xv-prev {
+	position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden;
+	background: var(--view-bg); border: 1px solid var(--line); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.02);
+}
+.xv-prev canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.xv-chip, .xv-prev-t {
+	position: absolute; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+	background: var(--xv-pill); color: #fff; font-size: 12px; font-weight: 600; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.xv-chip { left: 10px; top: 10px; }
+.xv-chip i { width: 7px; height: 7px; border-radius: 50%; background: #ff5a47; box-shadow: 0 0 0 2px rgba(255, 90, 71, 0.25); }
+.xv-prev-t { right: 10px; bottom: 10px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.xv-pp {
+	position: absolute; left: 10px; bottom: 10px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+	background: var(--xv-pill); display: grid; place-items: center; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.xv-pp svg { width: 15px; height: 15px; fill: #fff; grid-area: 1 / 1; }
+.xv-pp .xv-pp-pause, .xv-pp svg:last-child { display: none; }
+.xv-pp.playing svg:first-child { display: none; }
+.xv-pp.playing svg:last-child { display: block; }
+.xv-pp:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.xv-prev-msg {
+	position: absolute; left: 50%; bottom: 48px; transform: translateX(-50%); max-width: calc(100% - 24px); text-align: center;
+	font-size: 12px; color: #fff; background: var(--xv-pill); padding: 5px 10px; border-radius: 8px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+dialog.xv.xv-still .xv-pp, dialog.xv.xv-still .xv-trim-head { display: none; }
+
+/* length: the run as a strip with its events, two handles for the start and the end */
+.xv-len { margin-top: 14px; }
+.xv-len-top { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+.xv-len-v { font-size: 13px; color: var(--ink-3); font-variant-numeric: tabular-nums; flex: 1; min-width: 0; }
+.xv-len-v b { color: var(--ink); font-weight: 650; }
+.xv-link { border: 0; background: none; padding: 0; font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.xv-link:hover { text-decoration: underline; }
+.xv-trim { position: relative; height: 34px; touch-action: pan-y; cursor: pointer; user-select: none; -webkit-user-select: none; }
+.xv-trim-track { position: absolute; left: 9px; right: 9px; top: 13px; height: 8px; border-radius: 4px; background: var(--line); }
+.xv-trim-fill { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: color-mix(in srgb, var(--accent) 32%, transparent); }
+.xv-trim-marks { position: absolute; inset: 0; pointer-events: none; }
+.xv-trim-marks i { position: absolute; top: -3px; width: 2px; height: 14px; margin-left: -1px; border-radius: 1px; background: var(--ink-3); opacity: 0.55; }
+.xv-trim-head { position: absolute; top: -6px; width: 2px; height: 20px; margin-left: -1px; border-radius: 1px; background: var(--ink); opacity: 0.75; pointer-events: none; }
+.xv-trim input[type="range"] {
+	position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 34px; margin: 0; padding: 0; background: none;
+	pointer-events: none; -webkit-appearance: none; appearance: none; outline: none;
+}
+.xv-trim input[type="range"]::-webkit-slider-runnable-track { height: 34px; background: none; border: 0; }
+.xv-trim input[type="range"]::-moz-range-track { height: 34px; background: none; border: 0; }
+.xv-trim input[type="range"]::-webkit-slider-thumb {
+	-webkit-appearance: none; appearance: none; width: 18px; height: 26px; margin-top: 4px; border-radius: 6px;
+	background: var(--card); border: 2px solid var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); cursor: ew-resize;
+}
+.xv-trim input[type="range"]::-moz-range-thumb {
+	width: 14px; height: 22px; border-radius: 6px; background: var(--card); border: 2px solid var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22); cursor: ew-resize;
+}
+.xv-trim input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.xv-trim input[type="range"]:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.xv-trim.xv-dragging input[type="range"]::-webkit-slider-thumb { cursor: grabbing; }
+.xv-trim input[type="range"]:disabled { opacity: 0.4; }
+.xv-trim-ends { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; padding: 0 2px; }
+.xv-trim-ends b { font-weight: 600; color: var(--ink-2); }
+.xv-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* the choices */
+.xv-row { margin-bottom: 14px; }
+.xv-row-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.xv-seg { display: flex; gap: 3px; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.xv-seg button {
+	flex: 1 1 0; min-width: 0; border: 0; background: transparent; padding: 7px 4px; border-radius: 7px;
+	font-size: 13px; font-weight: 550; color: var(--ink-2); white-space: nowrap; transition: background 0.12s, color 0.12s;
+}
+.xv-seg button:hover:not(:disabled):not([aria-checked="true"]) { color: var(--ink); background: color-mix(in srgb, var(--card) 55%, transparent); }
+.xv-seg button[aria-checked="true"] { background: var(--card); color: var(--ink); font-weight: 650; box-shadow: 0 1px 2px rgba(40, 32, 20, 0.1), 0 2px 8px rgba(40, 32, 20, 0.06); }
+.xv-seg button:disabled { opacity: 0.38; cursor: not-allowed; }
+.xv-seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.xv-tog {
+	position: relative; display: flex; align-items: center; gap: 12px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer;
+	border: 1px solid var(--line); border-radius: 11px; background: var(--card);
+}
+.xv-tog:hover { border-color: var(--line-2); }
+.xv-tog-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.xv-tog-t b { font-size: 13.5px; font-weight: 650; }
+.xv-tog-t small { font-size: 12px; color: var(--ink-3); line-height: 1.35; }
+.xv-tog-t small.xv-cap-warn { color: var(--ink-2); font-weight: 600; }
+.xv-tog input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.xv-sw { position: relative; flex: none; width: 38px; height: 22px; border-radius: 11px; background: var(--line-2); transition: background 0.15s; }
+.xv-sw::after {
+	content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); transition: transform 0.15s;
+}
+.xv-tog input:checked + .xv-sw { background: var(--accent); }
+.xv-tog input:checked + .xv-sw::after { transform: translateX(16px); }
+.xv-tog input:focus-visible + .xv-sw { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xv-tog:has(input:disabled) { cursor: default; }
+.xv-tog:has(input:disabled) .xv-sw, .xv-tog:has(input:disabled) b { opacity: 0.45; }
+
+/* why the export can't start yet */
+.xv-warn {
+	display: flex; align-items: center; gap: 10px; padding: 10px 12px; margin-bottom: 14px; border-radius: 11px;
+	color: #7a4a00; background: #fff4dc; border: 1px solid #f1d293;
+}
+.xv-warn-ic { flex: none; width: 20px; height: 20px; display: grid; place-items: center; }
+.xv-warn-ic svg { width: 18px; height: 18px; fill: currentColor; }
+.xv-warn-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.xv-warn-t b { font-size: 13px; }
+.xv-warn-t small { font-size: 12px; opacity: 0.9; line-height: 1.35; }
+.xv-warn[data-state="running"], .xv-warn[data-state="none"], .xv-warn[data-state="editing"] { color: var(--ink-2); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 25%, transparent); }
+.xv-warn[data-state="failed"] { color: var(--bad); background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 30%, transparent); }
+.xv-spin { width: 16px; height: 16px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--accent) 25%, transparent); border-top-color: var(--accent); animation: xv-turn 0.8s linear infinite; }
+@keyframes xv-turn { to { transform: rotate(360deg); } }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .xv-warn:not([data-state="running"]):not([data-state="none"]):not([data-state="editing"]):not([data-state="failed"]) { color: #ffd38a; background: #3a2c12; border-color: #6b4f1d; } }
+:root[data-theme="dark"] .xv-warn:not([data-state="running"]):not([data-state="none"]):not([data-state="editing"]):not([data-state="failed"]) { color: #ffd38a; background: #3a2c12; border-color: #6b4f1d; }
+
+/* ---------- progress ---------- */
+.xv-progress, .xv-done, .xv-error { max-width: 720px; margin: 0 auto; }
+.xv-live { position: relative; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #111; border: 1px solid var(--line); }
+.xv-live canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.xv-live-badge {
+	position: absolute; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+	background: var(--xv-pill); color: #fff; font-size: 12px; font-weight: 600; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.xv-live-badge i { width: 7px; height: 7px; border-radius: 50%; background: #ff5a47; animation: xv-blink 1s ease-in-out infinite alternate; }
+@keyframes xv-blink { to { opacity: 0.25; } }
+.xv-bar { position: relative; height: 8px; margin: 16px 0 10px; border-radius: 4px; overflow: hidden; background: var(--line); }
+.xv-bar i {
+	position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--p, 0) * 100%); border-radius: inherit; background: var(--accent);
+	transition: width 0.15s linear;
+}
+.xv-bar i::after {
+	content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+	background-size: 200px 100%; background-repeat: no-repeat; animation: xv-sheen 1.4s linear infinite;
+}
+@keyframes xv-sheen { from { background-position: -200px 0; } to { background-position: calc(100% + 200px) 0; } }
+.xv-pstats { display: flex; justify-content: space-between; gap: 16px; }
+.xv-pstats > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.xv-pstats b { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.xv-pstats span { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.xv-pstats-r { text-align: right; align-items: flex-end; }
+.xv-p-note { margin: 10px 0 0; font-size: 12px; color: var(--ink-3); }
+.xv-p-note:empty { display: none; }
+
+/* ---------- done ---------- */
+.xv-player { aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #000; border: 1px solid var(--line); }
+.xv-player video { display: block; width: 100%; height: 100%; background: #000; }
+.xv-file { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border-radius: 11px; border: 1px solid var(--line); background: var(--card); }
+.xv-file-ic { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--ok-soft); }
+.xv-file-ic svg { width: 19px; height: 19px; fill: var(--ok); }
+.xv-file-t { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.xv-file-t b { font-size: 14px; overflow-wrap: anywhere; }
+.xv-file-t span { font-size: 12.5px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.xv-d-note { margin: 10px 0 0; font-size: 12.5px; color: var(--ink-2); }
+
+/* ---------- error ---------- */
+.xv-error { text-align: center; padding: 18px 0 6px; }
+.xv-err-ic { width: 46px; height: 46px; margin: 0 auto 10px; border-radius: 50%; display: grid; place-items: center; background: var(--bad-soft); }
+.xv-err-ic svg { width: 24px; height: 24px; fill: var(--bad); }
+.xv-error h3 { margin: 0 0 6px; font-size: 16px; }
+.xv-error p { margin: 0 auto; max-width: 52ch; color: var(--ink-2); font-size: 13.5px; overflow-wrap: anywhere; }
+
+/* ---------- footer ---------- */
+.xv-foot { flex: none; padding: 12px 18px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, var(--bg)); }
+.xv-foot-pane { display: flex; align-items: center; gap: 14px; min-height: 38px; }
+.xv-est { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.xv-est-main { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.xv-est-main i { font-style: normal; color: var(--ink-3); margin: 0 6px; font-weight: 400; }
+.xv-est-sub, #xv-p-what { font-size: 12px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xv-est-bad { font-size: 12.5px; color: var(--ink-2); }
+.xv-btns { display: flex; align-items: center; gap: 8px; flex: none; }
+.xv-btns-l { flex: 1; }
+.xv-btn {
+	display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 8px 14px; border-radius: 9px; white-space: nowrap;
+	border: 1px solid var(--line-2); background: var(--card); color: var(--ink); font-size: 13.5px; font-weight: 600;
+}
+.xv-btn svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
+.xv-btn:hover:not(:disabled) { border-color: var(--ink-3); }
+.xv-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xv-btn:disabled { opacity: 0.45; cursor: default; }
+.xv-primary { background: var(--accent); color: var(--on-accent); border-color: transparent; padding: 8px 18px; }
+.xv-primary:hover:not(:disabled) { border-color: transparent; filter: brightness(1.06); }
+.xv-quiet { border-color: transparent; background: transparent; color: var(--ink-2); padding-left: 6px; }
+.xv-quiet:hover:not(:disabled) { border-color: transparent; color: var(--ink); }
+.xv-small { padding: 5px 10px; font-size: 12.5px; flex: none; }
+
+/* a short note: over the footer on the done screen; on the settings it takes the estimate's place in the footer (it covers no setting) */
+.xv-flash {
+	position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%); z-index: 2; max-width: calc(100% - 32px);
+	padding: 7px 13px; border-radius: 9px; background: var(--ink); color: var(--bg); font-size: 13px; box-shadow: var(--shadow);
+	white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none;
+}
+.xv-flash.xv-flash-in { animation: xv-rise 0.18s ease-out; }
+@keyframes xv-rise { from { opacity: 0; translate: 0 6px; } }
+dialog.xv[data-mode="settings"] .xv-flash { left: 18px; bottom: 14px; transform: none; max-width: calc(100% - 300px); }
+dialog.xv[data-mode="settings"] .xv-sheet:has(.xv-flash:not([hidden])) [data-foot="settings"] .xv-est { visibility: hidden; }
+
+/* ---------- phones: a bottom sheet, one column, the buttons full width ---------- */
+@media (max-width: 640px) {
+	dialog.xv { width: 100%; margin: auto 0 0; }
+	.xv-sheet { max-height: calc(100dvh - 24px); border-radius: 18px 18px 0 0; border-bottom: 0; }
+	dialog.xv.xv-in .xv-sheet { animation: xv-up 0.24s cubic-bezier(0.2, 0.9, 0.3, 1); }
+	@keyframes xv-up { from { transform: translateY(40%); opacity: 0; } }
+	.xv-grab { display: block; width: 38px; height: 5px; margin: 8px auto 0; border-radius: 3px; background: var(--line-2); flex: none; }
+	.xv-head { padding: 8px 16px 12px; }
+	.xv-body { padding: 0 16px 14px; }
+	.xv-settings { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+	.xv-seg button { padding: 9px 2px; }
+	.xv-foot { padding: 10px 16px calc(10px + env(safe-area-inset-bottom)); }
+	.xv-foot-pane { flex-wrap: wrap; gap: 8px 10px; }
+	.xv-foot-pane[data-foot="settings"] .xv-est, .xv-foot-pane[data-foot="progress"] .xv-est { flex: 1 1 100%; }
+	.xv-foot-pane[data-foot="settings"] .xv-btns, .xv-foot-pane[data-foot="progress"] .xv-btns { flex: 1 1 100%; }
+	.xv-foot-pane .xv-btns .xv-btn { flex: 1; }
+	.xv-foot-pane[data-foot="done"] .xv-btns-l, .xv-foot-pane[data-foot="error"] .xv-btns-l { flex: 1 1 100%; order: 2; }
+	.xv-foot-pane[data-foot="done"] .xv-btns:not(.xv-btns-l), .xv-foot-pane[data-foot="error"] .xv-btns:not(.xv-btns-l) { flex: 1 1 100%; }
+	.xv-quiet { justify-content: center; }
+	.xv-flash { bottom: 120px; }
+	/* settings: the note sits on the estimate's row, above the buttons */
+	dialog.xv[data-mode="settings"] .xv-flash { left: 16px; bottom: calc(58px + env(safe-area-inset-bottom)); max-width: calc(100% - 32px); }
+	#xv-p-what { white-space: normal; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	dialog.xv.xv-in::backdrop, dialog.xv.xv-in .xv-sheet, .xv-flash.xv-flash-in, .xv-bar i::after, .xv-live-badge i, .xv-spin { animation: none !important; }
+	.xv-bar i, .xv-sw, .xv-sw::after, .xv-seg button { transition: none !important; }
+}

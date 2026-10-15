@@ -1,0 +1,3 @@
+{'mg_ball1_attached': True, 'mg_ramp2_attached': True, 'mg_seesaw_attached': True}
+ball1 0.0 1.6 drop 1.0 seesaw_x 2.7137 gap 0.078
+resolved ball1 1.689 seesaw_x 2.7137

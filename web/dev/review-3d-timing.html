@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D view timing</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>html, body { margin: 0; height: 100%; background: #222; } #stage { position: fixed; inset: 0; }</style>
+</head>
+<body>
+<div id="stage"></div>
+<script type="module">
+// Reviewer page: how long does the first 3D view take to build (textures, PMREM, shaders) and the first draw?
+const sim = await (await fetch("/sample/sim.json")).json()
+const t0 = performance.now()
+const { createView3D } = await import("../view3d.js")
+const t1 = performance.now()
+const view = createView3D(document.getElementById("stage"))
+const t2 = performance.now()
+view.load(sim, null)
+const t3 = performance.now()
+view.render(1.0)
+const gl = view._debug.renderer.getContext()
+gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4))
+const t4 = performance.now()
+view.load(sim, null)
+const t5 = performance.now()
+window.view = view
+window.timing = { importMs: t1 - t0, createMs: t2 - t1, firstLoadMs: t3 - t2, firstRenderMs: t4 - t3, secondLoadMs: t5 - t4 }
+</script>
+</body>
+</html>

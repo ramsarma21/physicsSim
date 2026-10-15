@@ -1,0 +1,107 @@
+// Vendors the MP4 muxer the export uses (mediabunny, pinned in package.json) into web/vendor/mediabunny/, so the deployed site needs no CDN.
+//   node tools/vendor-media.mjs            (npm run vendor:media; `npm ci` first)  rebuilds web/vendor/mediabunny/
+//   node tools/vendor-media.mjs --check    (npm run vendor:media:check)            writes nothing; exits 1 if web/vendor/mediabunny is missing,
+//                                           holds an extra file, or differs from what node_modules/mediabunny + the app's imports make now
+// What is written: web/vendor/mediabunny/mediabunny.js (one ES module holding ONLY the names the app imports from "mediabunny", tree-shaken
+// by the pinned esbuild out of node_modules/mediabunny, not minified so it stays readable) and its LICENSE (MPL-2.0, unmodified). The names
+// come from every `import {A, B} from "mediabunny"` and `const {A, B} = await import("mediabunny")` in web/*.js and web/export/**, the way
+// tools/vendor-three.mjs finds the three.js addons, so a name added to web/export/encoder.js needs `npm run vendor:media` again (or the
+// export fails with "does not provide an export named ..."). web/index.html's importmap maps the bare name to the file:
+//   "mediabunny": "./vendor/mediabunny/mediabunny.js"
+// WHY mediabunny (not mp4-muxer 5.2.2): see web/export/encoder.js, "The muxer".
+import { createRequire } from "node:module"
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
+import { gzipSync } from "node:zlib"
+import path from "node:path"
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const pkgDir = path.join(root, "node_modules", "mediabunny")
+const out = path.join(root, "web", "vendor", "mediabunny")
+const fail = (m) => { console.error(`vendor-media: ${m}`); process.exit(1) }
+
+const args = process.argv.slice(2)
+const check = args.includes("--check")
+const unknown = args.find((a) => a !== "--check")
+if (unknown) fail(`unknown argument ${unknown} (the only one is --check)`)
+
+if (!existsSync(path.join(pkgDir, "package.json"))) fail("mediabunny is not installed (run `npm ci` in the project root).")
+const version = JSON.parse(readFileSync(path.join(pkgDir, "package.json"), "utf8")).version
+const wanted = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8")).dependencies?.mediabunny
+if (!wanted) fail("package.json does not list mediabunny in dependencies")
+if (wanted !== version) fail(`node_modules has mediabunny ${version} but package.json wants ${wanted} (run \`npm ci\`).`)
+if (!existsSync(path.join(root, "node_modules", "esbuild", "package.json"))) fail("esbuild is not installed (run `npm ci` in the project root).")
+const esbuild = createRequire(path.join(root, "node_modules", "x.js"))("esbuild")
+
+// The names the app imports from "mediabunny".
+const sources = []
+const walk = (dir, deep) => {
+	if (!existsSync(dir)) return
+	for (const e of readdirSync(dir, { withFileTypes: true })) {
+		const p = path.join(dir, e.name)
+		if (e.isDirectory()) { if (deep) walk(p, true) } else if (/\.m?js$/.test(e.name)) sources.push(p)
+	}
+}
+walk(path.join(root, "web"), false)
+walk(path.join(root, "web", "export"), true)
+const names = new Map()                                    // exported name -> the first app file that imports it
+const spec = String.raw`["']mediabunny["']`
+const patterns = [
+	new RegExp(String.raw`\bimport\s*\{([^{}]*)\}\s*from\s*${spec}`, "g"),
+	new RegExp(String.raw`\{([^{}]*)\}\s*=\s*await\s+import\(\s*${spec}\s*\)`, "g"),
+]
+for (const f of sources) {
+	const text = readFileSync(f, "utf8")
+	for (const re of patterns) {
+		for (const m of text.matchAll(re)) {
+			for (const part of m[1].split(",")) {
+				const name = part.trim().split(/\s+as\s+|\s*:\s*/)[0].trim()
+				if (!name) continue
+				if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail(`${path.relative(root, f)}: cannot read the imported name "${part.trim()}"`)
+				if (!names.has(name)) names.set(name, path.relative(root, f))
+			}
+		}
+	}
+	if (/["']mediabunny["']/.test(text) && !patterns.some((re) => new RegExp(re.source).test(text)))
+		fail(`${path.relative(root, f)} uses "mediabunny" in a form this script cannot read: import named exports, as \`const {A, B} = await import("mediabunny")\` or \`import {A, B} from "mediabunny"\``)
+}
+if (!names.size) fail("no imports of \"mediabunny\" found in web/*.js or web/export/** (is the scan wrong?)")
+const list = [...names.keys()].sort()
+
+const result = await esbuild.build({
+	stdin: { contents: `export { ${list.join(", ")} } from "mediabunny"\n`, resolveDir: root, sourcefile: "vendor-media-entry.js", loader: "js" },
+	bundle: true,
+	write: false,
+	format: "esm",
+	platform: "browser",
+	target: "es2022",
+	minify: false,
+	legalComments: "inline",
+	logLevel: "warning",
+	banner: { js: `// mediabunny ${version} (MPL-2.0, https://github.com/Vanilagy/mediabunny; LICENSE beside this file): only ${list.join(", ")}.\n// Generated by tools/vendor-media.mjs from node_modules/mediabunny with esbuild; do not edit (npm run vendor:media).` },
+})
+const bundle = Buffer.from(result.outputFiles[0].contents)
+const license = readFileSync(path.join(pkgDir, "LICENSE"))
+const want = new Map([["mediabunny.js", bundle], ["LICENSE", license]])
+
+if (check) {
+	const problems = []
+	const have = existsSync(out) ? readdirSync(out) : []
+	for (const [rel, bytes] of want) {
+		if (!have.includes(rel)) problems.push(`missing   ${rel}`)
+		else if (!readFileSync(path.join(out, rel)).equals(bytes)) problems.push(`differs   ${rel}   (not what mediabunny ${version} and the app's imports (${list.join(", ")}) make)`)
+	}
+	for (const rel of have) if (!want.has(rel)) problems.push(`extra     ${rel}`)
+	if (problems.length) {
+		console.error(`vendor-media --check: web/vendor/mediabunny is out of date (${problems.length} problem${problems.length > 1 ? "s" : ""}):\n  ${problems.sort().join("\n  ")}\nRun \`npm run vendor:media\` and commit/deploy web/vendor/mediabunny.`)
+		process.exit(1)
+	}
+	console.log(`vendor-media --check: web/vendor/mediabunny is up to date (mediabunny ${version}: ${list.join(", ")})`)
+	process.exit(0)
+}
+
+rmSync(out, { recursive: true, force: true })
+mkdirSync(out, { recursive: true })
+for (const [rel, bytes] of want) writeFileSync(path.join(out, rel), bytes)
+console.log(`vendor-media: mediabunny ${version} -> web/vendor/mediabunny/ (${list.join(", ")}; imported by ${[...new Set(names.values())].join(", ")})`)
+console.log(`  mediabunny.js ${bundle.length} bytes, gzip ${gzipSync(bundle, { level: 9 }).length}`)

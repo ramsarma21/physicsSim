@@ -1,0 +1,8 @@
+file: /Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/three-balls.blend
+doc: /Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/three-balls.json
+Traceback (most recent call last):
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/control/bridge.py", line 147, in poll
+    exec(open(path).read(), dict(G))
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 9, in <module>
+AttributeError: bpy_struct: attribute "active_panel_category" from "Region" is read-only

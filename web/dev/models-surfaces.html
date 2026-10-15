@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Models: surfaces, rods, containers</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info">loading</div>
+<script type="module">
+// Dev page for web/models/surfaces.js, rods.js, containers.js: every item of the three groups on a table, close-up cameras, snapshots.
+//   ?items=plank,steel-beam,...   (default: all of the groups)  ?props={"plank":{...}}  per-type prop overrides  ?legs=1  keep legs under planks
+//   window.look(type|x, y, dist, az, el)   orbit camera at an item (or a world point), dist m, az rad around y, el rad up
+//   window.snap(name)                      saves the canvas to web/dev/shots/<name>.png
+//   window.shoot(type, [[az, el, dist], ...], prefix)   one item from several views
+//   window.bbox()                          how each model fills its physics outline (mm; + sticks out, - falls short)
+const q = new URLSearchParams(location.search)
+window.__warn = []
+for (const k of ["warn", "error"]) { const o = console[k].bind(console); console[k] = (...a) => { window.__warn.push(k + ": " + a.map(String).join(" ")); o(...a) } }
+// make sure the browser re-reads the model files we edit (module imports follow the HTTP cache)
+await Promise.all(["../models/surfaces.js", "../models/surfaces-lib.js", "../models/rods.js", "../models/containers.js", "../models3d.js", "../view3d.js"].map((u) => fetch(new URL(u, location.href), { cache: "reload" })))
+const { createView3D } = await import("../view3d.js")
+const info = document.getElementById("info")
+const say = (m) => (info.textContent = m)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+const byKey = new Map(catalog.types.map((t) => [t.key, t]))
+const ALL = ["plank", "steel-beam", "ice-sheet", "glass-sheet", "rubber-mat", "carpet-strip", "concrete-slab", "peg", "bumper", "funnel", "staircase",
+  "wooden-rod", "steel-rod", "pendulum", "seesaw", "lever", "hinged-gate", "newtons-cradle", "peg-board", "fan", "box", "cup", "bucket", "basket"]
+const keys = q.get("items") ? q.get("items").split(",") : ALL
+const PROPS = { plank: { legs: false }, "steel-beam": { legs: false }, "ice-sheet": { legs: false }, "glass-sheet": { legs: false }, "rubber-mat": { legs: false },
+  "carpet-strip": { legs: false }, "concrete-slab": { legs: false }, pendulum: { start_angle: 0 }, "hinged-gate": { start_angle: 0 }, "newtons-cradle": { start_angle: 0 },
+  ...JSON.parse(q.get("props") || "{}") }
+if (q.get("legs")) for (const k of Object.keys(PROPS)) if (PROPS[k].legs === false) delete PROPS[k].legs
+
+// the preview solids give each item's extent (in its own frame) so it can rest on the table
+let SOLIDS = new Map()
+const worldOf = (s) => {
+  if (!s.parent) return { at: s.at, angle: s.angle ?? 0 }
+  const p = worldOf(SOLIDS.get(s.parent))
+  const c = Math.cos(p.angle), n = Math.sin(p.angle)
+  return { at: { x: p.at.x + s.at.x * c - s.at.y * n, y: p.at.y + s.at.x * n + s.at.y * c }, angle: p.angle + (s.angle ?? 0) }
+}
+const outline = (s0) => {
+  const w0 = worldOf(s0)
+  const s = { ...s0, at: w0.at, angle: w0.angle }
+  const b = s.body
+  const a = s.angle ?? 0
+  const c = Math.cos(a), n = Math.sin(a)
+  let pts
+  if (b.kind === "ball") return { x0: s.at.x - b.radius, x1: s.at.x + b.radius, y0: s.at.y - b.radius, y1: s.at.y + b.radius }
+  if (b.kind === "polygon") pts = b.points.map((p) => [p.x, p.y])
+  else { const hw = b.width / 2, hh = b.height / 2, hb = hw * (b.taper ?? 1); pts = [[-hb, -hh], [hb, -hh], [hw, hh], [-hw, hh]] }
+  const w = pts.map(([x, y]) => [s.at.x + x * c - y * n, s.at.y + x * n + y * c])
+  return { x0: Math.min(...w.map((p) => p[0])), x1: Math.max(...w.map((p) => p[0])), y0: Math.min(...w.map((p) => p[1])), y1: Math.max(...w.map((p) => p[1])) }
+}
+async function extentOf(type, props) {
+  // simulate the item alone to get its true starting extent with the props used here
+  const sc = { version: 2, id: "x", name: "x", seconds: 0.1, release: 0.1, stage: { x0: -1, x1: 1, y0: -1, y1: 1 }, items: [{ id: "p", type, x: 0, y: 0, angle: 0, props: props ?? {} }], goals: [] }
+  const r = await post("/api/layout", { scene: sc })
+  SOLIDS = new Map(r.doc.solids.map((s) => [s.id, s]))
+  const os = r.doc.solids.map(outline)
+  return { x0: Math.min(...os.map((o) => o.x0)), x1: Math.max(...os.map((o) => o.x1)), y0: Math.min(...os.map((o) => o.y0)), y1: Math.max(...os.map((o) => o.y1)) }
+}
+// the item list: one per type (default props above), then ?more=[{id, type, props}] for variants
+const entries = keys.filter((k) => byKey.has(k)).map((k) => ({ id: k, type: k, props: PROPS[k] ?? {} }))
+const MORE = q.get("variants") ? await (await fetch("variants-surfaces.json")).json() : JSON.parse(q.get("more") || "[]")
+for (const e of MORE) entries.push({ id: e.id ?? e.type + "-v", type: e.type, props: e.props ?? {} })
+const items = []
+const POS = {}
+const EXT = {}
+let cursor = 0
+const GAP = Number(q.get("gap") || 0.25)
+for (const en of entries) {
+  const e = await extentOf(en.type, en.props)
+  EXT[en.id] = e
+  const x = cursor - e.x0
+  POS[en.id] = { x, y: -e.y0, cx: x + (e.x0 + e.x1) / 2, cy: -e.y0 + (e.y0 + e.y1) / 2, w: e.x1 - e.x0, h: e.y1 - e.y0 }
+  items.push({ id: en.id, type: en.type, name: en.id, x, y: -e.y0 + Number(q.get("lift") || 0), angle: 0, fixed: !q.get("dynamic"), props: en.props })
+  cursor += e.x1 - e.x0 + GAP
+}
+const TW = Math.max(2, cursor + 1)
+items.unshift({ id: "table", type: "table", name: "Table", x: cursor / 2, y: 0, angle: 0, props: { width: TW, thickness: 0.15 } })
+const scene = { version: 2, id: "models-surfaces", name: "surfaces", seconds: Number(q.get("seconds") || 1), release: 0.5, stage: { x0: -0.5, x1: cursor + 0.5, y0: -0.156, y1: 2.0 }, items, goals: [] }
+const sim = await post("/api/simulate", { scene })
+SOLIDS = new Map(sim.doc.solids.map((s) => [s.id, s]))
+window.sim = sim
+window.POS = POS
+const view = createView3D(document.getElementById("stage"))
+window.view = view
+view.setOptions({ looks: catalog.looks })
+const tl = performance.now()
+view.load(sim, null)
+window.loadMs = performance.now() - tl
+view.setOptions({ camera: "orbit" })
+window.look = (t, y, dist = 0.4, az = 0, el = 0.15, tt = 0) => {
+  let x = t
+  if (typeof t === "string") { const p = POS[t]; x = p.cx; if (y === null || y === undefined) y = p.cy }
+  view.setOptions({ camera: "orbit" })
+  view.render(tt)
+  const d = view._debug
+  d.orbitCam.near = Math.max(0.002, dist / 80)
+  d.orbitCam.updateProjectionMatrix()
+  d.controls.minDistance = 0.004
+  d.controls.minAzimuthAngle = -Infinity
+  d.controls.maxAzimuthAngle = Infinity
+  d.controls.maxPolarAngle = Math.PI * 0.499
+  d.controls.target.set(x, y, 0)
+  d.orbitCam.position.set(x + dist * Math.sin(az) * Math.cos(el), y + dist * Math.sin(el), dist * Math.cos(az) * Math.cos(el))
+  d.controls.update()
+  view.render(tt)
+}
+window.snap = async (name, tt = 0) => {
+  view.render(tt)
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: view._debug.renderer.domElement.toDataURL() }) })
+  return r.status
+}
+window.shoot = async (type, views, prefix = "surf") => {
+  const out = []
+  for (let i = 0; i < views.length; i++) {
+    const [az, el, dist, dy] = views[i]
+    window.look(type, dy ?? null, dist, az, el)
+    out.push(await window.snap(`${prefix}-${type}-${i}`))
+  }
+  return out
+}
+// how well each model fills its physics outline: the drawn bounding box against the part's own (mm; + = sticks out, - = falls short)
+window.bbox = () => {
+  const { THREE } = view._debug
+  const rows = []
+  for (const s of sim.doc.solids) {
+    if (!s.itemType || s.itemType === "table") continue
+    const holder = view._debug.run.group.getObjectByName(s.id)
+    if (!holder) { rows.push(`${s.id}: (no model)`); continue }
+    holder.updateMatrixWorld(true)
+    const b = new THREE.Box3().setFromObject(holder)
+    const body = s.body
+    const f = (v) => (v * 1000).toFixed(2)
+    const w0 = worldOf(s)
+    const ang = w0.angle
+    if (Math.abs(ang) > 1e-9) { rows.push(`${s.id}: (turned ${ang.toFixed(3)} rad: bbox skipped)`); continue }
+    let o
+    if (body.kind === "ball") o = { x0: -body.radius, x1: body.radius, y0: -body.radius, y1: body.radius, hd: (s.depth3d ?? 2 * body.radius) / 2 }
+    else if (body.kind === "polygon") o = { x0: Math.min(...body.points.map((p) => p.x)), x1: Math.max(...body.points.map((p) => p.x)), y0: Math.min(...body.points.map((p) => p.y)), y1: Math.max(...body.points.map((p) => p.y)), hd: body.depth / 2 }
+    else o = { x0: -body.width / 2, x1: body.width / 2, y0: -body.height / 2, y1: body.height / 2, hd: body.depth / 2 }
+    const cx = w0.at.x, cy = w0.at.y
+    rows.push(`${s.id}: x ${f(b.min.x - cx - o.x0)}/${f(b.max.x - cx - o.x1)}  y ${f(b.min.y - cy - o.y0)}/${f(b.max.y - cy - o.y1)}  z ${f(b.min.z + o.hd)}/${f(b.max.z - o.hd)}`)
+  }
+  return rows
+}
+// the same per ITEM: the union of all its models' boxes against the union of its parts' outlines (so a vessel drawn on its floor's part is judged whole)
+window.bboxItems = () => {
+  const { THREE } = view._debug
+  const rows = []
+  const byItem = new Map()
+  for (const s of sim.doc.solids) if (s.item !== "table" && s.itemType) { if (!byItem.has(s.item)) byItem.set(s.item, []); byItem.get(s.item).push(s) }
+  for (const [item, solids] of byItem) {
+    const O = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity, z: 0 }
+    const B = new THREE.Box3()
+    let any = false
+    for (const s of solids) {
+      const w0 = worldOf(s)
+      const o = outline({ ...s, at: s.at, angle: s.angle })
+      O.x0 = Math.min(O.x0, o.x0); O.x1 = Math.max(O.x1, o.x1); O.y0 = Math.min(O.y0, o.y0); O.y1 = Math.max(O.y1, o.y1)
+      const b = s.body
+      O.z = Math.max(O.z, (b.kind === "ball" ? (s.depth3d ?? 2 * b.radius) : b.depth) / 2)
+      const holder = view._debug.run.group.getObjectByName(s.id)
+      if (holder) { holder.updateMatrixWorld(true); B.union(new THREE.Box3().setFromObject(holder)); any = true }
+    }
+    if (!any) { rows.push(`${item}: (no model)`); continue }
+    const f = (v) => (v * 1000).toFixed(1)
+    rows.push(`${item}: x ${f(B.min.x - O.x0)}/${f(B.max.x - O.x1)}  y ${f(B.min.y - O.y0)}/${f(B.max.y - O.y1)}  z ${f(B.min.z + O.z)}/${f(B.max.z - O.z)}`)
+  }
+  return rows
+}
+say(`ready: ${keys.length} items, load ${window.loadMs.toFixed(0)} ms`)
+window.ready = true
+window.addEventListener("error", (e) => say("ERROR " + e.message))
+</script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+{
+ "version": 2,
+ "id": "vehicles",
+ "name": "Vehicles",
+ "seconds": 4.5,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.3,
+  "x1": 3.1,
+  "y0": -0.12,
+  "y1": 1
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "box",
+   "type": "cardboard-box",
+   "name": "Cardboard box",
+   "x": 0.55,
+   "y": 0.1015
+  },
+  {
+   "angle": -14,
+   "id": "ramp",
+   "type": "plank",
+   "name": "Ramp",
+   "props": {
+    "legs": false,
+    "length": 0.92
+   },
+   "x": 1.0645,
+   "y": 0.12346
+  },
+  {
+   "angle": -14,
+   "props": {},
+   "id": "car",
+   "type": "toy-car",
+   "name": "Toy car",
+   "x": 0.75666,
+   "y": 0.21305
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "truck",
+   "type": "truck",
+   "name": "Truck",
+   "x": 1.8835,
+   "y": 0.0015
+  },
+  {
+   "angle": 0,
+   "props": {},
+   "id": "skateboard",
+   "type": "skateboard",
+   "name": "Skateboard",
+   "x": 2.6335,
+   "y": 0.0015
+  }
+ ],
+ "goals": []
+}

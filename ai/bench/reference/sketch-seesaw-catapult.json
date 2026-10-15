@@ -1,0 +1,129 @@
+{
+ "case": "sketch-seesaw-catapult",
+ "notes": "mirrored: the seesaw only rests on its right end",
+ "plan": {
+  "title": "Seesaw catapult (hoop → basket), mirrored",
+  "items": [
+   {
+    "id": "seesaw",
+    "type": "seesaw",
+    "name": "Seesaw",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 0.9
+    },
+    "why": "reference"
+   },
+   {
+    "id": "ball",
+    "type": "ping-pong-ball",
+    "name": "Ball",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.19379,
+     "y_m": 0.04346
+    },
+    "why": "reference"
+   },
+   {
+    "id": "weight",
+    "type": "steel-weight-5kg",
+    "name": "Weight",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 0.69166,
+     "y_m": 0.54013
+    },
+    "held": true,
+    "why": "reference"
+   },
+   {
+    "id": "basket",
+    "type": "basket",
+    "name": "Basket (for the hoop)",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.56879
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [
+   {
+    "asked": "a basketball hoop",
+    "reason": "There is no hoop or backboard in the library; a basket on the table is the target.",
+    "substitute_type": "basket"
+   }
+  ],
+  "goals": [],
+  "tune": [],
+  "seconds": 4,
+  "notes": "mirrored: the seesaw only rests on its right end"
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-sketch-seesaw",
+  "name": "Seesaw catapult (hoop → basket), mirrored",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.4,
+   "y0": -0.12,
+   "y1": 1.4
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "seesaw",
+    "type": "seesaw",
+    "name": "Seesaw",
+    "x": 0.9,
+    "y": 0
+   },
+   {
+    "id": "ball",
+    "type": "ping-pong-ball",
+    "name": "Ball",
+    "angle": 0,
+    "props": {},
+    "x": 1.19379,
+    "y": 0.04346
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "weight",
+    "type": "steel-weight-5kg",
+    "name": "Weight",
+    "held": true,
+    "x": 0.69166,
+    "y": 0.54013
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "basket",
+    "type": "basket",
+    "name": "Basket (for the hoop)",
+    "x": 1.56879,
+    "y": 0.0115
+   }
+  ],
+  "goals": []
+ }
+}

@@ -1,0 +1,94 @@
+{
+ "version": 2,
+ "id": "golf-ball-weight-cup",
+ "name": "Golf ball, weight, cup",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Wooden ramp",
+   "x": 0.003476,
+   "y": 0.460436,
+   "angle": -18.43494882292202,
+   "props": {
+    "length": 0.632456
+   }
+  },
+  {
+   "id": "ball",
+   "type": "golf-ball",
+   "name": "Golf ball",
+   "x": -0.25,
+   "y": 0.579528,
+   "angle": 0,
+   "props": {},
+   "held": true
+  },
+  {
+   "id": "weight",
+   "type": "steel-weight-5kg",
+   "name": "Steel weight",
+   "x": 0.543,
+   "y": 0.235,
+   "angle": 0,
+   "props": {},
+   "fixed": true
+  },
+  {
+   "id": "cup",
+   "type": "cup",
+   "name": "Cup",
+   "x": 0.43,
+   "y": 0.003,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "in",
+   "item": "ball",
+   "container": "cup",
+   "label": "The golf ball lands in the cup"
+  }
+ ]
+}

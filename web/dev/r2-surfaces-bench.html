@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>R2 surfaces bench</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+</head>
+<body>
+<script type="module">
+// Fixer's micro-benchmark: times one bake of the surfaces library in a fresh page (window.bench(name, seed) -> ms).
+const THREE = await import("three")
+const { kit } = await import("../models3d.js")
+const { makeLib } = await import("../models/surfaces-lib.js")
+window.L = makeLib(kit, THREE)
+window.bench = (fn, ...a) => { const t = performance.now(); const r = L[fn](...a); return Math.round((performance.now() - t) * 10) / 10 }
+window.ready = true
+</script>
+</body>
+</html>

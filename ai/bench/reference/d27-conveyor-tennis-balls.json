@@ -1,0 +1,208 @@
+{
+ "case": "d27-conveyor-tennis-balls",
+ "notes": "hand-made edit (tools/make-edit-references.mjs)",
+ "plan": {
+  "title": "Conveyor delivery",
+  "seconds": 6,
+  "release": 0.5,
+  "items": [
+   {
+    "id": "belt",
+    "type": "conveyor-belt",
+    "name": "Conveyor belt",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1,
+     "y_m": 0.3,
+     "angle_deg": 0,
+     "keep": true
+    }
+   },
+   {
+    "id": "ball1",
+    "type": "tennis-ball",
+    "props": {},
+    "place": {
+     "on": "belt",
+     "x": 0.62
+    }
+   },
+   {
+    "id": "ball2",
+    "type": "tennis-ball",
+    "props": {},
+    "place": {
+     "on": "belt",
+     "x": 0.73
+    }
+   },
+   {
+    "id": "ball3",
+    "type": "tennis-ball",
+    "props": {},
+    "place": {
+     "on": "belt",
+     "x": 0.84
+    }
+   },
+   {
+    "id": "box",
+    "type": "box",
+    "name": "Box",
+    "props": {
+     "wall": 0.22,
+     "hung": false
+    },
+    "place": {
+     "on": "air",
+     "x": 1.62,
+     "y_m": 0,
+     "angle_deg": 0,
+     "keep": true
+    }
+   }
+  ],
+  "goals": [
+   {
+    "label": "Tennis ball ends in the box",
+    "item": "ball1",
+    "container": "box"
+   },
+   {
+    "label": "Tennis ball ends in the box",
+    "item": "ball2",
+    "container": "box"
+   },
+   {
+    "label": "Tennis ball ends in the box",
+    "item": "ball3",
+    "container": "box"
+   }
+  ],
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.2,
+   "y0": -0.12,
+   "y1": 1.08
+  },
+  "table": {
+   "x": 1.3,
+   "props": {}
+  }
+ },
+ "scene": {
+  "version": 2,
+  "id": "conveyor-delivery",
+  "name": "Conveyor delivery",
+  "seconds": 6,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.4,
+   "x1": 2.2,
+   "y0": -0.12,
+   "y1": 1.08
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "belt",
+    "type": "conveyor-belt",
+    "name": "Conveyor belt",
+    "x": 1,
+    "y": 0.3,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "ball1",
+    "type": "tennis-ball",
+    "name": "Tennis ball",
+    "x": 0.62,
+    "y": 0.334,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "ball2",
+    "type": "tennis-ball",
+    "name": "Tennis ball",
+    "x": 0.73,
+    "y": 0.334,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "ball3",
+    "type": "tennis-ball",
+    "name": "Tennis ball",
+    "x": 0.84,
+    "y": 0.334,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "box",
+    "type": "box",
+    "name": "Box",
+    "x": 1.62,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "wall": 0.22,
+     "hung": false
+    }
+   },
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "x": -0.52,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 3.12,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "in",
+    "item": "ball1",
+    "container": "box",
+    "label": "Tennis ball ends in the box"
+   },
+   {
+    "kind": "in",
+    "item": "ball2",
+    "container": "box",
+    "label": "Tennis ball ends in the box"
+   },
+   {
+    "kind": "in",
+    "item": "ball3",
+    "container": "box",
+    "label": "Tennis ball ends in the box"
+   }
+  ]
+ }
+}

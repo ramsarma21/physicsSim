@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Polygon solids test</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #cards { position: fixed; right: 8px; bottom: 8px; display: flex; gap: 6px; z-index: 2; }
+  #cards canvas { width: 160px; height: 120px; background: #fff; border-radius: 4px; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 4px; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="cards"></div>
+<div id="info"></div>
+<script type="module">
+// Dev page for polygon solids in web/view2d.js and web/view3d.js.  ?view=2d|3d  ?t=<s>
+// The sim is web/dev/sim-poly.json: a scene of polygon solids (wedge, ramp, hexagon, egg, cone, car body, a polygon cube next to
+// its slab twin) built with temporary item types and run by the real engine.
+// window.view, window.setT(t), window.snap(name), window.look(x, y, dist, az) (3D close-up), window.sim, window.pickAt(x, y)
+import { createView2D, drawPreview } from "../view2d.js"
+import { createView3D } from "../view3d.js"
+
+const q = new URLSearchParams(location.search)
+const which = q.get("view") || "3d"
+const info = document.getElementById("info")
+const catalog = await (await fetch("/api/catalog")).json()
+const sim = await (await fetch("/dev/sim-poly.json?" + Date.now())).json()
+window.sim = sim
+const stage = document.getElementById("stage")
+const view = which === "2d" ? createView2D(stage) : createView3D(stage)
+window.view = view
+if (which === "3d") view.setOptions({ looks: catalog.looks })
+view.load(sim, null)
+if (which === "2d") view.resize?.()
+let t = Number(q.get("t") ?? 0)
+window.setT = (v) => {
+  t = v
+  view.render(v)
+  info.textContent = `${which} t ${v.toFixed(2)} s`
+}
+const canvasOf = () => (which === "2d" ? stage.querySelector("canvas") : view._debug.renderer.domElement)
+window.snap = async (name, tt = t) => {
+  view.render(tt)
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: canvasOf().toDataURL() }) })
+  return r.status
+}
+window.look = (x, y, dist = 0.4, az = 0, tt = t) => {
+  view.setOptions({ camera: "orbit" })
+  view.render(tt)
+  const d = view._debug
+  d.controls.target.set(x, y, 0)
+  d.orbitCam.position.set(x + dist * Math.sin(az), y + 0.04, dist * Math.cos(az))
+  d.controls.update()
+  view.render(tt)
+}
+// what the editor would pick at world point (x, y): the solid id there
+window.pickAt = (x, y) => {
+  const s = view.toScreen(x, y)
+  if (!s) return null
+  const r = stage.getBoundingClientRect()
+  return view.pick(r.left + s.x, r.top + s.y)
+}
+// catalog-card pictures of the polygon items, drawn by view2d's drawPreview
+const cards = document.getElementById("cards")
+for (const item of ["wedge", "hex", "egg", "cone", "car"]) {
+  const c = document.createElement("canvas")
+  cards.append(c)
+  const solids = sim.doc.solids.filter((s) => s.item === item).map((s) => ({ ...s, at: { x: 0, y: 0 }, angle: 0 }))
+  drawPreview(c, { solids, animated: [], joints: [] }, catalog.looks)
+}
+window.setT(t)
+window.ready = true
+</script>
+</body>
+</html>

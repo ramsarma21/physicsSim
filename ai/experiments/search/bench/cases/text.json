@@ -1,0 +1,1351 @@
+{
+ "version": 1,
+ "about": "physics-verified planning experiment eval set: 11 chain/outcome cases of ai/bench/cases/text.json + 15 new hard make-it-work requests (new-cases.json)",
+ "groups": {
+  "@ball": [
+   "superball",
+   "plastic-ball",
+   "clay-ball",
+   "ping-pong-ball",
+   "tennis-ball",
+   "golf-ball",
+   "baseball",
+   "basketball",
+   "soccer-ball",
+   "bowling-ball",
+   "glass-marble",
+   "steel-ball",
+   "beach-ball",
+   "wooden-ball",
+   "billiard-ball"
+  ],
+  "@ball_not_marble": [
+   "superball",
+   "plastic-ball",
+   "clay-ball",
+   "ping-pong-ball",
+   "tennis-ball",
+   "golf-ball",
+   "baseball",
+   "basketball",
+   "soccer-ball",
+   "bowling-ball",
+   "steel-ball",
+   "beach-ball",
+   "wooden-ball",
+   "billiard-ball"
+  ],
+  "@ramp": [
+   "plank",
+   "steel-beam",
+   "ice-sheet",
+   "glass-sheet",
+   "rubber-mat",
+   "carpet-strip",
+   "concrete-slab",
+   "wedge",
+   "cutting-board"
+  ],
+  "@domino": [
+   "domino",
+   "domino-row"
+  ],
+  "@book": [
+   "hardcover-book",
+   "paperback-book"
+  ],
+  "@container": [
+   "box",
+   "cup",
+   "bucket",
+   "basket",
+   "plastic-cup",
+   "glass-jar"
+  ],
+  "@cup": [
+   "cup",
+   "plastic-cup",
+   "glass-jar"
+  ],
+  "@vehicle": [
+   "toy-car",
+   "motor-car",
+   "cart",
+   "skateboard",
+   "truck"
+  ],
+  "@toy_car": [
+   "toy-car",
+   "motor-car"
+  ],
+  "@pendulum": [
+   "pendulum",
+   "rope-pendulum",
+   "wrecking-ball"
+  ],
+  "@lever": [
+   "seesaw",
+   "lever"
+  ],
+  "@spring": [
+   "hanging-spring",
+   "spring-launcher",
+   "bounce-pad",
+   "trampoline",
+   "spring-bumper",
+   "spring-gate",
+   "spring-catapult"
+  ],
+  "@pulley": [
+   "pulley-lift",
+   "atwood-machine"
+  ],
+  "@weight": [
+   "steel-weight-1kg",
+   "steel-weight-5kg"
+  ],
+  "@block": [
+   "wooden-block",
+   "brick",
+   "foam-block",
+   "cardboard-box",
+   "lego-brick",
+   "rubiks-cube",
+   "ice-cube",
+   "die",
+   "tissue-box",
+   "cereal-box"
+  ],
+  "@can": [
+   "soda-can",
+   "soda-can-side"
+  ],
+  "@bottle": [
+   "water-bottle",
+   "water-bottle-side"
+  ],
+  "@fruit": [
+   "apple",
+   "orange"
+  ],
+  "@glass_like": [
+   "glass-jar",
+   "plastic-cup",
+   "cup",
+   "coffee-mug"
+  ],
+  "@standing_four": [
+   "soda-can",
+   "coffee-mug",
+   "candle",
+   "water-bottle"
+  ],
+  "@three_balls": [
+   "glass-marble",
+   "wooden-ball",
+   "superball"
+  ],
+  "@scenery": [
+   "table",
+   "wall"
+  ]
+ },
+ "families": [
+  "@domino",
+  "@ball",
+  "@ramp",
+  "@book",
+  "@container",
+  "@vehicle",
+  "@pendulum",
+  "@lever",
+  "@spring",
+  "@pulley",
+  "@weight",
+  "@block",
+  "@can",
+  "@bottle",
+  "@fruit"
+ ],
+ "cases": [
+  {
+   "id": "c1-rube-cup",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "Build a Rube Goldberg machine with at least four stages that ends with a ball dropping into a cup.",
+   "expect": {
+    "must_types": [
+     "@ball",
+     "@cup"
+    ],
+    "not_missing": [
+     "ball",
+     "cup",
+     "domino",
+     "ramp"
+    ],
+    "items": {
+     "min": 6
+    },
+    "min_families": 4,
+    "outcomes": [
+     {
+      "kind": "chain_events",
+      "min": 4
+     },
+     {
+      "kind": "in",
+      "item": "@ball",
+      "container": "@cup"
+     }
+    ],
+    "rubric": "At least four distinct stages, each clearly triggering the next (e.g. ball down a ramp -> dominoes -> seesaw or pendulum -> ball into the cup). The final ball really ends inside the cup in the run. Laid out left to right so it reads; no stage is decorative; nothing overlaps or floats unsupported (held items are fine).",
+    "key": 1
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "c2-marble-zigzag",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "A marble rolls down two zig-zag ramps, knocks over a row of dominoes, and the last domino pushes a ball off a ledge into a bucket.",
+   "expect": {
+    "must_types": [
+     "glass-marble",
+     "@ramp",
+     "@domino",
+     "bucket",
+     "@ball_not_marble"
+    ],
+    "not_missing": [
+     "marble",
+     "ramp",
+     "domino",
+     "bucket",
+     "ball"
+    ],
+    "counts": [
+     {
+      "of": "@ramp",
+      "min": 2
+     }
+    ],
+    "relations": [
+     {
+      "rel": "angled",
+      "a": "@ramp",
+      "sign": "down_right",
+      "min_deg": 3
+     },
+     {
+      "rel": "angled",
+      "a": "@ramp",
+      "sign": "down_left",
+      "min_deg": 3
+     },
+     {
+      "rel": "over",
+      "a": "glass-marble",
+      "b": "@ramp"
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "glass-marble",
+      "b": "@domino"
+     },
+     {
+      "kind": "topples",
+      "of": "@domino",
+      "min_fraction": 0.8
+     },
+     {
+      "kind": "in",
+      "item": "@ball_not_marble",
+      "container": "bucket"
+     },
+     {
+      "kind": "sequence",
+      "steps": [
+       {
+        "kind": "hits",
+        "a": "glass-marble",
+        "b": "@domino"
+       },
+       {
+        "kind": "moves",
+        "of": "@ball_not_marble",
+        "min_m": 0.01
+       }
+      ]
+     }
+    ],
+    "rubric": "Two ramps sloping opposite ways (a zig-zag: the marble runs down one, drops or turns onto the other), then a domino row, then a ball resting on a raised ledge (a block, book or box) at the end of the row, and a bucket below the ledge. The second ball only moves because the dominoes reach it, and it ends in the bucket.",
+    "key": 2
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "g2-chain-reaction",
+   "category": "vague",
+   "mode": "new",
+   "prompt": "Make a cool chain reaction.",
+   "expect": {
+    "items": {
+     "min": 4
+    },
+    "min_families": 3,
+    "outcomes": [
+     {
+      "kind": "chain_events",
+      "min": 3
+     }
+    ],
+    "rubric": "Several different kinds of parts (dominoes, balls, ramps, levers, pendulums, springs…) triggering each other in a clear sequence from one start, left to right, with a satisfying ending. Every stage really fires in the run.",
+    "key": 0
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "m1-pendulum-golf",
+   "category": "mechanisms",
+   "mode": "new",
+   "prompt": "A pendulum with a 40 cm string swings down and knocks a golf ball off a wooden block.",
+   "expect": {
+    "must_types": [
+     [
+      "pendulum",
+      "rope-pendulum"
+     ],
+     "golf-ball",
+     "wooden-block"
+    ],
+    "not_missing": [
+     "pendulum",
+     "golf ball",
+     "wooden block",
+     "block",
+     "string"
+    ],
+    "prop_checks": [
+     {
+      "of": [
+       "pendulum",
+       "rope-pendulum"
+      ],
+      "prop": "length",
+      "min": 0.38,
+      "max": 0.42
+     }
+    ],
+    "relations": [
+     {
+      "rel": "on",
+      "a": "golf-ball",
+      "b": "wooden-block"
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "@pendulum",
+      "b": "golf-ball"
+     },
+     {
+      "kind": "leaves",
+      "of": "golf-ball",
+      "from": "wooden-block"
+     }
+    ],
+    "rubric": "A 40 cm pendulum released from an angle, its bob reaching the golf ball at the bottom of its swing; the golf ball sits on top of a wooden block at that height and is knocked off it.",
+    "key": 1
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "m2-seesaw-catapult",
+   "category": "mechanisms",
+   "mode": "new",
+   "prompt": "Drop a heavy steel weight onto one end of a seesaw to launch a ping-pong ball from the other end into a basket.",
+   "expect": {
+    "must_types": [
+     "@lever",
+     "@weight",
+     "ping-pong-ball",
+     "basket"
+    ],
+    "not_missing": [
+     "seesaw",
+     "steel weight",
+     "weight",
+     "ping-pong ball",
+     "ping pong ball",
+     "basket"
+    ],
+    "relations": [
+     {
+      "rel": "on",
+      "a": "ping-pong-ball",
+      "b": "@lever"
+     },
+     {
+      "rel": "over",
+      "a": "@weight",
+      "b": "@lever"
+     },
+     {
+      "rel": "height_above_table",
+      "a": "@weight",
+      "min": 0.1
+     },
+     {
+      "rel": "opposite_sides",
+      "a": "@weight",
+      "b": "ping-pong-ball",
+      "c": "@lever"
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "@weight",
+      "b": "@lever"
+     },
+     {
+      "kind": "rises",
+      "of": "ping-pong-ball",
+      "min_m": 0.1
+     },
+     {
+      "kind": "in",
+      "item": "ping-pong-ball",
+      "container": "basket",
+      "soft": true
+     }
+    ],
+    "rubric": "A seesaw with the ping-pong ball on its lowered end, the steel weight held above the raised end on the other side of the pivot; the weight drops, the ball is flung up and lands in a basket placed where its arc ends.",
+    "key": 2
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "m4-conveyor-oranges",
+   "category": "mechanisms",
+   "mode": "new",
+   "prompt": "A conveyor belt carries three oranges and drops them into a basket at the end.",
+   "expect": {
+    "must_types": [
+     "conveyor-belt",
+     "orange",
+     "basket"
+    ],
+    "not_missing": [
+     "conveyor",
+     "conveyor belt",
+     "orange",
+     "basket"
+    ],
+    "counts": [
+     {
+      "of": "orange",
+      "eq": 3
+     }
+    ],
+    "relations": [
+     {
+      "rel": "on",
+      "a": "orange",
+      "b": "conveyor-belt",
+      "all": true
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "in",
+      "item": "orange",
+      "container": "basket",
+      "all": true
+     }
+    ],
+    "rubric": "Three oranges resting on the belt's top, spaced out; the basket on the table just past the end the belt runs towards, so each orange falls in. All three end in the basket.",
+    "key": 0
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "m5-trampoline-bucket",
+   "category": "mechanisms",
+   "mode": "new",
+   "prompt": "Drop a basketball onto a trampoline so it bounces up and lands in a bucket.",
+   "expect": {
+    "must_types": [
+     "trampoline",
+     "basketball",
+     "bucket"
+    ],
+    "not_missing": [
+     "trampoline",
+     "basketball",
+     "bucket"
+    ],
+    "relations": [
+     {
+      "rel": "over",
+      "a": "basketball",
+      "b": "trampoline"
+     },
+     {
+      "rel": "height_above_table",
+      "a": "basketball",
+      "min": 0.5
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "basketball",
+      "b": "trampoline"
+     },
+     {
+      "kind": "in",
+      "item": "basketball",
+      "container": "bucket",
+      "soft": true
+     }
+    ],
+    "rubric": "The basketball held well above the trampoline mat (slightly off-centre or angled so its bounce carries it sideways), a bucket beside the trampoline where the bounce comes down. The ball ends in the bucket (the bucket may be made wider; the basketball is 24 cm).",
+    "key": 1
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "m6-spring-launcher-cup",
+   "category": "mechanisms",
+   "mode": "new",
+   "prompt": "A spring launcher shoots a golf ball over a wall of three stacked bricks into a cup.",
+   "expect": {
+    "must_types": [
+     "spring-launcher",
+     "golf-ball",
+     "brick",
+     "@cup"
+    ],
+    "not_missing": [
+     "spring launcher",
+     "spring",
+     "golf ball",
+     "brick",
+     "cup"
+    ],
+    "counts": [
+     {
+      "of": "brick",
+      "eq": 3
+     }
+    ],
+    "relations": [
+     {
+      "rel": "stack",
+      "a": "brick",
+      "min": 3
+     },
+     {
+      "rel": "between",
+      "a": "brick",
+      "b": "spring-launcher",
+      "c": "@cup"
+     },
+     {
+      "rel": "touching",
+      "a": "golf-ball",
+      "b": "spring-launcher"
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "rises",
+      "of": "golf-ball",
+      "min_m": 0.2
+     },
+     {
+      "kind": "in",
+      "item": "golf-ball",
+      "container": "@cup"
+     }
+    ],
+    "rubric": "Launcher angled up, golf ball resting in its cup/plate, a three-brick wall between it and the target cup; the ball clears the wall without touching it and lands in the cup. Tuning the launcher (angle, compression) or the cup's place is expected.",
+    "key": 1
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "k2-tower-wrecking",
+   "category": "stacking",
+   "mode": "new",
+   "prompt": "Build a tower of six wooden blocks and knock it down with a swinging wrecking ball.",
+   "expect": {
+    "must_types": [
+     "wooden-block",
+     "wrecking-ball"
+    ],
+    "not_missing": [
+     "wooden block",
+     "block",
+     "wrecking ball"
+    ],
+    "counts": [
+     {
+      "of": "wooden-block",
+      "eq": 6
+     }
+    ],
+    "relations": [
+     {
+      "rel": "stack",
+      "a": "wooden-block",
+      "min": 6
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "wrecking-ball",
+      "b": "wooden-block"
+     },
+     {
+      "kind": "displaced",
+      "of": "wooden-block",
+      "min_fraction": 0.5,
+      "min_m": 0.05
+     }
+    ],
+    "rubric": "Six wooden blocks stacked one on another into a single standing tower; a wrecking ball pulled back to one side whose swing reaches the tower and knocks most of it down. The tower stands still until it is hit.",
+    "key": 1
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "v1-motor-car-cereal",
+   "category": "vehicles",
+   "mode": "new",
+   "prompt": "A motorized toy car drives into three cereal boxes standing in a row and knocks them over.",
+   "expect": {
+    "must_types": [
+     "motor-car",
+     "cereal-box"
+    ],
+    "not_missing": [
+     "car",
+     "toy car",
+     "cereal box",
+     "box"
+    ],
+    "counts": [
+     {
+      "of": "cereal-box",
+      "eq": 3
+     }
+    ],
+    "relations": [
+     {
+      "rel": "on_table",
+      "a": "cereal-box",
+      "all": true
+     },
+     {
+      "rel": "upright",
+      "a": "cereal-box",
+      "all": true,
+      "max_deg": 3
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "motor-car",
+      "b": "cereal-box"
+     },
+     {
+      "kind": "topples",
+      "of": "cereal-box",
+      "min_fraction": 0.66,
+      "deg": 45
+     }
+    ],
+    "rubric": "A motor car (self-propelled) on the table pointed at a row of three upright cereal boxes, spaced so one falling box hits the next. The car drives the right way (towards the boxes) and the boxes fall like dominoes. (Motion is in one plane: boxes stood edge-on — their narrow 6.3 cm side along the row — tip easily; seen broadside, 19 cm wide, a toy car only shoves them.)",
+    "key": 1
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "e1-phone-board-pillow",
+   "category": "everyday",
+   "mode": "new",
+   "prompt": "A phone slides down a cutting board propped up on two books and stops on a pillow.",
+   "expect": {
+    "must_types": [
+     "smartphone",
+     "cutting-board",
+     "@book",
+     "pillow"
+    ],
+    "not_missing": [
+     "phone",
+     "cutting board",
+     "book",
+     "pillow"
+    ],
+    "counts": [
+     {
+      "of": "@book",
+      "eq": 2
+     },
+     {
+      "of": "smartphone",
+      "eq": 1
+     }
+    ],
+    "relations": [
+     {
+      "rel": "on",
+      "a": "smartphone",
+      "b": "cutting-board"
+     },
+     {
+      "rel": "on",
+      "a": "cutting-board",
+      "b": "@book"
+     },
+     {
+      "rel": "angled",
+      "a": "cutting-board",
+      "min_deg": 8,
+      "max_deg": 60
+     },
+     {
+      "rel": "stack",
+      "a": "@book",
+      "min": 2
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "moves",
+      "of": "smartphone",
+      "min_m": 0.05
+     },
+     {
+      "kind": "lands_on",
+      "of": "smartphone",
+      "on": "pillow",
+      "soft": true
+     }
+    ],
+    "rubric": "Two books stacked, a cutting board leaning from the top book down to the table (or to the pillow), the phone lying on the board near its high end, a pillow at the low end. The slope is steep enough for the phone to slide (friction) and the phone ends on the pillow.",
+    "key": 1
+   },
+   "origin": "bench"
+  },
+  {
+   "id": "h01-rube6-cup",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "Build a 6-stage Rube Goldberg machine where each stage triggers the next, ending with a golf ball dropping into a cup.",
+   "expect": {
+    "must_types": [
+     "golf-ball",
+     "@cup"
+    ],
+    "not_missing": [
+     "golf ball",
+     "cup",
+     "domino",
+     "ramp"
+    ],
+    "items": {
+     "min": 8
+    },
+    "min_families": 5,
+    "outcomes": [
+     {
+      "kind": "chain_events",
+      "min": 5
+     },
+     {
+      "kind": "in",
+      "item": "golf-ball",
+      "container": "@cup"
+     }
+    ],
+    "key": 1,
+    "rubric": "Six distinct stages (six different mechanisms or clearly separate steps), each one set off by the one before, laid out left to right, ending with the golf ball dropping into the cup. Every stage really fires in the run and the golf ball ends inside the cup."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h02-bounce3-cup",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "A superball is dropped from high up, bounces three times on the table, and lands in a cup after the third bounce.",
+   "expect": {
+    "must_types": [
+     "superball",
+     "@cup"
+    ],
+    "not_missing": [
+     "superball",
+     "cup"
+    ],
+    "outcomes": [
+     {
+      "kind": "in",
+      "item": "superball",
+      "container": "@cup"
+     }
+    ],
+    "extra": [
+     {
+      "kind": "bounces",
+      "of": "superball",
+      "on": "table",
+      "min": 3,
+      "max": 4
+     }
+    ],
+    "key": 0,
+    "rubric": "The superball starts held high above the table (dropped, possibly with a small sideways start such as a short ramp or angled drop so it travels), bounces on the table three times, and goes into the cup after the third bounce. The cup is on the table; the ball must end inside it."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h03-domino-spiral-bell",
+   "category": "honesty-chain",
+   "mode": "new",
+   "prompt": "Make a spiral of 30 dominoes that ends by ringing a bell.",
+   "expect": {
+    "must_types": [
+     "@domino"
+    ],
+    "must_missing": [
+     {
+      "what": "bell",
+      "match": [
+       "bell"
+      ]
+     }
+    ],
+    "not_missing": [
+     "domino"
+    ],
+    "counts": [
+     {
+      "of": "@domino",
+      "min": 25
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "topples",
+      "of": "@domino",
+      "min_fraction": 0.9
+     }
+    ],
+    "key": 0,
+    "rubric": "The library has no bell and everything moves in one vertical plane (a spiral is not possible): both are said honestly, with a stand-in for the bell (something the last domino visibly hits). About 30 dominoes in a row (or rows) that all fall, and the last one hits the bell's stand-in."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h04-pendulum-dominoes-ledge-bucket",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "A pendulum swings down and knocks over a row of 15 dominoes; the last domino pushes a ball off a ledge and the ball falls into a bucket.",
+   "expect": {
+    "must_types": [
+     "@pendulum",
+     "@domino",
+     "@ball",
+     "bucket"
+    ],
+    "not_missing": [
+     "pendulum",
+     "domino",
+     "ball",
+     "bucket",
+     "ledge"
+    ],
+    "counts": [
+     {
+      "of": "@domino",
+      "min": 15,
+      "max": 15
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "@pendulum",
+      "b": "@domino"
+     },
+     {
+      "kind": "topples",
+      "of": "@domino",
+      "min_fraction": 0.8
+     },
+     {
+      "kind": "in",
+      "item": "@ball",
+      "container": "bucket"
+     }
+    ],
+    "key": 2,
+    "rubric": "Pendulum -> 15 dominoes -> a ball resting on a raised ledge at the end of the row -> the ball falls off the ledge into a bucket below. The ball only moves because the dominoes reach it, and it ends in the bucket."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h05-car-jump-box",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "A toy car rolls down a steep ramp, flies off a small jump at the bottom, and lands in a box.",
+   "expect": {
+    "must_types": [
+     "toy-car",
+     "@ramp",
+     "box"
+    ],
+    "not_missing": [
+     "toy car",
+     "ramp",
+     "box"
+    ],
+    "outcomes": [
+     {
+      "kind": "in",
+      "item": "toy-car",
+      "container": "box"
+     }
+    ],
+    "key": 0,
+    "rubric": "A steep ramp, a small upward jump (a wedge or short tilted plank) at its foot, and an open box beyond it; the car leaves the jump through the air and ends inside the box."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h06-ramp-seesaw-basket",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "A steel ball rolls down a ramp and drops onto the high end of a seesaw, which launches a tennis ball from the other end into a basket.",
+   "expect": {
+    "must_types": [
+     "steel-ball",
+     "@ramp",
+     "@lever",
+     "tennis-ball",
+     "basket"
+    ],
+    "not_missing": [
+     "steel ball",
+     "ramp",
+     "seesaw",
+     "tennis ball",
+     "basket"
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "steel-ball",
+      "b": "@lever"
+     },
+     {
+      "kind": "rises",
+      "of": "tennis-ball",
+      "min_m": 0.1
+     },
+     {
+      "kind": "in",
+      "item": "tennis-ball",
+      "container": "basket"
+     }
+    ],
+    "key": 2,
+    "rubric": "The steel ball comes down the ramp and lands on the seesaw's raised end; the tennis ball sitting on the low end is flung up and lands in the basket. The tennis ball must end inside the basket."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h07-two-pendulums-cup",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "Two pendulums side by side: the first swings into the second, and the second knocks a golf ball off a wooden block so it drops into a cup.",
+   "expect": {
+    "must_types": [
+     "@pendulum",
+     "golf-ball",
+     "wooden-block",
+     "@cup"
+    ],
+    "not_missing": [
+     "pendulum",
+     "golf ball",
+     "wooden block",
+     "cup"
+    ],
+    "counts": [
+     {
+      "of": "@pendulum",
+      "min": 2
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "@pendulum",
+      "b": "golf-ball"
+     },
+     {
+      "kind": "leaves",
+      "of": "golf-ball",
+      "from": "wooden-block"
+     },
+     {
+      "kind": "in",
+      "item": "golf-ball",
+      "container": "@cup"
+     }
+    ],
+    "key": 2,
+    "rubric": "Two pendulums; the first one released swings into the second, which then swings into the golf ball resting on a wooden block; the golf ball drops into a cup. The second pendulum must start at rest and only move because the first hits it."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h08-conveyor-ramp-bucket",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "A conveyor belt carries a ball to its end, where the ball drops onto a ramp, rolls down it, and ends up in a bucket.",
+   "expect": {
+    "must_types": [
+     "conveyor-belt",
+     "@ball",
+     "@ramp",
+     "bucket"
+    ],
+    "not_missing": [
+     "conveyor",
+     "ball",
+     "ramp",
+     "bucket"
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "@ball",
+      "b": "@ramp"
+     },
+     {
+      "kind": "in",
+      "item": "@ball",
+      "container": "bucket"
+     }
+    ],
+    "key": 1,
+    "rubric": "The ball rides the belt, falls off its end onto a ramp below, rolls down the ramp and ends inside the bucket."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h09-catapult-wall-basket",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "A spring catapult throws a tennis ball over a wall of four stacked wooden blocks into a basket on the other side.",
+   "expect": {
+    "must_types": [
+     "spring-catapult",
+     "tennis-ball",
+     "wooden-block",
+     "basket"
+    ],
+    "not_missing": [
+     "catapult",
+     "tennis ball",
+     "wooden block",
+     "basket"
+    ],
+    "counts": [
+     {
+      "of": "wooden-block",
+      "eq": 4
+     }
+    ],
+    "relations": [
+     {
+      "rel": "stack",
+      "a": "wooden-block",
+      "min": 4
+     },
+     {
+      "rel": "between",
+      "a": "wooden-block",
+      "b": "spring-catapult",
+      "c": "basket"
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "rises",
+      "of": "tennis-ball",
+      "min_m": 0.2
+     },
+     {
+      "kind": "in",
+      "item": "tennis-ball",
+      "container": "basket"
+     }
+    ],
+    "key": 1,
+    "rubric": "Catapult, then a wall of four stacked wooden blocks, then a basket; the tennis ball flies over the wall without knocking it down and ends inside the basket."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h10-two-trampolines-bucket",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "Drop a tennis ball onto a trampoline; it bounces over onto a second trampoline and from there into a bucket.",
+   "expect": {
+    "must_types": [
+     "trampoline",
+     "tennis-ball",
+     "bucket"
+    ],
+    "not_missing": [
+     "trampoline",
+     "tennis ball",
+     "bucket"
+    ],
+    "counts": [
+     {
+      "of": "trampoline",
+      "min": 2
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "tennis-ball",
+      "b": "trampoline"
+     },
+     {
+      "kind": "in",
+      "item": "tennis-ball",
+      "container": "bucket"
+     }
+    ],
+    "extra": [
+     {
+      "kind": "hits_each",
+      "of": "tennis-ball",
+      "each": "trampoline",
+      "min": 2
+     }
+    ],
+    "key": 1,
+    "rubric": "The tennis ball is dropped from above onto the first trampoline, bounces onto the second trampoline, then lands in the bucket. It must touch both trampolines and end inside the bucket."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h11-marble-staircase-cup",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "A glass marble bounces down a staircase, step by step, and lands in a cup at the bottom.",
+   "expect": {
+    "must_types": [
+     "glass-marble",
+     "staircase",
+     "@cup"
+    ],
+    "not_missing": [
+     "marble",
+     "staircase",
+     "stairs",
+     "cup"
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "glass-marble",
+      "b": "staircase"
+     },
+     {
+      "kind": "in",
+      "item": "glass-marble",
+      "container": "@cup"
+     }
+    ],
+    "key": 1,
+    "rubric": "The marble starts at the top of a staircase, goes down it touching the steps, and ends inside a cup at the foot of the stairs."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h12-bowling-ten-pins",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "A bowling ball rolls down a ramp and knocks down all ten bowling pins.",
+   "expect": {
+    "must_types": [
+     "bowling-ball",
+     "@ramp",
+     "bowling-pin"
+    ],
+    "not_missing": [
+     "bowling ball",
+     "ramp",
+     "bowling pin"
+    ],
+    "counts": [
+     {
+      "of": "bowling-pin",
+      "eq": 10
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "hits",
+      "a": "bowling-ball",
+      "b": "bowling-pin"
+     },
+     {
+      "kind": "topples",
+      "of": "bowling-pin",
+      "min_fraction": 1,
+      "deg": 45
+     }
+    ],
+    "key": 1,
+    "rubric": "Ten standing pins (in one plane they stand in a line), a bowling ball coming down a ramp into them; all ten end knocked over."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h13-ramp-cup-on-books",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "A tennis ball rolls down a ramp and lands in a cup that sits on top of a stack of three books.",
+   "expect": {
+    "must_types": [
+     "tennis-ball",
+     "@ramp",
+     "@cup",
+     "@book"
+    ],
+    "not_missing": [
+     "tennis ball",
+     "ramp",
+     "cup",
+     "book"
+    ],
+    "counts": [
+     {
+      "of": "@book",
+      "eq": 3
+     }
+    ],
+    "relations": [
+     {
+      "rel": "stack",
+      "a": "@book",
+      "min": 3
+     },
+     {
+      "rel": "on",
+      "a": "@cup",
+      "b": "@book"
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "in",
+      "item": "tennis-ball",
+      "container": "@cup"
+     }
+    ],
+    "key": 0,
+    "rubric": "A cup resting on a stack of three books; a ramp whose low end is above the cup's rim (or that throws the ball into it); the tennis ball ends inside the cup. The cup may be made wider."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h14-three-shelves-dominoes",
+   "category": "chain",
+   "mode": "new",
+   "prompt": "Three rows of dominoes on three levels: the top row knocks a ball down onto the middle row, and the middle row knocks a ball down onto the bottom row, which all falls.",
+   "expect": {
+    "must_types": [
+     "@domino",
+     "@ball"
+    ],
+    "not_missing": [
+     "domino",
+     "ball"
+    ],
+    "counts": [
+     {
+      "of": "domino-row",
+      "min": 3
+     }
+    ],
+    "outcomes": [
+     {
+      "kind": "topples",
+      "of": "@domino",
+      "min_fraction": 0.85
+     },
+     {
+      "kind": "chain_events",
+      "min": 4
+     }
+    ],
+    "key": 0,
+    "rubric": "Three domino rows at three heights (two on shelves); the top row sets off a ball that drops to the middle row, which sets off a ball that drops to the bottom row. Every row falls."
+   },
+   "origin": "new"
+  },
+  {
+   "id": "h15-fan-beachball-basket",
+   "category": "outcome",
+   "mode": "new",
+   "prompt": "A fan blows a beach ball along the table until it falls into a basket.",
+   "expect": {
+    "must_types": [
+     "fan",
+     "beach-ball",
+     "basket"
+    ],
+    "not_missing": [
+     "fan",
+     "beach ball",
+     "basket"
+    ],
+    "outcomes": [
+     {
+      "kind": "moves",
+      "of": "beach-ball",
+      "min_m": 0.3
+     },
+     {
+      "kind": "in",
+      "item": "beach-ball",
+      "container": "basket"
+     }
+    ],
+    "key": 1,
+    "rubric": "The fan pushes the beach ball (the only thing moving it), the ball travels and ends inside the basket (it may roll off a ledge or down a slope into it). The basket must be big enough for a beach ball."
+   },
+   "origin": "new"
+  }
+ ]
+}

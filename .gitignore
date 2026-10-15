@@ -1,0 +1,58 @@
+# dependencies and build output
+node_modules/
+tooling/node_modules/
+tooling/node_modules.edullm-link
+dist/
+.vercel/
+.deps-new/
+__pycache__/
+*.pyc
+.DS_Store
+
+# secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# large local artefacts: test screenshots, renders, snapshots, scratch outputs
+web/dev/shots/
+web/out/
+web/saved/
+renders/
+shots/
+snapshots/
+old-tests/
+scenes/
+control/inbox/
+web/sim/*.map
+
+# research: keep only the engine worker, validators and review records
+research/*
+!research/poc/
+research/poc/*
+!research/poc/worker.ts
+!research/poc/dense_track.ts
+!research/rw-validate*.ts
+!research/review/
+
+# AI bench/experiment outputs (code, cases and eval images stay)
+ai/bench/results/
+ai/experiments/**/out/
+ai/experiments/**/results/
+ai/experiments/**/*.png
+ai/experiments/**/*.jpg
+
+# legacy edullm tooling not used by the sandbox
+tooling/editors/
+tooling/demo.ts
+tooling/sim.ts
+tooling/render.ts
+tooling/src/*
+!tooling/src/sim/
+tooling/src/sim/sheet.ts
+tooling/src/sim/sprite.ts
+
+# Apple-libm-derived pow constants: kept out of the public repo until replaced by an open-source correctly-rounded pow
+tools/apple-pow-tables.ts
+web/sim/engine-math.js
+web/sim/engine-worker.js

@@ -1,0 +1,142 @@
+{
+ "id": "car-ramp-dominoes",
+ "source": "scenario:car-ramp-dominoes (web/scenarios)",
+ "description": "A toy car at the top of a wooden ramp sloping down to the right, and a row of seven growing dominoes on the table past the ramp's end.",
+ "scene": "gt/car-ramp-dominoes.json",
+ "shot": {
+  "t": 0,
+  "run_seconds_for_framing": 0.5,
+  "page": "http://localhost:8790/?profile=bench-gt&quality=high (chrome hidden, view 1280×720)"
+ },
+ "quality": {
+  "mode": "high",
+  "tier": "high",
+  "reason": "chosen"
+ },
+ "renders": [
+  {
+   "file": "gt/car-ramp-dominoes.png",
+   "camera": "wide",
+   "width": 1280,
+   "height": 720,
+   "cam": {
+    "position": [
+     1.2334,
+     0.3902,
+     1.7612
+    ],
+    "direction": [
+     0,
+     -0.1191,
+     -0.9929
+    ],
+    "target": null,
+    "fov_v_deg": 42.5542,
+    "aspect": 1.7778
+   }
+  }
+ ],
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": -0.55,
+    "y0": -0.15,
+    "x1": 3.15,
+    "y1": 0,
+    "w": 3.7,
+    "h": 0.15
+   },
+   "image_box": {
+    "gt/car-ramp-dominoes.png": null
+   }
+  },
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Ramp",
+   "x": 0.66,
+   "y": 0.11472,
+   "angle": -12,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.16864,
+    "y0": 0,
+    "x1": 1.15136,
+    "y1": 0.22944,
+    "w": 0.98272,
+    "h": 0.22943
+   },
+   "image_box": {
+    "gt/car-ramp-dominoes.png": [
+     0.0505,
+     0.4597,
+     0.468,
+     0.6367
+    ]
+   }
+  },
+  {
+   "id": "car",
+   "type": "toy-car",
+   "name": "Toy car",
+   "x": 0.31015,
+   "y": 0.20032,
+   "angle": -12,
+   "props": {},
+   "held": false,
+   "box_m": {
+    "x0": 0.216,
+    "y0": 0.18685,
+    "x1": 0.41492,
+    "y1": 0.28041,
+    "w": 0.19892,
+    "h": 0.09356
+   },
+   "image_box": {
+    "gt/car-ramp-dominoes.png": [
+     0.0745,
+     0.4249,
+     0.1733,
+     0.4974
+    ]
+   }
+  },
+  {
+   "id": "dominoes",
+   "type": "domino-row",
+   "name": "Dominoes",
+   "x": 1.9,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "first_height": 0.07
+   },
+   "held": false,
+   "box_m": {
+    "x0": 1.89417,
+    "y0": 0,
+    "x1": 2.30473,
+    "y1": 0.20181,
+    "w": 0.41056,
+    "h": 0.20181
+   },
+   "image_box": {
+    "gt/car-ramp-dominoes.png": [
+     0.7633,
+     0.4797,
+     0.9496,
+     0.6351
+    ]
+   }
+  }
+ ]
+}

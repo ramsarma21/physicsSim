@@ -1,0 +1,19 @@
+{
+	"about": "Train / held-out split for prompt optimisation (ai/bench/run.mjs --split train|test). Prompts are only ever changed by looking at TRAIN results; TEST is scored each round but never inspected case by case until the end. Stratified by category; a ground-truth scene's two camera angles (gt-x and gt-x-b) are always on the same side.",
+	"train": [
+		"s1-ball-ramp", "s3-car-ramp", "c1-rube-cup", "k2-tower-wrecking", "e1-phone-board-pillow", "e3-balance-can-book", "v2-skateboard-cone",
+		"m1-pendulum-golf", "m3-pulley-lift", "m5-trampoline-bucket", "z1-steel-rubber-drop", "g2-chain-reaction", "i1-cat-water",
+		"photo-ramp-dominoes", "photo-seesaw-catapult", "photo-books-can-ball", "photo-zigzag-marble", "photo-rube-chain",
+		"sketch-ramp-cup", "sketch-pendulum-dominoes",
+		"gt-rube-goldberg", "gt-rube-goldberg-b", "gt-book-ramp-ball", "gt-book-ramp-ball-b", "gt-stacks", "gt-stacks-b", "gt-atwood", "gt-ball-drop",
+		"gt-conveyor-delivery", "gt-newtons-cradle", "gt-plinko", "gt-spring-launch"
+	],
+	"test": [
+		"s2-five-dominoes", "c2-marble-zigzag", "k1-book-stack", "e2-tallest-to-shortest", "v1-motor-car-cereal", "m2-seesaw-catapult",
+		"m4-conveyor-oranges", "m6-spring-launcher-cup", "z2-materials-ice-ramp", "g1-fun-balls", "i2-waterfall-wheel", "i3-747",
+		"photo-pendulum-dominoes", "photo-car-ramp-blocks", "photo-cradle-desk", "photo-tower-wrecking", "photo-board-bucket-34",
+		"sketch-seesaw-catapult", "sketch-rube-labelled",
+		"gt-seesaw-catapult", "gt-seesaw-catapult-b", "gt-wrecking-ball", "gt-wrecking-ball-b", "gt-vehicles", "gt-vehicles-b", "gt-desk-objects",
+		"gt-desk-objects-b", "gt-pendulum-dominoes", "gt-pendulum-dominoes-b", "gt-balls-lineup", "gt-car-ramp-dominoes", "gt-cradle-pendulum", "gt-trampoline"
+	]
+}

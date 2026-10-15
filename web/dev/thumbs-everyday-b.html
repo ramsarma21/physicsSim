@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Thumbnails: everyday-b</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>body { margin: 0; background: #e8e8e4; font: 12px system-ui; } .grid { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px } canvas { width: 260px; height: 195px; background: #f4f4f2 }</style>
+</head>
+<body><div class="grid" id="grid"></div>
+<script type="module">
+// Dev page: the catalog cards' 3D thumbnails (web/thumbs3d.js) of the everyday-b items, saved as one sheet.
+//   window.sheet(name) -> saves web/dev/shots/<name>.png
+import * as thumbs from "../thumbs3d.js"
+const catalog = await (await fetch("/api/catalog?reload=1")).json()
+thumbs.setCatalog(catalog)
+const keys = (new URLSearchParams(location.search).get("items") || "water-bottle,water-bottle-side,coffee-mug,rubber-duck,sneaker,egg,bowling-pin,traffic-cone,stapler,pencil,plastic-cup,glass-jar").split(",")
+const grid = document.getElementById("grid")
+const cvs = []
+for (const k of keys) {
+  const t = catalog.types.find((x) => x.key === k)
+  const cv = document.createElement("canvas")
+  cv.width = 520; cv.height = 390
+  grid.append(cv)
+  cvs.push([k, cv])
+  thumbs.drawPreview3D(cv, t.preview, catalog.looks, () => {})
+}
+await new Promise((r) => setTimeout(r, 1500))
+for (let i = 0; i < 60; i++) { // wait until the queue is done
+  const done = cvs.every(([, cv]) => cv.getContext("2d").getImageData(0, 0, cv.width, cv.height).data.some((v, j) => j % 4 === 3 && v > 0))
+  if (done) break
+  await new Promise((r) => setTimeout(r, 500))
+}
+window.sheet = async (name) => {
+  const cols = 3
+  const out = document.createElement("canvas")
+  out.width = cols * 520
+  out.height = Math.ceil(cvs.length / cols) * 390
+  const g = out.getContext("2d")
+  g.fillStyle = "#e8e8e4"
+  g.fillRect(0, 0, out.width, out.height)
+  cvs.forEach(([k, cv], i) => { g.drawImage(cv, (i % cols) * 520, Math.floor(i / cols) * 390); g.fillStyle = "#333"; g.font = "16px system-ui"; g.fillText(k, (i % cols) * 520 + 8, Math.floor(i / cols) * 390 + 20) })
+  const r = await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: out.toDataURL() }) })
+  return r.status
+}
+window.ready = true
+</script></body></html>

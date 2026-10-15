@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/Users/ramsarma/Downloads/science-map-share/blender-playground/control/bridge.py", line 147, in poll
+    exec(open(path).read(), dict(G))
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<string>", line 13, in <module>
+  File "<string>", line 84, in rebuild
+  File "/Applications/Blender.app/Contents/Resources/5.1/python/lib/python3.13/subprocess.py", line 577, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+subprocess.CalledProcessError: Command '['/Applications/Blender.app/Contents/Resources/5.1/python/bin/python3.13', '/Users/ramsarma/Downloads/science-map-share/blender-playground/machines/rube.py', '/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-params.json', '/Users/ramsarma/Downloads/science-map-share/blender-playground/scenes/rube-goldberg.json']' returned non-zero exit status 1.

@@ -1,0 +1,114 @@
+CATALOG (type key — name (category). summary. props as key=default [min..max])
+table — Table top (Scenery, static). The surface everything stands on. Props: width=3.7m [0.5..8]; thickness=0.15m [0.02..0.4]; material=varnished hardwood
+wall — Wall (Scenery, static).  Props: height=1.4m [0.05..3]; thickness=0.05m [0.005..0.3]; invisible_in_3d=false; material=varnished hardwood
+plank — Wooden plank (Surfaces & ramps, static). A varnished hardwood plank. Props: length=1m [0.05..4]; thickness=0.022m [0.003..0.2]; depth=0.12m [0.01..1]; legs=true; material=varnished hardwood
+superball — Superball (Balls). A solid rubber superball: very bouncy, and it grips and spins hard when it bounces at an a Props: diameter=0.06m [0.005..1]; mass=0.1025kg [0.00001..475]; material=solid rubber
+plastic-ball — Hollow plastic ball (Balls). A light hollow plastic toy ball. Props: diameter=0.06m [0.005..1]; mass=0.006318kg [0.000001..498]; hollow=true; wall=0.0006m [0.00005..0.05]; material=hollow plastic
+clay-ball — Modelling clay ball (Balls). A ball of modelling clay: it doesn't bounce, it dents. Props: diameter=0.06m [0.005..1]; mass=0.1776kg [0.0001..823]; material=modeling clay
+domino — Domino (Dominoes). One standard domino (5 x 2.5 x 0.8 cm). Props: height=0.05m [0.01..0.6]; thickness=0.008m [0.002..0.1]; depth=0.025m [0.005..0.3]; material=domino wood
+domino-row — Domino row (growing) (Dominoes). A row of dominoes, each a little bigger than the last, so the wave gains energy. Props: count=7; first_height=0.098m [0.01..0.4]; growth=1.193× [1..1.7]; spacing=0.568heights [0.2..1.2]; thickness_ratio=0.1667of height [0.05..0.5]; material=domino wood
+seesaw — Seesaw (Rods & hinges). A plank hinged on a fulcrum. Props: length=0.598m [0.1..2]; tilt=12.45° [1..40]; pivot_offset=-0.046m [-0.4..0.4]; plank_thickness=0.012m [0.004..0.05]; lip=true; material=varnished hardwood
+box — Open box (Containers, static). An open wooden box, hung on cords or standing. Props: width=0.26m [0.05..1.5]; wall=0.13m [0.02..1]; thickness=0.012m [0.003..0.05]; depth=0.12m [0.02..1]; hung=true; material=varnished hardwood
+ping-pong-ball — Ping-pong ball (Balls). A table-tennis ball: a 0.4 mm celluloid shell, so light that the air slows it. Props: diameter=0.04m [0.005..1]; mass=0.0027kg [0.000001..718]; hollow=true; wall=0.0004m [0.00005..0.05]; material=celluloid
+tennis-ball — Tennis ball (Balls). A felt-covered hollow rubber ball with the ITF bounce. Props: diameter=0.067m [0.005..1]; mass=0.0577kg [0.00001..547]; hollow=true; wall=0.0045m [0.0002..0.068]; material=felt (tennis)
+golf-ball — Golf ball (Balls). A small hard solid ball, as heavy as the rules allow for its size. Props: diameter=0.0427m [0.005..1]; mass=0.0459kg [0.00001..590]; material=golf ionomer
+baseball — Baseball (Balls). A leather ball wound round a cork core: heavy, and only about half as bouncy as a tennis b Props: diameter=0.074m [0.005..1]; mass=0.145kg [0.00001..358]; material=baseball (leather/cork)
+basketball — Basketball (Balls). A big inflated ball. Props: diameter=0.242m [0.005..1]; mass=0.62kg [0.000001..519]; hollow=true; wall=0.0035m [0.000072..0.05]; material=leather (basketball)
+soccer-ball — Soccer ball (Balls). A size-5 inflated ball. Props: diameter=0.22m [0.005..1]; mass=0.43kg [0.000001..437]; hollow=true; wall=0.0035m [0.000079..0.05]; material=synthetic leather (soccer)
+bowling-ball — Bowling ball (Balls). The heaviest ball allowed in the game: it hardly bounces and rolls a long way. Props: diameter=0.218m [0.005..1]; mass=7.26kg [0.00001..701]; material=bowling resin
+glass-marble — Glass marble (Balls). A small glass ball. Props: diameter=0.016m [0.005..1]; mass=0.0054kg [0.0001..1319]; material=glass marble
+steel-ball — Steel ball bearing (Balls). A 1 inch hardened-steel bearing ball: small and dense, and it rings off other metal. Props: diameter=0.0254m [0.005..1]; mass=0.0674kg [0.0001..4114]; material=steel
+beach-ball — Beach ball (Balls). A huge, thin, light inflatable: the air slows it long before it hits anything. Props: diameter=0.4m [0.005..1]; mass=0.1kg [1e-7..522]; hollow=true; wall=0.0002m [0.000002..0.05]; material=PVC (beach ball)
+wooden-ball — Wooden ball (Balls). A solid hardwood ball. Props: diameter=0.05m [0.005..1]; mass=0.049kg [0.00001..392]; material=dark wood
+billiard-ball — Billiard ball (Balls). A pool ball: hard resin that bounces off other pool balls almost perfectly. Props: diameter=0.0572m [0.005..1]; mass=0.17kg [0.0001..909]; number=2; material=phenolic resin
+wooden-block — Wooden block (Blocks & shapes). A toy building block, 4 x 2 x 2 inches. Props: width=0.1m [0.01..1.5]; height=0.05m [0.01..1.5]; depth=0.05m [0.01..1.5]; material=varnished hardwood
+brick — Brick (Blocks & shapes). A standard clay brick. Props: width=0.215m [0.01..1.5]; height=0.065m [0.01..1.5]; depth=0.1025m [0.01..1.5]; material=brick
+steel-weight-1kg — Steel weight (1 kg) (Blocks & shapes). A solid steel cube weighing 1 kg: it lands with a thud and pushes things hard. Props: mass=1kg [0.1..50]; material=steel weight
+steel-weight-5kg — Steel weight (5 kg) (Blocks & shapes). A solid steel cube weighing 5 kg: it lands with a thud and pushes things hard. Props: mass=5kg [0.1..50]; material=steel weight
+foam-block — Foam block (Blocks & shapes). A block of soft polyurethane foam: almost weightless, and it takes the bounce out of whate Props: width=0.2m [0.01..1.5]; height=0.1m [0.01..1.5]; depth=0.1m [0.01..1.5]; material=foam
+ice-cube — Ice cube (Blocks & shapes). A cube of ice: it slides almost without friction. Props: width=0.04m [0.01..1.5]; height=0.04m [0.01..1.5]; depth=0.04m [0.01..1.5]; material=ice
+cardboard-box — Cardboard box (Blocks & shapes). An empty corrugated box: big, light and not bouncy. Props: width=0.3m [0.01..1.5]; height=0.2m [0.01..1.5]; depth=0.2m [0.01..1.5]; material=cardboard
+wedge — Wedge (Blocks & shapes). A right-angled hardwood wedge (a door stop): flat base, upright back, its long sloped face Props: width=0.2m [0.02..1.5]; height=0.1m [0.02..1.5]; depth=0.1m [0.01..1]; material=varnished hardwood
+wooden-log — Wooden log (Blocks & shapes). A round log seen end-on: it rolls like a cylinder (inertia ½ m r²), not like a ball. Props: diameter=0.12m [0.02..0.6]; length=0.25m [0.02..1]; material=varnished hardwood
+steel-beam — Steel beam (Surfaces & ramps, static). A steel beam. Props: length=1m [0.05..4]; thickness=0.025m [0.003..0.2]; depth=0.08m [0.01..1]; legs=true; material=steel
+ice-sheet — Ice sheet (Surfaces & ramps, static). A slab of ice: almost no friction, so things slide down it. Props: length=1m [0.05..4]; thickness=0.03m [0.003..0.2]; depth=0.3m [0.01..1]; legs=true; material=ice
+glass-sheet — Glass sheet (Surfaces & ramps, static). A pane of glass: hard and smooth. Props: length=0.6m [0.05..4]; thickness=0.01m [0.003..0.2]; depth=0.3m [0.01..1]; legs=true; material=glass
+rubber-mat — Rubber mat (Surfaces & ramps, static). A rubber mat: things grip it instead of sliding. Props: length=1m [0.05..4]; thickness=0.012m [0.003..0.2]; depth=0.3m [0.01..1]; legs=true; material=rubber mat
+carpet-strip — Carpet strip (Surfaces & ramps, static). A strip of carpet: a rolling ball loses speed fast on it and bounces low. Props: length=1m [0.05..4]; thickness=0.01m [0.003..0.2]; depth=0.3m [0.01..1]; legs=true; material=carpet
+concrete-slab — Concrete slab (Surfaces & ramps, static). A slab of concrete: the hardest, grippiest ground. Props: length=0.8m [0.05..4]; thickness=0.05m [0.003..0.2]; depth=0.3m [0.01..1]; legs=true; material=concrete
+peg — Peg (Surfaces & ramps, static). A small fixed steel peg that things bounce off. Props: diameter=0.012m [0.002..0.1]; material=steel
+bumper — Bumper (Surfaces & ramps, static). A fixed round rubber bumper: balls spring off it and are kicked sideways. Props: diameter=0.12m [0.02..0.5]; material=solid rubber
+funnel — Funnel (Surfaces & ramps, static). A round cone of wood with a short stem that guides whatever falls in down through a small  Props: mouth=0.4m [0.05..2]; outlet=0.08m [0.01..1]; height=0.25m [0.05..1.5]; thickness=0.012m [0.003..0.05]; material=varnished hardwood
+staircase — Staircase (Surfaces & ramps, static). Steps going up to the right: a ball drops from one to the next. Props: steps=5; rise=0.05m [0.01..0.3]; run=0.1m [0.02..0.5]; depth=0.12m [0.02..1]; material=varnished hardwood
+wooden-rod — Wooden rod (Rods & hinges). A wooden dowel, loose. Props: length=0.5m [0.05..2]; thickness=0.012m [0.002..0.1]; material=varnished hardwood
+steel-rod — Steel rod (Rods & hinges). A thin round steel bar, loose. Props: length=0.5m [0.05..2]; thickness=0.008m [0.002..0.1]; material=steel
+pendulum — Pendulum (Rods & hinges). A bob on a light rod, pivoted at the top. Props: length=0.5m [0.1..2]; bob_diameter=0.05m [0.01..0.3]; bob_mass=0.5kg [0.01..10]; start_angle=30° [-170..170]; hanger=true; material=steel
+lever — Lever (Rods & hinges). A plank resting on a fulcrum and free to turn on it: balanced when the fulcrum is in the m Props: length=1m [0.2..3]; thickness=0.02m [0.005..0.1]; pivot_height=0.12m [0.03..1]; pivot_offset=0m [-0.45..0.45]; tilt=0° [-30..30]; material=varnished hardwood
+hinged-gate — Hinged gate (Rods & hinges). A plank hinged at its top end: it hangs straight down and swings open when something hits  Props: length=0.4m [0.05..2]; thickness=0.02m [0.003..0.1]; depth=0.12m [0.02..1]; start_angle=40° [-170..170]; hanger=true; material=varnished hardwood
+cup — Cup (Containers, static). A small tapered cup: a target to land things in. Props: width=0.08m [0.03..1.5]; wall=0.1m [0.02..1]; thickness=0.003m [0.002..0.05]; depth=0.08m [0.02..1]; bottom_ratio=0.7 [0.3..1]; material=cardboard
+bucket — Bucket (Containers, static). A tapered metal bucket: wider at the top than at the bottom. Props: width=0.28m [0.03..1.5]; wall=0.27m [0.02..1]; thickness=0.004m [0.002..0.05]; depth=0.304m [0.02..1]; bottom_ratio=0.78 [0.3..1]; material=aluminium
+basket — Basket (Containers, static). A wide, low basket with straight sides: easy to hit, easy to bounce out of. Props: width=0.45m [0.03..1.5]; wall=0.18m [0.02..1]; thickness=0.01m [0.002..0.05]; depth=0.3m [0.02..1]; bottom_ratio=1 [0.3..1]; material=dark wood
+newtons-cradle — Newton's cradle (Groups). Steel balls hanging in a row, touching: pull one back and let go, and the one at the other Props: count=5; ball_diameter=0.04m [0.01..0.15]; length=0.3m [0.1..1]; start_angle=-35° [-90..90]; gap=0.001m [0..0.01]; frame=true; material=steel
+peg-board — Peg board (Groups, static). A grid of fixed pegs, every other row shifted half a step, like a Plinko or Galton board. Props: rows=8; columns=7; spacing=0.07m [0.03..0.3]; peg_diameter=0.008m [0.003..0.05]; material=steel
+fan — Fan (Air, static). A desk fan on its base. Props: speed=5m/s [0.5..15]; diameter=0.3m [0.1..0.6]; on_at=0s [0..10]; material=aluminium
+soda-can — Soda can, standing (Everyday objects). A soda can standing up: heavy and hard to knock over when full, light and tippy when empty Props: diameter=0.0662m [0.01324..0.331]; height=0.1224m [0.02448..0.612]; full=true; material=aluminium can
+soda-can-side — Soda can, on its side (Everyday objects). The same soda can lying down, seen end-on: it rolls like a cylinder, not like a ball. Props: diameter=0.0662m [0.01324..0.331]; length=0.1224m [0.02448..0.612]; full=true; material=aluminium can
+water-bottle — Water bottle, standing (Everyday objects). A water bottle standing up: heavy and hard to knock over when full, light and tippy when e Props: diameter=0.065m [0.013..0.325]; height=0.205m [0.041..1.025]; full=true; material=PET
+water-bottle-side — Water bottle, on its side (Everyday objects). The same water bottle lying down, seen end-on: it rolls like a cylinder, not like a ball. Props: diameter=0.065m [0.013..0.325]; length=0.205m [0.041..1.025]; full=true; material=PET
+coffee-mug — Coffee mug (Everyday objects). An empty ceramic mug standing up: an open cup, heavy for its size, and it knocks rather th Props: diameter=0.082m [0.021..0.41]; height=0.095m [0.025..0.475]; mass=0.33kg [0.0005..3.3]; material=ceramic
+candle — Candle (Everyday objects). A tall thin candle: its base is only 22 mm wide, so it tips at 5 degrees. Props: diameter=0.022m [0.007..0.11]; height=0.254m [0.065..1.27]; mass=0.087kg [0.0005..0.87]; material=wax
+hardcover-book — Hardcover book (Everyday objects). A trade hardcover lying flat: it slides, and tips on its edge if you turn it. Props: width=0.229m [0.0458..1.145]; height=0.035m [0.007..0.175]; depth=0.152m [0.0304..0.76]; mass=0.65kg [0.0005..6.5]; material=cardboard
+paperback-book — Paperback book (Everyday objects). A pocket paperback lying flat. Props: width=0.175m [0.035..0.875]; height=0.025m [0.005..0.125]; depth=0.108m [0.0216..0.54]; mass=0.2kg [0.0005..2]; material=cardboard
+cereal-box — Cereal box (Everyday objects). A full cereal box standing up: tall and light, so it topples easily. Props: width=0.19m [0.038..0.95]; height=0.3m [0.06..1.5]; depth=0.063m [0.0126..0.315]; mass=0.55kg [0.0005..5.5]; material=cardboard
+tissue-box — Tissue box (Everyday objects). A box of tissues, opening up: light and low, it slides. Props: width=0.24m [0.048..1.2]; height=0.07m [0.014..0.35]; depth=0.12m [0.024..0.6]; mass=0.15kg [0.0005..1.5]; material=cardboard
+cutting-board — Cutting board (Everyday objects). A wooden chopping board lying flat: heavy for its thinness. Props: width=0.406m [0.0812..2]; height=0.019m [0.0038..0.095]; depth=0.305m [0.061..1.525]; mass=1.65kg [0.0005..16.5]; material=varnished hardwood
+sponge — Sponge (Everyday objects). A dry kitchen sponge: almost weightless, and it takes the bounce out of whatever lands on  Props: width=0.114m [0.0228..0.57]; height=0.015m [0.003..0.075]; depth=0.069m [0.0138..0.345]; mass=0.015kg [0.0005..0.15]; material=foam
+smartphone — Smartphone (Everyday objects). A phone lying flat on its back. Props: width=0.1476m [0.02952..0.738]; height=0.0078m [0.00156..0.039]; depth=0.0716m [0.01432..0.358]; mass=0.171kg [0.0005..1.71]; material=glass & aluminium
+
+MATERIALS
+varnished hardwood: 700 kg/m3, bounce 0.93, friction 0.45
+domino wood: 700 kg/m3, bounce 0.93, friction 0.4
+solid rubber: 906 kg/m3, bounce 0.925, friction 0.52
+hollow plastic: 950 kg/m3, bounce 0.806, friction 0.33
+modeling clay: 1570 kg/m3, bounce 0.054, friction 0.9
+steel: 7850 kg/m3, bounce 0.95, friction 0.4
+glass: 2500 kg/m3, bounce 0.92, friction 0.4
+ice: 917 kg/m3, bounce 0.95, friction 0.03
+foam: 30 kg/m3, bounce 0.15, friction 0.7
+brick: 1900 kg/m3, bounce 0.95, friction 0.65
+carpet: 200 kg/m3, bounce 0.7, friction 0.8
+cork: 200 kg/m3, bounce 0.55, friction 0.5
+cardboard: 24 kg/m3, bounce 0.3, friction 0.45
+aluminium: 2700 kg/m3, bounce 0.85, friction 0.4
+concrete: 2400 kg/m3, bounce 0.97, friction 0.6
+rubber mat: 1100 kg/m3, bounce 0.8, friction 0.85
+steel weight: 8000 kg/m3, bounce 0.25, friction 0.4
+dark wood: 750 kg/m3, bounce 0.667, friction 0.4
+celluloid: 1370.1 kg/m3, bounce 0.963, friction 0.25
+felt (tennis): 1043 kg/m3, bounce 0.801, friction 0.6
+golf ionomer: 1126 kg/m3, bounce 0.86, friction 0.25
+baseball (leather/cork): 683.4 kg/m3, bounce 0.591, friction 0.5
+leather (basketball): 991.2 kg/m3, bounce 0.825, friction 0.6
+synthetic leather (soccer): 834.3 kg/m3, bounce 0.86, friction 0.5
+bowling resin: 1338.3 kg/m3, bounce 0.645, friction 0.2
+glass marble: 2517.9 kg/m3, bounce 0.71, friction 0.3
+PVC (beach ball): 995.7 kg/m3, bounce 0.591, friction 0.4
+phenolic resin: 1734.9 kg/m3, bounce 0.86, friction 0.2
+ABS plastic: 1050 kg/m3, bounce 0.538, friction 0.3
+polypropylene: 905 kg/m3, bounce 0.43, friction 0.25
+PET: 1380 kg/m3, bounce 0.269, friction 0.3
+ceramic: 2400 kg/m3, bounce 0.484, friction 0.35
+glass & aluminium: 2700 kg/m3, bounce 0.323, friction 0.35
+aluminium can: 2700 kg/m3, bounce 0.269, friction 0.3
+fruit: 820 kg/m3, bounce 0.323, friction 0.45
+eggshell: 1030 kg/m3, bounce 0.108, friction 0.4
+tissue paper: 120 kg/m3, bounce 0.108, friction 0.5
+wax: 900 kg/m3, bounce 0.161, friction 0.3
+vinyl rubber: 1150 kg/m3, bounce 0.376, friction 0.7
+cupronickel: 8900 kg/m3, bounce 0.538, friction 0.3
+rubber & fabric: 300 kg/m3, bounce 0.161, friction 0.8
+tyre rubber: 1100 kg/m3, bounce 0.5, friction 0.8
+bicycle tyre: 1100 kg/m3, bounce 0.5, friction 0.8
+urethane: 1200 kg/m3, bounce 0.6, friction 0.6
+trampoline mat: 400 kg/m3, bounce 0.4, friction 0.5
+conveyor belt: 1200 kg/m3, bounce 0.5, friction 0.6

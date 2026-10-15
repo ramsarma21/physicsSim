@@ -1,0 +1,62 @@
+# What `vercel` uploads from this folder: ONLY what the build (vercel.json: npm ci, then npm run build:static -> dist/) and the AI
+# function (api/ai/[step].mjs: the AI core in ai/ and the engine in web/sim) need. Everything else stays on this machine: research/,
+# machines/, snapshots/, scenes/, shots/, renders/, control/, old-tests/, web/dev (GBs of dev pages and shots), the local server, keys,
+# .env files. Allowlist: ignore all of the project root, then let back in what is needed (see docs/DEPLOY.md).
+/*
+!/package.json
+!/package-lock.json
+!/vercel.json
+!/api
+!/ai
+!/tools
+!/tooling
+!/web
+
+# ai/: the server-side AI core, all of it (a new module or data file under ai/ ships without a change here), except its research, benchmark,
+# tests, notes and cache. The function bundles all of ai/ (vercel.json includeFiles), because steps.mjs loads files by computed paths.
+/ai/research
+/ai/bench
+/ai/test
+/ai/*.md
+/ai/.cache
+# ai/experiments: offline eval harnesses and their results (19 MB, with symbolic links into web/sim); nothing in ai/*.mjs or api/ imports them
+/ai/experiments
+
+# tools/: the build scripts and the engine bundle's entries and helpers (*.ts; not the parity tools)
+/tools/*
+!/tools/build-static.mjs
+!/tools/build-engine.mjs
+!/tools/vendor-three.mjs
+!/tools/vendor-media.mjs
+!/tools/vendor-clerk.mjs
+!/tools/gen-scenarios.mjs
+!/tools/*.ts
+
+# tooling/: the engine's sources (npm run build:engine bundles tooling/src/sim; tooling/package.json maps its #imports)
+/tooling/*
+!/tooling/package.json
+!/tooling/src
+
+# web/: not the dev pages, renders, samples, the local server or its saves, the client tests, the 6 MB engine source map
+/web/dev
+/web/out
+/web/sample
+/web/saved
+/web/presets
+/web/server.py
+/web/server.log
+/web/ai/test
+/web/account/test
+/web/sim/**/*.map
+
+# anywhere
+node_modules
+__pycache__
+.DS_Store
+.env
+.env.*
+*.pem
+*.key
+*.log
+.cache
+.vercel

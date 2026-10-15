@@ -1,0 +1,159 @@
+{
+ "title": "Bowling ball versus ten pins",
+ "seconds": 6,
+ "release": 0.5,
+ "items": [
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Long ramp",
+   "place": {
+    "lean": {
+     "from": {
+      "on": "air",
+      "x": -0.5,
+      "y": 0.6
+     },
+     "to": {
+      "on": "table",
+      "x": 0.6
+     }
+    },
+    "on": "air"
+   },
+   "why": "A long wooden ramp from 60 cm up down to the table, about 1.25 m long at about 29\u00b0",
+   "props": {}
+  },
+  {
+   "id": "ball",
+   "type": "bowling-ball",
+   "name": "Bowling ball",
+   "place": {
+    "on": "ramp",
+    "x": -0.38
+   },
+   "held": true,
+   "why": "The 7.26 kg ball waits at the top of the ramp until the release",
+   "props": {}
+  },
+  {
+   "id": "pin1",
+   "type": "bowling-pin",
+   "name": "Pin 1",
+   "place": {
+    "on": "table",
+    "x": 0.75
+   },
+   "why": "First pin, hit by the ball",
+   "props": {}
+  },
+  {
+   "id": "pin2",
+   "type": "bowling-pin",
+   "name": "Pin 2",
+   "place": {
+    "on": "table",
+    "x": 1
+   },
+   "why": "Pins stand 25 cm apart, closer than their 38 cm height, so each falls into the next",
+   "props": {}
+  },
+  {
+   "id": "pin3",
+   "type": "bowling-pin",
+   "name": "Pin 3",
+   "place": {
+    "on": "table",
+    "x": 1.25
+   },
+   "why": "Pin in the row",
+   "props": {}
+  },
+  {
+   "id": "pin4",
+   "type": "bowling-pin",
+   "name": "Pin 4",
+   "place": {
+    "on": "table",
+    "x": 1.5
+   },
+   "why": "Pin in the row",
+   "props": {}
+  },
+  {
+   "id": "pin5",
+   "type": "bowling-pin",
+   "name": "Pin 5",
+   "place": {
+    "on": "table",
+    "x": 1.75
+   },
+   "why": "Pin in the row",
+   "props": {}
+  },
+  {
+   "id": "pin6",
+   "type": "bowling-pin",
+   "name": "Pin 6",
+   "place": {
+    "on": "table",
+    "x": 2
+   },
+   "why": "Pin in the row",
+   "props": {}
+  },
+  {
+   "id": "pin7",
+   "type": "bowling-pin",
+   "name": "Pin 7",
+   "place": {
+    "on": "table",
+    "x": 2.25
+   },
+   "why": "Pin in the row",
+   "props": {}
+  },
+  {
+   "id": "pin8",
+   "type": "bowling-pin",
+   "name": "Pin 8",
+   "place": {
+    "on": "table",
+    "x": 2.5
+   },
+   "why": "Pin in the row",
+   "props": {}
+  },
+  {
+   "id": "pin9",
+   "type": "bowling-pin",
+   "name": "Pin 9",
+   "place": {
+    "on": "table",
+    "x": 2.75
+   },
+   "why": "Pin in the row",
+   "props": {}
+  },
+  {
+   "id": "pin10",
+   "type": "bowling-pin",
+   "name": "Pin 10",
+   "place": {
+    "on": "table",
+    "x": 3
+   },
+   "why": "Last pin, its right edge about 9 cm from the table's end",
+   "props": {}
+  }
+ ],
+ "missing": [],
+ "goals": [],
+ "tune": [],
+ "notes": "The ball's centre drops about 0.55 m down the ramp, so it reaches the table at about 2.8 m/s. It rolls 15 cm into the first pin and keeps ploughing down the row. Each falling pin (38 cm tall) also reaches the next one 25 cm away, so the whole row goes over within about 3 s.",
+ "assumptions": [
+  "The pins stand in a single straight line left to right, not in the usual triangle, because all motion happens in one plane",
+  "Pins are spaced 25 cm apart (centre to centre) so the row fits on the table and each pin can topple the next",
+  "The ramp is 60 cm high at its top so the ball arrives fast enough to carry through the row"
+ ]
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Blocks cold r2</title></head>
+<body style="font:12px system-ui;background:#222;color:#ddd">
+<pre id="out">running</pre>
+<script>
+// cold builds, each in a fresh iframe (fresh JS realm): ?types=a,b,c  &rep=2
+const q = new URLSearchParams(location.search)
+const types = (q.get("types") || "wooden-block,brick,steel-weight-1kg,steel-weight-5kg,foam-block,ice-cube,cardboard-box,wooden-log,domino,domino-row,wall,wedge").split(",")
+const rep = Number(q.get("rep") || 1)
+const calib = () => { const t = performance.now(); let x = 0; for (let i = 0; i < 3e7; i++) x += Math.sqrt(i); return Math.round(performance.now() - t) }
+const run = (type) => new Promise((res) => {
+  const f = document.createElement("iframe")
+  f.style.cssText = "width:400px;height:300px;border:0"
+  f.src = `${q.get("page") || "/dev/r2-blocks-fix.html"}?cold=${type}&_=${Math.random()}`
+  document.body.append(f)
+  const t0 = performance.now()
+  const tick = () => {
+    const w = f.contentWindow
+    if (w && w.ready && w.cold) { const r = w.cold[type]; f.remove(); res(r) }
+    else if (performance.now() - t0 > 60000) { f.remove(); res("timeout") }
+    else setTimeout(tick, 100)
+  }
+  tick()
+})
+;(async () => {
+  const out = { calib_ms: calib(), results: {} }
+  for (const t of types) {
+    const rs = []
+    for (let i = 0; i < rep; i++) rs.push(await run(t))
+    out.results[t] = rs.map((r) => (typeof r === "string" ? r : `${r.ms}ms ${r.tris}tris ${r.meshes}m ${r.uniqueGeos}g`))
+  }
+  out.calib_end = calib()
+  window.out = out
+  document.getElementById("out").textContent = JSON.stringify(out, null, 1)
+  window.done = true
+})()
+</script></body></html>

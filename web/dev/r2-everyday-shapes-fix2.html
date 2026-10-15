@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R2 fix2: everyday shapes</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; left: 0; top: 0; width: 1600px; height: 1000px; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+  #thumbs { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; }
+  #thumbs canvas { width: 384px; height: 288px; background: #fff; }
+</style>
+</head>
+<body>
+<div id="info"></div>
+<script type="module">
+// Round-2 adversarial review page for the everyday-shapes models (everyday-a*.js).  Modes:
+//   ?items=a,b,c            the items dropped (dynamic, not fixed) onto a table in a row; the picture is the settled last frame
+//      &fixed=1             place them fixed at their outline's resting height instead (y = h/2)
+//   ?bench=<key>            fresh-document cold build of that item: window.bench = {ms, tris, meshes, geos, mats}
+//   ?thumbs=a,b,c           catalog card photos via thumbs3d.drawPreview3D; window.thumbSheet(name) saves a contact sheet
+// Helpers (items mode): shoot(name, {i, az, el, dist, fov, x, y, z}), outline(name, i, opts), sil(i) silhouette-vs-outline check (mm),
+//   wide(name) the app's wide camera, fit() bbox vs outline, rest() resting heights.
+const q = new URLSearchParams(location.search)
+const info = document.getElementById("info")
+const say = (m) => (info.textContent = m)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+// the endpoint refuses PNGs over about 7 MB: a busy close-up is retried at 0.75, 0.55, 0.4 of the size
+const snapPng = async (name, png) => {
+  let st = (await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png }) })).status
+  if (st === 200) return st
+  const img = new Image()
+  await new Promise((res) => { img.onload = res; img.src = png })
+  for (const k of [0.75, 0.55, 0.4]) {
+    const c = document.createElement("canvas")
+    c.width = Math.round(img.width * k)
+    c.height = Math.round(img.height * k)
+    c.getContext("2d").drawImage(img, 0, 0, c.width, c.height)
+    st = (await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: c.toDataURL() }) })).status
+    if (st === 200) return st
+  }
+  return st
+}
+const triCount = (o) => { let n = 0; o.traverse((m) => { if (m.isMesh) { const c = m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count; n += (m.isInstancedMesh ? m.count : 1) * c / 3 } }); return Math.round(n) }
+
+// ---------------------------------------------------------------- bench: one cold build in a fresh document
+if (q.get("bench")) {
+  const key = q.get("bench")
+  const catalog = await (await fetch("/api/catalog")).json()
+  const t = catalog.types.find((x) => x.key === key)
+  const m3 = await import("../models3d.js")
+  const props = { ...t.defaults }
+  // resolved props come from a layout call (what the view passes)
+  const lay = await post("/api/layout", { scene: { version: 2, id: "b", name: "b", seconds: 1, release: 0, stage: { x0: -1, x1: 1, y0: -0.2, y1: 1 }, items: [{ id: "it", type: key, x: 0, y: 0.5, angle: 0, props: {} }], goals: [] } })
+  const sols = lay.doc.solids.filter((s) => s.item === "it")
+  const st0 = m3.modelStats()
+  // &pre=<key>: build that item first (untimed), so the kit's one-off setup is paid before the timed build
+  let preMs = null
+  if (q.get("pre")) {
+    const pk = q.get("pre")
+    const lp = await post("/api/layout", { scene: { version: 2, id: "p", name: "p", seconds: 1, release: 0, stage: { x0: -1, x1: 1, y0: -0.2, y1: 1 }, items: [{ id: "pp", type: pk, x: 0, y: 0.5, angle: 0, props: {} }], goals: [] } })
+    const tp = performance.now()
+    for (const s of lp.doc.solids.filter((s) => s.item === "pp")) m3.buildModel(s, { props: lp.resolved?.pp ?? {}, look: catalog.looks[s.look] ?? {} })
+    preMs = +(performance.now() - tp).toFixed(1)
+  }
+  let ms = 0, tris = 0, meshes = 0
+  const per = []
+  for (const s of sols) {
+    const t0 = performance.now()
+    const o = m3.buildModel(s, { props: lay.resolved?.it ?? props, look: catalog.looks[s.look] ?? {} })
+    const dt = performance.now() - t0
+    ms += dt
+    let mm = 0
+    if (o) o.traverse((m) => { if (m.isMesh) mm++ })
+    meshes += mm
+    const tr = o ? triCount(o) : 0
+    tris += tr
+    per.push({ part: s.part, ms: +dt.toFixed(1), tris: tr, meshes: mm, model: o === undefined ? "none" : o === null ? "null" : "ok" })
+  }
+  // a second build at a different size (slider drag): how much the kit cache saves
+  const s0 = sols[0]
+  const big = JSON.parse(JSON.stringify(s0))
+  if (big.body.kind === "slab") big.body.width *= 1.1
+  else if (big.body.kind === "ball") big.body.radius *= 1.1
+  const t1 = performance.now()
+  m3.buildModel(big, { props: lay.resolved?.it ?? props, look: catalog.looks[s0.look] ?? {} })
+  const warm = performance.now() - t1
+  window.bench = { key, preMs, ms: +ms.toFixed(1), warmResize: +warm.toFixed(1), tris, meshes, per, stats: m3.modelStats() }
+  parent?.postMessage?.({ bench: window.bench }, "*")
+  say(JSON.stringify(window.bench))
+}
+
+// ---------------------------------------------------------------- thumbs: catalog card photos
+else if (q.get("thumbs")) {
+  const keys = q.get("thumbs").split(",")
+  const catalog = await (await fetch("/api/catalog")).json()
+  const th = await import("../thumbs3d.js")
+  th.setCatalog(catalog)
+  const host = document.createElement("div")
+  host.id = "thumbs"
+  document.body.appendChild(host)
+  const cvs = []
+  for (const k of keys) {
+    const t = catalog.types.find((x) => x.key === k)
+    const c = document.createElement("canvas")
+    c.width = 384
+    c.height = 288
+    c.title = k
+    host.appendChild(c)
+    cvs.push([k, c])
+    th.drawPreview3D(c, t.preview, catalog.looks)
+  }
+  window.thumbDone = () => cvs.every(([k]) => th.hasShot(catalog.types.find((x) => x.key === k).preview))
+  window.thumbSheet = async (name, cols = 6) => {
+    const rows = Math.ceil(cvs.length / cols)
+    const sh = document.createElement("canvas")
+    sh.width = cols * 384
+    sh.height = rows * 300
+    const g = sh.getContext("2d")
+    g.fillStyle = "#777"
+    g.fillRect(0, 0, sh.width, sh.height)
+    cvs.forEach(([k, c], i) => {
+      const x = (i % cols) * 384, y = Math.floor(i / cols) * 300
+      g.drawImage(c, 0, 0, c.width, c.height, x, y, 384, 288) // the card canvas may be a different pixel size than its 384 x 288 box
+      g.fillStyle = "#000"
+      g.font = "11px sans-serif"
+      g.fillText(k, x + 4, y + 298)
+    })
+    return snapPng(name, sh.toDataURL())
+  }
+  window.ready = true
+}
+
+// ---------------------------------------------------------------- items: a settled row on a table
+else {
+  const stageEl = document.createElement("div")
+  stageEl.id = "stage"
+  document.body.prepend(stageEl)
+  await Promise.all(["models3d.js", "view3d.js", "models/everyday-a.js", "models/everyday-a-lib.js", "models/everyday-a-books.js", "models/everyday-a-flat.js", "models/everyday-a-small.js", "models/everyday-a-round.js"].map((f) => fetch("../" + f, { cache: "reload" }).catch(() => null)))
+  const { createView3D } = await import("../view3d.js")
+  const { placementsAt } = await import("../track.js")
+  const keys = (q.get("items") || "hardcover-book").split(",")
+  const catalog = await (await fetch("/api/catalog?reload=1")).json()
+  const byKey = new Map(catalog.types.map((t) => [t.key, t]))
+  const fixed = q.get("fixed") === "1"
+  const items = [{ id: "table", type: "table", name: "Table", x: 0, y: 0, angle: 0, props: { width: 6, thickness: 0.15 } }]
+  const layout = []
+  let cursor = 0
+  const GAP = Number(q.get("gap") || 0.06)
+  for (const k of keys) {
+    const t = byKey.get(k)
+    if (!t) { say("unknown type " + k); continue }
+    const sol = t.preview.solids[0]
+    const b = sol.body
+    let w, h
+    const polys = t.preview.solids.filter((z) => z.body.kind === "polygon")
+    const allPts = polys.flatMap((z) => z.body.points)
+    if (b.kind === "ball") { w = h = 2 * b.radius }
+    else if (b.kind === "polygon") { const xs = allPts.map((p) => p.x), ys = allPts.map((p) => p.y); w = Math.max(...xs) - Math.min(...xs); h = Math.max(...ys) - Math.min(...ys) }
+    else { w = b.width; h = b.height }
+    const ymin = b.kind === "polygon" ? -Math.min(...allPts.map((p) => p.y)) : h / 2
+    const x = cursor + w / 2
+    cursor += w + GAP
+    items.push({ id: k, type: k, name: t.name, x, y: ymin + (fixed ? 0 : 0.003), angle: 0, fixed, props: {} })
+    layout.push({ id: k, type: k, x, y: h / 2, w, h })
+  }
+  const shift = cursor / 2
+  for (const it of items) if (it.id !== "table") it.x -= shift
+  for (const l of layout) l.x -= shift
+  items[0].props.width = Math.max(1.2, cursor + 0.6)
+  const seconds = Number(q.get("seconds") || 1.5)
+  const scene = { version: 2, id: "r2es", name: "r2es", seconds, release: 0, stage: { x0: -cursor / 2 - 0.3, x1: cursor / 2 + 0.3, y0: -0.15, y1: 0.6 }, items, goals: [] }
+  const sim = await post("/api/simulate", { scene })
+  const T = fixed ? 0 : seconds - 0.01
+  const P = placementsAt(sim.track, T)
+  window.P = P
+  for (const l of layout) {
+    const s = sim.doc.solids.find((z) => z.item === l.id)
+    if (s && P[s.id]) { l.x = P[s.id].x; l.y = P[s.id].y; l.angle = P[s.id].angle }
+  }
+  window.sim = sim
+  window.layout = layout
+  window.catalog = catalog
+  window.T = T
+  const view = createView3D(stageEl)
+  window.view = view
+  view.setOptions({ looks: catalog.looks })
+  view.load(sim, null)
+  view.render(T)
+  const d = view._debug
+  window.d = d
+  // resting heights: centre y vs outline half height (mm above y = 0 for the lowest point)
+  window.rest = () => layout.map((l) => {
+    const s = sim.doc.solids.find((z) => z.item === l.id)
+    const b = s.body
+    const pl = P[s.id]
+    const low = b.kind === "ball" ? pl.y - b.radius : b.kind === "polygon" ? pl.y + Math.min(...b.points.map((p) => p.x * Math.sin(pl.angle) + p.y * Math.cos(pl.angle))) : pl.y - Math.abs(b.width / 2 * Math.sin(pl.angle)) - Math.abs(b.height / 2 * Math.cos(pl.angle))
+    return { id: l.id, lowestMm: +(low * 1000).toFixed(2), angleDeg: +(pl.angle * 180 / Math.PI).toFixed(2), x: +pl.x.toFixed(4) }
+  })
+  window.wide = async (name) => {
+    view.setOptions({ camera: "wide" })
+    view.frame()
+    view.render(T)
+    return snapPng(name, d.renderer.domElement.toDataURL())
+  }
+  const orbit = () => {
+    view.setOptions({ camera: "orbit" })
+    view.render(T)
+    d.controls.minDistance = 0.003
+    d.controls.maxDistance = Infinity
+    d.controls.maxPolarAngle = Math.PI * 0.499
+    d.controls.enableDamping = false
+    d.controls.minAzimuthAngle = -Infinity
+    d.controls.maxAzimuthAngle = Infinity
+  }
+  window.aim = (opts = {}) => {
+    orbit()
+    const L = opts.i !== undefined ? layout.find((l) => l.id === opts.i) ?? layout[opts.i] : null
+    const x = opts.x ?? (L ? L.x : 0)
+    const y = opts.y ?? (L ? L.y : 0.05)
+    const dist = opts.dist ?? (L ? 2.6 * Math.max(L.w, L.h) : 0.4)
+    const az = opts.az ?? 0.5
+    const el = opts.el ?? 0.45
+    d.orbitCam.fov = opts.fov ?? 28
+    d.orbitCam.near = opts.near ?? Math.max(0.002, dist / 60)
+    d.orbitCam.far = opts.far ?? 40
+    d.orbitCam.updateProjectionMatrix()
+    d.controls.target.set(x, y, opts.z ?? 0)
+    d.orbitCam.position.set(x + dist * Math.sin(az) * Math.cos(el), y + dist * Math.sin(el), (opts.z ?? 0) + dist * Math.cos(az) * Math.cos(el))
+    d.controls.update()
+    view.render(T)
+  }
+  window.shoot = async (name, opts = {}) => {
+    window.aim(opts)
+    view.render(T)
+    return snapPng(name, d.renderer.domElement.toDataURL())
+  }
+  const projPx = (x, y, z = 0) => {
+    const c = d.renderer.domElement
+    const v = new d.THREE.Vector3(x, y, z).project(d.orbitCam)
+    return [(v.x * 0.5 + 0.5) * c.width, (-v.y * 0.5 + 0.5) * c.height]
+  }
+  function outlinePts(s, pl) {
+    const b = s.body
+    const ca = Math.cos(pl.angle || 0), sa = Math.sin(pl.angle || 0)
+    const W = (lx, ly) => [pl.x + lx * ca - ly * sa, pl.y + lx * sa + ly * ca]
+    if (b.kind === "ball") return Array.from({ length: 96 }, (_, k) => { const a = (k / 96) * Math.PI * 2; return W(b.radius * Math.cos(a), b.radius * Math.sin(a)) })
+    if (b.kind === "polygon") return b.points.map((p) => W(p.x, p.y))
+    const hw = b.width / 2, hh = b.height / 2
+    return [W(-hw, -hh), W(hw, -hh), W(hw, hh), W(-hw, hh)]
+  }
+  // the doc outline over a frontal near-orthographic shot: green z = 0 via view.toScreen, magenta front face, cyan back face, yellow y = 0 line
+  window.outline = async (name, i, opts = {}) => {
+    const L = layout.find((l) => l.id === i) ?? layout[i]
+    const span = Math.max(L.w, L.h)
+    const fov = opts.fov ?? 2
+    const dist = opts.dist ?? (span * (opts.pad ?? 1.25)) / (2 * Math.tan((fov * Math.PI) / 360))
+    window.aim({ x: opts.x ?? L.x, y: opts.y ?? L.y, dist, az: opts.az ?? 0, el: opts.el ?? 0.0001, fov, near: dist * 0.5, far: dist * 2 })
+    view.render(T)
+    const src = d.renderer.domElement
+    const c = document.createElement("canvas")
+    c.width = src.width
+    c.height = src.height
+    const g = c.getContext("2d")
+    g.drawImage(src, 0, 0)
+    const dpr = src.width / src.clientWidth
+    g.lineWidth = 1.2
+    const s = sim.doc.solids.find((z) => z.item === L.id)
+    const pl = P[s.id]
+    const hd = s.body.kind === "ball" ? (s.depth3d ?? (s.shape === "cylinder" ? 4 * s.body.radius : 2 * s.body.radius)) / 2 : s.body.depth / 2
+    if (opts.depthBox !== false) for (const [z, col] of [[hd, "rgba(255,0,200,0.9)"], [-hd, "rgba(0,180,255,0.9)"]]) {
+      g.strokeStyle = col
+      g.beginPath()
+      outlinePts(s, pl).forEach(([x, y], k) => { const [px, py] = projPx(x, y, z); k ? g.lineTo(px, py) : g.moveTo(px, py) })
+      g.closePath()
+      g.stroke()
+    }
+    g.strokeStyle = "#00ff66"
+    g.beginPath()
+    outlinePts(s, pl).forEach(([x, y], k) => { const p = view.toScreen(x, y); k ? g.lineTo(p.x * dpr, p.y * dpr) : g.moveTo(p.x * dpr, p.y * dpr) })
+    g.closePath()
+    g.stroke()
+    g.strokeStyle = "rgba(255,230,0,0.9)"
+    g.beginPath()
+    const a = view.toScreen(L.x - span, 0), b = view.toScreen(L.x + span, 0)
+    g.moveTo(a.x * dpr, a.y * dpr); g.lineTo(b.x * dpr, b.y * dpr)
+    g.stroke()
+    return snapPng(name, c.toDataURL())
+  }
+  // bbox of the drawn holder against the outline (mm; + sticks out, - falls short), plus triangles
+  window.fit = () => sim.doc.solids.filter((s) => s.item !== "table").map((s) => {
+    let holder = null
+    d.scene.traverse((o) => { if (o.name === s.id) holder = o })
+    if (!holder) return { id: s.id, err: "no model drawn" }
+    const save = holder.rotation.z
+    holder.rotation.z = 0
+    holder.updateWorldMatrix(true, true)
+    const bx = new d.THREE.Box3().setFromObject(holder, true)
+    holder.rotation.z = save
+    holder.updateWorldMatrix(true, true)
+    const pl = { x: holder.position.x, y: holder.position.y }
+    const b = s.body
+    let x0, x1, y0, y1
+    if (b.kind === "ball") { x0 = y0 = -b.radius; x1 = y1 = b.radius }
+    else if (b.kind === "polygon") { x0 = Math.min(...b.points.map((p) => p.x)); x1 = Math.max(...b.points.map((p) => p.x)); y0 = Math.min(...b.points.map((p) => p.y)); y1 = Math.max(...b.points.map((p) => p.y)) }
+    else { x0 = -b.width / 2; x1 = b.width / 2; y0 = -b.height / 2; y1 = b.height / 2 }
+    const hd = b.kind === "ball" ? (s.depth3d ?? (s.shape === "cylinder" ? 4 * b.radius : 2 * b.radius)) / 2 : b.depth / 2
+    const mm = (v) => +(v * 1000).toFixed(2)
+    return { id: s.id, x: [mm(-(bx.min.x - pl.x - x0)), mm(bx.max.x - pl.x - x1)], y: [mm(-(bx.min.y - pl.y - y0)), mm(bx.max.y - pl.y - y1)], z: [mm(-(bx.min.z + hd)), mm(bx.max.z - hd)], tris: triCount(holder) }
+  })
+  // silhouette check: the model (frontal orthographic, white on black) against the outline. Reports how far it sticks out of the
+  // outline and how far inside the outline it leaves uncovered (max distance, mm), and pixel shares.
+  window.sil = async (i, { px = 0.1 } = {}) => {
+    const THREE = d.THREE
+    const L = layout.find((l) => l.id === i) ?? layout[i]
+    const s = sim.doc.solids.find((z) => z.item === L.id)
+    const m3 = await import("../models3d.js")
+    const o = m3.buildModel(s, { props: sim.resolved?.[s.item] ?? {}, look: catalog.looks[s.look] ?? {} })
+    const b = s.body
+    const unionPolys = sim.doc.solids.filter((z) => z.item === L.id && z.body.kind === "polygon").map((z) => z.body.points.map((p) => [p.x, p.y]))
+    let x0, x1, y0, y1
+    if (b.kind === "ball") { x0 = y0 = -b.radius; x1 = y1 = b.radius }
+    else if (b.kind === "polygon") { const all = unionPolys.flat(); x0 = Math.min(...all.map((p) => p[0])); x1 = Math.max(...all.map((p) => p[0])); y0 = Math.min(...all.map((p) => p[1])); y1 = Math.max(...all.map((p) => p[1])) }
+    else { x0 = -b.width / 2; x1 = b.width / 2; y0 = -b.height / 2; y1 = b.height / 2 }
+    const M = 0.004
+    let pxm = px / 1000
+    let W = Math.ceil((x1 - x0 + 2 * M) / pxm), H = Math.ceil((y1 - y0 + 2 * M) / pxm)
+    const cap = 3000
+    if (Math.max(W, H) > cap) { pxm *= Math.max(W, H) / cap; W = Math.ceil((x1 - x0 + 2 * M) / pxm); H = Math.ceil((y1 - y0 + 2 * M) / pxm) }
+    const r = (window._silR ??= new THREE.WebGLRenderer({ antialias: false, preserveDrawingBuffer: true }))
+    r.setPixelRatio(1)
+    r.setSize(W, H, false)
+    const sc = new THREE.Scene()
+    sc.background = new THREE.Color(0)
+    sc.overrideMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide })
+    sc.add(o)
+    const X0 = x0 - M, Y0 = y0 - M
+    const cam = new THREE.OrthographicCamera(X0, X0 + W * pxm, Y0 + H * pxm, Y0, 0.001, 10)
+    cam.position.set(0, 0, 5)
+    cam.lookAt(0, 0, 0)
+    cam.position.set(0, 0, 5)
+    cam.updateProjectionMatrix()
+    r.render(sc, cam)
+    const gl = r.getContext()
+    const buf = new Uint8Array(W * H * 4)
+    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+    sc.remove(o)
+    // signed distance to the outline (m): + outside
+    let sd
+    if (b.kind === "ball") sd = (x, y) => Math.hypot(x, y) - b.radius
+    else {
+      const sets = b.kind === "polygon" ? unionPolys : [[[x0, y0], [x1, y0], [x1, y1], [x0, y1]]]
+      const sd1 = (pts, x, y) => {
+        let dmin = Infinity, inside = true
+        for (let k = 0; k < pts.length; k++) {
+          const [ax, ay] = pts[k], [bx, by] = pts[(k + 1) % pts.length]
+          const ex = bx - ax, ey = by - ay
+          const t = Math.max(0, Math.min(1, ((x - ax) * ex + (y - ay) * ey) / (ex * ex + ey * ey)))
+          dmin = Math.min(dmin, Math.hypot(x - ax - t * ex, y - ay - t * ey))
+          if (ex * (y - ay) - ey * (x - ax) < 0) inside = false
+        }
+        return inside ? -dmin : dmin
+      }
+      sd = (x, y) => Math.min(...sets.map((pts) => sd1(pts, x, y)))   // the union of convex pieces: the most negative signed distance
+    }
+    let out = 0, outMax = 0, short = 0, shortMax = 0, inN = 0
+    let outAt = null, shortAt = null
+    const tol = 0.0005
+    for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
+      const on = buf[(yy * W + xx) * 4] > 127
+      const X = X0 + (xx + 0.5) * pxm, Y = Y0 + (yy + 0.5) * pxm
+      const dd = sd(X, Y)
+      if (dd < 0) inN++
+      if (on && dd > tol) { out++; if (dd > outMax) { outMax = dd; outAt = [X, Y] } }
+      if (!on && dd < -tol) { short++; if (-dd > shortMax) { shortMax = -dd; shortAt = [X, Y] } }
+    }
+    const mm = (v) => +(v * 1000).toFixed(2)
+    // also save the mask with the outline for a look
+    const c = document.createElement("canvas")
+    c.width = W; c.height = H
+    const g = c.getContext("2d")
+    const img = g.createImageData(W, H)
+    for (let yy = 0; yy < H; yy++) for (let xx = 0; xx < W; xx++) {
+      const on = buf[(yy * W + xx) * 4] > 127
+      const X = X0 + (xx + 0.5) * pxm, Y = Y0 + (yy + 0.5) * pxm
+      const dd = sd(X, Y)
+      const o2 = ((H - 1 - yy) * W + xx) * 4
+      const col = on && dd > tol ? [255, 40, 40] : !on && dd < -tol ? [40, 120, 255] : on ? [235, 235, 235] : [20, 20, 20]
+      img.data[o2] = col[0]; img.data[o2 + 1] = col[1]; img.data[o2 + 2] = col[2]; img.data[o2 + 3] = 255
+    }
+    g.putImageData(img, 0, 0)
+    if (q.get("silsave") !== "0") await snapPng(`r2-everyday-shapes-f2sil-${L.id}`, c.toDataURL())
+    return { id: L.id, pxmm: +(pxm * 1000).toFixed(3), stickOutMaxMm: mm(outMax), stickOutAt: outAt && outAt.map(mm), stickOutShare: +(out / Math.max(1, inN)).toFixed(4), shortMaxMm: mm(shortMax), shortAt: shortAt && shortAt.map(mm), shortShare: +(short / Math.max(1, inN)).toFixed(4) }
+  }
+  window.ready = true
+  say(`${layout.length} items, t=${T}`)
+}
+window.addEventListener("error", (e) => say("ERROR " + e.message))
+</script>
+</body>
+</html>

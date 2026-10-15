@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ball models r4 fix check</title>
+<script type="importmap">{"imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #222; color: #ddd; font: 12px system-ui, sans-serif; }
+  #stage { position: fixed; inset: 0; }
+  #info { position: fixed; left: 8px; top: 8px; background: #000a; padding: 4px 8px; border-radius: 6px; z-index: 2; }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="info"></div>
+<script type="module">
+// Round-2 visual review page for web/models/balls.js (reviewer's own page; approach of test-3d.html / review-balls.html).
+//   ?mode=cost&only=<keys>  cold build ms + triangles (fresh page = nothing baked; list steel-ball first to pre-bake the studio)
+//   ?mode=thumbs            every ball's catalog card through thumbs3d.drawPreview3D; window.saveThumbs(name)
+//   ?only=<keys,comma>  ?drop=1 (balls start 0.25 m up and fall, rolling a little)  ?gap=0.05
+// window.ctxShot(type, name, {az, el, span}), window.close(type, name, {az, el, k, fov}), window.outline(name, {type, t, fov})
+// window.bounds(type) -> geometry extents of the model relative to its centre, window.rest(type) -> y of the ball over time
+import { createView3D } from "../view3d.js"
+import { placementsAt } from "../track.js"
+
+const q = new URLSearchParams(location.search)
+const post = async (url, body) => {
+  const r = await fetch(url, { method: "POST", body: JSON.stringify(body) })
+  if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text()}`)
+  return r.json()
+}
+const catalog = await (await fetch("/api/catalog")).json()
+window.catalog = catalog
+const MODE = q.get("mode") || "scene"
+if (MODE === "cost") {
+  // cold build cost of one ball type (fresh page = nothing baked yet): ms of buildModel and the triangles it draws, then the first render (upload + compile)
+  const M = await import("../models3d.js")
+  const T3 = await import("three")
+  const keys = (q.get("only") || "").split(",").filter(Boolean)
+  const out = []
+  // reliable timing: let the page settle, then warm three.js with an unrelated catalog model (the app has three warm by then)
+  await new Promise((r) => setTimeout(r, 1200))
+  const warmT = catalog.types.find((x) => x.category !== "Balls" && x.preview.solids.length && x.key !== "table")
+  for (const s of warmT.preview.solids) M.buildModel(s, { props: warmT.defaults, look: catalog.looks[s.look] ?? {} })
+  for (const k of keys) {
+    const t = catalog.types.find((x) => x.key === k)
+    const s = t.preview.solids[0]
+    const L = catalog.looks[s.look] ?? {}
+    const props = { ...t.defaults, ...(q.get("number") && k === "billiard-ball" ? { number: Number(q.get("number")) } : {}) }
+    const t0 = performance.now()
+    const obj = M.buildModel(s, { props, look: L })
+    const ms = performance.now() - t0
+    let tris = 0, meshes = 0, texBytes = 0
+    const texs = new Set()
+    obj.traverse((o) => {
+      if (!o.isMesh) return
+      meshes++
+      const g = o.geometry
+      tris += (g.index ? g.index.count : g.attributes.position.count) / 3
+      for (const m of [o.material].flat()) for (const kk of ["map", "normalMap", "roughnessMap", "metalnessMap", "emissiveMap", "alphaMap", "clearcoatNormalMap", "envMap"]) if (m[kk]) texs.add(m[kk])
+    })
+    for (const tx of texs) { const im = tx.image; if (im) texBytes += (im.width || 0) * (im.height || 0) * 4 }
+    // first render on its own renderer: texture upload + shader compile
+    const rr = new T3.WebGLRenderer({ antialias: true })
+    rr.setSize(256, 256, false)
+    const sc = new T3.Scene()
+    sc.add(new T3.DirectionalLight(0xffffff, 2))
+    sc.add(obj)
+    const cam = new T3.PerspectiveCamera(30, 1, 0.001, 10)
+    cam.position.set(0, 0, s.body.radius * 6)
+    cam.lookAt(0, 0, 0)
+    const t1 = performance.now()
+    rr.render(sc, cam)
+    rr.getContext().readPixels(0, 0, 1, 1, rr.getContext().RGBA, rr.getContext().UNSIGNED_BYTE, new Uint8Array(4))
+    const firstRender = performance.now() - t1
+    // warm rebuild (cached)
+    const t2 = performance.now()
+    M.buildModel(s, { props, look: L })
+    const warm = performance.now() - t2
+    out.push({ key: k, coldMs: +ms.toFixed(1), firstRenderMs: +firstRender.toFixed(1), warmMs: +warm.toFixed(2), tris: Math.round(tris), meshes, textures: texs.size, texMB: +(texBytes / 1e6).toFixed(1) })
+    rr.dispose()
+  }
+  window.cost = out
+  document.body.textContent = JSON.stringify(out)
+  window.ready = true
+  throw new Error("cost done")
+}
+if (MODE === "thumbs") {
+  const TH = await import("../thumbs3d.js")
+  TH.setCatalog(catalog)
+  const grid = document.createElement("div")
+  grid.style.cssText = "position:fixed;inset:0;display:grid;grid-template-columns:repeat(5,192px);gap:6px;padding:6px;background:#f3f1ec;z-index:5"
+  document.body.appendChild(grid)
+  const cvs = []
+  for (const t of catalog.types.filter((t) => t.category === "Balls" && t.key !== "clay-ball")) {
+    const c = document.createElement("canvas")
+    c.style.cssText = "width:192px;height:144px;background:#fff;border-radius:6px"
+    c.width = 384; c.height = 288
+    c.title = t.key
+    grid.appendChild(c)
+    cvs.push([t.key, c])
+    TH.drawPreview3D(c, t.preview, catalog.looks)
+  }
+  window.thumbs = cvs
+  window.saveThumbs = async (name) => {
+    const big = document.createElement("canvas")
+    big.width = 5 * 384; big.height = Math.ceil(cvs.length / 5) * 288
+    const g = big.getContext("2d")
+    g.fillStyle = "#f3f1ec"; g.fillRect(0, 0, big.width, big.height)
+    cvs.forEach(([k, c], i) => { g.drawImage(c, (i % 5) * 384, Math.floor(i / 5) * 288, 384, 288); g.fillStyle = "#333"; g.font = "16px sans-serif"; g.fillText(k, (i % 5) * 384 + 6, Math.floor(i / 5) * 288 + 18) })
+    return (await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png: big.toDataURL() }) })).status
+  }
+  window.ready = true
+  throw new Error("thumbs mode")
+}
+const types = catalog.types.filter((t) => t.category === "Balls" && t.key !== "clay-ball")
+const only = q.get("only")
+const list = only ? types.filter((t) => only.split(",").includes(t.key)) : types
+const drop = q.get("drop") === "1"
+const gap = Number(q.get("gap") ?? 0.05)
+const items = [{ id: "table", type: "table", name: "Table", x: 1.3, y: 0, props: { width: 3.7, thickness: 0.15 } }]
+const pos = {}
+let x = -0.35
+for (const t of list) {
+  const dq = q.get("d_" + t.key)
+  const r = (dq ? Number(dq) : t.defaults.diameter) / 2
+  x += r
+  items.push({ id: t.key, type: t.key, name: t.name, x, y: drop ? r + 0.25 : r + 0.0015, angle: Number(q.get("angle") ?? 0), props: dq ? { diameter: Number(dq) } : {} })
+  pos[t.key] = { x, y: r, r }
+  x += r + gap
+}
+const scene = { version: 2, id: "review-balls", name: "review balls", seconds: Number(q.get("seconds") ?? 1.2), release: 0.1, stage: { x0: -0.559, x1: 3.191, y0: -0.156, y1: 2.344 }, items, goals: [] }
+const sim = await post("/api/simulate", { scene })
+if (q.get("number")) for (const s of sim.doc.solids) if (s.itemType === "billiard-ball") s.number = Number(q.get("number"))
+window.sim = sim
+window.scene = scene
+const view = createView3D(document.getElementById("stage"))
+window.view = view
+view.setOptions({ looks: catalog.looks })
+const tl0 = performance.now()
+view.load(sim, null)
+window.loadMs = performance.now() - tl0
+window.pos = pos
+const T = () => Number(q.get("t") ?? (drop ? 0 : 0.6))
+window.setT = (v) => view.render(v)
+const glc = () => view._debug.renderer.domElement
+const save = async (name, png) => (await fetch("/api/dev/snapshot", { method: "POST", body: JSON.stringify({ name, png }) })).status
+window.snap = async (name, tt = T()) => {
+  view.render(tt)
+  return save(name, glc().toDataURL())
+}
+// current pose of a ball at time t (from the track)
+const poseAt = (type, t) => {
+  const pl = placementsAt(sim.track, t)
+  const s = sim.doc.solids.find((o) => o.item === type)
+  return { ...(pl[s.id] ?? { x: s.at.x, y: s.at.y, angle: 0 }), r: s.body.radius, id: s.id }
+}
+window.poseAt = poseAt
+window.cam = (tx, ty, tz, px, py, pz, fov = 24, tt = T()) => {
+  view.setOptions({ camera: "orbit" })
+  view.render(tt)
+  const d = view._debug
+  d.controls.minDistance = 0.001
+  d.controls.minAzimuthAngle = -Infinity
+  d.controls.maxAzimuthAngle = Infinity
+  d.controls.maxPolarAngle = Math.PI
+  d.orbitCam.fov = fov
+  d.orbitCam.updateProjectionMatrix()
+  d.controls.target.set(tx, ty, tz)
+  d.orbitCam.position.set(px, py, pz)
+  d.controls.update()
+  view.render(tt)
+  view.render(tt)
+}
+// context: the ball on the table, the wall behind, a few diameters of table round it, seen from a little above
+window.ctxShot = async (type, name, { az = 0.35, el = 0.32, span = 9, fov = 28, t = T() } = {}) => {
+  const p = poseAt(type, t)
+  const D = (span * p.r) / Math.tan((fov * Math.PI) / 360)
+  window.cam(p.x, p.r, 0, p.x + D * Math.sin(az) * Math.cos(el), p.r + D * Math.sin(el), D * Math.cos(az) * Math.cos(el), fov, t)
+  return window.snap(name, t)
+}
+// close-up, the ball filling most of the frame
+window.close = async (type, name, { az = 0, el = 0.1, k = 7.5, fov = 24, t = T() } = {}) => {
+  const p = poseAt(type, t)
+  const D = p.r * k
+  window.cam(p.x, p.y, 0, p.x + D * Math.sin(az) * Math.cos(el), p.y + D * Math.sin(el), D * Math.cos(az) * Math.cos(el), fov, t)
+  return window.snap(name, t)
+}
+// frontal shot from far away with a narrow lens (silhouette ~ orthographic) and every doc solid's physics outline on top
+window.outline = async (name, { type = null, t = T(), fov = 4, k = 2.6 } = {}) => {
+  let cx, cy, half
+  if (type) {
+    const p = poseAt(type, t)
+    cx = p.x
+    cy = p.y
+    half = p.r * k
+  } else {
+    const xs = Object.values(pos)
+    cx = (xs[0].x + xs[xs.length - 1].x) / 2
+    cy = 0.08
+    half = (xs[xs.length - 1].x - xs[0].x) / 2 + 0.2
+  }
+  const D = half / Math.tan((fov * Math.PI) / 360)
+  window.cam(cx, cy, 0, cx, cy, D, fov, t)
+  view.render(t)
+  const src = glc()
+  const c = document.createElement("canvas")
+  c.width = src.width
+  c.height = src.height
+  const g = c.getContext("2d")
+  g.drawImage(src, 0, 0)
+  const sx = src.width / src.clientWidth
+  const pl = placementsAt(sim.track, t)
+  const P = (wx, wy) => {
+    const s = view.toScreen(wx, wy)
+    return s ? [s.x * sx, s.y * sx] : null
+  }
+  g.lineWidth = Math.max(1, sx)
+  for (const s of sim.doc.solids) {
+    const at = pl[s.id] ?? { x: s.at.x, y: s.at.y, angle: s.angle ?? 0 }
+    const ca = Math.cos(at.angle)
+    const sa = Math.sin(at.angle)
+    const W = (lx, ly) => P(at.x + lx * ca - ly * sa, at.y + lx * sa + ly * ca)
+    let pts = []
+    if (s.body.kind === "ball") for (let i = 0; i < 180; i++) { const a = (i / 180) * Math.PI * 2; pts.push(W(s.body.radius * Math.cos(a), s.body.radius * Math.sin(a))) }
+    else if (s.body.kind === "slab") { const w = s.body.width / 2, h = s.body.height / 2; pts = [W(-w, -h), W(w, -h), W(w, h), W(-w, h)] }
+    else if (s.body.kind === "polygon") pts = s.body.points.map((p) => W(p.x, p.y))
+    pts = pts.filter(Boolean)
+    if (pts.length < 2) continue
+    g.strokeStyle = "rgba(0,255,90,0.95)"
+    g.beginPath()
+    pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])))
+    g.closePath()
+    g.stroke()
+    if (s.body.kind === "ball") { // centre cross + the angle mark
+      const c0 = W(0, 0), c1 = W(s.body.radius, 0)
+      g.beginPath(); g.moveTo(c0[0], c0[1]); g.lineTo(c1[0], c1[1]); g.stroke()
+    }
+  }
+  return save(name, c.toDataURL())
+}
+// geometry extents of a ball's model (object space of the holder), and the depth limit
+window.bounds = (type) => {
+  const run = view._debug.run
+  const s = sim.doc.solids.find((o) => o.item === type)
+  const holder = view._debug.scene.getObjectByName(s.id)
+  if (!holder) return null
+  holder.updateMatrixWorld(true)
+  const inv = holder.matrixWorld.clone().invert()
+  let maxR = 0, zmin = 1e9, zmax = -1e9, ymin = 1e9, ymax = -1e9, xmin = 1e9, xmax = -1e9, meshes = 0
+  const v = new view._debug.THREE.Vector3()
+  holder.traverse((o) => {
+    if (!o.isMesh) return
+    meshes++
+    const pa = o.geometry.attributes.position
+    for (let i = 0; i < pa.count; i++) {
+      v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv)
+      maxR = Math.max(maxR, v.length())
+      zmin = Math.min(zmin, v.z); zmax = Math.max(zmax, v.z)
+      ymin = Math.min(ymin, v.y); ymax = Math.max(ymax, v.y)
+      xmin = Math.min(xmin, v.x); xmax = Math.max(xmax, v.x)
+    }
+  })
+  return { r: s.body.radius, meshes, maxR_minus_r_mm: +(1000 * (maxR - s.body.radius)).toFixed(2), x: [xmin, xmax].map((a) => +(a * 1000).toFixed(2)), y: [ymin, ymax].map((a) => +(a * 1000).toFixed(2)), z: [zmin, zmax].map((a) => +(a * 1000).toFixed(2)) }
+}
+window.rest = (type) => {
+  const s = sim.doc.solids.find((o) => o.item === type)
+  return sim.track.frames.filter((_, i) => i % 12 === 0).map((f) => [+f.t.toFixed(2), +(1000 * (f.placements[s.id].y - s.body.radius)).toFixed(2), +f.placements[s.id].x.toFixed(4), +f.placements[s.id].angle.toFixed(3)])
+}
+window.wide = async (name, t = T()) => { view.setOptions({ camera: "wide" }); view.frame?.(); view.render(t); view.render(t); return window.snap(name, t) }
+
+// ---- round-3 reviewer helpers: load any set of balls at any sizes (layout only, resting), shoot sheets
+window.loadSet = async (entries, { tw = 3.7 } = {}) => {
+  const items = [{ id: "table", type: "table", name: "Table", x: 1.3, y: 0, props: { width: tw, thickness: 0.15 } }]
+  let xx = -0.4
+  const P = {}
+  entries.forEach((e, i) => {
+    const r = e.d / 2
+    xx += r
+    const id = e.id ?? `b${i}`
+    items.push({ id, type: e.type, name: id, x: xx, y: r + 0.0009, angle: e.angle ?? 0, props: { diameter: e.d, ...(e.props || {}) } })
+    P[id] = { x: xx, y: r + 0.0009, r, type: e.type, d: e.d }
+    xx += r + Math.max(0.05, r * 0.7)
+  })
+  const sc = { ...scene, id: "rv-set", items }
+  const lay = await post("/api/layout", { scene: sc })
+  const placements = {}
+  for (const s of lay.doc.solids) placements[s.id] = { x: s.at.x, y: s.at.y, angle: s.angle ?? 0 }
+  const t0 = performance.now()
+  view.load({ key: "layout" + Math.random(), doc: lay.doc, track: { fps: 1, frames: [{ t: 0, placements }] }, summary: { goals: [], stories: [], events: [] }, resolved: lay.resolved }, null, { rebuild: true })
+  window.lastLoadMs = performance.now() - t0
+  window.P = P
+  window.LAY = lay
+  view.render(0)
+  return { P, warnings: lay.warnings, loadMs: window.lastLoadMs }
+}
+// camera at a ball instance: az (rad, 0 = front), el, k = distance in radii, fov
+window.camAt = (id, { az = 0, el = 0.1, k = 7.5, fov = 24, ty = 0 } = {}) => {
+  const p = window.P[id]
+  const D = p.r * k
+  view._debug.orbitCam.near = Math.max(0.0002, Math.min(0.05, p.r * 0.5))
+  view._debug.orbitCam.far = 60
+  window.cam(p.x, p.y + ty * p.r, 0, p.x + D * Math.sin(az) * Math.cos(el), p.y + ty * p.r + D * Math.sin(el), D * Math.cos(az) * Math.cos(el), fov, 0)
+}
+window.boundsOf = (id) => {
+  const s = window.LAY.doc.solids.find((o) => o.item === id)
+  const holder = view._debug.scene.getObjectByName(s.id)
+  if (!holder) return null
+  holder.updateMatrixWorld(true)
+  const inv = holder.matrixWorld.clone().invert()
+  let maxR = 0, zmin = 1e9, zmax = -1e9, tris = 0
+  const v = new view._debug.THREE.Vector3()
+  holder.traverse((o) => {
+    if (!o.isMesh || o.visible === false) return
+    const pa = o.geometry.attributes.position
+    tris += (o.geometry.index ? o.geometry.index.count : pa.count) / 3
+    for (let i = 0; i < pa.count; i++) {
+      v.fromBufferAttribute(pa, i).applyMatrix4(o.matrixWorld).applyMatrix4(inv)
+      maxR = Math.max(maxR, v.length()); zmin = Math.min(zmin, v.z); zmax = Math.max(zmax, v.z)
+    }
+  })
+  return { d_mm: +(2000 * s.body.radius).toFixed(1), out_mm: +(1000 * (maxR - s.body.radius)).toFixed(2), z_mm: [+(zmin * 1000).toFixed(2), +(zmax * 1000).toFixed(2)], tris: Math.round(tris) }
+}
+// outline ring drawn on the current canvas for every ball in P (projected circle), returns a canvas copy
+const overlay = () => {
+  const src = glc()
+  const c = document.createElement("canvas")
+  c.width = src.width; c.height = src.height
+  const g = c.getContext("2d")
+  g.drawImage(src, 0, 0)
+  const sx = src.width / src.clientWidth
+  g.lineWidth = Math.max(1, sx * 0.6)
+  g.strokeStyle = "rgba(0,255,90,0.95)"
+  for (const p of Object.values(window.P)) {
+    g.beginPath()
+    for (let i = 0; i <= 180; i++) { const a = (i / 180) * Math.PI * 2; const s = view.toScreen(p.x + p.r * Math.cos(a), p.y + p.r * Math.sin(a)); if (!s) continue; i ? g.lineTo(s.x * sx, s.y * sx) : g.moveTo(s.x * sx, s.y * sx) }
+    g.stroke()
+  }
+  return c
+}
+// shots = [{id, az, el, k, fov, ty, label, outline}] -> one sheet, cols wide, each tile tw x th
+window.sheet = async (name, shots, { cols = 3, tw = 640, th = 480 } = {}) => {
+  const rows = Math.ceil(shots.length / cols)
+  const big = document.createElement("canvas")
+  big.width = cols * tw; big.height = rows * th
+  const g = big.getContext("2d")
+  g.fillStyle = "#111"; g.fillRect(0, 0, big.width, big.height)
+  for (let i = 0; i < shots.length; i++) {
+    const s = shots[i]
+    window.camAt(s.id, s)
+    view.render(0)
+    const src = s.outline ? overlay() : glc()
+    // centre crop to the tile's aspect
+    const ar = tw / th
+    let sw = src.width, sh = src.height
+    if (sw / sh > ar) sw = sh * ar; else sh = sw / ar
+    g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, (i % cols) * tw, Math.floor(i / cols) * th, tw, th)
+    g.fillStyle = "#000a"; g.fillRect((i % cols) * tw, Math.floor(i / cols) * th, tw, 22)
+    g.fillStyle = "#fff"; g.font = "15px sans-serif"
+    g.fillText(s.label ?? `${s.id} ${window.P[s.id].type} d=${window.P[s.id].d}`, (i % cols) * tw + 6, Math.floor(i / cols) * th + 16)
+  }
+  return save(name, big.toDataURL())
+}
+window.snapNow = async (name) => { view.render(0); return save(name, glc().toDataURL()) }
+window.snapOutline = async (name) => { view.render(0); return save(name, overlay().toDataURL()) }
+
+window.addEventListener("error", (e) => (document.getElementById("info").textContent = "ERROR " + e.message))
+document.getElementById("info").textContent = list.map((t) => t.key).join(" ")
+view.render(T())
+window.ready = true
+</script>
+</body>
+</html>

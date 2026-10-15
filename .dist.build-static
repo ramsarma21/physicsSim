@@ -1,0 +1,1 @@
+dist/ is written by tools/build-static.mjs and wiped on every build (this file says so).

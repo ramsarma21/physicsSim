@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>R2 build costs</title></head>
+<body>
+<pre id="out">running</pre>
+<script type="module">
+// Reviewer's page: each item's cold model build in its own fresh iframe (r2-cost-one.html), then all of them in one page in catalog order.
+//   window.run(keys) -> rows; window.seq(keys) -> rows (sequential, one page)
+const all = "plank,steel-beam,ice-sheet,glass-sheet,rubber-mat,carpet-strip,concrete-slab,peg,bumper,funnel,staircase,wooden-rod,steel-rod,pendulum,seesaw,lever,hinged-gate,newtons-cradle,peg-board,fan,box,cup,bucket,basket".split(",")
+const once = (src) => new Promise((res) => {
+  const f = document.createElement("iframe")
+  f.style.cssText = "width:10px;height:10px;border:0"
+  const on = (e) => { if (e.source === f.contentWindow && e.data?.r2cost) { window.removeEventListener("message", on); f.remove(); res(e.data.r2cost) } }
+  window.addEventListener("message", on)
+  f.src = src
+  document.body.append(f)
+})
+window.run = async (keys = all, props = null) => {
+  const rows = []
+  for (const k of keys) rows.push(...(await once(`r2-cost-one.html?items=${k}${props ? "&props=" + encodeURIComponent(JSON.stringify(props)) : ""}`)))
+  document.getElementById("out").textContent = JSON.stringify(rows, null, 1)
+  return rows
+}
+window.seq = async (keys = all) => once(`r2-cost-one.html?items=${keys.join(",")}`)
+window.ready = true
+</script>
+</body>
+</html>

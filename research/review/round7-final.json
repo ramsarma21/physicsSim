@@ -1,0 +1,207 @@
+{
+ "surfaces": {
+  "final": {
+   "pass": false,
+   "verdict": "The round-8 MAJOR is fixed. I swept the gate and the pendulum over 160 combinations of item angle and start angle each (A from -135 to 180, start from -170 to 170), with the hanger on and off. The tracks are bit-identical, with 0 impacts against the hanger in every case. The low bar is level in the world. 'hanger-high' is built exactly when the world swing passes level, or when the bob would reach the low bar. The pictures show nothing that swings passing through the bar, the batten or the bearing, at 0\u00b0, mid-swing or the far end of the swing. Supporting checks: catalog_items parity 37,866 cases / 0 mismatches; core --mode server 21,995 / 0; test_rg PASS; test_catalog 139/139 pass; the pendulum-dominoes scenario is fine. Cold builds are 60-112 ms and models are \u2264 17.7k triangles. Small-swing periods match theory: gate 1.0376 s vs 1.0367 s; pendulum 1.4168 s vs 1.4166 s, also at L 0.1 m and 2 m. Most cheap minors are in: box eyes, bail hooks, funnel depth (in front of the room wall), wood repeats, cup seam and the smallest basket. One major problem in this group's own code remains, and the fix is cheap. The light rod or string (pendulum, Newton's cradle) is pivoted to the world and the heavy ball is welded under it, and planck's weld cannot hold the mass ratio. The cradle visibly comes apart at ordinary ball sizes, and the pendulum flies apart at the slider extremes. The fixer put this in needs_elsewhere as an engine problem, but I ran the engine directly (dense_track.ts) on an edited layout document. Pivoting the ball and welding the rod to it removes the stretch completely (0.00 mm) and leaves the periods unchanged. Screenshots: web/dev/shots/rv8-*.png and r8-surf-*-rv8-*.png.",
+   "findings": [
+    {
+     "item": "newtons-cradle and pendulum (catalog_items.py _hung_ball, shared)",
+     "severity": "major",
+     "where": "group",
+     "problem": "_hung_ball pivots the light rod or string to the world and welds the heavy bob under it. Planck's WeldJoint cannot hold the mass ratio (cradle: a 1 g string; pendulum: a 3-56 g rod), so the bob sags off the rod's end and the rod leaves the pin. Newton's cradle, worst gap between ball and string pivot: 2.2 mm at the default, 8.3 mm with 6 cm balls, 20.5 mm at 8 cm, 43.6 mm at 10 cm, 82 mm at 15 cm. In 3D the strings visibly end 2-8 cm above the balls (shots rv8-cradle10-34.png, rv8-cradle15-34.png). With 15 cm balls the cradle stops working: the last ball swings out 1.4 cm instead of about 12.6 cm; with 10 cm balls, 12.3 cm instead of 14.2 cm. Pendulum: 6.5 mm sag at L 0.5 m with a 10 kg bob. At L 0.1 m with 10 kg the rod top sits 18.5 mm off the hanger's pin and the bob 39 mm off the rod's end; the amplitude grows from 5\u00b0 to 15\u00b0. At L 0.1 m, 10 kg, 30 cm bob the pendulum blows apart: the bob flies 0.74 m off the pivot, starting from a 5\u00b0 release. These are ordinary slider values, so the items are wrong at those settings.",
+     "fix": "In _hung_ball (Python, and its port in web/sim/catalog-items.js), put the pivot on the BOB: the bob is the root, at its world point, with angle = the start angle and pivot {x: 0, y: L} in its own frame. The rod or string becomes the child: parent = the bob, at (0, L/2), angle 0. Keep the part names so the models and the view need no change. I applied exactly this edit to the /api/layout documents and ran research/poc/dense_track.ts on them. Stretch is 0.00 mm in every case: pendulum L 0.1/10 kg/30 cm at 5\u00b0 and 170\u00b0, L 0.5/10 kg; cradle with default, 10 cm and 15 cm balls. The cradle's last ball then swings out 15.4 cm (default) and 12.6 cm (15 cm balls). Pendulum periods are unchanged: 1.4406 s vs 1.4409 s at 30\u00b0, and the decay matches. Then re-run test_catalog, the parity tools and the pendulum-dominoes scenario. The engine-level alternative (welded parts as fixtures of one compound body) can still follow."
+    },
+    {
+     "item": "pendulum, hinged-gate (engine revolute joint)",
+     "severity": "major",
+     "where": "elsewhere",
+     "problem": "Large swings lose energy far faster than in reality, with no damping set. Half-swing peaks: pendulum 90\u00b0 gives 88.5, 87.1, 85.8; 150\u00b0 gives 141.0, 134.2; gate 150\u00b0 gives 137.6. The first period is therefore 14% (gate 150\u00b0) to 33% (gate 170\u00b0) short of the elliptic-integral theory at the start amplitude. The fixer partly attributed this to air drag; it is not air drag. A steel gate at 150\u00b0 still loses 8.8\u00b0 in its first half swing (11x the mass for the same drag area), and the pendulum loses the same with a 0.5 kg or a 10 kg bob (9.0\u00b0 and 9.3\u00b0 at 150\u00b0). The loss fraction scales with \u03c9\u00b2 (0.47% per half swing at 30\u00b0, 2.6% at 90\u00b0, 4.8% at 150\u00b0), the signature of velocity projection in the revolute constraint at dt = 1/480 s. Swapping which part carries the pivot does not change it.",
+     "fix": "Engine batch (tooling/src/sim/physics.ts): substep or use more velocity iterations for pinned bodies, or project energy for revolute joints. Target: under 0.05% energy loss per period with no damping set. Nothing for this group to do."
+    },
+    {
+     "item": "hinged-gate model (rods.js): hinge pin on thin gates",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The 'pivot pin scaling on thin planks' minor is not done for the gate. The gate's own pin is a fixed pinZ(0.0016) in both the wood and the sheet-metal branch, while its knuckles shrink as eyeR = min(2.8 mm, 0.16\u00b7th). Below 10 mm thickness the pin is fatter than the eyes that hold it. At th = 3 mm the 3.2 mm pin is wider than the plank, stands 1.1 mm above its top end and shows end-on as a grey disc behind the gate's top (rv8-gate-thin-pivot-c.png, rv8-gate-thin-pivot-b.png). The lever and the seesaw already scale their pins.",
+     "fix": "Scale the pin with the plank as the lever does, e.g. pr = min(0.0016, 0.3\u00b7th, 0.8\u00b7eyeR), with its centre at most pr under the top end. Use the same pr in the hinged-gate 'hanger-high' model (its pin's back end and nut), and keep the knuckles at least pr + 0.3 mm."
+    },
+    {
+     "item": "bucket model (containers.js), wooden look, tapered (bottom_ratio 0.3)",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The varnished-hardwood pail turned on the lathe shows one hard vertical texture seam down the back, with a knot cut in half on it (rv8-pailwood-taper-back.png). The rest of the wall is continuous, so the seam reads as a texture joint, not a stave joint. The galvanised pail at the same taper has no visible seam or shear (rv8-pail-taper-back-close.png).",
+     "fix": "Make the grain tile a whole number of repeats around the circumference at both the rim and the base, or slide the knot field off the u = 0/1 seam (no knot within one knot radius of it), or hide the seam under a stave joint line."
+    }
+   ]
+  },
+  "needs_elsewhere": [
+   "View (web/view3d.js, rest fix): a static part resting on the table is lifted 1 mm onto the drawn tabletop, but the hinged part it carries is never moved. The pivot hardware drawn on the static part therefore sits 1 mm above the hinged part's axis (lever fulcrum vs plank, seesaw block vs plank). I worked around it in the models: thin-plank pins are capped at th/2 - 1.2 mm. The proper fix is to lift both by the same amount.",
+   "View, test page only: with show(..., fixed: true) the static seesaw or lever plank is also lowered 1 mm as a resting slab while its fulcrum is raised 1 mm, so the pivot looks 2 mm off. With a dynamic plank (the app) only the 1 mm offset above remains.",
+   "Engine batch (tooling/src/sim, not touched): explicit spring damping blowing up light parts, and the point pulley letting anchors pass the wheel, as given in the brief.",
+   "Parity, other groups: fuzz-live --n 300 currently fails on scenes containing 'egg' (a TypeError in web/sim/items.js summarize, which has a placement missing). There are also unported changes in catalog_mechanisms and catalog_everyday (spring-gate start_angle, the egg description, material hashes), and catalog_mechanisms.py changed during the run. None involve catalog_items types: catalog.mjs --module catalog_items gives 0 mismatches out of 37,866.",
+   "Catalog cards (thumbs3d.js, app agent): no change needed. Cards rebuild from the same models, so only some default looks move slightly: steel items (the new mill scale), the lever fulcrum (now 72 mm deep), and glass cup and funnel shadows.",
+   "Engine (tooling/src/sim/physics.ts:277): a part with a parent and no pivot is welded with a planck WeldJoint. A heavy bob welded to the light pendulum rod (mass ratio up to about 5000:1) stretches the chain. 10 kg bob, L 0.5, 30\u00b0: 5.7 mm. 90\u00b0: 10.8 mm. L 0.2: 15.8 mm. L 0.1 at 140\u00b0: the bob flies 0.4-0.66 m off the pivot, with the hanger on or off. These were the only 4 differences in 350 hanger-on/off sweep cases. Fix: make welded parts fixtures of the parent's body (one compound body), or raise the iterations.",
+   "Engine (from the review): pin-joint swings lose about 0.11\u00b0 of amplitude per half swing with no damping set. Gate 150\u00b0 falls to 137.6\u00b0 within 3 s. Target is under 0.05% energy loss per period.",
+   "Engine (from the brief): explicit spring damping blowing up light parts, and the point pulley letting anchors pass the wheel. Not touched.",
+   "View (web/view3d.js, from the review): the rest fix lifts a resting static base 1 mm but not the hinged part on it, so pivot hardware sits up to 1 mm off the axis.",
+   "View (optional): a dynamic part's world pivot with no static carrier (hanger switched off) gets no mount. It could get a bearing on a post behind the swing.",
+   "Other groups' ports are out of sync right now (not my items). fuzz-live --n 300 crashes in web/sim/items.js summarize on every scene that has 'egg': JS builds p/egg-end where Python builds p/egg. catalog type 83 (egg) differs. spring-catapult materials ('varnished hardwood [0d6f89]', 'steel [dadcf7]' contacts) differ. motor-spinner differs. The atwood scenario differs. Scenario wrecking-ball story 'brick1 doesn't move' fails (mechanisms).",
+   "CONTRACT.md (shared): it could document the new hinged-gate/pendulum part 'hanger-high' (a static bar beyond the swing's reach, stand post/wall, its model hanging a batten behind the swing to the hinge) and that the low hanger is now level in the world. I left the contract unedited."
+  ]
+ },
+ "everyday-silhouettes": {
+  "final": {
+   "pass": true,
+   "verdict": "The major is fixed. An egg typed wider than it is long now builds, resolves and draws as the egg exactly as wide as it is long.\n- **Live server:** 57x65, 57x74.1 and 11.4x220 resolve to width 57 and 11.4. They give the same solids as the as-wide-as-long egg, and the 3D shells are identical in the overlay (olcheck out 0.12 mm).\n- **Thin limit:** a width under 0.55 of the length now resolves to 0.55 x length (57x8.8 builds 57x31.35).\n- **Tests:** test_rg.py PASS; test_everyday.py PASS, 38 of 38 types. No built-in scenario uses the egg.\n- **Rests against theory:**\n  - 57x44 hen's egg rests at 188.82 deg (true 188.85).\n  - 57x31.35 rests at 184.08 (true 184.09).\n  - 57x57 side rest at 205.76 (true 205.66); stood on its blunt end it stays at 90.0.\n  - A 57x65 egg dropped 20 cm at 45 deg on the live server ends stood on its blunt end at 90.0 deg, still by 8 s.\n- **Stress sweep:** 270 drops covering 0.5 g / 57 g / 570 g, the slider corners, the clamped wide and thin eggs, 3 cm and 50 cm, 5 angles. No explosions: no speed above free fall, welds within 0.43 mm. Eggs lighter than the air they push aside (0.5 g at 140 mm and up) rise, which is correct.\n- **Model:** cold build 19 to 22 ms, 9,216 triangles, at every size.\n\nWhat remains is minor or belongs to other groups:\n- the egg's weight does not follow its size;\n- the outline is more than 1 mm off above 2x size;\n- rocking is too fast and too short, because the rests are built as corners (needs an engine shape);\n- small eggs are held off their rest by the engine's 0.5 mm contact margin;\n- the shell sinks into the tabletop (view3d);\n- the inspector shows the typed width, not the built one;\n- web/sim has not been ported yet, so the browser version still builds the old egg.",
+   "findings": [
+    {
+     "item": "egg weight vs size",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The egg keeps 57 g at every size. At 285x220 it is 6.9 L of egg at 57 g, about 8 kg/m3, and air buoyancy (8.3 g) is 15 % of its weight. At 11.4x8.8 it is 0.44 cm3 at 57 g, about 129,000 kg/m3, 6 times denser than osmium. The Weight slider stops at 0.57 kg, so an ostrich-size egg (150x130, about 1.4 kg real) cannot be given its real weight. A real egg's weight follows its volume (about 1030 kg/m3).",
+     "fix": "In catalog_everyday.py make mass an auto prop that follows length x width^2, as ball_type does for a ball's diameter: 57 g x (L/0.057)(W/0.044)^2. Raise its top to the 285x220 egg's weight (about 7.4 kg); a slider_max can keep the slider usable. Port it in the Resync."
+    },
+    {
+     "item": "outline fit above 2x size",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The model rule is to fill the outline within about 1 mm. At 285x156.75 the shell misses the physics outline by 3.96 mm and sticks out 3.97 mm (olcheck). At 285x220 it is 3.18 short and 3.48 out, part of which is the view's lowering. Most of it is at the tip piece's lower chords, so other things would contact the egg up to about 4 mm away from the drawn shell there.",
+     "fix": "Past about 2x size, add pieces as the egg grows: split the middle piece, or give the tip more corners, so every chord stays within 1 mm. Or cap the size sliders at 2x and say why."
+    },
+    {
+     "item": "width range wording",
+     "severity": "minor",
+     "where": "group",
+     "problem": "The description and width help say the width goes from 0.55 of the length to the length, 'as real eggs are'. The width slider's own 8.8 to 220 mm range overrides that at the ends of the length slider. At 11.4 mm long the narrowest egg is 0.77 (8.8 mm). At 285 mm long the roundest is 0.77 (220 mm). A round egg is possible only up to 220 mm long, and a thin one only from 16 mm long. Also, the roundest real eggs are about 1.1 times as long as wide, not 1.0.",
+     "fix": "Widen the width prop to about 0.0063 to 0.285 m so both limits are reachable at every length, or state the slider limits in the help. Say that 'as wide as long' is the roundest the egg is built, slightly past real eggs."
+    },
+    {
+     "item": "rocking dynamics (rest corners)",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "The rests are built as corners: two balls crossing at the rest, or the flat's two corners. A real egg's rests are smooth curves.\n- **Too fast at small swings:** the 57x57 egg tipped 3 deg off its side rest rocks with a period of about 0.23 s; theory (from the true curve) is 0.63 s. The 57x44 half-period is 0.096 s against 0.19 s.\n- **Hen's egg dies out too fast:** from 8 deg it swings to -3.2 deg, then +0.8 deg, and stops in 0.25 s.\n- **Round egg swings too far:** from +8 deg it swings to -13.3 deg. A real egg without losses can reach only -8.2 deg, because near the rest the built shape is 0.3 to 0.5 mm off the curve where the true dip is only 0.1 mm deep. The engine does conserve energy for the shape as built (that shape gives -13.65 deg).",
+     "fix": "Engine batch: a smooth convex body (a rounded polygon or capsule) or a contact margin that scales with body size. Then rebuild the egg's rests on smooth arcs. A smooth rest cannot be built from Box2D balls or polygons: its curvature radius (42.5 mm on the hen's egg) is larger than its distance to the centre of gravity, so any such ball would stick out of the egg."
+    },
+    {
+     "item": "small eggs held off their rest",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "The engine's 0.5 mm contact margin holds eggs set near their rest.\n- **Smallest egg:** 11.4x8.8 set 8 or 15 deg off its rest stays 8.0 or 11.3 deg off.\n- **Small round egg:** 11.4x11.4 dropped 50 cm onto its blunt end ends 12 deg from a true rest.\n- **Default size:** even 57x44 and 57x31.35 set 3 deg off stay 2.0 deg off.\n- **Skin:** the fixed 1 mm polygon skin makes an 11.4 mm egg collide as if about 2 mm (18 to 23 %) bigger than it is drawn.",
+     "fix": "Engine batch: a contact margin and skin that scale with the body's size (already partly listed by the fixer, who measured 3 to 7 deg; the worst I measured is 11 to 12 deg at 11.4 mm)."
+    },
+    {
+     "item": "shell sinks into the tabletop",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "The view lowers the egg's resting middle piece by its gap. The shell then sits below the drawn tabletop (1 mm) by 0.5 mm at 57x44, about 0.4 mm at 57x31.35 and about 2.6 mm at 285x220 (shell bottom -1.59 mm). The model already gives userData.restGrow, but the view does not use it.",
+     "fix": "web/view3d.js about line 3308: dynRest(s, mdl.userData?.restGrow ?? 0), as the fixer asked."
+    },
+    {
+     "item": "inspector shows the typed width",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "A typed 65 mm at a 57 mm length still shows 65 mm while the egg is built 57 mm wide; a typed 8.8 mm shows 8.8 while it is built 31.35 mm. The size handle also sits at the typed width, away from the shell.",
+     "fix": "inspector.js and editor.js: show the width from resolved, and place the size handle from resolved props."
+    },
+    {
+     "item": "web/sim port out of date",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "web/sim/catalog-everyday.js still builds the old egg: no 0.55 limit, the old ball root, the old carrier margin, and _egg_outline rounding after the hull. A static deploy (browser backend) would still have the thin eggs that leapt off the table, the small round eggs that flew apart, and the 25.4x14 build failure.",
+     "fix": "Resync: port the listed Python changes in the exact order the fixer gave, then run tools/parity (catalog.mjs with catalog_everyday, then fuzz-live)."
+    }
+   ]
+  },
+  "needs_elsewhere": [
+   "Resync (web/sim/catalog-everyday.js; it was synced at 07:17, before these changes). (1) _fruit.build_egg: at the top, `if (P.width > P.length) P.width = P.length`, mutating P, which is the resolved entry, then go straight to _egg_outline when the ball fit is None (no chain fallback). Update its comments, the egg type's width prop help (a 4th _len argument), the description and the source text, all exactly. (2) _egg_build_balls: no per-ball y offset (every ball keeps the fit's y; mirrored balls get -y); dy = 0.08 * min(sx, sy); sh_ = _shares(base, [[1]*n, xs + [g], ys + [0.0]], [1.0, g, dy]); Ip gets '- dy * dy' at the end; update the docstring. (3) Remove EGG_WINDOW, _egg_spiral, _egg_chain, _egg_chain_at, _egg_chain_cached, _egg_bands and _egg_build_chain. (4) Docstring-only changes in _egg_crit and _egg_balls. Then run tools/parity/run.sh, node tools/parity/catalog.mjs and node --no-warnings tools/parity/fuzz-live.mjs --n 300. Note: `node tools/parity/catalog.mjs --module catalog_everyday --quick --no-browser` already crashed before my change, at [catalog] (TypeError reading 'filter', catalog.mjs:398).",
+   "Engine (tooling/src/sim/physics.ts), contact slop plus sleep. A ball within 0.5 mm of the table is in the contact manifold, and Box2D's velocity constraint stops it approaching, so two nearby balls act as a base. A body turning slower than 2 degrees/s for 0.5 s falls asleep. Together they hold round eggs of 40 mm or less 4 to 11 degrees off their rests (6 to 49 microns of centre-of-gravity height), and they would make any Coulomb rolling resistance hold an egg at a top. A smaller linear slop, or speculative contacts that allow approach up to the true surface, would fix it.",
+   "Engine: angular damping for a free (unpivoted) solid. Today `damping` acts only on pivoted parts. Box2D's body.setAngularDamping on the egg's root, standing for a raw egg's liquid contents, would let round eggs settle in 1 to 2 s instead of 4 to 26 s without holding them at tops.",
+   "Engine (still open): a collision filter so one weld assembly never collides with itself. The ball egg would then not need its hidden pins.",
+   "web/view3d.js (still open): in the model branch use dynRest(s, mdl.userData?.restGrow ?? 0). Measured now: the default hen's egg shell sits 1.5 mm into the tabletop (olcheck 'out' 1.49 mm at y 0.5 mm), and 3.3 mm at 285 x 220. A ball egg's restGrow is now 0.",
+   "web/inspector.js and web/editor.js (optional, owners' call): the inspector box and the size handle show the typed width. When the egg's builder caps it (resolved width smaller than the item's own width), showing the resolved width or a short 'built as wide as long' note would avoid confusion. Only the egg does this.",
+   "Resync (web/sim/catalog-everyday.js): port the Python changes below, then run tools/parity. Until then the browser backend builds the egg the old way. Exact order to follow in the hen's egg build: the solids are egg (the root, c.poly at the origin), then egg-end (_weld_ball to the root at (cb, off)), then egg-tip and egg-cap (_weld_poly to the root at (0, 0)), each tip/cap followed by its pin joint egg-hold1 or egg-hold2 (a = egg-end, b = that piece, anchorA (0, 0), anchorB (round(cb, 5), off), render {hinge: 'none'}). The c.mat calls run in that same order: middle piece, ball, tip, cap. The width limit is the plain product EGG_MIN_WIDTH * length, not rounded.",
+   "web/view3d.js line 3308: use dynRest(s, mdl.userData?.restGrow ?? 0) instead of dynRest(s, 0). The hen's egg shell still sinks into the tabletop: olcheck 'out' is 1.48 mm at 57 x 44, 1.10 mm at 57 x 31.35 and 3.97 mm at 285 x 156.75, all at the contact patch.",
+   "inspector.js / editor.js: show the resolved width. There are now two limits: a typed 8.8 mm at a 57 mm length shows 8.8 while the egg is built 31.35 mm wide, and a typed 65 shows 65 while it is built 57.",
+   "Engine (contact margin at small scale): eggs under about 30 mm set down level stop 3 to 7 deg short of a shallow side rest. 14 x 11.55 stops at 274.4 to 275 deg against the true 281.0 (the next ball is 0.41 mm above the table, inside the 0.5 mm margin, so the solver props it). 14 x 10 hen's egg: 270.2 against 277.1. 28.5 x 21.4: about 4 deg short. 40 mm and longer: within 0.01 deg. Mass makes no difference. Box2D's 0.5 mm contact margin is fixed in size, so on small parts it holds them up.",
+   "Engine: angular damping on free bodies, for the long settle of large round eggs (unchanged, already listed). A smooth convex shape (or capsules / rounded polygons) is still needed for exact rocking of round eggs."
+  ]
+ },
+ "mechanisms": {
+  "final": {
+   "pass": false,
+   "verdict": "Not passed. Three of the named majors are fixed. The catapult no longer has an invisible catch: at the table's edge with 20 N/m and a baseball, the arm rests on the drawn base corner (logged base\u2013arm contact, 38.4\u00b0), short of the slot-floor limit at 50.2\u00b0. The pendulum bob's weight now follows size \u00d7 density unless the user types one: steel 0.514 kg, wood 0.046, aluminium 0.177; a typed 10 or 112 kg is built exactly. The period is 1.4436 s against 1.4432 s theory, and the 30 cm bob matches the physical-pendulum formula. The Atwood machine now uses one wheel spanning both runs (wr = d/2, render.wheel single) and accelerates at 1.961 against 1.962 m/s\u00b2. In my 32-run grid of mass ratios (1.1:1 to 60:1, drops 0.1\u20132 m) it shows 0.0\u00b0 tilt and never enters the rim. The motor spinner now shows a retort stand, or a wall bracket above 1.3 m, and turns at 6.283 rad/s. Checks: test_rg PASS, test_mechanisms 58/58 PASS, cold builds 31\u201347 ms, at most 13.1k triangles. Three group-fixable majors remain. (1) The pulley lift was only half fixed. With a heavy pail and a light weight, the 50 g weight is yanked up to its wheel and tumbles into it: 458\u00b0 with a 30\u00d730 pail, 63\u00b0 with a 30\u00d720 pail, ending 6\u201314 mm inside the drawn wheel. This happens at item y between 1.6 and 2.3 m, which the stage allows. The fixer's grid runs at y = 1.2, where heavy pails land on the table first, so it never reaches this case. (2) A motor spinner added from its catalog card lies on the table and never turns. (3) The spring caps still let a small bounce pad create energy: a steel ball bounces higher than it was dropped.",
+   "findings": [
+    {
+     "item": "pulley-lift",
+     "severity": "major",
+     "where": "group",
+     "problem": "The weight-jam case (pail heavier than the weight) has no stop under the pail. Only 'jam-pail' exists, which sits under the weight for the opposite case. The 50 g weight is therefore yanked up at about 3 m/s and pushed past its single _jam ball into the wheel. Measured runs: (a) pail 0.3\u00d70.3 m, weight 0.05 kg, drop 0.5, item y 1.6, 1.8 or 2.3: the weight turns 458\u00b0 and ends at 422\u00b0, 14 mm inside the drawn wheel (snapshot web/dev/shots/r8rev-lift-tumble-*.png). (b) 0.3\u00d70.2 m: turns 63\u00b0, ends at \u221236\u00b0, 6\u201311 mm inside, top 2 mm under the axle. (c) 0.25\u00d70.25 m at drop 0.7: 14.5\u00b0, 8 mm inside. (d) 0.3\u00d70.1 m at drop 1.0: top ends 1 mm above the axle. (e) After the yank the pail also keeps swinging: 0.15\u00d70.2 m with 0.05 kg at drop 1.0, y 2.3, still swings 15\u00b0 in the last 0.5 s; 0.2\u00d70.2 m swings 11\u00b0. At 0.08 kg and above nothing tumbles. This is the same 50:1 class the fixer fixed for the Atwood machine with plates. The 27-run LIFT_GRID runs at y = 1.2, drop 0.5, where every heavy pail lands on the table before the weight reaches its wheel, so it never covers this.",
+     "fix": "In build_lift, mirror build_atwood: add a hidden dead steel plate under the pail's root floor (bounce 0), placed where the floor is when the weight's top reaches its jam, raised by v\u00b7STEP. Build it only when the pail outweighs the weight, and build 'jam-pail' only when the weight outweighs the pail. Add grid rows at y \u2265 1.6 (weight 0.05 and 0.08 kg \u00d7 pail widths 0.2\u20130.3 \u00d7 heights 0.1\u20130.3) that assert weight tilt < 3\u00b0, no entry into the drawn rim (centre gx + wr \u2212 0.004, radius wr \u2212 0.0005), and the pail's late swing < 3\u00b0. List build_lift for the JS resync."
+    },
+    {
+     "item": "motor-spinner",
+     "severity": "major",
+     "where": "group",
+     "problem": "A spinner added from its card (Add or click) does not work. app.js restY stands the preview's lowest point on the table, and that point is the underside of the horizontal paddle. The shaft therefore ends up 11 mm above the table and the paddle lies on it. Over 3 s at +60 or \u221260 rpm the paddle turns 0.0\u00b0, stalled against the table. No stand is drawn, because the hub counts as resting on the tabletop. The drawn 31 mm motor can sinks about 4.5 mm into the tabletop (snapshot r8rev-spin-addplace.png). The new support only shows when the user drags the item up into the air.",
+     "fix": "In build_spinner, start the paddle upright: langle 90 with the pivot unchanged, so the preview footprint reaches L/2 below the shaft. Add then puts the shaft at L/2 + 1 mm, the paddle's corner circle clears the table, and the retort stand is drawn. Alternatively, have app.js restY use a rotating part's swept circle (elsewhere). Add a test that places the spinner at its restY and checks it turns at its set speed."
+    },
+    {
+     "item": "bounce-pad (spring caps: _spring_cap)",
+     "severity": "major",
+     "where": "group",
+     "problem": "The stiffness cap (k\u00b7\u03bb\u00b7dt\u00b2 \u2264 1.44, i.e. \u03c9\u00b7dt = 1.2 for the plate alone) is not stable once a ball presses on a light plate. Measured bounces of a ball dropped 30 cm: (a) 6\u00d710 cm plate, stiffness 10000 (built 7214 at the cap), default damping 0.5: a steel ball dropped from 0.417 m rises to 0.627 m. (b) The same plate at k 5000: peaks 0.424 \u2192 0.475 \u2192 0.578 m, rising each bounce. (c) 6\u00d72 cm plate (4.3 g) at any stiffness \u2265 1442 with damping 20: steel ball 0.417 \u2192 0.648 \u2192 1.137 \u2192 2.029 m; golf ball 0.425 \u2192 0.646 \u2192 0.826 \u2192 1.564 m. On the third bounce the plate is knocked 22\u00b0 and the ball thrown sideways. (d) 12\u00d72 cm plate at k 10000, c 20: 0.417 \u2192 0.613 \u2192 0.948 \u2192 1.836 m. In short, a ball bounces higher each time on a bounce pad. The gain starts near \u03c9\u00b7dt \u2248 0.85 for a 22 g plate. The damping cap alone does not prevent it; the stiffness cap does not either.",
+     "fix": "Until the engine's implicit springs land, tighten _spring_cap's stiffness bound to about k\u00b7\u03bb\u00b7dt\u00b2 \u2264 0.36 (\u03c9\u00b7dt \u2264 0.6). Re-check the trampoline: the fixer found stiffness \u00d7 0.5 keeps the 30\u00d75 cm, 30 g, 3000 N/m mat with a bowling ball under 5 m/s, against 253 m/s now. Add a pad grid (width 0.06 and 0.12 \u00d7 depth 0.02 and 0.1 \u00d7 max stiffness \u00d7 steel and golf ball, dropped 30 cm) that asserts no bounce peak above the drop height. Keep the engine item in needs_elsewhere."
+    },
+    {
+     "item": "atwood-machine / pulley-lift hidden plates",
+     "severity": "minor",
+     "where": "group",
+     "problem": "Both Atwood plates are always built, though only the heavier weight's plate is ever used. The pulley lift's 'jam-pail' is also built when the pail is the heavier side. With the default Add placement (Atwood bar at 0.90 m), 'stop-right' sits 7\u201310 mm above the tabletop under the light weight. Golf, tennis and steel balls rolled toward it from the right each hit this invisible plate twice and hop over it. Separately, the light weight always stops 1\u20137 mm short of the wheel's rim because the heavy weight lands on its plate first: 0.5:3 kg at a 2 m drop stops 7 mm short, and in the atwood scenario the heavy weight rests on its plate 4 mm above the tabletop.",
+     "fix": "Build only the plate the falling side can land on. For the 1\u20137 mm gap and the 4 mm hover, raise the plate by a little less, or accept as cosmetic."
+    },
+    {
+     "item": "spring-launcher extremes",
+     "severity": "minor",
+     "where": "group",
+     "problem": "Not touched this round, but these are reachable slider extremes. A 6 cm plate at max stiffness (built 2229) and compression 0.45 throws a ping-pong ball at 202 m/s and a golf ball at 78 m/s. The bare plate oscillates at 49\u201399 m/s in a 16 ms period, which looks like a blur. The default 16 cm plate at k 5000 and compression 0.45 reaches 54\u201385 m/s. This is consistent with a massless spring storing \u00bdkx\u00b2 = 225\u2013506 J, but no real 50 cm table spring would do it.",
+     "fix": "Cap the stored energy \u00bdkx\u00b2 relative to plate plus spring mass, or give the spring an effective mass (about a third of a realistic spring mass) in the energy budget. Alternatively, limit compression \u00d7 stiffness."
+    },
+    {
+     "item": "spring-catapult residuals",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "Long arms on weak springs keep swinging: a 0.8 m arm on a 0.6 m post at 20 N/m with a baseball still swings \u00b19\u00b0 at 3 s, \u00b15\u00b0 with a bowling ball. The \u03b6 = 0.2 spring damping that stands in for pin friction costs about 30% of the throw energy (default golf-ball throw 4.2 m/s against 5.0 without it). At the table's edge the arm rests on the base corner with a visible 2.5 mm contact-skin gap, because hinged parts are never lowered by the view.",
+     "fix": "Engine pin friction (already in needs_elsewhere), then return the catapult's damping to the spring's own. The view's resting-gap rule could also cover a hinged part resting on a static one."
+    },
+    {
+     "item": "pulley-lift pail landing",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "Because the engine's pulley is an equality constraint, the rope pushes. When a pail heavier than the weight lands, the still-rising weight drives the crown down. A 15\u00d730 cm pail with 0.3 kg at drop 1.0 (y 2.3) tilts 14\u00b0 and slides 57 mm. A 20\u00d730 cm pail with 0.1 kg ends leaning 30\u00b0 against its rope.",
+     "fix": "Engine pulley minimum rope-end length (an inequality), already in needs_elsewhere."
+    },
+    {
+     "item": "rope-pendulum",
+     "severity": "minor",
+     "where": "elsewhere",
+     "problem": "(1) A pendulum added with the Add button rests its bob on the table at its 30\u00b0 start and never swings. app.js restY stands the start pose's lowest point on the tabletop. Wrecking ball and swing are likely the same; not run. (2) The engine's rope loses much more energy than air drag would. A 0.5 m rope with a 5 cm steel bob from 90\u00b0 drops to 78\u00b0 in 7 s (21% of the energy, against about 1% drag). A 30 cm, 111 kg bob on a 0.19 m rope from 81\u00b0 drops to 65\u00b0 in 6 s (34%). (3) The 111 kg, 30 cm steel bob still hangs on a 3 mm rope from an 8 cm wooden hanger on a lab retort stand.",
+     "fix": "(1) app.js should place swinging items by the bottom of their swing, or the type should give a sweep hint. (2) Engine rope-joint dissipation. (3) Scale the rope and hanger with the bob's weight, or cap the steel diameter."
+    }
+   ]
+  },
+  "needs_elsewhere": [
+   "Engine (tooling/src/sim), pulley joint: it has no rope-end stop. planck's PulleyJoint is an equality constraint whose ends can pass the ground points. Please add a per-side minimum length, for example `minLengthA/minLengthB` on the doc pulley, solved inside the joint as an inequality, or as an internal undrawn RopeJoint from groundA to anchorB with maxLength = constant - minLengthA. Then a body hauled to its wheel stops at the joint level whatever the mass ratio. The catalog's contact stops (hidden balls) depend on the light body's contact holding the heavy side's momentum through the pulley. They fail at 60:1 (Atwood 3 kg against 0.05 kg) and on the pail side.",
+   "Engine, welds: welded children (`parent` without pivot) are separate bodies joined by WeldJoints, and these give under a hard knock. The pail's 11 g ferrule and its 3 mm wire bail pieces get pushed through static stops by the 61 g floor body plus a 1 to 3 kg falling weight. Merging welded parts into one multi-fixture body would make stops on any welded part reliable (pail, cars, chains).",
+   "Engine, springs: make spring force and damping implicit (or substep). Then the catalog caps in _spring_cap (damping\u00b7\u03bb\u00b7dt \u2264 1, stiffness\u00b7\u03bb\u00b7dt\u00b2 \u2264 1.44) can be lifted. Separately, a 7 kg bowling ball dropped from 0.9 m on a 30 cm, 30 g trampoline mat flips the mat (22 to 27 m/s at about 2.5 s) even at stiffness 300 and damping 0. The old code does the same. This is heavy-on-light contact (240:1), not the springs.",
+   "Engine, hinges: pin joints with limits have no damping or friction (dampPivots only covers solid `pivot`s). Hinge friction would settle the long catapult arm that oscillates about its over-centre balance.",
+   "Resync (web/sim/catalog-mechanisms.js): port every function in python_functions_changed. Note one coupling: web/models/mechanisms-springs.js now expects the catapult post slab to be H0 + 0.009 tall with the pivot 9 mm under its top. Until build_catapult is ported, the browser engine (static deploy) draws the catapult pivot lug 9 mm low. The motor-spinner hub model is unused until build_spinner is ported. The new solids are: atwood wheel (raised), jam-left, jam-right; pulley-lift wheel1, wheel2 (raised), jam-weight, jam-pail1, jam-pail2, knot (welded, hidden); motor-spinner hub (depth3d, stand) and paddle pivot+parent. Also port the rope-pendulum bob_mass auto prop with wall shells. Then run tools/parity/run.sh, catalog.mjs and fuzz-live.",
+   "web/CONTRACT.md (doc): document the motor spinner (static 'hub' ball with depth3d and stand, pin joint with motor and render.hinge 'none', paddle pivot+parent hub with `at` in the hub's frame). Document the pulley jam stops: hidden dead steel balls jam-*, a raised hidden wheel disc, and the pail's hidden welded 11 g ferrule 'knot'. Document the rope-pendulum bob_mass auto prop and its hollow shell for lighter typed weights. Document the spring caps written into resolved.",
+   "ai/catalog-digest.mjs line 294 (AI builder, not mine): the motor-spinner entry says 'Pinned to the world at its middle'. It is now pinned to its motor's shaft (a static hub on a stand).",
+   "web/catalog-ui.js placeholderPreview (flat stand-in card, shown before the 3D photo): it does not skip hidden_3d solids, so the pulley items' hidden wheel discs and jam balls appear as flat circles until the 3D photo replaces them.",
+   "Engine (tooling/src/sim/physics.ts): build a weld group as one compound body, or at least stop collisions between all members of one weld group. The pulley-lift now avoids the problem with 2.5 mm gaps and a heavy root part, but any welded assembly whose non-adjacent pieces touch still fights itself. The leftover 15\u201333\u00b0 pail swing after a 2 m yank comes from the welds being solved one after another.",
+   "Engine pulley joint: give the pulley a minimum rope-end length (an inequality, so a rope end cannot pass the wheel). The current constraint is an equality, so the rope can push: a pail landing on the table stops its rising weight through the rope. The catalog now stops the falling body on hidden plates (pulley-lift 'jam-pail'; Atwood 'stop-left' / 'stop-right'). With an engine minimum length those plates could go.",
+   "Engine springs: implicit (or sub-stepped) spring damping and stiffness. The trampoline at its extremes with a bowling ball gains energy up to 253 m/s even under _spring_cap. The current catalog cap is c\u00b7\u03bb\u00b7dt \u2264 1 and k\u00b7\u03bb\u00b7dt\u00b2 \u2264 1.44 for the lightest part (\u03bb from _rate); the catapult's new damping uses at most c\u00b7dt\u00b7s\u00b2/I = 0.066.",
+   "Engine pin joints: no friction. The catapult's pin losses are modelled as spring damping (\u03b6 0.2), which also takes about a sixth off the throw speed. Friction on a pin joint would let the arm settle without slowing the throw."
+  ]
+ }
+}

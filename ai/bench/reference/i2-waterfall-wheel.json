@@ -1,0 +1,207 @@
+{
+ "case": "i2-waterfall-wheel",
+ "notes": "all four marbles end in the bucket (chute lift 0.009 m, rise 0.08 m, bucket 0.45 m wide)",
+ "plan": {
+  "title": "Stand-in: marbles down stairs into a bucket",
+  "items": [
+   {
+    "id": "bucket",
+    "type": "bucket",
+    "name": "Bucket",
+    "props": {
+     "width": 0.45,
+     "wall": 0.045
+    },
+    "place": {
+     "on": "table",
+     "x": 0.64435
+    },
+    "why": "reference"
+   },
+   {
+    "id": "stairs",
+    "type": "staircase",
+    "name": "Staircase (stand-in for the falls)",
+    "props": {},
+    "place": {
+     "on": "table",
+     "x": 1.2
+    },
+    "why": "reference"
+   },
+   {
+    "id": "chute",
+    "type": "plank",
+    "name": "Chute",
+    "props": {
+     "length": 0.40792,
+     "thickness": 0.006
+    },
+    "place": {
+     "on": "stairs",
+     "x": 1.63059,
+     "angle_deg": 11.30993
+    },
+    "why": "reference"
+   },
+   {
+    "id": "m1",
+    "type": "glass-marble",
+    "name": "Marble 1",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.79125,
+     "y_m": 0.34241
+    },
+    "why": "reference"
+   },
+   {
+    "id": "m2",
+    "type": "glass-marble",
+    "name": "Marble 2",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.76183,
+     "y_m": 0.33652
+    },
+    "why": "reference"
+   },
+   {
+    "id": "m3",
+    "type": "glass-marble",
+    "name": "Marble 3",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.73241,
+     "y_m": 0.33064
+    },
+    "why": "reference"
+   },
+   {
+    "id": "m4",
+    "type": "glass-marble",
+    "name": "Marble 4",
+    "props": {},
+    "place": {
+     "on": "air",
+     "x": 1.70299,
+     "y_m": 0.32476
+    },
+    "why": "reference"
+   }
+  ],
+  "missing": [
+   {
+    "asked": "a waterfall",
+    "reason": "No fluids: water cannot flow. Marbles tumble down a staircase instead.",
+    "substitute_type": "glass-marble"
+   },
+   {
+    "asked": "a water wheel",
+    "reason": "No water wheel; nothing would turn it without water.",
+    "substitute_type": null
+   }
+  ],
+  "goals": [],
+  "tune": [],
+  "seconds": 6,
+  "notes": "all four marbles end in the bucket (chute lift 0.009 m, rise 0.08 m, bucket 0.45 m wide)"
+ },
+ "scene": {
+  "version": 2,
+  "id": "ref-i2",
+  "name": "Stand-in: marbles down stairs into a bucket",
+  "seconds": 6,
+  "release": 0.5,
+  "stage": {
+   "x0": 0.2,
+   "x1": 2.4,
+   "y0": -0.12,
+   "y1": 1
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "angle": 0,
+    "props": {
+     "width": 0.45,
+     "wall": 0.045
+    },
+    "id": "bucket",
+    "type": "bucket",
+    "name": "Bucket",
+    "x": 0.64435,
+    "y": 0.0055
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "stairs",
+    "type": "staircase",
+    "name": "Staircase (stand-in for the falls)",
+    "x": 1.2,
+    "y": 0.0015
+   },
+   {
+    "id": "chute",
+    "type": "plank",
+    "name": "Chute",
+    "x": 1.63059,
+    "y": 0.29756,
+    "angle": 11.30993,
+    "props": {
+     "length": 0.40792,
+     "thickness": 0.006
+    }
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "m1",
+    "type": "glass-marble",
+    "name": "Marble 1",
+    "x": 1.79125,
+    "y": 0.34241
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "m2",
+    "type": "glass-marble",
+    "name": "Marble 2",
+    "x": 1.76183,
+    "y": 0.33652
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "m3",
+    "type": "glass-marble",
+    "name": "Marble 3",
+    "x": 1.73241,
+    "y": 0.33064
+   },
+   {
+    "angle": 0,
+    "props": {},
+    "id": "m4",
+    "type": "glass-marble",
+    "name": "Marble 4",
+    "x": 1.70299,
+    "y": 0.32476
+   }
+  ],
+  "goals": []
+ }
+}
