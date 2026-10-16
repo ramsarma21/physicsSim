@@ -235,6 +235,7 @@ function buildHelp() {
 						row([h("span", { text: "click an event" })], "Jump to that moment")),
 					group("Open",
 						row(["/"], "Add an item from the catalog"),
+						row(["\\"], "Show or hide the settings panel"),
 						row(["A"], "Edit this scene with AI"),
 						row(["N"], "New: blank, Build with AI, or an example"),
 						row(["E"], "Export video"),

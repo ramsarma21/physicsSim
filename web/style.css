@@ -447,6 +447,20 @@ body.ai-draft .marks { opacity: 0.35; }
 
 /* the controls panel starts collapsed; it opens from the top-left button or when you pick up a part */
 body.panel-collapsed .panel { display: none; }
+/* the panel's own hide/show tab: on the panel's inner edge while it is open, at the picture's edge while it is hidden (\ does the same) */
+.panel-tab {
+	position: absolute; z-index: 9; top: 50%; left: var(--pw); width: 20px; height: 64px; margin-top: -32px; padding: 0; display: grid; place-items: center;
+	background: var(--panel); color: var(--ink-3); border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+	box-shadow: 4px 0 12px rgba(0, 0, 0, 0.10); cursor: pointer;
+}
+.panel-tab:hover { color: var(--ink); }
+.panel-tab:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: 2px; }
+.panel-tab svg { width: 16px; height: 16px; fill: currentColor; }
+body.panel-right .panel-tab { left: auto; right: var(--pw); border-left: 1px solid var(--line); border-right: 0; border-radius: var(--r-sm) 0 0 var(--r-sm); box-shadow: -4px 0 12px rgba(0, 0, 0, 0.10); }
+body.panel-right .panel-tab svg, body.panel-collapsed .panel-tab svg { transform: scaleX(-1); }
+body.panel-collapsed .panel-tab { left: 0; }
+body.panel-collapsed.panel-right .panel-tab { left: auto; right: 0; }
+body.panel-collapsed.panel-right .panel-tab svg { transform: none; }
 
 .catalog-host {
 	position: absolute; left: 0; top: 0; bottom: 0; width: min(400px, 92%); z-index: 9; background: var(--panel);
@@ -469,6 +483,7 @@ body.panel-collapsed .panel { display: none; }
 /* narrow screens: the page scrolls, the bar wraps, and the panel and the catalog become sheets from the bottom */
 @media (max-width: 900px) {
 	body { overflow: auto; }
+	.panel-tab { display: none; } /* (the panel is a sheet here: ☰ shows and hides it) */
 	.top { flex-wrap: wrap; gap: 8px; padding: 8px 16px; }
 	.top-right { flex-wrap: wrap; gap: 6px; margin-left: 0; }
 	.top-right select { max-width: 160px; }
