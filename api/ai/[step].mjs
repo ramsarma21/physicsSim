@@ -1,4 +1,4 @@
-// Vercel serverless twin of web/server.py's POST /api/ai/<step> (observe | plan | refine | edit). Not deployed by this file: docs/DEPLOY.md.
+// Vercel serverless twin of web/server.py's POST /api/ai/<step> (observe | plan | refine | edit | imagine). Not deployed by this file: docs/DEPLOY.md.
 // Same request and answer as the local server: body {payload, client?: {requestId}} -> {ok: true, result, model, ms, usage, ...} or
 // {ok: false, error, code, retryable} with the status the error names. The key comes from the project's environment variables
 // (TRUEFOUNDRY_API_KEY, TRUEFOUNDRY_BASE_URL) and never leaves the function. Contract: ai/DESIGN.md §13 "The hosted endpoint".
@@ -12,7 +12,7 @@
 //     (VERCEL_ENV != "production"), the header `x-ai-access: <AI_ACCESS_TOKEN>` (the protected preview's simple token, which the static
 //     build may put in the page). On Vercel with neither configured every AI call is refused (503 "not configured"); off Vercel the check
 //     applies when AI_ACCESS_TOKEN or AI_SESSION_SECRET is set.
-//   - Shape: POST only (405), one of the four steps (404), Content-Type application/json (415), at most 12 MB (413; Vercel itself stops
+//   - Shape: POST only (405), one of the steps (404), Content-Type application/json (415), at most 12 MB (413; Vercel itself stops
 //     bodies over 4.5 MB), a JSON object {payload: {...}} (400). The payload goes through the same checks as the local server's
 //     (ai/steps.mjs: web/sim clean() for scenes, pictures as data URLs, size caps).
 // Time: a step's budget is capped at maxDuration − 20 s (and what it waited for a slot), so it ends with its own answer, never Vercel's
@@ -32,10 +32,10 @@ const MARGIN_MS = 20000 // the step ends this long before Vercel would stop it
 const MAX_BODY = 12 << 20
 const ON_VERCEL = () => !!process.env.VERCEL
 const SLOTS = () => Math.max(1, Number(process.env.AI_SLOTS) || 12)
-const STEP_SLOTS = { observe: 4, plan: 6, refine: 8, edit: 8 }
+const STEP_SLOTS = { observe: 4, plan: 6, refine: 8, edit: 8, imagine: 4 }
 const QUEUE_WAIT_MS = () => Math.max(0, Number(process.env.AI_QUEUE_WAIT) || 30) * 1000
 const QUEUE_MAX = () => Math.max(1, Number(process.env.AI_QUEUE_MAX) || 24)
-const TYPICAL_S = { observe: 30, plan: 30, refine: 15, edit: 6 }
+const TYPICAL_S = { observe: 30, plan: 30, refine: 15, edit: 6, imagine: 25 }
 const SESSION_COOKIE = "ai_session"
 const RID_RE = /^[\w.:-]{1,80}$/
 
@@ -229,8 +229,15 @@ export default async function handler(req, res) {
 		return fail(res, 400, "bad_input", "the body must be JSON {payload: {...}, client?: {requestId}}")
 	const rid = typeof body.client?.requestId === "string" && RID_RE.test(body.client.requestId) ? body.client.requestId : undefined
 	const ac = new AbortController()
+	// the caller left (Cancel, the client's own deadline, a closed tab): the step stops and frees its slot. On Node >= 16 the request's "close"
+	// has already fired once its body was read, so a listener added now never hears a later disconnect: the response's "close" (before it
+	// finished) is the one that does; the request's stays for runtimes that fire it late.
+	const leave = () => ac.abort(new Error("client left"))
 	req.on?.("close", () => {
-		if (!res.writableEnded) ac.abort(new Error("client left"))
+		if (!res.writableEnded) leave()
+	})
+	res.on?.("close", () => {
+		if (!res.writableFinished) leave()
 	})
 	const stream = /application\/x-ndjson/i.test(header(req, "accept") ?? "")
 	// the queue
@@ -287,6 +294,9 @@ export default async function handler(req, res) {
 		const ans = { ok: false, error: err.message, code: err.code, status: err.status, retryable: !!err.retryable }
 		if (err.attempts?.length) ans.attempts = err.attempts
 		if (err.details) ans.details = err.details
+		// (what a failed step spent and how long it took, as the local server's answer has them: ai/cli.mjs fail())
+		if (err.ms !== undefined) ans.ms = err.ms
+		if (err.usage && Object.keys(err.usage).length) ans.usage = err.usage
 		if (rid) ans.requestId = rid
 		if (stream) {
 			line({ type: "result", ...ans })

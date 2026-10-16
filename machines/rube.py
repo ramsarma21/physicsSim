@@ -12,6 +12,8 @@ import os
 import shutil
 import sys
 
+from crmath import cos, sin  # _world, _corners, _overlap_depth (web/sim/rube.js ports them): web/sim's sin/cos on any machine
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SCENES = os.path.join(os.path.dirname(HERE), "scenes")
 
@@ -273,7 +275,7 @@ def _world(doc):
         if "parent" in s_:
             q = by[s_["parent"]]
             qa = q.get("angle", 0.0)
-            x, y = q["at"]["x"] + x * math.cos(qa) - y * math.sin(qa), q["at"]["y"] + x * math.sin(qa) + y * math.cos(qa)
+            x, y = q["at"]["x"] + x * cos(qa) - y * sin(qa), q["at"]["y"] + x * sin(qa) + y * cos(qa)
             a += qa
         out[s_["id"]] = (x, y, a)
     return out
@@ -282,7 +284,7 @@ def _world(doc):
 def _corners(s_, pose):
     x, y, a = pose
     hw, hh = s_["body"]["width"] / 2, s_["body"]["height"] / 2
-    c, n = math.cos(a), math.sin(a)
+    c, n = cos(a), sin(a)
     return [(x + px * c - py * n, y + px * n + py * c) for px, py in ((-hw, -hh), (hw, -hh), (hw, hh), (-hw, hh))]
 
 
@@ -294,7 +296,7 @@ def _overlap_depth(sa, pa, sb, pb):
     if ka == "ball" or kb == "ball":
         (sc, pc), (sr, pr) = ((sa, pa), (sb, pb)) if ka == "ball" else ((sb, pb), (sa, pa))
         dx, dy = pc[0] - pr[0], pc[1] - pr[1]
-        c, n = math.cos(-pr[2]), math.sin(-pr[2])
+        c, n = cos(-pr[2]), sin(-pr[2])
         lx, ly = dx * c - dy * n, dx * n + dy * c
         hw, hh = sr["body"]["width"] / 2, sr["body"]["height"] / 2
         qx, qy = max(-hw, min(hw, lx)), max(-hh, min(hh, ly))

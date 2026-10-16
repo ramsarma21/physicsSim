@@ -5,6 +5,7 @@ import assert from "node:assert/strict"
 import { Readable } from "node:stream"
 import { after, before, beforeEach, test } from "node:test"
 import { FAKE_KEY, startMockGateway, testRouting } from "./mock-gateway.mjs"
+import { AIError } from "../core.mjs"
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -85,6 +86,88 @@ test("method, step and body checks", async () => {
 	assert.equal((await call("plan", { body: { payload: {} }, headers: { "content-length": String(13 << 20) } })).status, 413)
 	assert.equal((await call("plan", { body: { payload: { text: "x" } }, headers: { "content-type": "text/plain" } })).status, 415)
 	assert.equal(gw.requests.length, 0)
+})
+
+test("imagine is a step of the function: words only (a picture is a 400 before any model call); it reserves $0.25 (a Gemini fallback costs $0.19-0.22)", async () => {
+	const r = await call("imagine", { body: { payload: { text: "a ball rolls into a cup", images: ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="] } } })
+	assert.equal(r.status, 400)
+	assert.match(r.json.error, /from words only/)
+	assert.equal(gw.requests.length, 0)
+	const { STEP_USD } = await import("../../api/_lib/ai-gate.mjs")
+	assert.equal(STEP_USD.imagine, 0.25)
+})
+
+test("a failed step's answer carries what it spent and how long it took (usage, ms), as the local server's does", async () => {
+	gw.script("m1", [{ content: "not json", usage: { prompt_tokens: 10, completion_tokens: 5, costInUSD: 0.002 } }, { content: "still not json", usage: { prompt_tokens: 10, completion_tokens: 5, costInUSD: 0.002 } }])
+	const r = await call("edit", { body: EDIT })
+	assert.equal(r.json.ok, false)
+	assert.ok(r.status >= 500, String(r.status))
+	assert.ok(Math.abs(r.json.usage.costInUSD - 0.004) < 1e-9, JSON.stringify(r.json.usage))
+	assert.ok(Number.isFinite(r.json.ms) && r.json.ms >= 0)
+})
+
+test("the caller leaves (a real socket, node:http): the step stops at once, its slot is freed and its gateway call closed", async () => {
+	const { createServer } = await import("node:http")
+	const slow = join(dir, "slow-models.json")
+	writeFileSync(slow, JSON.stringify(testRouting({ timeoutMs: 20000, budgetMs: 30000, retries: 0 })))
+	const models = process.env.AI_MODELS
+	process.env.AI_MODELS = slow // (withEnv would delete it afterwards: the other tests need the short routing)
+	try {
+		gw.script("m1", [{ hang: true }])
+		const server = createServer((req, res) => {
+			req.query = { step: "edit" }
+			handler(req, res)
+		})
+		await new Promise((r) => server.listen(0, "127.0.0.1", r))
+		const until = async (ok, ms = 5000) => {
+			const t0 = Date.now()
+			while (!ok()) {
+				if (Date.now() - t0 > ms) return false
+				await new Promise((r) => setTimeout(r, 10))
+			}
+			return true
+		}
+		try {
+			const ac = new AbortController()
+			const p = fetch(`http://127.0.0.1:${server.address().port}/api/ai/edit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(EDIT), signal: ac.signal }).catch((e) => e)
+			assert.ok(await until(() => gw.requests.length === 1), "the step reached the gateway")
+			assert.equal(twin._queue.by.edit, 1)
+			const t0 = Date.now()
+			ac.abort()
+			await p
+			assert.ok(await until(() => (twin._queue.by.edit ?? 0) === 0 && gw.requests[0].closed, 3000), `slot ${twin._queue.by.edit}, gateway call closed ${gw.requests[0].closed}`)
+			assert.ok(Date.now() - t0 < 2000, `stopped after ${Date.now() - t0} ms (its attempt would have run 20 s)`)
+			assert.equal(twin._queue.busy, 0)
+		} finally {
+			await new Promise((r) => server.close(r))
+		}
+	} finally {
+		process.env.AI_MODELS = models
+	}
+})
+
+test("a request the step refuses as bad input (400, before any model call) does not count against the caller's steps; one that reached a model does", async () => {
+	const { testDatabase } = await import("../../web/account/test/helpers.mjs")
+	const { aiGate } = await import("../../api/_lib/ai-gate.mjs")
+	const db = await testDatabase()
+	try {
+		const env = { DATABASE_URL: "postgres://check@127.0.0.1:9/none" }
+		const now = () => new Date("2026-10-21T10:30:00Z")
+		const gate = () => aiGate({ headers: { "x-ai-access": "t" } }, "imagine", { accessProblem: () => null, env, now })
+		const rows = async () => (await db.pg.query("select bucket, n, usd::float8 as usd from counters where key = 'tok' order by bucket")).rows
+		for (let i = 0; i < 3; i++) {
+			const g = await gate()
+			assert.equal(await g.charge(), null)
+			await assert.rejects(g.run(async () => { throw new AIError("bad_input", "imagine makes a picture from words only") }), /words only/)
+		}
+		assert.deepEqual(await rows(), [{ bucket: "ai:d:2026-10-21", n: 0, usd: 0 }, { bucket: "ai:h:2026-10-21T10", n: 0, usd: 0 }])
+		const g = await gate()
+		assert.equal(await g.charge(), null)
+		await assert.rejects(g.run(async () => { throw Object.assign(new AIError("gateway", "every route failed"), { usage: { costInUSD: 0.03 } }) }))
+		assert.deepEqual(await rows(), [{ bucket: "ai:d:2026-10-21", n: 1, usd: 0.03 }, { bucket: "ai:h:2026-10-21T10", n: 1, usd: 0 }])
+	} finally {
+		await db.close()
+	}
 })
 
 test("an allowed-origins list refuses other origins", async () => {

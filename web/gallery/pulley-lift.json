@@ -1,0 +1,88 @@
+{
+ "version": 2,
+ "id": "gallery-pulley-lift",
+ "name": "Counterweight lift",
+ "seconds": 4,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "lift",
+   "type": "pulley-lift",
+   "name": "Pulley lift",
+   "x": 1.3,
+   "y": 1.25,
+   "props": {
+    "weight": 1.2,
+    "cup_width": 0.14,
+    "cup_height": 0.1,
+    "drop": 0.6
+   }
+  },
+  {
+   "id": "golf",
+   "type": "apple",
+   "name": "Apple",
+   "x": 1.43657,
+   "y": 0.5185
+  },
+  {
+   "id": "pillow",
+   "type": "pillow",
+   "name": "Pillow",
+   "x": 1.1634,
+   "y": 0.06,
+   "props": {
+    "width": 0.5,
+    "height": 0.12
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "moves",
+   "item": "golf",
+   "min_m": 0.4,
+   "label": "The pail lifts the apple at least 40 cm"
+  },
+  {
+   "kind": "hits",
+   "item": "lift",
+   "target": "pillow",
+   "label": "The counterweight lands on the pillow"
+  }
+ ]
+}

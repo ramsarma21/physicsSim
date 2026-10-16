@@ -16,6 +16,8 @@ import math
 import os
 import struct
 
+from crmath import cos, cube, sin  # x ** 3 correctly rounded, and sin/cos with web/sim's table at multiples of 30 degrees: the same bits as web/sim on any machine
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PG = os.path.dirname(HERE)
 SCENES = os.path.join(PG, "scenes")
@@ -220,7 +222,7 @@ class Ctx:
     def __init__(self, scene_builder, item, P):
         self.sb, self.item, self.P = scene_builder, item, P
         a = item.get("angle", 0.0) * D2R
-        self.ox, self.oy, self.ca, self.sa, self.a = item.get("x", 0.0), item.get("y", 0.0), math.cos(a), math.sin(a), a
+        self.ox, self.oy, self.ca, self.sa, self.a = item.get("x", 0.0), item.get("y", 0.0), cos(a), sin(a), a
         self.kind = "static" if (item.get("fixed") or not TYPES[item["type"]].dynamic) else "dynamic"
 
     def world(self, lx, ly):
@@ -500,7 +502,7 @@ register(ItemType("plank", "Wooden plank", "Surfaces & ramps", build_plank, dyna
 def _ball_volume(d, wall=None):
     """The material in a ball d across, m³: solid, or a hollow shell `wall` thick."""
     r = d / 2
-    return (4 / 3) * math.pi * (r ** 3 - (max(0.0, r - wall) ** 3 if wall else 0.0))
+    return (4 / 3) * math.pi * (cube(r) - (cube(max(0.0, r - wall)) if wall else 0.0))
 
 
 def ball_type(key, name, diameter, mass, material, hollow_wall=None, sprite=None, pattern=None, look=None, tags=(), description="", source="",
@@ -554,11 +556,11 @@ def ball_type(key, name, diameter, mass, material, hollow_wall=None, sprite=None
                              edit=[{"kind": "radius", "prop": "diameter"}]))
 
 
-_V60 = (4 / 3) * math.pi * 0.03 ** 3
+_V60 = (4 / 3) * math.pi * cube(0.03)
 ball_type("superball", "Superball", 0.06, 906 * _V60, "solid rubber", sprite="rubber", look="rubber", tags=["bouncy", "rubber", "red", "super ball", "high bounce"],
           description="A solid rubber superball: very bouncy, and it grips and spins hard when it bounces at an angle.",
           source="102.5 g, 60 mm superball measured by Cross, Am. J. Phys. 70, 482 (2002).")
-ball_type("plastic-ball", "Hollow plastic ball", 0.06, 950 * (4 / 3) * math.pi * (0.03 ** 3 - 0.0294 ** 3), "hollow plastic", hollow_wall=0.0006, sprite="plastic", look="plastic",
+ball_type("plastic-ball", "Hollow plastic ball", 0.06, 950 * (4 / 3) * math.pi * (cube(0.03) - cube(0.0294)), "hollow plastic", hollow_wall=0.0006, sprite="plastic", look="plastic",
           tags=["yellow", "light", "hollow", "toy"], description="A light hollow plastic toy ball.", source="Physics Factbook: hollow hard plastic ball, 92 cm drop, 43.6 cm rebound.")
 ball_type("clay-ball", "Modelling clay ball", 0.06, 1570 * _V60, "modeling clay", sprite="clay", look="clay", tags=["plasticine", "dead", "no bounce", "green", "soft"],
           description="A ball of modelling clay: it doesn't bounce, it dents.", source="Van Aken plasticine, 1570 kg/m³.")
@@ -602,8 +604,8 @@ def build_seesaw(c, P):
     tilt = P["tilt"] * D2R
     off = P["pivot_offset"]
     right = L / 2 - off
-    cy = right * math.sin(tilt) + (th / 2) * math.cos(tilt)
-    plank_center = (-off * math.cos(tilt), cy + off * math.sin(tilt))
+    cy = right * sin(tilt) + (th / 2) * cos(tilt)
+    plank_center = (-off * cos(tilt), cy + off * sin(tilt))
     fh = cy - th / 2 - 0.004
     c.slab("fulcrum", 0.026, fh, 0.06, 0, fh / 2, kind="static", words="a wooden fulcrum block")
     plank = c.slab("plank", L, th, 0.04, plank_center[0], plank_center[1], langle=-P["tilt"], words="a thin varnished hardwood seesaw plank",
@@ -663,7 +665,7 @@ def _world_poses(doc):
         if "parent" in s:
             q = by[s["parent"]]
             qa = q.get("angle", 0.0)
-            x, y = q["at"]["x"] + x * math.cos(qa) - y * math.sin(qa), q["at"]["y"] + x * math.sin(qa) + y * math.cos(qa)
+            x, y = q["at"]["x"] + x * cos(qa) - y * sin(qa), q["at"]["y"] + x * sin(qa) + y * cos(qa)
             a += qa
         out[s["id"]] = (x, y, a)
     return out
@@ -693,9 +695,10 @@ def _short_m(m):
 
 class _Fall:
     """The balance-point rule of ai/goals.mjs (trackTools: bodies, tipAngle, fell), so the run's summary counts a fallen body as the AI's
-    goal check does: an item's rigid bodies that can fall (weld groups not hinged to the world or a parent; round ones only when it has
-    nothing else) have fallen when turned past their tipping angle (atan(base / height) of their outline box at the start, + 5 degrees,
-    within 20 to 85) or knocked down at least half their smaller side and 2 cm (not a body on wheels)."""
+    goal check does: an item's rigid bodies that can fall (weld groups not hinged to the world or a parent, and not hung from or held by a
+    pin, a rope, a chain or a pulley: a swing's seat, a pendulum's bob, an Atwood machine's weights swing and drop as they should without
+    falling over; round ones only when it has nothing else) have fallen when turned past their tipping angle (atan(base / height) of their
+    outline box at the start, + 5 degrees, within 20 to 85) or knocked down at least half their smaller side and 2 cm (not a body on wheels)."""
 
     def __init__(self, doc, fr):
         self.f0, self.end = fr[0]["placements"], fr[-1]["placements"]
@@ -708,6 +711,8 @@ class _Fall:
                     break
                 r = by_id[r["parent"]]
             return r
+        # (the solids a pin, a rope or chain, or a pulley holds: their weld groups hang or swing, they do not fall over)
+        self.held = {side for j in doc.get("joints", []) if j["kind"] in ("pin", "rope", "pulley") for side in (j.get("a"), j.get("b")) if side is not None}
         self.groups = {}
         for s in doc["solids"]:
             if s["kind"] != "dynamic":
@@ -732,13 +737,13 @@ class _Fall:
             pts = [(-hb, -hh), (hb, -hh), (hw, hh), (-hw, hh)]
         else:
             pts = [(p["x"], p["y"]) for p in b["points"]]
-        c, n = math.cos(pose["angle"]), math.sin(pose["angle"])
+        c, n = cos(pose["angle"]), sin(pose["angle"])
         return [(pose["x"] + x * c - y * n, pose["y"] + x * n + y * c) for x, y in pts]
 
     def bodies(self, iid):
         if iid in self.cache:
             return self.cache[iid]
-        all_ = [g for g in self.groups.get(iid, []) if not g["root"].get("pivot")]
+        all_ = [g for g in self.groups.get(iid, []) if not g["root"].get("pivot") and not any(m["id"] in self.held for m in g["members"])]
         round_ = lambda g: all(m["body"]["kind"] == "ball" for m in g["members"])
         keep = [g for g in all_ if not round_(g)] if any(not round_(g) for g in all_) else all_
         out = []
@@ -896,7 +901,7 @@ def _corners(s, pose):
         hw, hh = b["width"] / 2, b["height"] / 2
         hb = hw * b.get("taper", 1.0)
         pts = [(-hb, -hh), (hb, -hh), (hw, hh), (-hw, hh)]
-    c, n = math.cos(a), math.sin(a)
+    c, n = cos(a), sin(a)
     return [(x + px * c - py * n, y + px * n + py * c) for px, py in pts]
 
 
@@ -984,7 +989,7 @@ def inside(scene, doc, poses, iid, cid):
             continue
         x, y = poses[s["id"]]
         dx, dy = x - cx, y - cy
-        lx, ly = dx * math.cos(-a) - dy * math.sin(-a), dx * math.sin(-a) + dy * math.cos(-a)
+        lx, ly = dx * cos(-a) - dy * sin(-a), dx * sin(-a) + dy * cos(-a)
         r = s["body"].get("radius", 0)
         if not (-w / 2 + t <= lx <= w / 2 - t and -0.005 <= ly - r <= wall):
             return False

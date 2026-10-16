@@ -110,13 +110,18 @@ test("which requests state an outcome (their edit is made to work too)", () => {
 	for (const t of ["fix the box to the table", "fix the ramp in place", "can you make sure the box is red"]) assert.equal(statesOutcome(t), false, t)
 })
 
-test("the reply's first sentence: what changed, then what happens instead (now / still), or that it works", () => {
+test("the reply's first sentence: what happens instead (now / still), or that it works (the card lists the change itself right under it)", () => {
 	const t = (o) => editLead({ changes: ["moved the box 10 cm left"], ...o })
-	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: false, was: true, happened: "Ball 2 flies 6 cm past the box" }] }), "I moved the box 10 cm left — now Ball 2 flies 6 cm past the box ✗.")
-	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: false, was: false, happened: "Ball 2 flies 6 cm past the box" }] }), "I moved the box 10 cm left — it still doesn’t work: Ball 2 flies 6 cm past the box ✗.")
-	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: true, was: true }, { label: "All 7 dominoes fall", ok: true, implicit: true }] }), "Done! I moved the box 10 cm left — Ball 2 lands in the box, as before ✓")
-	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: true, was: true }], fixApplied: { did: "lowered the seesaw 2 cm" } }), "Done! I moved the box 10 cm left, and lowered the seesaw 2 cm so it works — Ball 2 lands in the box ✓")
-	assert.equal(t({ targets: [{ label: "All 7 dominoes fall", ok: false, was: true, implicit: true, happened: "only 3 of 7 dominoes fall" }] }), "I moved the box 10 cm left — now only 3 of 7 dominoes fall ✗.")
+	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: false, was: true, happened: "Ball 2 flies 6 cm past the box" }] }), "Done, but now Ball 2 flies 6 cm past the box ✗.")
+	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: false, was: false, happened: "Ball 2 flies 6 cm past the box" }] }), "Done, but it still doesn’t work: Ball 2 flies 6 cm past the box ✗.")
+	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: true, was: true }, { label: "All 7 dominoes fall", ok: true, implicit: true }] }), "Done — Ball 2 lands in the box, as before ✓")
+	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: true, was: true }], fixApplied: { did: "lowered the seesaw 2 cm" } }), "Done, and I lowered the seesaw 2 cm so it works — Ball 2 lands in the box ✓")
+	assert.equal(t({ targets: [{ label: "All 7 dominoes fall", ok: false, was: true, implicit: true, happened: "only 3 of 7 dominoes fall" }] }), "Done, but now only 3 of 7 dominoes fall ✗.")
+	assert.equal(t({ targets: [] }), "Done.")
+	assert.equal(t({ targets: [{ label: "Ball 2 lands in the box", ok: true }, { label: "Ball 1 hits the dominoes", ok: true }] }), "Done — both goals happen ✓", "(never “all 2 goals”)")
+	// a "make it work" whose answer would have undone the person's choice: said as such, never "nothing needed changing" (round 3's acceptance)
+	assert.equal(editLead({ changes: [], targets: [{ label: "Ball 2 lands in the box", ok: false, was: false, happened: "Ball 2 never moves" }], undid: "putting the seesaw back" }), "I couldn't make it work without undoing what you chose (putting the seesaw back), so I left it as it is — Ball 2 never moves ✗.")
+	assert.equal(editLead({ changes: [], targets: [{ label: "Ball 2 lands in the box", ok: false, was: false, happened: "Ball 2 never moves" }] }), "Nothing needed changing for that — it still doesn’t work: Ball 2 never moves ✗.")
 })
 
 test("cancel stops the search at once (AbortError)", async () => {
@@ -139,7 +144,7 @@ for (const [name, text, patches, kept, mustFind] of starterCases)
 		const { r, fr, editMs, fixMs } = await editThenFix(scenario("rube-goldberg"), text, patches)
 		assert.ok(kept(r.scene), "the edit is exactly what was asked")
 		assert.equal(r.fixNeeded, true, r.lead)
-		assert.match(r.lead, / — now .+ ✗\.$/, r.lead)
+		assert.match(r.lead, /^Done, but now .+ ✗\.$/, r.lead)
 		log(`${name}: edit ${editMs} ms · "${r.lead}" · search ${fixMs} ms, ${fr.runs} runs → ${fr.status}${fr.fix ? `: ${fr.fix.words.say}` : fr.near ? ` (closest: ${fr.near.words.say}: ${fr.near.happened})` : ""}`)
 		if (mustFind) assert.equal(fr.status, "found")
 		if (fr.status === "found") {
@@ -172,14 +177,16 @@ test("starter (real engine): the tennis ball made heavier after the swap was fix
 // ================================================================ the real engine: three other scenarios
 test("spring launcher (real engine): the cup moved away — the launcher is pulled back further (the cup stays where it was put)", async () => {
 	const { r, fr } = await editThenFix(scenario("spring-launch"), "move the cup 10 cm right", [{ op: "move", id: "cup", dx: 0.1 }])
-	assert.match(r.lead, /^I moved the cup 10 cm right — now the golf ball .+ ✗\.$/, r.lead)
+	assert.match(r.lead, /^Done, but now the golf ball .+ ✗\.$/, r.lead)
+	assert.deepEqual(r.human, ["moved the cup 10 cm right"])
 	assert.equal(fr.status, "found")
 	assert.ok(Math.abs(fr.fix.scene.items.find((i) => i.id === "cup").x - 2.09) < 1e-6, "the cup stays")
 	await verifyFix(r, fr)
 	log(`spring: "${r.lead}" → ${fr.fix.words.say} (${fr.runs} runs)`)
 	// and a weaker launch: the cup (untouched) moves under the flight
 	const w = await editThenFix(scenario("spring-launch"), "pull the launcher back less", [{ op: "set_props", id: "launcher", props: { compression: 0.035 } }])
-	assert.match(w.r.lead, /^I pulled the spring launcher back less \(4\.6 → 3\.5 cm\) — now /, w.r.lead)
+	assert.match(w.r.lead, /^Done, but now /, w.r.lead)
+	assert.deepEqual(w.r.human, ["pulled the spring launcher back less (4.6 → 3.5 cm)"])
 	assert.equal(w.fr.status, "found")
 	assert.match(w.fr.fix.words.say, /^move the cup \d+ cm (left|right)$/, w.fr.fix.words.say)
 	await verifyFix(w.r, w.fr)
@@ -188,7 +195,7 @@ test("spring launcher (real engine): the cup moved away — the launcher is pull
 test("car, ramp and dominoes (real engine, no stated goals): a flatter ramp stops the row that all fell — the row itself is the goal won back", async () => {
 	const { r, fr } = await editThenFix(scenario("car-ramp-dominoes"), "make the ramp less steep", [{ op: "move", id: "ramp", angle_deg: -6 }])
 	assert.deepEqual(r.targets.map((t) => [t.label, t.ok, t.implicit]), [["All 7 dominoes fall", false, true]])
-	assert.match(r.lead, / — now (none|only \d+) of (the dominoes|7 dominoes) fall ✗\.$/, r.lead)
+	assert.match(r.lead, /^Done, but now (none|only \d+) of (the dominoes|7 dominoes) fall ✗\.$/, r.lead)
 	assert.equal(fr.status, "found")
 	await verifyFix(r, fr)
 	assert.equal(fixInfo(fr, r.scene, fr.targets).checked, "All 7 dominoes fall")
@@ -226,7 +233,8 @@ test("starter (real engine): the box moved 15 cm right — the seesaw follows, a
 
 test("pendulum (real engine): a string made 30 cm shorter — the pendulum is hung 30 cm lower, so it swings as low as before", async () => {
 	const { r, fr } = await editThenFix(scenario("pendulum-dominoes"), "make the pendulum string 30 cm long", [{ op: "set_props", id: "pendulum", props: { length: 0.3 } }])
-	assert.match(r.lead, /^I made the pendulum shorter \(length 60 → 30 cm\) — now none of the dominoes fall ✗\.$/, r.lead)
+	assert.equal(r.lead, "Done, but now none of the dominoes fall ✗.")
+	assert.deepEqual(r.human, ["made the pendulum shorter (length 60 → 30 cm)"], "(its re-seat is part of the change, never a move of its own)")
 	assert.equal(fr.status, "found")
 	assert.equal(fr.fix.words.say, "lower the pendulum 30 cm so it swings as low as before")
 	assert.equal(fr.fix.words.label, "Lower the pendulum 30 cm")

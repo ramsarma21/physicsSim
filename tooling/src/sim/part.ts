@@ -334,7 +334,7 @@ export type Joint =
 			readonly compressOnly?: boolean
 			readonly coils?: number
 			readonly coilRadius?: number
-			/** The spring's own mass, kg: a third of it moves with a body it pushes from a fixed end (Rayleigh), half each between two moving ones. */
+			/** The spring's own mass, kg, zero or more: from a fixed end, its fundamental mode's share (Rayleigh's third, light) moves with the body it pushes, which holds half its weight; between two moving ones, a uniform bar's consistent mass (physics.ts). */
 			readonly mass?: number
 	  }
 	/**

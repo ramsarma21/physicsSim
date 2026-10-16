@@ -21,10 +21,10 @@
 // given the density of the sphere with the same weight, because the engine weighs round bodies as spheres.
 //
 // Exactness (see pymath.js): Python's round() is pyRound, sum() of floats is pySum (Neumaier), math.hypot/dist are hypot, `a ** 3` is the
-// engine's cube(), f"{x:.2f}" is fmtF, min/max of two numbers keep the first of equals (pymin/pymax), and division by a variable goes
-// through div() so a zero raises ZeroDivisionError as Python does. Two things JavaScript cannot be made to do bit for bit, and why that
-// shows nothing: `x ** 2` is x * x here (Python's libm pow(x, 2.0) differs from x * x in the last bit for about 1 in 800 arguments; it
-// is used for a rolling thing's inertia, which is then round(k, 4), and for a threshold in _apart), and math.atan2 is V8's (the last bit
+// engine's cube() (crmath.py's cube(), correctly rounded on both sides), f"{x:.2f}" is fmtF, min/max of two numbers keep the first of equals (pymin/pymax), and division by a variable goes
+// through div() so a zero raises ZeroDivisionError as Python does. `x ** 2` is x * x here
+// and sq(x) = x * x in the Python (crmath.py). One thing JavaScript cannot be made to do bit for bit, and why that shows nothing:
+// math.atan2 is V8's (the last bit
 // differs from the platform libm's for about a fifth of arguments; a vessel's wall angle goes through round(angle, 6)). The harness
 // (tools/parity/core.mjs --mode everyday) compares every type, built alone and in scenes, number against number.
 //

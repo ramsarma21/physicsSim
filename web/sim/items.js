@@ -744,9 +744,10 @@ function _short_m(m) {
 }
 
 /** The balance-point rule of ai/goals.mjs (trackTools: bodies, tipAngle, fell), so the run's summary counts a fallen body as the AI's
- *  goal check does: an item's rigid bodies that can fall (weld groups not hinged to the world or a parent; round ones only when it has
- *  nothing else) have fallen when turned past their tipping angle (atan(base / height) of their outline box at the start, + 5 degrees,
- *  within 20 to 85) or knocked down at least half their smaller side and 2 cm (not a body on wheels). */
+ *  goal check does: an item's rigid bodies that can fall (weld groups not hinged to the world or a parent, and not hung from or held by a
+ *  pin, a rope, a chain or a pulley: a swing's seat, a pendulum's bob, an Atwood machine's weights swing and drop as they should without
+ *  falling over; round ones only when it has nothing else) have fallen when turned past their tipping angle (atan(base / height) of their
+ *  outline box at the start, + 5 degrees, within 20 to 85) or knocked down at least half their smaller side and 2 cm (not a body on wheels). */
 class _Fall {
 	constructor(doc, fr) {
 		this.f0 = fr[0].placements
@@ -759,6 +760,12 @@ class _Fall {
 				r = by_id.get(r.parent)
 			}
 			return r
+		}
+		// (the solids a pin, a rope or chain, or a pulley holds: their weld groups hang or swing, they do not fall over)
+		this.held = new Set()
+		for (const j of doc.joints ?? []) {
+			if (!["pin", "rope", "pulley"].includes(j.kind)) continue
+			for (const side of [j.a, j.b]) if (side !== null && side !== undefined) this.held.add(side)
 		}
 		this.groups = new Map()
 		for (const s of doc.solids) {
@@ -793,7 +800,7 @@ class _Fall {
 	}
 	bodies(iid) {
 		if (this.cache.has(iid)) return this.cache.get(iid)
-		const all = (this.groups.get(iid) ?? []).filter((g) => !truthy(g.root.pivot))
+		const all = (this.groups.get(iid) ?? []).filter((g) => !truthy(g.root.pivot) && !g.members.some((m) => this.held.has(m.id)))
 		const round = (g) => g.members.every((m) => m.body.kind === "ball")
 		const keep = all.some((g) => !round(g)) ? all.filter((g) => !round(g)) : all
 		const out = keep.map((g) => {

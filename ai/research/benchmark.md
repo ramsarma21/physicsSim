@@ -384,3 +384,119 @@ zsh -c 'source ~/.config/truefoundry/env && node ai/bench/tools/edit-integrated.
 zsh -c '... --run t1 --cases s-fix-tennis,s-fix-user-swap' and the same with --original                 # t1..t5, launched together
 node ai/bench/tools/edit-integrated.mjs --report --runs i1,i2 --fix-runs i1,i2,i3,i4,i5 --same-time t1,t2,t3,t4,t5 --same-time-cases s-fix-tennis,s-fix-user-swap --save
 ```
+
+## 15. Round 3 repair (15 Oct, night): edits move exactly what was asked, on AI-built scenes too
+
+**What a review of §14 found** (contracts and fixes in `ai/DESIGN.md` §14.1 "Repair", §14.2 (2)–(6), §14.4): the browser contract's measured `applyEdit` (v3, `ai/experiments/edit/integrate/`) moved touched things far from what was asked on AI-built scenes with a leaning plank (the card said 4 cm, the bucket moved 13.4 cm), hid the solver's own re-placements, and its "make it work again" could aim a container the user had just moved; on the server a swap to a truck cost a repair turn, `missing` repeated the build's list, a few replies ran past 40 words, the digest called a red toy car black, and "start over" was patched into a rebuild. The browser half's reference is now `ai/browser/` (v4); the server half is live (the server runs `ai/cli.mjs` per request).
+
+**No model calls** (`node ai/bench/tools/apply-edit-scan.mjs noop|move`; the integrated eval's records replayed):
+
+| check | v3 (measured as n7) | **v4 (`ai/browser/`)** |
+|---|---|---|
+| no-op touch of every item (407 touches, 82 scenes: 70 AI-built with their plans + the built-in ones): something else moved > 1 mm | 65 touches, 24 scenes | **0** |
+| the same on the review's own scan (354 touches, the 70 AI-built scenes) | 56 touches, 21 scenes | **0** (the review's proposed patch: 17, then 10) |
+| a 2 cm move of every item: something else moved > 1 mm, or the moved thing landed elsewhere | 99 touches, 36 scenes | **2** (a leaning ramp moved with `dx`: an `error` now; the server never sends that patch) |
+| the 165 recorded answers of i1 + i2 (first and last), the experiment's hard checks: exact / untouched / byte-identical / no new overlaps / no unasked items | 165 / 165 / 163 / 165 / 161 of 165 (161) | the same; 2 flagged that v3 hid (a 12-domino row 2 cm past the table's end) |
+
+**Live: the review's 59 requests** (`ai/bench/cases/edit-review.mjs`: the starter 30, ball-drop 6, conveyor-delivery 5, pendulum-dominoes 4, wrecking-ball 5, and 3 AI-built scenes 17 (photo-board-bucket-34, photo-rube-chain, gt-book-ramp-ball); `node ai/bench/tools/edit-review.mjs`: `runEdit` of `ai/browser/` with every edit call to the running server, `intent: "edit"`; results `ai/bench/results/edit-review/final.json`):
+- kinds: 43 change, 6 answer, 6 ask, 2 fix, 1 undo, 1 new; every one the kind the case expects (t19 "the last golf ball" may be a change or a question: it chose one and said which).
+- **0 left with an overlap or a shortfall**; 1 repair turn (p2: 14 growing dominoes would stand past the table's end; the second answer kept them on it with a gentler growth and said so); **0 validator repair turns** (the review's run: 2, both the truck swap); **0 replies over 40 words** (the review's: 3 of 59, up to 45).
+- edit p50 / p90 **6.5 / 14.4 s** end to end in the browser half (edit call, apply, the run before and after, the repair turn when there is one), $0.027 p50 per edit, $1.74 for the 59.
+- the cases the review cited: x2 "nudge the bucket a bit right" +4.0 cm exactly (was 13.4 cm); t06 "closer to the ramp" −4.5 cm, "about 1 cm from the ramp's low end", said (was −13.5 cm); t15 "4 inches left" −10.16 cm (was −3.86 cm); r3 "two more dominoes" 5 → 7, the row where it was, the car +4.4 cm and said (was 35.6 / 40 cm); s10 "seesaw 10 cm left" −10.0 cm and the dominoes 3.5 cm left to make room, said (was −6.9 cm with "10 cm" on the card); p2 "double the dominoes" 14, on the table, said (was a hidden 60 cm shift); r1 "car → truck" one call, 14.3 s, $0.046, no stale `missing` (was a repair turn, 17–27 s, $0.08–0.09, and the build's two `missing` entries); s9 "start over: …" kind new, 3.8 s (was an 18 s patch rebuild); x5 "make it work again" after the bucket moved 30 cm: the bucket kept, the ramp with its box, book and balls moved 30 cm, both goals MET; t20 "now make the pendulum hit them again" after the dominoes moved 30 cm: the pendulum moved 30 cm (fix); x3 "make the ramp steeper": +8.3° by moving the low end (was +11.3°), though the reply still quotes an angle (20° for 22.2°): the card's lead must be `describeDiff` (§14.2 (5)).
+- found and fixed while running it: v4's first cut let a pendulum ride with the domino row (its swing outline reached 7 mm over the first domino: riders now need their middle over the support) and wrote a moved thing's default props away (now kept as the scene wrote them).
+
+**Checks**: `npm run test:ai` 129/129; `node --test ai/browser/*.test.mjs` 19/19.
+
+**Reproduce**:
+```
+node ai/bench/tools/apply-edit-scan.mjs noop        # and: move
+node ai/bench/tools/edit-review.mjs --jobs 4 --out <dir>      # needs web/server.py on :8790 (or $AI_SERVER); ≈ $1.8
+node ai/bench/tools/edit-review.mjs --report --out <dir>
+```
+
+## 16. Round 3 integration acceptance (15 Oct, 20:09–21:00): the live client after C1 and C2 (E1), round3-plan §8 B–F
+
+(§15 was already taken by the round-3 repair, so this write-up of round3-plan §6 and §8 is §16.) Full detail: the session scratchpad `partB/B/acceptance.md`.
+
+**Setup.**
+- E1 is a frozen copy of `web/ai` and `web/sim` taken at 20:09, after C1 and C2.
+- E0 is the snapshot taken after part A.
+- The server step is this tree's `ai/`, run in process. Renders and UI runs used a private server on :8796.
+- The scorer is a frozen copy shared by E0 and E1.
+- At most 4 model calls were in flight per process.
+- Up to 11 bench processes shared the machine from 20:10 to 20:40. Each A/B ran its arms at the same time, so deltas are fair but absolute wall times are inflated (about +25 %).
+
+**Edits through the live drawer** (`ai/bench/tools/edit-live.mjs`, 105 cases × 2 samples + 4 make-it-work cases × 5):
+
+| arm | n | pass | byte-identical pass | exact change | others untouched | untouched byte | no new overlaps | works or says why | questions unchanged | asks when ambiguous | p50 / p90 s | $ per edit | make it work |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **E1** | 210 | **0.971** | **0.962** | 175/178 | **178/178** | 176/178 | 178/178 | 201/202 | 32/32 | 10/10 | **6.6 / 10.9** | **0.030** | **16–17/20** (aimed boxes 10/10) |
+| E0 | 105 | 0.838 | 0.829 | 86/89 | 80/89 | 79/89 | 85/89 | 99/101 | 16/16 | 5/5 | 7.0 / 12.9 | 0.041 | 8/20 |
+| n7 (experiment) | 210 | 0.990 | 0.981 | 177/178 | 178/178 | 176/178 | 178/178 | 202/202 | 32/32 | 10/10 | 7.3 / 11.5 | 0.029 | 15/20 |
+
+- **E1 against E0.** E1 beats E0 on every quality column, in time and in cost. The exception is make-it-work, where p90 is 98 s against 34 s and $0.10 against $0.05, from the extra edit calls.
+- **Against the §8 B bar**, E1 misses 4 thresholds: pass 0.98, byte-identical 0.97, exact 177, and says-why 202. The failures:
+  - `s-box-lower5`, in 3 of 4 E1 samples. The edit step says the box "hangs only 3.7 cm above the seesaw", which is false, and lowers it 2.7–3.6 cm or asks. E0, n7 and one E1 sample lowered it 5 cm cleanly. This appeared when the client stopped sending `sim` and the server began digesting its own run.
+  - `s-add3-dominoes` asked once.
+  - `w-add-brick-top`: the heads-up misses a lost stage on a scene without a plan.
+  - `s-fix-user-swap`.
+- **Bench fix.** `edit-live.mjs` now also writes the new "Heads-up, in the new run: …" line into the card it scores, as `panel.js` renders it. Samples run before that fix under-count "says why".
+
+**The user's edit in the real app** (headless Chromium, 1440×900, 3 quiet runs): every check passed.
+- The swap took 6.2–6.9 s, changed exactly ball1 and ball2 (the basketball's bottom held at 0.719 m), and the card read "Everything else is exactly as it was (5 items untouched)".
+- The card also said "drops outside ✗" and offered a checked "Lower the box 5 cm" chip.
+- ⌘Z restored the starter byte for byte.
+- "make it work again" aimed the box in 5–6 s.
+- "make the ball bigger" asked one question with 2 chips.
+- "start over…" opened New → Build with AI with the words filled in.
+- Under bench load the same swap took 49–54 s: the edit step now runs the scene on the server.
+
+**Imagine end to end**: `run.mjs pipeline --set chains --imagine off|auto|direct`, 18 chains × 2 samples, all at the same time, both judges blind.
+
+| arm | n | hard pass | key outcome | own goals met | judge Astra | judge Opus | p50 / p90 s | $ per build | concepts | fallbacks |
+|---|---|---|---|---|---|---|---|---|---|---|
+| off | 36 | 0.75 | 0.83 | 0.92 | 8.85 | 7.56 | 110 / 230 | 0.32 | 0 | – |
+| auto (observe) | 36 | 0.78 | 0.89 | 0.93 | 9.00 | 7.67 | 192 / 293 | 0.52 | 33 | 1/34 |
+| direct | 36 | 0.75 | 0.83 | 0.91 | 8.79 | 7.69 | 133 / 328 | 0.40 | 36 | 0/36 |
+
+- **auto − off**:
+  - hard pass +0.03 and goals +0.014, both passing;
+  - judges +0.13 [95 % CI −0.50, +0.78], short of the +0.3 needed;
+  - p50 +81 s, over the +60 s allowed;
+  - fallback 2.9 %.
+- **Ship rule: the default stays Off**, and the setting stays. Direct ties observe (−0.03 pass, −0.02 goals) and is 59 s faster, but it does not beat off either (judges +0.04).
+- With part A's stage tuner, the words-only arm already holds most of what the concept added in the experiment (0.82 → 0.95 there, measured without the tuner). This is the overlap the plan warned about.
+- **Fault injection** (`run.mjs --fault imagine|observe|plan`, and a 500 in the UI): at each of the 3 failure points the build finishes from the words with one info line and no concept on the result. A concept already shown is taken down (`concept-dropped`).
+- **Non-chain prompts**: 0 imagine calls. That is 29 of 29 non-chain prompts in text25 + new15 by the route, and 11 of 11 live.
+
+**No regressions** (e0-client against E1, at the same time). **PASS**, revised 21:20 in the repair round. The first pass, at 3 picture samples and 1 chain pair, showed −0.10 on both. 5 more same-time pairs of each closed it:
+
+| set | E0 | E1 | Δ E1 − E0 [95 % CI, bootstrap over cases] |
+|---|---|---|---|
+| text (12) | 12/12 | 12/12 | 0 |
+| edits (10) | 7/10 | 7/10 (the same 3 in both) | 0 |
+| **pictures, 8 same-time pairs** | 93/120 = 0.775 | 89/120 = 0.742 | **−0.033** [−0.083, +0.009] |
+| pictures, the 5 new pairs alone | 60/80 | 60/80 | 0.000 [−0.063, +0.050] |
+| **chains, words only, 6 same-time pairs** | 90/108 = 0.833 | 88/108 = 0.815 | **−0.019** [−0.074, +0.028] |
+| chains, judges mean (paired) | 8.45 | 8.50 | +0.05 [−0.26, +0.37] |
+
+- 0 errors.
+- With the 3 unpaired chain samples added, the gap is 0.84 against 0.80 (−0.043). Those samples are E0 alone on a quiet machine (0.89) and E1 under the heaviest load (0.72, 0.78), so the same-time pairs are the fair comparison.
+- No case drops consistently. Identical code ranged 0.69–1.00 a sample on pictures and 0.72–1.00 on chains.
+- **The same code, shown by running it.** Both clients built the 18 chains and the 16 pictures against one scripted model:
+  - plan returned a stored plan;
+  - refine returned one move patch, then done.
+- Every request and the final scene and card were **byte-identical in 34/34**, with the stage tuner off and with it on (60–70 tuner runs in 4 builds).
+- A 0.1 mm mutant of the E1 client is caught.
+- `applyPatches`, `solver.js`, `stage-tune.js` and `web/sim` are byte-identical in both clients. The first write-up wrongly said C1 had changed `applyPatches`.
+
+**UI** (7 live chain builds, light and dark):
+- The concept shows before the plan step ends in 7 of 7 builds: at 25–39 s, against the first plan at 62–157 s.
+- It is labelled "Concept sketch · AI-generated", with the cast chips and story.
+- The thumbnail and the side-by-side view work in 3 of 3.
+- The setting survives a reload.
+- No imagine call comes from Edit with AI or with a photo attached.
+- There are 0 unsure lines.
+- Not clean: on 2 of 7 UI builds and 4 of 70 bench concept builds, the plan's own reply mentions "the concept picture".
+
+**Checks**: `node --test web/ai/test/*.test.mjs` 152/152; `npm run test:ai` 147/147.

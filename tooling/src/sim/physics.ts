@@ -127,11 +127,13 @@ const DENT_PRESSURE = 3
 
 /**
  * The fastest anything in a scene may move, m/s: its centre, and any point of it as it turns. Nothing a scene builds comes near
- * it (a ball dropped from 6 m lands at 11 m/s, the stiffest launcher throws at under 40); it is a guard against a solve that
- * diverges where solids are wedged deep inside one another, which would otherwise feed on itself to infinity (and NaN) within a
- * few steps. A body over it is slowed to it, said once per run (console.warn).
+ * it: a run lasts at most 20 s (web/server.py's `clean`), in which gravity alone can give a body at most 196 m/s (a 1 m steel ball let
+ * fall from 1000 m reaches 180 m/s in 20 s through the air); the stiffest launcher throws at under 40. It is a guard against a solve
+ * that diverges where solids are wedged deep inside one another, which would otherwise feed on itself to infinity (and NaN) within
+ * a few steps. A body over it is slowed to it, said once per run (console.warn); planck's own clamp on a step's move
+ * (`Settings.maxTranslation`) is set to it as well, so no single solve carries a body farther than it allows.
  */
-const SANE_SPEED = 150
+const SANE_SPEED = 250
 
 /** An error the engine reports itself: one line, saying when and what (the server and the page show its message as it is). */
 export class SimulationError extends Error {
@@ -143,18 +145,45 @@ export class SimulationError extends Error {
 
 /**
  * Sub-steps for stiff springs (`simulate`'s `subSteps`): the most a spring group may turn its bodies in one (sub-)step, radians (ω·h),
- * on its own (a period then within 0.9 % of its true one, its swing within 2.6 %), and while something from outside touches or nears it
- * (a ball's rebound off its plate is then within 1.4 % of a step 10 times finer: research/rw-validate-p3.ts); and the most sub-steps a
- * step is split into (the whole world is stepped in them, so a crowded table with a stiff pad in it costs up to that many times more).
+ * on its own (a period then within 0.9 % of its true one: 1 − ω·h/(2·asin(ω·h/2)) at most), and while something from outside strikes
+ * or nears it (a ball's rebound off its plate is then within 1.4 % of a step 10 times finer: research/rw-validate-p3.ts); and the most
+ * sub-steps a step is split into.
  */
 const SUB_TURN = 0.45
 const SUB_TURN_NEAR = 0.15
 const SUB_MAX = 16
-/** Steps the finer sub-steps are kept for after a body from outside a spring group last neared it (0.25 s). */
+/**
+ * Steps (0.25 s) the finer sub-steps are kept for after a body from outside a spring group last neared it; and the least a group keeps
+ * the sub-steps it asked for before it may ask for fewer (a count that followed the swing's phase, more while the spring is stretched
+ * and fewer while it is pressed, gave the swing energy every period: an undamped 10 × 10 cm pad at 10000 N/m rang up from 17 to 93 mm
+ * in 2.5 s with nothing touching it, and threw a marble dropped 2 m on it 6.5 m high).
+ */
 const SUB_HOLD = 120
+/**
+ * The whole world is stepped in the sub-steps, so they are limited to about SUB_WORK body-steps a step: at most SUB_WORK over the moving
+ * bodies awake (a pad at 10000 N/m with a ball on it took a crowded Rube Goldberg machine from 0.24 to 2.3 s); a crowded scene's
+ * stiff springs are then followed in fewer, steady still (their implicit share), the rebound off them followed less closely.
+ */
+const SUB_WORK = 64
+/**
+ * m/s: a body from outside a spring group that moves against it slower than this rests on it or rides with it (a ball sitting on a
+ * pad, a mat's passenger); only one that comes at it faster strikes it, and only then are the finer sub-steps needed.
+ */
+const NEAR_SPEED = 0.1
 
-/** The most impacts the time-of-impact pass solves in one step (`simulate`'s `solveIslandTOI`). */
-const TOI_EVENTS = 64
+/**
+ * The most impacts the time-of-impact pass solves in one step (`simulate`'s `solveIslandTOI`), and the most it solves for any one body
+ * (a body wedged among fixed solids, a ball and a wheel, set off 122,432 impacts in 1.5 s; a scene took 51-329 s for 3).
+ */
+const TOI_EVENTS = 1024
+const BODY_TOI = 32
+/**
+ * A body that used all its BODY_TOI impacts in a step is wedged (it strikes the same solids over and over): BODY_TOI_WEDGED a step for it from the
+ * next step on, until a step leaves it some (four wedged among 390 pegs used 32 each in every step: 216,553 impacts, 44 s of a 3 s run's 47).
+ */
+const BODY_TOI_WEDGED = 4
+/** Each impact the pass solves scans every contact of the world again for the next one: at most TOI_WORK contacts scanned a step. */
+const TOI_WORK = 200000
 
 /** Spin below this (rad/s) gets no rolling resistance, so a resting ball is left alone. */
 const ROLLING_OMEGA_FLOOR = 0.01
@@ -402,18 +431,24 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	}
 	const joints = scene.joints ?? []
 	/**
-	 * A spring's own mass (a spring joint's `mass`, kg) moves with what it pushes: its coils move from not at all at a fixed end to all
-	 * of the way at the moving one, which carries a third of it (Rayleigh's correction, exact for the spring's slow modes: a plate of
-	 * mass m on a spring of mass mₛ swings at √(k/(m + mₛ/3)) and is thrown with ½k·x² = ½(m + mₛ/3)·v²). That third is added to the
-	 * moving end's body at its anchor (its weight with it); a spring between two moving bodies puts half its mass at each end.
+	 * A spring's own mass (a spring joint's `mass`, kg) moves with what it pushes: its coils move from not at all at a fixed end to all of
+	 * the way at a moving one. The engine gives it a uniform spring's inertia and weight where they act:
+	 * - One end fixed: the moving end carries the inertia of the spring's fundamental mode, m_e = mₛ/β² − m with β·tan β = mₛ/m (m the
+	 *   body's own mass; the exact period of a mass on a uniform spring, 2π√((m + m_e)/k): Rayleigh's mₛ/3 for a light spring, up to
+	 *   0.405·mₛ for a heavy one), added to its body at the anchor; and half the spring's weight (the fixed end holds the other half: a
+	 *   pad's plate settles (m + mₛ/2)·g/k down, a hanging weight (m + mₛ/2)·g/k), the weight beyond m_e's own applied at the anchor
+	 *   (`springWeight`). Springs from fixed points to one body (a plate's two) are reckoned together.
+	 * - Both ends moving: a uniform bar's consistent mass, mₛ/6 at each end and 2mₛ/3 at the middle of its anchors moving as they do
+	 *   (`SpringMass`): the whole mₛ moves with the pair, its stretching swing carries mₛ/6 at each end (Rayleigh's), and each end holds half
+	 *   its weight.
+	 * A lumped end mass is true to a real spring only while the spring is light against what it moves: a launcher whose steel outweighs
+	 * its plate and ball throws slower than any lumped mass gives (the coil's release wave limits it to x₀·√(k/mₛ)). The catalog keeps
+	 * its springs where mₛ/3 is at most 0.3 of the plate and a light ball (machines/catalog_mechanisms.py `_spring_cap`): there a
+	 * launcher's throw is within 2.5 % of a 400-node coil (research/rw-validate-p4.ts `mass`).
 	 */
-	for (const joint of joints) {
-		if (joint.kind !== "spring" || !((joint.mass ?? 0) > 0) || oneBody(joint.a, joint.b)) continue
-		const ends = ([[joint.a, joint.anchorA], [joint.b, joint.anchorB]] as const).filter(([id]) => id !== null && bodyOf(id).isDynamic())
-		const share = (joint.mass ?? 0) / (ends.length === 2 ? 2 : 3)
-		for (const [id, anchor] of ends) {
-			const body = bodyOf(id)
-			const p = anchorOn(id, anchor)
+	const springWeights: { body: Body; anchor: Vec2; force: number }[] = []
+	{
+		const addMass = (body: Body, p: Vec2, share: number) => {
 			const md = { mass: 0, center: new Vec2(0, 0), I: 0 }
 			body.getMassData(md)
 			const total = md.mass + share
@@ -422,6 +457,38 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				center: new Vec2((md.mass * md.center.x + share * p.x) / total, (md.mass * md.center.y + share * p.y) / total),
 				I: md.I + share * (p.x * p.x + p.y * p.y)
 			})
+		}
+		const fixedEnd = new Map<Body, { anchor: Vec2; mass: number }[]>()
+		const bothEnds: { a: Body; b: Body; la: Vec2; lb: Vec2; mass: number }[] = []
+		for (const joint of joints) {
+			if (joint.kind !== "spring" || !((joint.mass ?? 0) > 0) || oneBody(joint.a, joint.b)) continue
+			const mass = joint.mass ?? 0
+			const a = bodyOf(joint.a)
+			const b = bodyOf(joint.b)
+			if (a.isDynamic() && b.isDynamic()) bothEnds.push({ a, b, la: anchorOn(joint.a, joint.anchorA), lb: anchorOn(joint.b, joint.anchorB), mass })
+			else if (a.isDynamic() || b.isDynamic()) {
+				const [body, anchor] = a.isDynamic() ? [a, anchorOn(joint.a, joint.anchorA)] : [b, anchorOn(joint.b, joint.anchorB)]
+				fixedEnd.set(body, [...(fixedEnd.get(body) ?? []), { anchor, mass }])
+			}
+		}
+		// (each body's own mass, before any spring's is added)
+		const own = new Map<Body, number>([...fixedEnd.keys()].map((body) => [body, body.getMass()]))
+		for (const [body, springs] of fixedEnd) {
+			const total = springs.reduce((sum, s) => sum + s.mass, 0)
+			const m = own.get(body) ?? 0
+			const beta = fundamentalMode(total / m)
+			// (a light spring's m_e is mₛ/3 to the last digit's noise; m tiny against mₛ: 4mₛ/π² − m)
+			const inertia = m > 0 && Number.isFinite(beta) ? total / (beta * beta) - m : total / 3
+			for (const s of springs) {
+				const share = (inertia * s.mass) / total
+				addMass(body, s.anchor, share)
+				springWeights.push({ body, anchor: s.anchor, force: (s.mass / 2 - share) * GRAVITY })
+			}
+		}
+		for (const s of bothEnds) {
+			addMass(s.a, s.la, s.mass / 6)
+			addMass(s.b, s.lb, s.mass / 6)
+			world.createJoint(new SpringMass(s.a, s.b, s.la, s.lb, (2 * s.mass) / 3))
 		}
 	}
 	const parentLinks = scene.solids.flatMap((s) => (s.parent === undefined ? [] : [[s.id, s.parent] as const]))
@@ -684,20 +751,35 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	let continuous = false
 	/** The (sub-)step being solved, s: STEP, or a share of it where a stiff spring needs finer steps (`subSteps`). */
 	let h = STEP
-	const solver = (world as unknown as { m_solver: { solveWorldTOI: (step: unknown) => void; solveIslandTOI: (...args: unknown[]) => void } }).m_solver
+	const solver = (world as unknown as { m_solver: { solveWorldTOI: (step: unknown) => void; solveIslandTOI: (...args: unknown[]) => void; solveIsland: (step: unknown) => void } }).m_solver
 	const solveTOI = solver.solveWorldTOI.bind(solver)
 	/**
-	 * At most TOI_EVENTS impacts a step for the time-of-impact pass to solve one by one (each scans every contact again): a scene
-	 * solves a few at most (the wrecking ball's tumbling bricks 27), but solids wedged among hundreds of pegs set off thousands, a
-	 * step's work taking a fifth of a second (a 2.5 s run, 5 minutes). Past it the pass ends and what is left is the next step's.
+	 * At most TOI_EVENTS impacts a step for the time-of-impact pass to solve one by one (each scans every contact again), and at most
+	 * BODY_TOI for any one body: a scene solves a few at most (the wrecking ball's tumbling bricks 27), but a body wedged among fixed
+	 * solids strikes them again and again within the step (a handle wedged against a fixed ball and a wheel set off 122,432 impacts in
+	 * 1.5 s, which no global cap of 64 a step stopped: a 3 s run took 51 to 329 s). Past either the body's contacts, or every contact,
+	 * sit the pass out, and what is left is the next step's (planck's pass skips a contact that has had its share of events).
 	 */
 	let toiEvents = 0
+	let toiCap = TOI_EVENTS
+	const toiOf = new Map<Body, number>()
+	/** The bodies that used all their impacts in the step before (wedged). */
+	const wedged = new Set<Body>()
+	const spent = (c: Touch) => {
+		;(c as unknown as { m_toiCount: number }).m_toiCount = Settings.maxSubSteps + 1
+	}
 	const solveIslandTOI = solver.solveIslandTOI.bind(solver)
 	solver.solveIslandTOI = (...args: unknown[]) => {
+		propagate(solver as unknown as Island)
 		solveIslandTOI(...args)
-		if (++toiEvents < TOI_EVENTS) return
-		// (planck's pass skips a contact that has had its share of events: every contact has had it)
-		for (let c = world.getContactList(); c !== null; c = c.getNext()) (c as unknown as { m_toiCount: number }).m_toiCount = Settings.maxSubSteps + 1
+		for (const body of [args[1], args[2]] as Body[]) {
+			if (!body.isDynamic()) continue
+			const n = (toiOf.get(body) ?? 0) + 1
+			toiOf.set(body, n)
+			if (n >= (wedged.has(body) ? BODY_TOI_WEDGED : BODY_TOI)) for (let e = body.getContactList(); e !== null; e = e.next) spent(e.contact)
+		}
+		if (++toiEvents < toiCap) return
+		for (let c = world.getContactList(); c !== null; c = c.getNext()) spent(c)
 	}
 	solver.solveWorldTOI = (step) => {
 		// The time-of-impact pass ignores joints, so it would solve a hinged part's impacts as if it were
@@ -710,6 +792,11 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		// (planck's pass cannot take a body whose motion is not a number: it throws deep inside, with nothing to say what)
 		unsound("solved")
 		toiEvents = 0
+		toiCap = Math.min(TOI_EVENTS, Math.max(BODY_TOI, Math.floor(TOI_WORK / Math.max(1, world.getContactCount()))))
+		// (a body that used up its impacts last step stays wedged while it goes on using up its fewer ones)
+		for (const body of [...wedged]) if ((toiOf.get(body) ?? 0) < BODY_TOI_WEDGED) wedged.delete(body)
+		for (const [body, n] of toiOf) if (n >= BODY_TOI) wedged.add(body)
+		toiOf.clear()
 		continuous = true
 		try {
 			solveTOI(step)
@@ -856,11 +943,33 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	/** The force each contact pressed with in the last step, from its solved impulses, in newtons. */
 	const pressed = new Map<Touch, number>()
 	world.on("post-solve", (touch, impulse) => {
+		// A wedged body's contacts can pile impulse up step after step through warm starting, opposing contacts cancelling while their
+		// stored impulses grow (a sneaker's heel wedged among fixed pegs: its stored impulses grew until the warm start alone gave it
+		// 11,000 units a step, then NaN). A stored impulse that would change the heavier moving body's speed by more than SANE_SPEED is no
+		// real push: it is dropped from the next step's warm start (the step's solve still had it).
+		{
+			const A = touch.getFixtureA().getBody()
+			const B = touch.getFixtureB().getBody()
+			const bound = Math.max(A.isDynamic() ? A.getMass() : 0, B.isDynamic() ? B.getMass() : 0) * SANE_SPEED * LENGTH_SCALE
+			const manifold = touch.getManifold()
+			let over = false
+			for (let i = 0; i < manifold.pointCount; i++) {
+				const p = manifold.points[i]
+				if (p !== undefined && !(Math.abs(p.normalImpulse) <= bound && Math.abs(p.tangentImpulse) <= bound)) over = true
+			}
+			if (over)
+				for (let i = 0; i < manifold.pointCount; i++) {
+					const p = manifold.points[i]
+					if (p === undefined) continue
+					p.normalImpulse = 0
+					p.tangentImpulse = 0
+				}
+		}
 		const total = impulse.normalImpulses.reduce((sum, i) => sum + i, 0)
 		pressed.set(touch, total / h / LENGTH_SCALE)
 		const spring = springs.get(touch)
 		if (spring !== undefined) {
-			spring.normalImpulse = total
+			spring.normalImpulse = total + (passed.get(touch) ?? 0)
 			// Box2D's tangent is the normal turned clockwise; the spring's is turned counterclockwise.
 			spring.tangentImpulse = -impulse.tangentImpulses.reduce((sum, i) => sum + i, 0)
 		}
@@ -898,6 +1007,160 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		}
 		touch.setTangentSpeed(speed)
 	}
+	/**
+	 * Impacts carried on through lasting contacts (sequential impacts). planck solves an island's contacts together, and gives
+	 * restitution only to a contact that is closing as the step begins: a strike on a body that rests against another (a ball on a
+	 * ball, a row of touching balls) reached the others through contacts that were not closing yet, and was shared out as if the
+	 * bodies were glued (a tennis ball dropped resting on a basketball rose to 0.82 m of its 1.24 m; a Newton's cradle of touching balls
+	 * sent two out). So where a strike lands on a body that also touches another moving body, the island's one-point contacts are
+	 * first resolved one strike at a time, each with its own restitution, the hardest closing first, until none closes faster than
+	 * VELOCITY_THRESHOLD: the strike runs through the row as a wave does (the basketball rebounds off the floor, then meets the tennis
+	 * ball still falling and throws it up at about three times its speed; the cradle sends out one ball). Each strike is a two-body
+	 * collision with e ≤ 1, so none adds energy. Then planck solves the island as always (what still closes is a touch, and the
+	 * strikes' contacts are parting). A struck contact's restitution is `compensated`'s, applied as planck would (its rebound e times
+	 * the approach as the step began); one passed on is its pair's own. Contacts of two points (a slab flat on a slab) are left to
+	 * planck's solve, as are the joints (a cradle's strings, perpendicular to its strikes). Both in the main solve (before
+	 * `solveIsland`) and in the time-of-impact pass (before `solveIslandTOI`, which takes in what touches the struck bodies).
+	 */
+	type Island = { m_bodies: Body[]; m_contacts: Touch[] }
+	/** Contacts given restitution this (sub-)step (a strike: `compensated` > 0). */
+	const struck = new Set<Touch>()
+	/** The normal impulse each contact took in the pass this step (planck units), for Garwin's spring-back (`springBack`). */
+	const passed = new Map<Touch, number>()
+	/** Whether a contact can take part in the pass: touching at one point, enabled, between solids. */
+	const single = (c: Touch) => c.isTouching() && c.isEnabled() && c.getManifold().pointCount === 1 && !c.getFixtureA().isSensor() && !c.getFixtureB().isSensor()
+	/** Two round solids touching (balls, wheels, rolls): a strike passes on through them. */
+	const round = (c: Touch) => c.getFixtureA().getType() === "circle" && c.getFixtureB().getType() === "circle" && single(c)
+	/**
+	 * How a body moves when struck in the pass: fixed (static); loose (no joint but springs); turning about a fixed pivot (one
+	 * hinge to a fixed body, no motor or limit: a cradle's ball, a seesaw's plank, met with its inertia about the pivot, so the hinge
+	 * holds as it is struck); or not at all (held by anything else: a rope, a pulley, a wheel's axle, a chain it lies on, a driven or
+	 * limited hinge, a hinge to a moving body), its contacts then left to planck's solve.
+	 */
+	const bearing = (body: Body): { pivot?: Vec2 } | undefined => {
+		if (!body.isDynamic()) return {}
+		let pivot: Vec2 | undefined
+		for (let e = body.getJointList(); e !== null; e = e.next) {
+			const j = e.joint
+			if (j instanceof SpringLink || j instanceof SpringMass) continue
+			if (pivot !== undefined || !(j instanceof Hinge) || !e.other.isStatic() || j.isMotorEnabled() || j.isLimitEnabled()) return undefined
+			pivot = j.getBodyA() === body ? j.getAnchorA() : j.getAnchorB()
+		}
+		return pivot === undefined ? {} : { pivot }
+	}
+	/** A side of a contact in the pass: its body, its arm to the point (from its centre, or from its pivot), and its inverse mass along the normal. */
+	type Side = { body: Body; r: Vec2; pivot: Vec2 | undefined; inverse: number; turn: number }
+	const sideOf = (body: Body, point: Vec2, n: Vec2): Side | undefined => {
+		const how = bearing(body)
+		if (how === undefined) return undefined
+		if (!body.isDynamic()) return { body, r: new Vec2(0, 0), pivot: undefined, inverse: 0, turn: 0 }
+		const c = body.getWorldCenter()
+		if (how.pivot === undefined) {
+			const r = Vec2.sub(point, c)
+			const turn = inverseInertia(body)
+			return { body, r, pivot: undefined, inverse: inverseMass(body) + turn * Vec2.cross(r, n) ** 2, turn }
+		}
+		// about its pivot O: I_O = I_c + m·|c − O|², and a strike at r from O turns it by (r × J)/I_O, its centre moving with the turn
+		const o = how.pivot
+		const r = Vec2.sub(point, o)
+		const spin = inverseInertia(body)
+		const arm = Vec2.sub(c, o)
+		const io = (spin > 0 ? 1 / spin : 0) + body.getMass() * Vec2.dot(arm, arm)
+		if (!(io > 0)) return undefined
+		return { body, r, pivot: o, inverse: Vec2.cross(r, n) ** 2 / io, turn: 1 / io }
+	}
+	const motion = (body: Body) => body as unknown as { m_linearVelocity: Vec2; m_angularVelocity: number }
+	/** The velocity of the side's point now (planck units). */
+	const pointVelocity = (s: Side, point: Vec2) => {
+		const m = motion(s.body)
+		const c = s.body.getWorldCenter()
+		return { x: m.m_linearVelocity.x - m.m_angularVelocity * (point.y - c.y), y: m.m_linearVelocity.y + m.m_angularVelocity * (point.x - c.x) }
+	}
+	/** An impulse J (planck units) on the side at its point. */
+	const strike = (s: Side, jx: number, jy: number) => {
+		if (!s.body.isDynamic()) return
+		const m = motion(s.body)
+		const dw = s.turn * (s.r.x * jy - s.r.y * jx)
+		m.m_angularVelocity += dw
+		if (s.pivot === undefined) {
+			const im = inverseMass(s.body)
+			m.m_linearVelocity.x += im * jx
+			m.m_linearVelocity.y += im * jy
+			return
+		}
+		// (its centre turns about the pivot)
+		const c = s.body.getWorldCenter()
+		m.m_linearVelocity.x += -dw * (c.y - s.pivot.y)
+		m.m_linearVelocity.y += dw * (c.x - s.pivot.x)
+	}
+	const propagate = (island: Island) => {
+		if (struck.size === 0) return
+		const contacts = island.m_contacts
+		let needed = false
+		for (const c of contacts) {
+			if (!struck.has(c) || !single(c)) continue
+			for (const body of [c.getFixtureA().getBody(), c.getFixtureB().getBody()]) {
+				if (!body.isDynamic() || bearing(body) === undefined) continue
+				for (let e = body.getContactList(); e !== null && !needed; e = e.next) if (e.contact !== c && e.other.isDynamic() && round(e.contact) && bearing(e.other) !== undefined) needed = true
+			}
+			if (needed) break
+		}
+		if (!needed) return
+		const points: { c: Touch; a: Side; b: Side; point: Vec2; n: Vec2; k: number; e: number; fresh: boolean; lift: number; hit: boolean }[] = []
+		for (const c of contacts) {
+			if (!(struck.has(c) ? single(c) : round(c))) continue
+			const pair = pairOf(c)
+			const wm = c.getWorldManifold(null)
+			if (pair?.contact === undefined || wm === null || wm === undefined || wm.pointCount === 0) continue
+			const point = Vec2.clone(wm.points[0] as Vec2)
+			const n = Vec2.clone(wm.normal)
+			const A = c.getFixtureA().getBody()
+			const B = c.getFixtureB().getBody()
+			const a = sideOf(A, point, n)
+			const b = sideOf(B, point, n)
+			if (a === undefined || b === undefined || !(a.inverse + b.inverse > 0)) continue
+			const fresh = struck.has(c)
+			// (in the main solve, the gravity the step is about to add to a struck contact's approach, which `compensated` has reckoned with)
+			const lift = fresh && !continuous ? GRAVITY * LENGTH_SCALE * h * n.y * ((B.isDynamic() ? 1 : 0) - (A.isDynamic() ? 1 : 0)) : 0
+			points.push({ c, a, b, point, n, k: a.inverse + b.inverse, e: fresh ? c.getRestitution() : pair.contact.restitution, fresh, lift, hit: false })
+		}
+		const closing = (q: (typeof points)[number]) => {
+			const va = pointVelocity(q.a, q.point)
+			const vb = pointVelocity(q.b, q.point)
+			return -((vb.x - va.x) * q.n.x + (vb.y - va.y) * q.n.y)
+		}
+		for (let pass = 0; pass < Math.min(256, 8 * points.length); pass++) {
+			let worst: (typeof points)[number] | undefined
+			let most = VELOCITY_THRESHOLD * LENGTH_SCALE
+			for (const q of points) {
+				const approach = closing(q)
+				if (approach > most) {
+					most = approach
+					worst = q
+				}
+			}
+			if (worst === undefined) break
+			const q = worst
+			// the impulse that leaves them parting at e times the approach (a struck contact: as planck's step with `compensated`'s e would)
+			const j = (q.e * (most + q.lift) + q.lift + most) / q.k
+			strike(q.a, -j * q.n.x, -j * q.n.y)
+			strike(q.b, j * q.n.x, j * q.n.y)
+			passed.set(q.c, (passed.get(q.c) ?? 0) + j)
+			// a strike passed on is an impact of its own (a struck contact's was counted as it began)
+			if (!q.fresh && !q.hit) {
+				q.hit = true
+				const pair = pairOf(q.c)
+				const speed = most / LENGTH_SCALE
+				if (pair !== undefined) hits.push({ t: stepIndex * STEP, a: pair.a.id, b: pair.b.id, speed: Math.round(speed * 1000) / 1000 })
+				if (speed > (impacts.get(stepIndex) ?? 0)) impacts.set(stepIndex, speed)
+			}
+		}
+	}
+	const solveIsland = solver.solveIsland.bind(solver)
+	solver.solveIsland = (step: unknown) => {
+		propagate(solver as unknown as Island)
+		solveIsland(step)
+	}
 	world.on("pre-solve", (touch, oldManifold) => {
 		// (the time-of-impact pass re-enables a contact it updates: one of a hinged body's stays out of it)
 		if (continuous && (hinged(touch.getFixtureA().getBody()) || hinged(touch.getFixtureB().getBody()))) {
@@ -908,7 +1171,9 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		const pair = pairOf(touch)
 		if (pair?.contact === undefined) return
 		touch.setFriction(pair.contact.friction)
-		touch.setRestitution(compensated(touch, pair.contact.restitution, oldManifold))
+		const restitution = compensated(touch, pair.contact.restitution, oldManifold)
+		touch.setRestitution(restitution)
+		if (restitution > 0) struck.add(touch)
 		const e = pair.contact.tangentRestitution ?? 0
 		if (e <= 0 || oldManifold.pointCount > 0) return
 		const wm = touch.getWorldManifold(null)
@@ -1124,44 +1389,84 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	/**
 	 * How many sub-steps the coming step is solved in: enough that every spring group's fastest swing (ω = √rate, its springs' k/m
 	 * summed on the bodies they move) turns at most SUB_TURN a sub-step, or SUB_TURN_NEAR while a moving body from outside the group
-	 * touches or nears one of its bodies (planck has a contact for them: their boxes overlap), as a ball falling on a sprung plate or
-	 * resting on it: the plate and the ball strike, part and strike again within a few thousandths of a second, and the step must
-	 * follow that (at 480 Hz a 58 g plate on a 7300 N/m spring threw a bowling ball 12 cm higher than it fell from). At most SUB_MAX;
-	 * a spring stiffer than that can follow is steadied by its implicit share (`tuneSprings`). Whole steps (one sub-step) for every
-	 * spring in the catalog at its default settings with nothing on it.
+	 * comes at one of its bodies (planck has a contact for them: their boxes overlap; and it moves against it faster than NEAR_SPEED),
+	 * as a ball falling on a sprung plate: the plate and the ball strike, part and strike again within a few thousandths of a second, and
+	 * the step must follow that (at 480 Hz a 58 g plate on a 7300 N/m spring threw a bowling ball 12 cm higher than it fell from). A ball
+	 * resting on the plate, or riding it, strikes nothing: whole steps follow it. At most SUB_MAX, and at most SUB_WORK over the moving
+	 * bodies awake; a spring stiffer than that can follow is steadied by its implicit share (`tuneSprings`). Whole steps (one sub-step)
+	 * for every spring in the catalog at its default settings with nothing on it.
+	 *
+	 * The count may rise at any step but falls only after SUB_HOLD steps of needing fewer: neared, a group keeps the most it has needed
+	 * until SUB_HOLD steps after it was last neared; alone, it keeps what it asked for until it has asked for fewer for SUB_HOLD steps;
+	 * the work budget the same. A count that changed with the swing's phase (a stretched spring's sideways stiffness T/d comes and goes
+	 * each half period) gave the swing a little energy every period, as a swing pumped in step with it gains: the step that changes its
+	 * length mid-swing changes what the swing keeps.
 	 */
 	const nearUntil = springGroups.map(() => -1)
-	/** The sub-steps each group has kept since it was neared (the most it has needed: a step that grows mid-swing changes the swing too). */
+	/** The sub-steps each group has kept since it was neared (the most it has needed). */
 	const kept = springGroups.map(() => 0)
+	/** The sub-steps each group asks for alone, and the step it last asked for as many or more. */
+	const freeKept = springGroups.map(() => 0)
+	const freeSince = springGroups.map(() => -1)
+	/** The step since which each group's springs' ends have stayed still against each other (infinity: they are moving, or nothing is known yet). */
+	const stillSince = springGroups.map(() => Number.POSITIVE_INFINITY)
+	/** The work budget's sub-steps, and the step it last allowed as many or more. */
+	let budget = 0
+	let budgetSince = -1
 	const subSteps = (rates: readonly number[]) => {
 		let n = 1
 		springGroups.forEach((_, i) => {
 			const turn = Math.sqrt(rates[i] ?? 0) * STEP
-			if (turn <= SUB_TURN_NEAR) return
-			const own = groupBodies[i] as Set<Body>
 			let near = false
-			for (const body of own) {
-				for (let f = body.getFixtureList(); f !== null && !near; f = f.getNext())
-					world.queryAABB(f.getAABB(0), (other) => {
-						const ob = other.getBody()
-						if (ob.isDynamic() && !own.has(ob) && !other.isSensor()) near = true
-						return !near
-					})
-				if (near) break
+			if (turn > SUB_TURN_NEAR) {
+				const own = groupBodies[i] as Set<Body>
+				for (const body of own) {
+					const v = body.getLinearVelocity()
+					for (let f = body.getFixtureList(); f !== null && !near; f = f.getNext())
+						world.queryAABB(f.getAABB(0), (other) => {
+							const ob = other.getBody()
+							if (ob.isDynamic() && !own.has(ob) && !other.isSensor()) {
+								const u = ob.getLinearVelocity()
+								const dx = u.x - v.x
+								const dy = u.y - v.y
+								if (dx * dx + dy * dy > NEAR_SPEED * NEAR_SPEED * LENGTH_SCALE * LENGTH_SCALE) near = true
+							}
+							return !near
+						})
+					if (near) break
+				}
+				// (and for SUB_HOLD steps after: the sub-steps stay through a whole exchange of strikes, not only while the bodies' boxes overlap)
+				if (near) nearUntil[i] = stepIndex + SUB_HOLD
 			}
-			// (and for SUB_HOLD steps after: a step that changes its length mid-swing changes what the swing keeps, so the sub-steps stay
-			// through a whole exchange of strikes, not only while the bodies' boxes overlap)
-			if (near) nearUntil[i] = stepIndex + SUB_HOLD
-			else near = stepIndex <= (nearUntil[i] as number)
-			if (!near) {
-				kept[i] = 0
-				n = Math.max(n, Math.ceil(turn / SUB_TURN))
+			if (!near) near = stepIndex <= (nearUntil[i] as number)
+			if (near) {
+				kept[i] = Math.max(kept[i] as number, Math.ceil(turn / SUB_TURN_NEAR))
+				n = Math.max(n, kept[i] as number)
 				return
 			}
-			kept[i] = Math.max(kept[i] as number, Math.ceil(turn / SUB_TURN_NEAR))
-			n = Math.max(n, kept[i] as number)
+			kept[i] = 0
+			// (a group none of whose springs' ends have moved against each other faster than NEAR_SPEED since the step before swings by less than
+			// anything can see: a plate at rest, a ball resting on it; whole steps, its implicit share keeping it steady, until something strikes it
+			// or it moves. Not at its first step, when nothing is known of it yet: a launcher's plate is still as it is let go)
+			let moving = false
+			for (const link of springGroups[i] as SpringLink[]) if (link.motion > NEAR_SPEED * LENGTH_SCALE) moving = true
+			if (moving) stillSince[i] = Number.POSITIVE_INFINITY
+			else if (stillSince[i] === Number.POSITIVE_INFINITY) stillSince[i] = stepIndex
+			const need = turn > SUB_TURN_NEAR && !(stepIndex > (stillSince[i] as number)) ? Math.ceil(turn / SUB_TURN) : 1
+			if (need >= (freeKept[i] as number) || stepIndex - (freeSince[i] as number) > SUB_HOLD) {
+				freeKept[i] = need
+				freeSince[i] = stepIndex
+			}
+			n = Math.max(n, freeKept[i] as number)
 		})
-		return Math.min(n, SUB_MAX)
+		let awake = 0
+		for (const { body } of movers) if (body.isAwake()) awake++
+		const allowed = Math.max(1, Math.floor(SUB_WORK / Math.max(1, awake)))
+		if (allowed >= budget || stepIndex - budgetSince > SUB_HOLD) {
+			budget = allowed
+			budgetSince = stepIndex
+		}
+		return Math.min(n, SUB_MAX, budget)
 	}
 
 	/** The weight of everything joined to a part: its whole assembly, and what joints join to it (a car's body to its wheels). */
@@ -1216,6 +1521,11 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			if (m.lone) m.body.applyForceToCenter(new Vec2(0, lift), false)
 			else m.body.applyForce(new Vec2(0, lift), m.body.getWorldPoint(m.center), false)
 		}
+	}
+
+	/** The rest of a fixed-ended spring's weight that its moving end holds (`springWeights`): half the spring's, less what its added inertia already weighs. */
+	const springWeight = () => {
+		for (const { body, anchor, force } of springWeights) body.applyForce(new Vec2(0, -force * LENGTH_SCALE), body.getWorldPoint(anchor), false)
 	}
 
 	/**
@@ -1328,7 +1638,11 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				if (curvedJoints.length > 0) freeJoints()
 				rollingResistance()
 				airLift()
+				if (springWeights.length > 0) springWeight()
 				airDrag()
+				Settings.maxTranslation = SANE_SPEED * LENGTH_SCALE * h
+				struck.clear()
+				passed.clear()
 				world.step(h)
 				springBack()
 				unsound("ending")
@@ -1548,6 +1862,8 @@ class SpringLink extends PlanckJoint {
 	private stretch = 0
 	/** Its stretching speed along its line at the step's start, planck units. */
 	private rate0 = 0
+	/** How fast its two anchors move against each other at the step's start (any way), planck units: whether it is swinging at all (`subSteps`). */
+	motion = 0
 	private invMass = 0
 	private gamma = 0
 	private hooke = 0
@@ -1581,6 +1897,7 @@ class SpringLink extends PlanckJoint {
 		const d = Math.sqrt(dx * dx + dy * dy)
 		this.stretch = d / LENGTH_SCALE - this.rest
 		this.active = d / LENGTH_SCALE >= 1e-9 && !(this.pushOnly && this.stretch >= 0)
+		this.motion = 0
 		if (!this.active) return 0
 		this.u.x = dx / d
 		this.u.y = dy / d
@@ -1603,6 +1920,7 @@ class SpringLink extends PlanckJoint {
 		const va = A.getLinearVelocityFromWorldPoint(pa)
 		const vb = B.getLinearVelocityFromWorldPoint(pb)
 		this.rate0 = (vb.x - va.x) * this.u.x + (vb.y - va.y) * this.u.y
+		this.motion = Math.sqrt((vb.x - va.x) * (vb.x - va.x) + (vb.y - va.y) * (vb.y - va.y))
 		if (A.isDynamic() && !A.isAwake()) A.setAwake(true)
 		if (B.isDynamic() && !B.isAwake()) B.setAwake(true)
 		return this.k * this.invMass + this.side * this.invSide
@@ -1674,6 +1992,114 @@ class SpringLink extends PlanckJoint {
 		const r = body === this.m_bodyB ? this.rB : this.rA
 		const s = solving(body)
 		return { x: s.m_invMass * px, y: s.m_invMass * py, w: s.m_invI * (r.x * py - r.y * px) }
+	}
+	getReactionTorque(_inv_dt: number) {
+		return 0
+	}
+}
+
+/**
+ * β in (0, π/2) with β·tan β = x: the fundamental mode of a uniform spring with one end fixed and a mass m on the other, x = mₛ/m
+ * (its period 2π·√(mₛ/k)/β). Found by bisection on β·sin β − x·cos β, which rises from −x to π/2 over the interval: the same steps,
+ * and so the same bits, wherever it runs.
+ */
+const fundamentalMode = (x: number) => {
+	if (!(x > 0)) return Number.NaN
+	let lo = 0
+	let hi = Math.PI / 2
+	for (let i = 0; i < 64; i++) {
+		const mid = (lo + hi) / 2
+		if (mid * Math.sin(mid) - x * Math.cos(mid) < 0) lo = mid
+		else hi = mid
+	}
+	return (lo + hi) / 2
+}
+
+/**
+ * The middle of a spring between two moving bodies (`simulate`'s spring masses): a mass `mass` (2mₛ/3) that moves as the middle of its
+ * two anchors does, its velocity their mean, and has its own weight. With mₛ/6 at each end it is a uniform bar's consistent mass matrix,
+ * mₛ/6·[[2, 1], [1, 2]]: the pair carries the whole mₛ as it moves, the stretching swing mₛ/6 at each end (Rayleigh's), each end half
+ * its weight. It is a velocity constraint between the bodies and this mass alone (it has no place of its own: the middle of the
+ * anchors is where it is), solved with planck's other constraints; nothing collides with it.
+ */
+class SpringMass extends PlanckJoint {
+	private readonly la: Vec2
+	private readonly lb: Vec2
+	private readonly mass: number
+	private rA = new Vec2(0, 0)
+	private rB = new Vec2(0, 0)
+	/** The middle's velocity (planck units). */
+	private readonly w = new Vec2(0, 0)
+	/** The 2 × 2 effective mass's inverse: (¼(K_A + K_B) + 1/mass)⁻¹, symmetric. */
+	private m11 = 0
+	private m12 = 0
+	private m22 = 0
+	constructor(a: Body, b: Body, la: Vec2, lb: Vec2, mass: number) {
+		super({ collideConnected: true }, a, b)
+		;(this as unknown as { m_type: string }).m_type = "spring-mass"
+		this.la = la
+		this.lb = lb
+		this.mass = mass
+	}
+	initVelocityConstraints(step: TimeStep) {
+		const A = this.m_bodyA
+		const B = this.m_bodyB
+		const ca = A.getWorldCenter()
+		const cb = B.getWorldCenter()
+		const pa = A.getWorldPoint(this.la)
+		const pb = B.getWorldPoint(this.lb)
+		this.rA = new Vec2(pa.x - ca.x, pa.y - ca.y)
+		this.rB = new Vec2(pb.x - cb.x, pb.y - cb.y)
+		// the middle's velocity as the step began (the bodies' own, before this step's forces), and this step's gravity on it
+		const va = A.getLinearVelocityFromWorldPoint(pa)
+		const vb = B.getLinearVelocityFromWorldPoint(pb)
+		this.w.x = (va.x + vb.x) / 2
+		this.w.y = (vb.y + va.y) / 2 - GRAVITY * LENGTH_SCALE * step.dt
+		const sa = solving(A)
+		const sb = solving(B)
+		const k11 = (sa.m_invMass + sa.m_invI * this.rA.y * this.rA.y + sb.m_invMass + sb.m_invI * this.rB.y * this.rB.y) / 4 + 1 / this.mass
+		const k12 = (-sa.m_invI * this.rA.x * this.rA.y - sb.m_invI * this.rB.x * this.rB.y) / 4
+		const k22 = (sa.m_invMass + sa.m_invI * this.rA.x * this.rA.x + sb.m_invMass + sb.m_invI * this.rB.x * this.rB.x) / 4 + 1 / this.mass
+		const det = k11 * k22 - k12 * k12
+		this.m11 = k22 / det
+		this.m12 = -k12 / det
+		this.m22 = k11 / det
+	}
+	solveVelocityConstraints(_step: TimeStep) {
+		const A = solving(this.m_bodyA)
+		const B = solving(this.m_bodyB)
+		const vA = A.c_velocity.v
+		const vB = B.c_velocity.v
+		const wA = A.c_velocity.w
+		const wB = B.c_velocity.w
+		// how far the anchors' mean velocity is from the middle's
+		const cx = (vA.x - wA * this.rA.y + vB.x - wB * this.rB.y) / 2 - this.w.x
+		const cy = (vA.y + wA * this.rA.x + vB.y + wB * this.rB.x) / 2 - this.w.y
+		const px = -(this.m11 * cx + this.m12 * cy)
+		const py = -(this.m12 * cx + this.m22 * cy)
+		// half of it at each anchor, all of it (the other way) on the middle
+		const hx = px / 2
+		const hy = py / 2
+		vA.x += A.m_invMass * hx
+		vA.y += A.m_invMass * hy
+		A.c_velocity.w += A.m_invI * (this.rA.x * hy - this.rA.y * hx)
+		vB.x += B.m_invMass * hx
+		vB.y += B.m_invMass * hy
+		B.c_velocity.w += B.m_invI * (this.rB.x * hy - this.rB.y * hx)
+		this.w.x -= px / this.mass
+		this.w.y -= py / this.mass
+	}
+	solvePositionConstraints(_step: TimeStep) {
+		return true
+	}
+	getAnchorA() {
+		return this.m_bodyA.getWorldPoint(this.la)
+	}
+	getAnchorB() {
+		return this.m_bodyB.getWorldPoint(this.lb)
+	}
+	getReactionForce(_inv_dt: number) {
+		return new Vec2(0, 0)
 	}
 	getReactionTorque(_inv_dt: number) {
 		return 0
@@ -2547,7 +2973,7 @@ class ChainTouch extends PlanckJoint {
 
 /** Whether a body hangs on a joint other than a spring: the time-of-impact pass would solve its impacts as if it were loose. */
 const hinged = (body: Body) => {
-	for (let edge = body.getJointList(); edge !== null; edge = edge.next) if (!(edge.joint instanceof SpringLink) && !(edge.joint instanceof ChainTouch)) return true
+	for (let edge = body.getJointList(); edge !== null; edge = edge.next) if (!(edge.joint instanceof SpringLink) && !(edge.joint instanceof ChainTouch) && !(edge.joint instanceof SpringMass)) return true
 	return false
 }
 

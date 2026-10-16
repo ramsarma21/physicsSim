@@ -8,7 +8,8 @@
 //      and the site's in the same statement that checks the caps, so steps running side by side can't all pass a cap they'd break together.
 //      Over a limit: 403 {code: "quota" | "site_quota"} - never 429, which web/ai/orchestrator.js treats as "busy" and retries.
 //   4. After the step (gate.run(fn) wraps it): the reservation becomes its real usage.costInUSD (from the answer or the error; none known: the
-//      reservation is given back). A cap can be passed only by what steps already running cost beyond their estimates.
+//      reservation is given back). A cap can be passed only by what steps already running cost beyond their estimates. A request the step
+//      refused as bad input (400) before any model call is not counted as a step either.
 // Without accounts configured (no publishable key, or no database) this is exactly the function's old access check.
 import { HttpError, logLine } from "./http.mjs"
 import { bearerToken, clerkSettings, verifySessionToken } from "./auth.mjs"
@@ -28,8 +29,10 @@ export function aiLimits(env = process.env) {
 	}
 }
 /** What each step reserves of the dollar caps before it runs (about the 99th percentile of its measured cost, ai/bench/results: plan p99
- *  $0.34, observe $0.19, refine $0.13, edit $0.24 with a long tail but p90 $0.04). The real cost replaces it once the step is done. */
-export const STEP_USD = { observe: 0.2, plan: 0.35, refine: 0.15, edit: 0.1 }
+ *  $0.34, observe $0.19, refine $0.13, edit $0.24 with a long tail but p90 $0.04; imagine about $0.06 for the picture (an estimate from its
+ *  tokens, in its usage.costInUSD) + $0.03-0.06 for the pre-pass, $0.08-0.11 in all on the first route, and $0.19-0.22 measured when the
+ *  picture falls back to Gemini, whose tokens cost 3x: so $0.25). The real cost replaces it once the step is done. */
+export const STEP_USD = { observe: 0.2, plan: 0.35, refine: 0.15, edit: 0.1, imagine: 0.25 }
 const DEFAULT_STEP_USD = 0.35
 /** Accounts are on for the AI gate: a publishable key and a database (the same rule as the scenes function's accountsOn), not switched off. */
 const accountsOn = (env) => !!clerkSettings(env) && dbConfigured(env) && (env.ACCOUNTS ?? "").toLowerCase() !== "off"
@@ -115,7 +118,7 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 	const lim = aiLimits(env)
 	const userUsd = account?.aiUsdPerDay ?? lim.userUsdPerDay
 	const est = STEP_USD[step] ?? DEFAULT_STEP_USD
-	let charged = null // {key, day, est}: what this step reserved
+	let charged = null // {key, day, hour, est}: what this step reserved
 	/** Counts this step against the limits and reserves its estimated cost; null when it may run, else the refusal. */
 	async function charge() {
 		const t = now()
@@ -153,7 +156,7 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 			else if (!r.user_ok) refusal = { code: "quota", error: `You've used today's Build with AI allowance. It resets at 00:00 UTC.` }
 			else if (!r.hour_ok) refusal = { code: "quota", error: `You've used this hour's Build with AI allowance. Try again after the hour.`, hourly: true }
 			if (!refusal) {
-				charged = { key, day: dayB, est }
+				charged = { key, day: dayB, hour, est }
 				return null
 			}
 			// (a refused step doesn't count: what the guards before the refusing one added is given back)
@@ -167,18 +170,24 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 			return { status: h.status, code: h.code, error: h.message, extra: h.extra }
 		}
 	}
-	/** The step is done: its reservation becomes what it really cost (none known: the reservation is given back), for the caller and the site. */
-	async function record(usage) {
+	/**
+	 * The step is done: its reservation becomes what it really cost (none known: the reservation is given back), for the caller and the site.
+	 * refused: the step turned the request down before any model call (a 400 from its payload's checks, e.g. a picture sent to imagine): with
+	 * nothing spent, it does not count as one of the caller's steps this hour or today either.
+	 */
+	async function record(usage, { refused = false } = {}) {
 		if (!charged) return
 		const c = charged
 		charged = null
 		const usd = Number(usage?.costInUSD)
 		const actual = Number.isFinite(usd) && usd > 0 ? Math.min(usd, 100) : 0
 		const delta = Math.round((actual - c.est) * 1e4) / 1e4
-		if (!delta) return
+		const uncount = refused && actual === 0
+		if (!delta && !uncount) return
 		try {
 			const db = await getDb(env)
-			await db.query("update counters set usd = greatest(0, usd + $3::numeric) where bucket = $2 and key in ($1, '*')", [c.key, c.day, delta])
+			if (delta) await db.query("update counters set usd = greatest(0, usd + $3::numeric) where bucket = $2 and key in ($1, '*')", [c.key, c.day, delta])
+			if (uncount) await db.query("update counters set n = greatest(0, n - 1) where key = $1 and bucket in ($2, $3)", [c.key, c.day, c.hour])
 		} catch {
 			logLine({ event: "ai_usage_lost", usd: actual })
 		}
@@ -189,7 +198,7 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 		try {
 			out = await fn()
 		} catch (e) {
-			await record(e?.usage)
+			await record(e?.usage, { refused: e?.code === "bad_input" })
 			throw e
 		}
 		await record(out?.usage)

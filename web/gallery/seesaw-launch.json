@@ -1,0 +1,109 @@
+{
+ "version": 2,
+ "id": "gallery-seesaw-launch",
+ "name": "Seesaw launch",
+ "seconds": 4,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "seesaw",
+   "type": "seesaw",
+   "name": "Seesaw",
+   "x": 1.2,
+   "y": 0.0015,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "ball",
+   "type": "tennis-ball",
+   "name": "Tennis ball",
+   "x": 1.5,
+   "y": 0.056468,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "weight",
+   "type": "steel-weight-1kg",
+   "name": "Heavy steel weight",
+   "x": 0.98,
+   "y": 0.85,
+   "angle": 0,
+   "props": {},
+   "held": true
+  },
+  {
+   "id": "shelf",
+   "type": "plank",
+   "name": "High shelf",
+   "x": 0.45,
+   "y": 0.6,
+   "angle": 0,
+   "props": {
+    "length": 0.8
+   }
+  },
+  {
+   "id": "basket",
+   "type": "basket",
+   "name": "Basket",
+   "x": 0.45,
+   "y": 0.621,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "hits",
+   "label": "The steel weight hits the seesaw",
+   "item": "weight",
+   "target": "seesaw",
+   "before_s": 1.5
+  },
+  {
+   "kind": "in",
+   "label": "The tennis ball lands in the basket on the shelf",
+   "item": "ball",
+   "container": "basket"
+  }
+ ]
+}

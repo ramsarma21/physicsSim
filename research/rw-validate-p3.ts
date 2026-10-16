@@ -447,7 +447,8 @@ const flights = (y: readonly number[]) => {
  * onto the default bounce pad and trampoline. (From ω·h = 1, 13 to 42% of a throw was lost at the stiffest settings: the spring's implicit
  * share, physics.ts `tuneSprings`, now starts at ω·h = √2.) Since the engine batch 2 (2026-10-15) the catalog builds every stiffness the props
  * ask for (no cap: the engine sub-steps a stiff spring's group, physics.ts `subSteps`) and the springs have mass (catalog_mechanisms.py
- * `_spring_mass`). A throw is the top of the ball's first flight (an undamped plate rings on, and a ball that falls back on it can be thrown
+ * `_spring_mass`); since its repair the catalog builds a stiffness lower where the springs' steel would outweigh the plate and a light ball
+ * (`_spring_cap`: the smallest launcher's "5000 N/m" is built at that cap; research/rw-validate-p4.ts has the uncapped one as a document). A throw is the top of the ball's first flight (an undamped plate rings on, and a ball that falls back on it can be thrown
  * again higher or lower, as the plate's swing meets it). A drop is the median, over drop heights 0.97 to 1.03 m, of the first rebound's top,
  * within 2.5% of the 4800 Hz median, or among the 4800 Hz rebounds of those drops: a ball as big as the default pad (the basketball) lands
  * on its plate and its rails' tops at once, and whether it then rolls off the pad's side is a toss-up a centimetre of height (or the step)
@@ -469,7 +470,7 @@ const sprungAgainstFine = async () => {
 	}
 	// launchers: the ball sits on the plate, which is held pressed until the release
 	const launchers: [string, Record<string, number>, string][] = [
-		["at its stiffest and smallest (5000 N/m, 10 cm, 6 × 2 cm plate)", { stiffness: 5000, compression: 0.1, width: 0.06, depth: 0.02, damping: 0 }, "golf-ball"],
+		["at its stiffest and smallest (asked 5000 N/m, built at its spring-steel cap; 10 cm, 6 × 2 cm plate)", { stiffness: 5000, compression: 0.1, width: 0.06, depth: 0.02, damping: 0 }, "golf-ball"],
 		["at its stiffest and smallest", { stiffness: 5000, compression: 0.1, width: 0.06, depth: 0.02, damping: 0 }, "steel-ball"],
 		["at its stiffest, smallest and least pressed (3 cm)", { stiffness: 5000, compression: 0.03, width: 0.06, depth: 0.02, damping: 0 }, "golf-ball"],
 		["at its defaults", {}, "golf-ball"]

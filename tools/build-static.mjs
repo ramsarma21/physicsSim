@@ -17,8 +17,9 @@
 //                                            `vercel deploy` would upload (.vercelignore) to a scratch folder, runs `vercel build` there (npm ci, then
 //                                            this script with --regen) with a throwaway local project id, then lays the built AI function out as a
 //                                            deploy does (read-only) and calls it against a mock gateway on 127.0.0.1 with a fake key (GET 405, an
-//                                            unknown step 404, an `edit` of the starter 200), and runs the starter in its engine. Needs git and the
-//                                            Vercel CLI; touches nothing in the project. --keep leaves the scratch folder (it is kept on a failure).
+//                                            unknown step 404, an `edit` of the starter 200, an `imagine` 200 with its picture), and runs the starter
+//                                            in its engine. Needs git and the Vercel CLI; touches nothing in the project. --keep leaves the scratch
+//                                            folder (it is kept on a failure).
 // Options: --out <dir> (default dist; must be inside the project), --map-budget <bytes> (default 1048576: a source map larger than this is left out,
 // and the sourceMappingURL comment of its file with it).
 //
@@ -93,7 +94,7 @@ const MARKER = ".build-static"
 const markerOf = (dir) => path.join(path.dirname(dir), `.${path.basename(dir)}${MARKER}`)
 
 // ------------------------------------------------------------------ what ships
-const SHIP_DIRS = new Set(["account", "ai", "export", "models", "scenarios", "sim", "ui", "vendor"])
+const SHIP_DIRS = new Set(["account", "ai", "export", "gallery", "models", "scenarios", "sim", "ui", "vendor"])
 const SKIP_DIRS = new Set(["dev", "out", "sample", "saved", "presets", "__pycache__", "node_modules"]) // dev pages and shots, renders, test data, the server's saves
 const ASSET_EXT = new Set([".html", ".js", ".mjs", ".css", ".json", ".map", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif", ".ico",
 	".woff", ".woff2", ".ttf", ".otf", ".wav", ".mp3", ".ogg", ".m4a", ".mp4", ".webm", ".wasm", ".txt"])
@@ -199,7 +200,11 @@ const KEY = process.env.TRUEFOUNDRY_API_KEY
 const { startMockGateway } = await import(pathToFileURL(gwFile).href)
 const gw = await startMockGateway()
 process.env.AI_GATEWAY_URL = gw.url
-gw.fallback = () => ({ content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }) })
+// (the imagine step's pre-pass gets a cast and a layout from the catalog; every other chat call the edit's "nothing to change"; the picture
+// is the mock's 1536x1024 JPEG)
+const PREPASS = JSON.stringify({ cast: [{ type: "steel-ball", count: 1, role: "rolls down the ramp" }, { type: "plank", count: 1, role: "the ramp" }], missing: [], layout: "On the left of the table a plank ramp slopes down to the right; the steel ball rests at its top.", story: ["The ball rolls down the ramp."] })
+gw.fallback = (rec) => ({ content: /concept picture/.test(JSON.stringify(rec.body?.messages?.[0] ?? "")) ? PREPASS : JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }) })
+gw.imageFallback = () => ({})
 const handler = (await import(pathToFileURL(join(fn, "api", "ai", "[step].mjs")).href)).default
 function call(step, { method = "POST", body } = {}) {
 	const raw = body === undefined ? "" : JSON.stringify(body)
@@ -229,7 +234,12 @@ const scene = JSON.parse(readFileSync(starterFile, "utf8"))
 const t0 = Date.now()
 const ed = await call("edit", { body: { payload: { text: "Change nothing.", scene }, client: { requestId: "vercel-check" } } })
 out.edit = { status: ed.status, ok: ed.json?.ok ?? null, model: ed.json?.model ?? null, error: ed.json?.error ?? null, requestId: ed.json?.requestId ?? null, cacheControl: ed.headers["cache-control"] ?? null, ms: Date.now() - t0 }
-out.keyInAnswers = [get, unknown, ed].some((r) => r.text.includes(KEY))
+// the imagine step: every module it loads (the picture's HTTP/1.1 fetch among them) must be in the function, and a picture comes back
+const t1 = Date.now()
+const im = await call("imagine", { body: { payload: { text: "a steel ball rolls down a ramp" }, client: { requestId: "vercel-check-imagine" } } })
+const concept = im.json?.result?.concepts?.[0]
+out.imagine = { status: im.status, ok: im.json?.ok ?? null, model: im.json?.model ?? null, error: im.json?.error ?? null, mime: concept?.mime ?? null, width: concept?.width ?? null, costInUSD: im.json?.usage?.costInUSD ?? null, ms: Date.now() - t1 }
+out.keyInAnswers = [get, unknown, ed, im].some((r) => r.text.includes(KEY))
 out.gateway = { requests: gw.requests.length, withKey: gw.requests.every((q) => q.auth) }
 const steps = await import(pathToFileURL(join(fn, "ai", "steps.mjs")).href)
 const run = await steps.runScene(scene)
@@ -450,10 +460,11 @@ async function vercelCheck() {
 		if (got.edit.status !== 200 || got.edit.ok !== true) problems.push(`the edit of the starter answered ${got.edit.status}: ${got.edit.error ?? "not ok"}`)
 		if (got.edit.requestId !== "vercel-check") problems.push("the edit's answer did not carry its requestId back")
 		if (got.edit.cacheControl !== "no-store") problems.push(`the edit's answer has Cache-Control ${got.edit.cacheControl}, not no-store`)
+		if (got.imagine.status !== 200 || got.imagine.ok !== true || got.imagine.mime !== "image/jpeg") problems.push(`the imagine step answered ${got.imagine.status}: ${got.imagine.error ?? `a concept of type ${got.imagine.mime}`}`)
 		if (got.keyInAnswers) problems.push("an answer of the function holds the key")
 		if (got.gateway.requests < 1 || !got.gateway.withKey) problems.push(`the gateway got ${got.gateway.requests} requests${got.gateway.withKey ? "" : ", not all with the key"}`)
 		if (!(got.run.frames > 0) || got.run.goal !== true) problems.push(`the function's engine ran the starter to ${got.run.frames} frames, goal ${got.run.goal}`)
-		say(`function called: GET ${got.get}, unknown step ${got.unknown}, edit of the starter ${got.edit.status} through ${got.edit.model} in ${got.edit.ms} ms (gateway: ${got.gateway.requests} request${got.gateway.requests === 1 ? "" : "s"}), no key in any answer; its engine ran the starter: ${got.run.frames} frames, goal ${got.run.goal ? "met" : "NOT met"}`)
+		say(`function called: GET ${got.get}, unknown step ${got.unknown}, edit of the starter ${got.edit.status} through ${got.edit.model} in ${got.edit.ms} ms, imagine ${got.imagine.status} (a ${got.imagine.mime} ${got.imagine.width} wide through ${got.imagine.model}) in ${got.imagine.ms} ms (gateway: ${got.gateway.requests} request${got.gateway.requests === 1 ? "" : "s"}), no key in any answer; its engine ran the starter: ${got.run.frames} frames, goal ${got.run.goal ? "met" : "NOT met"}`)
 		await scenesCheck({ output, cfg, up, files, tmp, problems, say, run, posix, chmodTree })
 		return problems.length ? 1 : 0
 	} catch (e) {

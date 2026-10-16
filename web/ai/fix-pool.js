@@ -2,6 +2,7 @@
 //   import { createFixPool } from "./fix-pool.js"
 //   const pool = createFixPool()               // workers start on the first use (or pool.prewarm())
 //   const judged = await pool.evaluate(scene, targets, signal)   // ./fixer.js judgeRun's answer for that scene's run
+//   const j = await pool.stage(scene, goals, checks, signal)      // ./stage-tune.js judgeRun's: {goals, checks: [{res, d}], warnings} (the stage tuner)
 //   pool.size; pool.broken (module workers unavailable: use the app's own runs instead); pool.terminate()
 // Idle workers are let go after a minute (they are made again on the next search). Aborting a run that a worker is busy with replaces that worker.
 const URL_ = new URL("./fix-worker.js", import.meta.url)
@@ -13,7 +14,7 @@ export function createFixPool({ size = null } = {}) {
 	const waiting = []
 	let nextId = 1
 	let idleTimer = 0
-	const pool = { size: n, broken: typeof Worker === "undefined", evaluate, prewarm, terminate }
+	const pool = { size: n, broken: typeof Worker === "undefined", evaluate, stage, prewarm, terminate }
 
 	function make() {
 		let w
@@ -34,7 +35,7 @@ export function createFixPool({ size = null } = {}) {
 			slot.job = null
 			job.signal?.removeEventListener("abort", job.onAbort)
 			if (m.error !== undefined) job.reject(new Error(m.error))
-			else job.resolve({ results: m.results, ok: m.ok, f: m.f, warn: m.warn, ms: m.ms })
+			else job.resolve(job.op === "stage" ? { goals: m.goals, checks: m.checks, warnings: m.warnings, ms: m.ms } : { results: m.results, ok: m.ok, f: m.f, warn: m.warn, ms: m.ms })
 			pump()
 		})
 		w.addEventListener("error", (e) => {
@@ -75,15 +76,23 @@ export function createFixPool({ size = null } = {}) {
 			if (!slot) return
 			const job = waiting.shift()
 			slot.job = job
-			slot.w.postMessage({ fix: 1, id: job.id, scene: job.scene, targets: job.targets })
+			slot.w.postMessage(job.op === "stage" ? { fix: 1, id: job.id, op: "stage", scene: job.scene, goals: job.goals, checks: job.checks } : { fix: 1, id: job.id, scene: job.scene, targets: job.targets })
 		}
 	}
+	/** The fix search's judgement of a scene's run (./fixer.js judgeRun). */
 	function evaluate(scene, targets, signal) {
+		return submit({ scene, targets }, signal)
+	}
+	/** The stage tuner's judgement of a scene's run: the goals and each stage's check, with how far each failing one is (./stage-tune.js). */
+	function stage(scene, goals, checks, signal) {
+		return submit({ op: "stage", scene, goals, checks }, signal)
+	}
+	function submit(msg, signal) {
 		if (pool.broken) return Promise.reject(new Error("fix workers are not available here"))
 		touch()
 		return new Promise((resolve, reject) => {
 			if (signal?.aborted) return reject(abortError())
-			const job = { id: nextId++, scene, targets, resolve, reject, signal }
+			const job = { id: nextId++, ...msg, resolve, reject, signal }
 			job.onAbort = () => {
 				const qi = waiting.indexOf(job)
 				if (qi >= 0) waiting.splice(qi, 1)

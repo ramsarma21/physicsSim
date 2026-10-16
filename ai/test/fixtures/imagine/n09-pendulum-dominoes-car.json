@@ -1,0 +1,45 @@
+{
+	"$comment": "Stored pre-pass and image prompt of ai/experiments/imagine/results/p2/imagine/n09-pendulum-dominoes-car__s0 (prepass.json, n09-pendulum-dominoes-car__flare__photo__0.json): ai/imagine.mjs must give this prompt byte for byte for this pre-pass.",
+	"case": "n09-pendulum-dominoes-car",
+	"request": "A pendulum knocks over a line of dominoes, and the last domino bumps a toy car so it rolls away down a ramp.",
+	"prepass": {
+		"cast": [
+			{
+				"type": "pendulum",
+				"count": 1,
+				"role": "Swings down and knocks over the first domino",
+				"size": "32 cm wide × 48 cm tall"
+			},
+			{
+				"type": "domino",
+				"count": 10,
+				"role": "Topple in a chain, left to right",
+				"size": "0.8 cm wide × 5 cm tall"
+			},
+			{
+				"type": "toy-car",
+				"count": 1,
+				"role": "Pushed by the last domino, rolls down the ramp",
+				"size": "20 cm wide × 7.4 cm tall"
+			},
+			{
+				"type": "plank",
+				"count": 2,
+				"role": "One raised flat shelf, one ramp down to the table",
+				"size": "1 m wide × 2.2 cm tall"
+			}
+		],
+		"missing": [],
+		"layout": "A plank lies flat on its own wooden legs from x = 0 to 1.0 m, with its top 34 cm above the table. The pendulum stands on the left end of this shelf, and its bob is held raised to the left. Ten dominoes stand upright on the shelf from x = 0.40 m to 0.67 m, spaced 3 cm apart. The first domino stands just inside the lowest point of the bob's swing. The toy car rests on the shelf at x = 0.69–0.89 m, facing right, its rear 2 cm from the last domino. A second plank runs from the shelf's right end at 34 cm down to the table at about x = 1.94 m, sloping 20°.",
+		"story": [
+			"The pendulum bob is released and swings down to the right.",
+			"The bob strikes the first domino.",
+			"The dominoes topple one after another along the shelf.",
+			"The last domino falls against the rear of the toy car.",
+			"The car rolls right off the shelf onto the ramp.",
+			"The car speeds down the 20° ramp and rolls away along the table."
+		]
+	},
+	"prompt": "A photograph of a tabletop physics demonstration, seen exactly from the side: the camera is level with the tabletop and looks straight at it, so the whole setup lies in one flat plane, left to right (no perspective tilt, no top-down or angled view). A long plain light-wood tabletop runs across the whole picture in front of a plain light-grey studio backdrop; soft even light; everything in sharp focus. It shows the moment just before it starts: A pendulum knocks over a line of dominoes, and the last domino bumps a toy car so it rolls away down a ramp.\n\nExactly these objects and nothing else, at their true real-world sizes relative to each other:\n- 1 × pendulum (32 cm wide × 48 cm tall; a steel bob on a light wooden rod from a wooden hanger, which the view stands on its own retort stand (part of this item)) — Swings down and knocks over the first domino\n- 10 × domino (0.8 cm wide × 5 cm tall; light wood with dark pips) — Topple in a chain, left to right\n- 1 × toy car (20 cm wide × 7.4 cm tall; a small plastic toy car on black rubber wheels) — Pushed by the last domino, rolls down the ramp\n- 2 × wooden plank (1 m wide × 2.2 cm tall; varnished natural wood, standing on wooden legs down to the table while legs is on (legs false: a bare board)) — One raised flat shelf, one ramp down to the table\n\nLayout at the start, left to right: A plank lies flat on its own wooden legs from x = 0 to 1.0 m, with its top 34 cm above the table. The pendulum stands on the left end of this shelf, and its bob is held raised to the left. Ten dominoes stand upright on the shelf from x = 0.40 m to 0.67 m, spaced 3 cm apart. The first domino stands just inside the lowest point of the bob's swing. The toy car rests on the shelf at x = 0.69–0.89 m, facing right, its rear 2 cm from the last domino. A second plank runs from the shelf's right end at 34 cm down to the table at about x = 1.94 m, sloping 20°.\n\nEvery object visibly rests on the table or on another object, or hangs from its own stand; a thing that waits in the air or on a slope at the start is held by a thin wooden pin on a thin post. Show clearly where each thing touches what holds it up.\n\nNo people, no hands, no other furniture, no clutter, no shelves or walls behind the table. No text, no arrows, no labels.",
+	"model": "openai-group/gpt-image-2.5-flare"
+}

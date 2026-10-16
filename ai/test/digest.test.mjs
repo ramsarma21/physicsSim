@@ -99,3 +99,32 @@ test("simText: goals, stories, events and warnings in plain words", () => {
 	assert.match(t, /Warnings: Ball starts inside Ramp/)
 	assert.match(simText(null), /No run results/)
 })
+
+test("the edit step's rich digest says what the user sees: a pool ball's colour from its number, not a car's wheels, 'dark red', 'an', a thing sunk a hair into the table stands on it", async () => {
+	const { richDigestFrom } = await import("../rich-digest.mjs")
+	const cat = await getCatalog()
+	const scene = {
+		id: "t",
+		seconds: 3,
+		release: 0.5,
+		stage: { x0: -0.6, x1: 3.2, y0: -0.2, y1: 2 },
+		items: [
+			{ id: "table", type: "table", x: 1.3, y: 0, props: { width: 3.7, thickness: 0.15 } },
+			{ id: "eight", type: "billiard-ball", name: "Eight ball", x: 0.2, y: 0.0286, props: { number: 8 } },
+			{ id: "car", type: "toy-car", name: "Red toy car", x: 0.6, y: 0.02 },
+			{ id: "book", type: "hardcover-book", name: "Book", x: 1.2, y: 0.0175 },
+			{ id: "hoop", type: "basketball", name: "Basketball", x: 2.2, y: 0.121 },
+			{ id: "crate", type: "box", name: "Crate", x: 2.8, y: 0 },
+			{ id: "deep", type: "box", name: "Sunk box", x: 2.0, y: -0.04 }
+		]
+	}
+	const d = await sceneDigest(scene, cat.index)
+	const text = richDigestFrom(scene, d, { sim: null, plan: null, cat }).text
+	assert.match(text, /- eight · “Eight ball” · a black ball: billiard-ball/)
+	assert.match(text, /- car · “Red toy car” · a car: toy-car/)
+	assert.match(text, /- book · “Book” · a dark red book: hardcover-book/)
+	assert.match(text, /- hoop · “Basketball” · an orange ball: basketball/)
+	assert.match(text, /- crate · “Crate” · [^\n]*\n  where: right third of the table, standing on the table;/)
+	assert.match(text, /- deep · “Sunk box” · [^\n]*\n  where: [^\n]*in the air; its bottom 5\.2 cm below the top of the table;/)
+	assert.doesNotMatch(text, /-\d[.\d]* cm above/)
+})

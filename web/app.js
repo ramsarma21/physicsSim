@@ -683,6 +683,9 @@ function syncScenarioMenu() {
 	if (!sel) return
 	const same = S.scene && JSON.stringify(S.scene) === S.loadedJSON
 	const v = same && scenarioList.some((s) => s.id === S.scenarioId) ? S.scenarioId : ""
+	// a scene opened from elsewhere (an example, a file, My scenes) is named until it is changed
+	const blank = sel.querySelector("option[value='']")
+	if (blank) blank.textContent = v === "" && same && S.scene?.name ? S.scene.name : "Edited scene"
 	if (sel.value !== v) sel.value = v
 }
 

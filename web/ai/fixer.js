@@ -251,7 +251,11 @@ function inWords(g, sim, scene, before = null) {
 				try {
 					;[r] = checkGoals([{ kind: "falls", items: [st.item], label: "x" }], sim)
 				} catch {}
-			if (r && r.of > 0 && r.fallen < r.of) return `${who} ${moved ? "is never launched" : "never moves"}: only ${r.fallen} of ${r.of} ${st.item && scene.items.find((i) => i.id === st.item)?.type === "domino-row" ? "dominoes" : "of its parts"} fall`
+			if (r && r.of > 0 && r.fallen < r.of) {
+				const row = st.item && scene.items.find((i) => i.id === st.item)?.type === "domino-row"
+				// (none: "none of the dominoes fall", never "only 0 of 7")
+				return `${who} ${moved ? "is never launched" : "never moves"}: ${r.fallen === 0 ? `none of ${row ? "the dominoes" : "its parts"} fall` : `only ${r.fallen} of ${r.of} ${row ? "dominoes" : "of its parts"} fall`}`
+			}
 		}
 		return moved ? `${who} is never launched` : `${who} never moves`
 	}

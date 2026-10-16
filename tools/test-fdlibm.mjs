@@ -1,4 +1,5 @@
-// Checks tools/fdlibm.ts against this node's own Math, bit for bit, on millions of inputs (the engine's ranges and the awkward ones).
+// Checks tools/fdlibm.ts against this node's own Math, bit for bit, on millions of inputs (the engine's ranges and the awkward ones): sin, cos,
+// atan2, exp and hypot are ports of what node runs on macOS arm64, so run this there. (pow is correctly rounded, not node's: tools/test-crpow.mjs.)
 //   node tools/test-fdlibm.mjs [millions-per-function]
 import * as fd from "./fdlibm.ts"
 
@@ -32,10 +33,7 @@ const gens = {
 	},
 	exp: () => [(rnd53() * 2 - 1) * (rnd() < 0.8 ? 5 : rnd() < 0.9 ? 50 : 700)],
 	"exp (near multiples of ln2)": () => [nudge(Math.floor((rnd() * 2 - 1) * 1000) * Math.LN2 * (rnd() < 0.5 ? 1 : 0.5) + (rnd() < 0.5 ? 0 : (rnd() - 0.5) * 1e-6))],
-	hypot: () => [(rnd53() * 2 - 1) * scale(rnd()), (rnd53() * 2 - 1) * scale(rnd())],
-	pow: () => [rnd53() * scale(rnd()) * (rnd() < 0.05 ? -1 : 1), [2, 3, 4, 0.5, 1.5, 2.5, 5, 7, -1, -2, -3][Math.floor(rnd() * 11)]],
-	"pow (x ** 3 and x ** 4, sizes to the micrometre)": () => [Math.round(rnd() * 1e6) / (rnd() < 0.5 ? 1e6 : 2e6), rnd() < 0.5 ? 3 : 4],
-	"pow (any y, x of any size)": () => [Math.exp((rnd53() * 2 - 1) * 69) * (rnd() < 0.05 ? -1 : 1), rnd() < 0.2 ? Math.round((rnd53() * 2 - 1) * 40) : (rnd53() * 2 - 1) * 40]
+	hypot: () => [(rnd53() * 2 - 1) * scale(rnd()), (rnd53() * 2 - 1) * scale(rnd())]
 }
 const special = [0, -0, 1, -1, 0.5, Math.PI, Math.PI / 2, Math.PI / 4, 3 * Math.PI / 4, 1e-300, 5e-324, 1e300, 823549.6, 823550, 2e6, -2e6, Infinity, -Infinity, NaN, 2 ** -27, 2 ** -28, 709.78, 709.79, -745, -746, 1e-9]
 let bad = 0
@@ -56,7 +54,6 @@ for (const label of Object.keys(gens)) {
 	}
 	if (label === name) for (const x of special) {
 		if (name === "atan2" || name === "hypot") for (const y of special) check([x, y])
-		else if (name === "pow") for (const y of [2, 3, 4, 0.5, -1, 0, 1, NaN, Infinity, -Infinity, 1e-30, 1e30, -3, 5, 2 ** 64, 2 ** -64]) check([x, y])
 		else check([x])
 	}
 	for (let i = 0; i < N; i++) check(gens[label]())

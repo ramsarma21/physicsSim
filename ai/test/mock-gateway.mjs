@@ -1,15 +1,26 @@
-// A scriptable stand-in for the TrueFoundry gateway (OpenAI-compatible POST /v1/chat/completions) on 127.0.0.1, for the tests.
+// A scriptable stand-in for the TrueFoundry gateway (OpenAI-compatible POST /v1/chat/completions, and POST /images/generations for the
+// image routes) on 127.0.0.1, for the tests.
 //   const gw = await startMockGateway()
 //   gw.script("m1", [{status: 429, headers: {"retry-after": "0"}}, {content: '{"ok": true}'}])   // answers for model m1, in order
 //   gw.fallback = (req) => ({content: "..."})          // when a model's script is used up (default: 500)
+//   gw.imageFallback = (req) => ({b64?, usage?})     // the same for POST /images/generations (default: 500); a step's b64 is the picture
+//                                                     // (default: a 1536x1024 JPEG header), answered as {data: [{b64_json}], usage}
 //   ... env AI_GATEWAY_URL = gw.url ...
-//   gw.requests  -> [{model, body (parsed, the auth header removed), auth (true when a Bearer token came), at}]
+//   gw.requests  -> [{model, body (parsed, the auth header removed), auth (true when a Bearer token came), at, closed (its connection ended)}]
 //   await gw.close()
 // A step: {status?, content?, finish?, usage?, body? (raw JSON object or string to send instead), headers?, delayMs?, hang?}
 // A request with stream: true is answered as server-sent events (role, `thinking` reasoning chunks, the content in pieces, the finish, the
 // usage, [DONE]) unless the step says plain: true; chunkDelayMs spaces the chunks; stall: n sends n chunks and then nothing more.
 // The Authorization header is never stored: only whether it was there.
 import { createServer } from "node:http"
+
+/** The headers of a 1536x1024 JPEG (all the imagine step reads of a picture: its type and size), base64. */
+export const MOCK_JPEG = Buffer.concat([
+	Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]),
+	Buffer.from([0xff, 0xc0, 0x00, 0x11, 0x08, 0x04, 0x00, 0x06, 0x00, 0x03, 0x01, 0x22, 0x00, 0x02, 0x11, 0x01, 0x03, 0x11, 0x01]),
+	Buffer.alloc(64, 0x11),
+	Buffer.from([0xff, 0xd9])
+]).toString("base64")
 
 export async function startMockGateway() {
 	const scripts = new Map()
@@ -19,6 +30,7 @@ export async function startMockGateway() {
 		url: "",
 		requests,
 		fallback: () => ({ status: 500, body: { error: { message: "no scripted answer" } } }),
+		imageFallback: () => ({ status: 500, body: { error: { message: "no scripted picture" } } }),
 		script(model, steps) {
 			scripts.set(model, [...(scripts.get(model) ?? []), ...steps])
 			return gw
@@ -42,8 +54,22 @@ export async function startMockGateway() {
 			body = JSON.parse(Buffer.concat(chunks).toString("utf8"))
 		} catch {}
 		const auth = /^Bearer \S{8,}$/.test(req.headers.authorization ?? "")
-		const rec = { model: body?.model, body, auth, path: req.url, at: Date.now() }
+		const rec = { model: body?.model, body, auth, path: req.url, at: Date.now(), closed: false }
+		res.on("close", () => (rec.closed = true)) // (the caller hung up, or the answer is done: a hung request's caller must close it)
 		requests.push(rec)
+		if (req.method === "POST" && req.url.endsWith("/images/generations")) {
+			const queue = scripts.get(body?.model)
+			const step = queue?.length ? queue.shift() : gw.imageFallback(rec)
+			rec.step = step
+			if (step.hang) return
+			if (step.delayMs) await new Promise((r) => setTimeout(r, step.delayMs))
+			if (res.destroyed) return
+			const status = step.status ?? 200
+			res.writeHead(status, { "content-type": "application/json", ...(step.headers ?? {}) })
+			if (step.body !== undefined) return res.end(typeof step.body === "string" ? step.body : JSON.stringify(step.body))
+			if (status !== 200) return res.end(JSON.stringify({ error: { message: step.message ?? `mock error ${status}` } }))
+			return res.end(JSON.stringify({ created: 1, data: [{ b64_json: step.b64 ?? MOCK_JPEG }], usage: step.usage === undefined ? { output_tokens: 1372 } : step.usage }))
+		}
 		if (req.method !== "POST" || !req.url.endsWith("/chat/completions")) {
 			res.writeHead(404, { "content-type": "application/json" })
 			return res.end(JSON.stringify({ error: { message: "not found" } }))

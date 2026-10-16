@@ -10,6 +10,8 @@
 //   fuzz       --n random mixed scenes (default 2000) of all 113 types: random props incl. min, max, slider_max, beyond the range (clamped), many decimals,
 //              all-min / all-max corners; random places (a quarter of them dense clusters), angles (round, huge, fractional), held/fixed, goals (containers
 //              and not), seconds, release, stage; 3 % carry garbage the server refuses or keeps (a prop of the wrong kind, a twice-used id, an id with "/")
+//   hung       a swing, a rope pendulum, a hanging chain, an Atwood machine and a pulley lift with "falls" goals: as above, and the server must count none
+//              of their held bodies (a rope, chain, pin or pulley holds them) as able to fall (`of` 0)
 //   node tools/parity/fuzz-live.mjs [--n 2000] [--seed N] [--shard i/K] [--no-engine] [--server http://localhost:8790] [--dump fails.jsonl] [--verbose]
 // --shard i/K runs only scenes with index % K == i (several processes in parallel; the server runs two engine workers). Nothing is started or stopped.
 import fs from "node:fs"
@@ -25,10 +27,10 @@ const N = Number(opt("n", 2000))
 const SEED = Number(opt("seed", 20261015))
 const [SHARD, SHARDS] = opt("shard", "0/1").split("/").map(Number)
 const ENGINE = !args.includes("--no-engine")
-const SERVER = opt("server", "http://localhost:8790")
+const SERVER = opt("server", process.env.PARITY_SERVER ?? "http://localhost:8790")
 const DUMP = opt("dump", null)
 const VERBOSE = args.includes("--verbose")
-const GROUPS = opt("groups", "catalog,scenarios,fuzz").split(",")
+const GROUPS = opt("groups", "catalog,scenarios,fuzz,hung").split(",")
 
 const sim = await import(`${SIM}/index.js`)
 const itemsMod = await import(`${SIM}/items.js`)
@@ -197,7 +199,7 @@ async function check(group, id, scene) {
 		}
 	}
 	// 2. the app's local API, engine included
-	if (!ENGINE) return
+	if (!ENGINE) return sv
 	const t1 = performance.now()
 	let out
 	try {
@@ -219,6 +221,7 @@ async function check(group, id, scene) {
 		if (d.length && d.every((x) => x.startsWith(".warnings")) && overlapTies(out.doc).length) d.push("(a pair on the 3 mm tolerance: overlaps() rounds the depth to 9 decimals on both sides, so they must agree)")
 	}
 	note(`${group}: local API + engine`, d.length === 0, id, d, wire)
+	return sv
 }
 
 // ---------------------------------------------------------------- random scenes
@@ -392,6 +395,19 @@ if (GROUPS.includes("scenarios") && SHARD === 0) {
 		}
 	}
 	console.log(`  scenarios: ${list.length} served by the server (${list.map((s) => s.id).join(", ")})`)
+}
+if (GROUPS.includes("hung") && SHARD === 0) {
+	// bodies a rope, a chain, a pin or a pulley holds swing and drop without falling over (machines/items.py _Fall, web/sim/items.js the same): a swing's
+	// seat, a rope pendulum's bob, a hanging chain's links, an Atwood machine's weights, a pulley lift's pail and weight are never counted as fallen
+	const cases = [["swing", { start_angle: -40 }], ["rope-pendulum", { start_angle: 60 }], ["hanging-chain", {}], ["atwood-machine", {}], ["pulley-lift", {}]]
+	for (const [type, props] of cases) {
+		const scene = { version: 2, id: `hung-${type}`, name: type, seconds: 3, release: 0.5, items: [{ id: "table", type: "table", name: "Table", x: 1.3, y: 0, props: {} }, { id: "h", type, x: 1.3, y: 1.5, props }], goals: [{ kind: "falls", item: "h" }, { kind: "falls", items: ["h", "table"] }] }
+		const sv = await check("hung", type, scene)
+		const g = sv?.json?.summary?.goals?.[0]
+		const d = g === undefined ? [`no falls goal in the server's answer (${sv?.status} ${sv?.error ?? ""})`] : g.of === 0 && g.fallen === 0 && g.ok === false ? [] : [`counted ${g.fallen} of ${g.of} as fallen (ok ${g.ok})`]
+		note("hung: bodies held by a rope, chain, pin or pulley never count as fallen", d.length === 0, type, d, scene)
+	}
+	console.log(`  hung: ${cases.length} scenes of held bodies with falls goals`)
 }
 if (GROUPS.includes("fuzz")) {
 	let done = 0

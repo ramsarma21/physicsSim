@@ -1,0 +1,44 @@
+{
+	"$comment": "Stored pre-pass and image prompt of ai/experiments/imagine/results/p2/imagine/i1-cat-water__s0 (prepass.json, i1-cat-water__flare__photo__0.json): ai/imagine.mjs must give this prompt byte for byte for this pre-pass.",
+	"case": "i1-cat-water",
+	"request": "A live cat knocks a glass of water off the table.",
+	"prepass": {
+		"cast": [
+			{
+				"type": "pendulum",
+				"count": 1,
+				"role": "Stands in for the cat's paw, swinging to swat the glass",
+				"size": "32 cm wide × 48 cm tall"
+			},
+			{
+				"type": "coffee-mug",
+				"count": 1,
+				"role": "Stands in for the glass, knocked off the table's end",
+				"size": "12 cm wide × 9.5 cm tall"
+			}
+		],
+		"missing": [
+			{
+				"asked": "live cat",
+				"substitute_type": "pendulum"
+			},
+			{
+				"asked": "glass",
+				"substitute_type": "coffee-mug"
+			},
+			{
+				"asked": "water",
+				"substitute_type": null
+			}
+		],
+		"layout": "The table runs from x = 0 to x = 3.7 m, and the scene sits at its right end. The pendulum (31.5 cm wide, 47.6 cm tall) stands on the table centred at x = 3.35 m. Its bob hangs about 4 cm above the tabletop when at rest. The bob is held pulled up to the left at about 60° from vertical. The empty coffee mug (11.8 cm wide, 9.5 cm tall) stands upright on the tabletop with its left side at x = 3.44 m. The mug's right side is 14 cm from the table's right edge. Nothing stands beyond the mug.",
+		"story": [
+			"The bob is released and swings down to the right like a swatting paw.",
+			"At the bottom of its arc the bob strikes the mug's left side.",
+			"The mug slides and tips toward the table's right edge.",
+			"The mug goes over the edge and falls to the floor."
+		]
+	},
+	"prompt": "A photograph of a tabletop physics demonstration, seen exactly from the side: the camera is level with the tabletop and looks straight at it, so the whole setup lies in one flat plane, left to right (no perspective tilt, no top-down or angled view). A long plain light-wood tabletop runs across the whole picture in front of a plain light-grey studio backdrop; soft even light; everything in sharp focus. It shows the moment just before it starts: A live cat knocks a glass of water off the table.\n\nExactly these objects and nothing else, at their true real-world sizes relative to each other:\n- 1 × pendulum (32 cm wide × 48 cm tall; a steel bob on a light wooden rod from a wooden hanger, which the view stands on its own retort stand (part of this item)) — Stands in for the cat's paw, swinging to swat the glass\n- 1 × coffee mug (12 cm wide × 9.5 cm tall; an off-white ceramic mug) — Stands in for the glass, knocked off the table's end\n\nLayout at the start, left to right: The table runs from x = 0 to x = 3.7 m, and the scene sits at its right end. The pendulum (31.5 cm wide, 47.6 cm tall) stands on the table centred at x = 3.35 m. Its bob hangs about 4 cm above the tabletop when at rest. The bob is held pulled up to the left at about 60° from vertical. The empty coffee mug (11.8 cm wide, 9.5 cm tall) stands upright on the tabletop with its left side at x = 3.44 m. The mug's right side is 14 cm from the table's right edge. Nothing stands beyond the mug.\n\nEvery object visibly rests on the table or on another object, or hangs from its own stand; a thing that waits in the air or on a slope at the start is held by a thin wooden pin on a thin post. Show clearly where each thing touches what holds it up.\n\nNo people, no hands, no other furniture, no clutter, no shelves or walls behind the table. No text, no arrows, no labels.",
+	"model": "openai-group/gpt-image-2.5-flare"
+}

@@ -156,12 +156,30 @@ function sumUsage(total, u) {
 	return total
 }
 
-/** A gateway error body as one short line, with the key (if it ever appears) removed. */
+/** A gateway error body as one short line, with the key (if it ever appears) and any email address removed (a gateway 403 names the
+ *  gateway account's address: "User <email> is not authorized to access model …", which must not reach a visitor of the hosted site). */
 function redact(s, key) {
 	let t = String(s ?? "")
 	if (key && key.length >= 8) t = t.split(key).join("[redacted]")
 	t = t.replace(/Bearer\s+[A-Za-z0-9._\-]{12,}/g, "Bearer [redacted]")
-	return t
+	return dropEmails(t)
+}
+/** Every email address (local@domain.tld) as "[account]". Linear: it starts from each "@" (a regex with a leading [\w.+-]+ retries from
+ *  every character of a long run, which a whole answer with a picture in it, megabytes of base64, would make quadratic). */
+function dropEmails(t) {
+	if (!t.includes("@")) return t
+	const re = /@[\w-]+(?:\.[\w-]+)+/g
+	let out = ""
+	let last = 0
+	let m
+	while ((m = re.exec(t))) {
+		let i = m.index
+		while (i > last && /[\w.+-]/.test(t[i - 1])) i--
+		if (i === m.index) continue // no name before the "@"
+		out += t.slice(last, i) + "[account]"
+		last = m.index + m[0].length
+	}
+	return out + t.slice(last)
 }
 function errorLine(body, key) {
 	let msg = body

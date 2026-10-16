@@ -1,0 +1,112 @@
+[
+ {
+  "slug": "rube-goldberg",
+  "title": "Six-stage Rube Goldberg",
+  "description": "A cue ball rides a ramp, a conveyor and a swing gate, topples dominoes, and a seesaw flips a ball into a box.",
+  "thumb": "gallery/rube-goldberg.png",
+  "scene": "gallery/rube-goldberg.json",
+  "stages": 6,
+  "goal": "The plastic ball flies into the box",
+  "items": 11,
+  "seconds": 6
+ },
+ {
+  "slug": "domino-run",
+  "title": "Domino effect",
+  "description": "24 dominoes run into a growing row that ends in a half-metre giant; it knocks the 8-ball into a bucket.",
+  "thumb": "gallery/domino-run.png",
+  "scene": "gallery/domino-run.json",
+  "stages": 4,
+  "goal": "The giant knocks the 8-ball into the bucket",
+  "items": 9,
+  "seconds": 7
+ },
+ {
+  "slug": "marble-run",
+  "title": "Zig-zag marble run",
+  "description": "A glass marble zig-zags down five ramps and drops into a cup at the bottom.",
+  "thumb": "gallery/marble-run.png",
+  "scene": "gallery/marble-run.json",
+  "stages": 6,
+  "goal": "The marble ends in the cup",
+  "items": 12,
+  "seconds": 6
+ },
+ {
+  "slug": "catapult-bucket",
+  "title": "Catapult into a bucket",
+  "description": "A spring catapult lobs a tennis ball over a traffic cone into a bucket 1.5 m away.",
+  "thumb": "gallery/catapult-bucket.png",
+  "scene": "gallery/catapult-bucket.json",
+  "stages": 2,
+  "goal": "The tennis ball sails over the cone into the bucket",
+  "items": 7,
+  "seconds": 4
+ },
+ {
+  "slug": "newtons-cradle",
+  "title": "Newton's cradle relay",
+  "description": "The cradle's click topples ten growing dominoes, and the last one tips the 8-ball into a cup.",
+  "thumb": "gallery/newtons-cradle.png",
+  "scene": "gallery/newtons-cradle.json",
+  "stages": 4,
+  "goal": "The 8-ball drops into the cup",
+  "items": 7,
+  "seconds": 6
+ },
+ {
+  "slug": "seesaw-launch",
+  "title": "Seesaw launch",
+  "description": "A 1 kg steel weight drops on a seesaw and catapults a tennis ball into a basket on a high shelf.",
+  "thumb": "gallery/seesaw-launch.png",
+  "scene": "gallery/seesaw-launch.json",
+  "stages": 3,
+  "goal": "The tennis ball lands in the basket on the shelf",
+  "items": 8,
+  "seconds": 4
+ },
+ {
+  "slug": "pulley-lift",
+  "title": "Counterweight lift",
+  "description": "A falling 1.2 kg counterweight hauls a pail with an apple almost half a metre up, then lands on a pillow.",
+  "thumb": "gallery/pulley-lift.png",
+  "scene": "gallery/pulley-lift.json",
+  "stages": 2,
+  "goal": "The counterweight lands on the pillow",
+  "items": 6,
+  "seconds": 4
+ },
+ {
+  "slug": "bowling-strike",
+  "title": "Bowling strike",
+  "description": "A 7 kg bowling ball rolls off a steep ramp and knocks down all ten pins.",
+  "thumb": "gallery/bowling-strike.png",
+  "scene": "gallery/bowling-strike.json",
+  "stages": 2,
+  "goal": "All ten pins fall: a strike",
+  "items": 15,
+  "seconds": 5
+ },
+ {
+  "slug": "bounce-chain",
+  "title": "Bounce chain",
+  "description": "A superball rolls off a high ramp and hops across three bounce pads into a basket.",
+  "thumb": "gallery/bounce-chain.png",
+  "scene": "gallery/bounce-chain.json",
+  "stages": 5,
+  "goal": "The superball lands in the basket",
+  "items": 9,
+  "seconds": 5
+ },
+ {
+  "slug": "wrecking-chain",
+  "title": "Wrecking-ball combo",
+  "description": "A wrecking ball clips a brick off a tower; it slams a seesaw that flips a tennis ball into a bucket.",
+  "thumb": "gallery/wrecking-chain.png",
+  "scene": "gallery/wrecking-chain.json",
+  "stages": 4,
+  "goal": "The tennis ball drops into the bucket",
+  "items": 16,
+  "seconds": 4
+ }
+]

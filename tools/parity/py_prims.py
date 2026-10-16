@@ -6,6 +6,7 @@ Doubles travel as 16 hex digits of their IEEE bits (so the sign of zero and subn
 import hashlib
 import json
 import math
+import os
 import struct
 import sys
 
@@ -16,6 +17,14 @@ def d(h):
 
 def h(x):
     return struct.pack(">d", x).hex()
+
+
+def crmath():
+    """machines/crmath.py (the builders' correctly rounded powers, and their sin and cos with web/sim's table at multiples of 30 degrees)."""
+    if "crmath" not in sys.modules:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "machines"))
+    import crmath
+    return crmath
 
 
 def run(op, c):
@@ -39,10 +48,18 @@ def run(op, c):
         return h(sum(d(x) for x in c))
     if op == "cube":
         return h(d(c) ** 3)
+    if op == "crcube":
+        return h(crmath().cube(d(c)))
+    if op == "crcbrt":
+        return h(crmath().cr_pow(d(c), 1 / 3))
     if op == "sin":
         return h(math.sin(d(c)))
     if op == "cos":
         return h(math.cos(d(c)))
+    if op == "crsin":
+        return h(crmath().sin(d(c)))
+    if op == "crcos":
+        return h(crmath().cos(d(c)))
     if op == "atan2":
         return h(math.atan2(d(c[0]), d(c[1])))
     if op == "floorlog10":
@@ -86,7 +103,7 @@ FLOAT_TEMPLATES = [lambda c: c, lambda c: "1" + c, lambda c: c + "1", lambda c: 
 
 
 def worldfuzz(n, seed, outfile):
-    """n random item placements (x, y, angle, a local offset) through Ctx.world's formula and round(.., 5), written as 8 doubles each:
+    """n random item placements (x, y, angle, a local offset) through Ctx.world's formula (crmath's sin and cos) and round(.., 5), written as 8 doubles each:
     ox, oy, angle_deg, lx, ly, x, y, ulps (1 if sin or cos of the angle differs from the other side's in the last bit; filled in by the JS side)."""
     import random
     r = random.Random(seed)
@@ -102,7 +119,7 @@ def worldfuzz(n, seed, outfile):
             ly = r.choice([0, 0.00001, 0.000005, 0.000015, -0.00001, 0.00003, 0.5, 0.25, 0.1]) * r.choice([1, 1, 1, 3, 5, 7])
         deg = r.choice([r.randint(-720, 720), r.randint(-720, 720) * 0.25, round(r.uniform(-100000, 100000), 3), r.choice([30, 45, 60, 90, 120, 135, 150, 180, 240, 270, 300, 360, -30, -45, -60, -90, -120])])
         a = deg * D2R
-        ca, sa = math.cos(a), math.sin(a)
+        ca, sa = crmath().cos(a), crmath().sin(a)  # as items.py's Ctx.world does
         x = round(ox + lx * ca - ly * sa, 5)
         y = round(oy + lx * sa + ly * ca, 5)
         buf += struct.pack(">8d", ox, oy, deg, lx, ly, x, y, 0.0)

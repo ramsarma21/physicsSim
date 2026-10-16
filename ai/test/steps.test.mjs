@@ -400,6 +400,27 @@ test("edit intent \"edit\": the request says the user pressed Edit; a \"new\" an
 	out = await runStep("edit", { text: "a car race", scene: scenario("rube-goldberg") }, { ...opts(), noEscalate: true })
 	assert.doesNotMatch(gw.requests[0].body.messages[1].content, /The user pressed "Edit"/)
 	await assert.rejects(runStep("edit", { text: "x", scene: scenario("rube-goldberg"), intent: "new" }, opts()), badInput(/intent must be "auto" or "edit"/))
+	// a real start-over under Edit: kind "new" at once (no repair turn toward a patch, no planner call: the client offers to build it new)
+	gw.reset()
+	gw.script("m1", [NEW])
+	out = await runStep("edit", { text: "start over: just a tennis ball rolling down a ramp into a cup", scene: scenario("rube-goldberg"), intent: "edit" }, opts())
+	assert.deepEqual([out.result.mode, out.result.kind, gw.requests.length], ["new", "new", 1])
+	assert.match(gw.requests[0].body.messages[1].content, /Only a request to throw this scene away and build a different one \("start over: …"/)
+})
+
+test("edit (repair 2026-10-15 night): the plan JSON in the request leaves out the build's missing list; the answer's missing is this request's, the scene keeps its list as plan_missing", async () => {
+	const { planFromScene } = await import("../schemas.mjs")
+	const { getCatalog } = await import("../catalog-digest.mjs")
+	const cat = await getCatalog()
+	const pl = planFromScene(STARTER(), cat.index)
+	pl.missing = [{ asked: "a crumpled paper cup", reason: "things do not crumple", substitute_type: "box", substitute_id: "box" }]
+	gw.script("m1", [{ content: JSON.stringify({ kind: "change", targets: [{ says: "the box", ids: ["box"] }], mode: "patch", why: "A move.", reply: "I moved the box 10 cm left.", patches: [{ op: "move", id: "box", dx: -0.1 }], missing: [] }) }])
+	const out = await runStep("edit", { text: "move the box 10 cm left", scene: STARTER(), plan: pl, intent: "edit" }, opts())
+	const user = gw.requests[0].body.messages[1].content
+	assert.match(user, /# Its plan \(patches change this plan/)
+	assert.doesNotMatch(user, /crumpled/)
+	assert.deepEqual(out.result.missing, [])
+	assert.deepEqual(out.result.plan_missing.map((m) => m.asked), ["a crumpled paper cup"])
 })
 
 test("edit (§14): the request carries the rich digest from a run made here (looks, places in words, each item's part in the run, look-alikes, the goals MET / FAILED), the client's feedback just before the request; kind and targets come back; a bad sim or feedback is a 400", async () => {
@@ -419,6 +440,53 @@ test("edit (§14): the request carries the rich digest from a run made here (loo
 	await assert.rejects(runStep("edit", { text: "x", scene: STARTER(), sim: 3 }, opts()), badInput(/sim must be an object/))
 	await assert.rejects(runStep("edit", { text: "x", scene: STARTER(), feedback: 5 }, opts()), badInput(/feedback must be text/))
 	await assert.rejects(runStep("edit", { text: "x", scene: STARTER(), feedback: "x".repeat(9000) }, opts()), badInput(/feedback is too long/))
+})
+
+test("edit: a hung thing's \"where\" gap is the real one when its outline box shows less (the box over the sloped seesaw plank: 6.8 cm, not 3.7)", async () => {
+	const { roomUnder } = await import("../room.mjs")
+	const { sceneDigest } = await import("../scene-digest.mjs")
+	const { getCatalog } = await import("../catalog-digest.mjs")
+	const cat = await getCatalog()
+	const sc = STARTER()
+	const r = await roomUnder(sc, await sceneDigest(sc, cat.index))
+	assert.deepEqual(r.items.map((x) => [x.id, x.best, x.below, Math.round(x.boxGap * 1000), Math.round(x.room * 1000)]), [["box", "seesaw", "seesaw", 37, 68]], "only the box: ball1 is held (it rides with ramp 1 by the boxes' gap)")
+	gw.script("m1", [{ content: JSON.stringify({ kind: "change", targets: [{ says: "the box", ids: ["box"], because: "the only box" }], mode: "patch", reply: "Lowered it 5 cm.", patches: [{ op: "move", id: "box", dy: -0.05 }] }) }])
+	await runStep("edit", { text: "lower the box by 5 cm", scene: sc }, opts())
+	const user = gw.requests[0].body.messages[1].content
+	assert.match(user, /- box · [^\n]*\n  where: right third of the table, in the air; 6\.8 cm above seesaw; static \(never moves\)\n/)
+	assert.equal(user.includes("3.7 cm above seesaw"), false)
+	assert.match(user, /where: left third of the table, in the air; 3\.1 cm above ramp1; dynamic, held/, "a held thing keeps the boxes' gap")
+	assert.equal(user.includes("## Free room"), false)
+	// a scene where nothing hangs over a sloped or round thing is as before
+	gw.script("m1", [{ content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "ok", patches: [] }) }])
+	await runStep("edit", { text: "what is this?", scene: scenario("trampoline") }, opts())
+	assert.match(gw.requests[1].body.messages[1].content, /^# The current scene\n/)
+})
+
+test("edit (§14): a scene is run once: the same scene again (a repair turn, Undo) gets the same digest from the cache, said in prompt.digest", async () => {
+	const { mkdtempSync, readdirSync, rmSync } = await import("node:fs")
+	const { tmpdir } = await import("node:os")
+	const { join } = await import("node:path")
+	const dir = mkdtempSync(join(tmpdir(), "ai-edit-runs-"))
+	const before = process.env.AI_CACHE_DIR
+	process.env.AI_CACHE_DIR = dir
+	try {
+		const NOTHING = { content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }) }
+		gw.script("m1", [NOTHING, NOTHING])
+		const sc = STARTER()
+		sc.items.find((i) => i.id === "box").x += 0.0001 * Math.random() // (a scene this process has not run yet)
+		const a = await runStep("edit", { text: "what does the box do?", scene: sc }, opts())
+		const b = await runStep("edit", { text: "what does the box do?", scene: structuredClone(sc) }, opts())
+		assert.equal(a.prompt.digest.cached, false)
+		assert.ok(a.prompt.digest.runMs > 0 && a.prompt.digest.ms >= a.prompt.digest.runMs)
+		assert.equal(b.prompt.digest.cached, true)
+		assert.equal(gw.requests[1].body.messages[1].content, gw.requests[0].body.messages[1].content, "the same digest, word for word")
+		assert.equal(readdirSync(join(dir, "edit-runs")).filter((n) => n.endsWith(".json")).length, 1, "kept on disk too (the local server runs each step in its own process)")
+	} finally {
+		if (before === undefined) delete process.env.AI_CACHE_DIR
+		else process.env.AI_CACHE_DIR = before
+		rmSync(dir, { recursive: true, force: true })
+	}
 })
 
 test("edit (§14): the plan's goals of other kinds are checked on the same run (MET / FAILED); a kind that changes nothing with patches gets the repair turn; ask comes back with no patches", async () => {

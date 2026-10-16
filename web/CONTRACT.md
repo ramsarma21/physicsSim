@@ -440,14 +440,28 @@ before except atwood-machine, pulley-lift, spring-gate, spring-catapult and wrec
   mechanisms ports; `node tools/parity/catalog.mjs --module catalog_items,catalog_everyday,catalog_mechanisms --no-browser` (all three catalog ports
   together); and `node --no-warnings tools/parity/fuzz-live.mjs --n 300` (random scenes of every type, every scenario and the catalog against the
   running server, through web/sim and through the browser backend with the engine bundle, the track byte for byte; `--n 2000` for the full fuzz).
-  Each prints its cases and mismatches and exits 1 on any mismatch. Every layout answer is also checked for a sprite shared by two solids of different
+  Each prints its cases and mismatches and exits 1 on any mismatch. The server is http://localhost:8790 unless `PARITY_SERVER` names another. Every layout answer is also checked for a sprite shared by two solids of different
   body or words (a document the engine would refuse).
 - Engine bundle: `npm run build:engine` (tools/build-engine.mjs, esbuild from `npm ci`) bundles tools/engine-worker-entry.ts (the engine,
   tooling/src/sim on planck.js) into `web/sim/engine-worker.js` (a module Worker, with `engine-worker.js.map`) and the math the page itself needs
-  (pow, cube) into `web/sim/engine-math.js`. In the bundle Math.sin, cos, atan2, exp, hypot and pow are tools/fdlibm.ts, so every browser computes
-  the bits node computes on the server. Rebuild it after any change under tooling/src/sim (the server's node workers restart by themselves; the
-  bundle does not), then check it with `node tools/parity-engine.mjs` (the bundle against the server's engine in node and headless Chromium, the
-  track byte for byte) and fuzz-live.
+  (pow, cube) into `web/sim/engine-math.js`. In the bundle Math.sin, cos, atan2, exp, hypot and pow (and `**`) are tools/fdlibm.ts's; the
+  server's engine (research/poc/worker.ts, and research/poc/dense_track.ts for the Python tests) loads the engine through
+  tools/engine-math-node.mjs, which makes the same substitution in node (the rules: tools/engine-math-transform.ts), so the server and every
+  browser compute the same bits on any machine, macOS or Linux. pow is tools/crpow.ts, correctly rounded (2^(y log2 x) in double-double with
+  a proven error bound; the rare pair it cannot round, and the exact and halfway cases, in BigInt), written for this project with tables
+  computed by tools/gen-crpow-tables.mjs (`--check` verifies them); `node tools/test-crpow.mjs` checks it against MPFR (python3 with gmpy2)
+  on 10 million pairs and for the same bits in node, bun, deno and headless Chromium. The Python builders take their powers from
+  machines/crmath.py (cube, cr_pow, sq), the same correctly rounded values, and their sin and cos too (crmath.sin, cos: math.sin/cos but
+  at the multiples of 30 degrees, where the last bit decides a rounding tie, web/sim/trig.js's values, the table pymath.js reads), so a
+  document is the same on a Mac and on Linux, except where another libm function lands exactly on a rounding tie: the builders' tan,
+  atan2, acos, asin, sinh/cosh/asinh (the hanging chain), log10 and sin/cos at other angles are still the platform's in Python and V8's in
+  web/sim, and can differ in the last bit, which shows only at an exact tie of a printed number (the hanging chain's documented case,
+  tools/parity/mechanisms.mjs --groups chainties). CI runs the parity suite on both (on Linux not blocking until it has passed on main).
+  The bundle is committed: rebuild it after any change
+  under tooling/src/sim or to the engine's math in tools/ (the server's node workers restart by themselves; the bundle does not), check it
+  with `node tools/parity-engine.mjs` (the bundle against the server's engine in node and headless Chromium, the track byte for byte) and
+  fuzz-live, and commit it (CI and a Vercel deploy rebuild it and fail on any difference). The node validators run the engine the same
+  way: `node --no-warnings --import ./tools/engine-math-node.mjs research/rw-validate.ts` (.github/scripts/validators.sh runs them all).
 - three.js is vendored: see the top of this file (`npm run vendor:three`, `npm run vendor:three:check`).
 
 ## AI builder ("Build with AI")
@@ -696,3 +710,116 @@ stepping at 4800 Hz), and in p3's launcher, pad and trampoline rows.
 - Checked: test_rg PASS (the starter's document and track unchanged), test_catalog 139/139, test_everyday 38/38, test_mechanisms 58/58; rw-validate,
   -p2, -poly, -slop, -p3 and -p4 pass; tools/parity/run.sh, catalog.mjs with all three modules, fuzz-live --n 2000 (4 shards; its scenes now carry
   falls / hits / moves goals too, odd fields included) and parity-engine --catalog: no mismatch.
+
+## Engine batch 2 repair (2026-10-15, after its review): tooling/src/sim/physics.ts, document.ts; the catalog's springs and the summary's falls rule
+These lines replace what "Engine batch 2" and "Catalog and summary after engine batch 2" above say where they differ (the sub-steps, the spring mass,
+the measured accuracy and speed, the falls rule). The track is the same shape; the document format is the same but for a spring's `mass`, which must now
+be zero or more. Backups: research/*-before-engine-batch2-repair.* (physics, part, document, the bundle and engine-math.js, catalog_mechanisms.py and its
+port, items.py and web/sim/items.js / layout.js, check.py, rw-validate-p3/-p4, fuzz-live.mjs, engine-fuzz.mjs, this file). Checked in
+`research/rw-validate-p4.ts` (rewritten: `[crash|energy|stiff|mass|impacts|all]`; `ENGINE_DIR` as before, `MACHINES_DIR` builds the catalog's scenes
+with another copy of machines/), p3's sprung rows, and the new fixtures tools/parity/fixtures/fuzz99991-8970.doc.json and fuzz99991-4425.doc.json.
+- No energy from the sub-steps. Batch 2 recomputed a spring group's sub-step count every step from its rate, which takes in a stretched spring's
+  sideways stiffness T/d: that comes and goes each half period, so the count flipped (2 ↔ 3) in step with the swing and pumped it like a swing pumped
+  in time. An undamped 10 × 10 cm pad at 10000 N/m alone rang up from 17 to 93 mm in 2.5 s; a marble dropped 2 m on a 6 × 10 cm pad at 7000 N/m rose
+  to 6.6 m; a steel ball dropped 4 m on a 10 × 10 cm pad at 10000 N/m 7 m above its start; 21 of 139 undamped bobs on springs grew (×10.75 at
+  ω·h 1.3). Now the count may rise at any step but falls only after `SUB_HOLD` (120) steps of needing fewer, for a group alone as for one something
+  nears (and the work budget below the same). Measured (p4 `energy`, `stiff`): 290 undamped bobs, ω·h 0.3 to 7.5 a 480 Hz step, 1 mm and 2 cm, 3 s:
+  none grows (Prony's decay a step ≤ 1); the review's five (ω·h 0.9, 1.3, 1.35, 1.75, 3.45, 2 cm) keep at most 98.6 % (the air's drag); 192 drops
+  on stiff pads as documents (3000-7000 N/m, 3-20 cm springs, 6 and 20 cm plates, marble, golf ball, superball, steel ball from 0.5 and 2 m, 6 s): the
+  highest comes back 125 mm under its start; the three review scenes 0.53 to 1.7 m under their starts over 8 s; the lone pad's swing dies away
+  (16.8 → 6.6 mm in 2.4 s: the air on a plate swinging at 8 m/s). The 12 scenarios' placements are unchanged by this alone.
+- Sub-step accuracy, measured over a fine scan (p4 `stiff`: a bob on a spring at ω·h 0.2 to 2.8 in 0.05 steps, every point where the count changes
+  included; batch 2's "periods within 0.69 %, damping ratios within 0.011 %" held at its five sample points only): periods within 0.87 % undamped and
+  at ζ 0.05 and 0.1 (theory for ω·h 0.45 a sub-step: 0.86 %), 1.14 % at ζ 0.3 (ω·h to 1.5); damping ratios within 0.07 % (ζ ≤ 0.1), 0.57 % at ζ 0.3.
+- Cheaper sub-steps (the whole world is stepped in them): a body from outside a group counts as nearing it only when it moves against it faster than
+  `NEAR_SPEED` (0.1 m/s: a ball resting on a pad, or riding it, strikes nothing); a group none of whose springs' ends have moved against each other
+  faster than that since the step before takes whole steps (its implicit share keeps it steady; never at its first step, so a launcher's plate is
+  stepped finely from its release); and at most `SUB_WORK` (64) over the moving bodies awake, held as above. A pad and a ball added to a scenario
+  (best of 3, node, this machine): rube-goldberg 108 ms → with the default pad 283 ms (batch 2: 518), with a 6 × 2 cm pad at 10000 N/m (a document)
+  763 ms (batch 2: 2805); car-ramp-dominoes 145 / 434 ms (310 / 1750); plinko 92 / 346 ms (172 / 890).
+- No crashed runs, no runs of minutes. (1) A wedged body's contacts could pile up impulse through planck's warm start, opposing contacts cancelling
+  while their stored impulses grew, until the warm start alone flung the body and its motion was NaN (engine-fuzz seed 99991 scene 8970, a sneaker's
+  heel among fixed pegs: "the simulation broke down at 1.181 s", HTTP 500 after 46 s): a stored impulse that would change the heavier moving body's
+  speed by more than `SANE_SPEED` is dropped from the next warm start (post-solve). (2) A body wedged against fixed solids struck them again and
+  again in the time-of-impact pass (scene 4425: a handle against a fixed ball and a wheel, 122,432 events in 1.5 s, 51 to 329 s for 3 s, past the
+  server's 120 s `RUN_TIMEOUT`): at most `BODY_TOI` (32) events a body a step, and 4 a step (`BODY_TOI_WEDGED`) for a body that used all of them the
+  step before, while it goes on using its 4 (wedged: it strikes the same solids over and over; four such in a 390-peg scene used 32 every step, 44 s
+  of a 3 s run's 47, now 10 s); at most `TOI_EVENTS` (1024) a step, fewer where the world has many contacts (each event scans them all again: at most
+  `TOI_WORK`, 200,000 contacts scanned a step). The 12 scenarios never reach these caps (their tracks are the same with or without them). (3) planck's clamp on a (sub-)step's
+  move (`Settings.maxTranslation`) is `SANE_SPEED`·h. (4) `SANE_SPEED` 150 → 250 m/s: a run lasts at most 20 s, in which gravity gives up to 196 m/s
+  (a 1 m steel ball let fall from 1000 m reaches 183.42 m/s in 20 s through the air; it was slowed to 150 and warned of as wedged); a document's motor
+  driven past it is still held to it. Fuzz (engine-fuzz.mjs, seed 99991, 10,000 scenes, 76,189 items, built by this catalog, 8 processes on a machine
+  busy with other work): 0 exceptions, 0 non-finite, the slowest 55 s (scene 2762, 13 s run alone; batch 2: 1 exception, 2 scenes over 120 s, 7 over
+  60 s); the fixtures 8970 and 4425 (batch 2's documents) run in 1.9 and 1.5 s; p4's own fuzz (seed 20261015, 5000 scenes): 0 exceptions, 0 non-finite,
+  the slowest 33 s (batch 2's report: 78-86 s).
+- Strikes carried on through lasting contacts (sequential impacts). planck solves an island's contacts together and gives restitution only to one
+  closing as the step begins, so a strike on a ball that rested against another went on through contacts that were not closing yet, as if the balls
+  were glued: a tennis ball resting on a basketball, let fall 1 m onto the table, rose to 0.85 m; a Newton's cradle of touching balls (gap 0, the
+  slider's least) sent two out. Now, where a strike (a contact `compensated` gives restitution) lands on a body that touches another moving body
+  round to round, the island's one-point contacts (the struck ones, and those between round solids) are resolved one strike at a time, the hardest
+  closing first, each with its own e, until none closes faster than `VELOCITY_THRESHOLD`; then planck solves the island as always. A struck contact's
+  e is `compensated`'s (its rebound e times the approach as the step began, as planck would give it); one passed on is its pair's own. A body takes
+  part when it is loose or turns on one hinge to a fixed body with no motor or limit (met with its inertia about that pivot, so the hinge holds as
+  it is struck: a cradle's ball); anything else holding it (a rope, a pulley, a wheel axle, a chain, a driven or limited hinge) leaves its contacts to
+  planck. Each strike is a two-body collision with e ≤ 1: no energy is made. A strike passed on is an impact of its own (track.impacts, the frame
+  nearest it). In both the main solve and the time-of-impact pass (`solveIsland`, `solveIslandTOI`). Measured (p4 `impacts`): the tennis ball rises to
+  2.919 m against 2.906 m for sequential impacts with each ball's drag, e 0.767 off the table and 0.661 between them (+0.4 %); the gap-0 cradle swings
+  235 / 6 / 6 / 6 / 203 mm (one ball out, 86 % as far: steel's e 0.95 four times; the middle ones under 2.5 %); a tennis ball resting on a basketball
+  on the table never rises. Slabs and planks (dominoes leaning on dominoes, a seesaw with a ball on it, stacked bricks) are left to planck's solve:
+  there a strike is shared as before.
+- Spring mass, where it acts (`simulate`'s spring masses, `SpringMass`). One end fixed: the moving end carries the inertia of the spring's fundamental
+  mode, m_e = mₛ/β² − m with β·tan β = mₛ/m (m its body's own mass; springs from fixed points to one body reckoned together): the exact period of a
+  mass on a uniform spring, Rayleigh's mₛ/3 for a light spring, up to 0.405·mₛ for a heavy one; and half the spring's weight (the fixed end holds the
+  other half), the part beyond m_e's own weight applied at the anchor (`springWeight`), so a pad's plate and a hanging weight settle (m + mₛ/2)·g/k
+  down, as a uniform spring's own weight puts them. Both ends moving: a uniform bar's consistent mass, mₛ/6 at each end and 2mₛ/3 at the middle of
+  the anchors moving as they do (a velocity constraint, no body of its own): the pair carries all of mₛ, its stretching swing mₛ/6 at each end (it
+  carried mₛ/2 at each, 11.6 % slow for mₛ = m). Measured (p4 `mass`): hanging springs' periods within 0.04 % of the uniform spring's fundamental
+  (500 N/m with 450 g of steel and a 50 g weight: Rayleigh's mₛ/3 would be 5.7 % short); two 50 g balls joined by a 50 g spring, falling free: its
+  stretching swing within 0.25 % of the uniform spring's; pads' plates, let go, move at most 10 µm (the catalog's starting compression and the engine's statics agree). A lumped mass is a real spring only while the
+  spring is light against what it moves (a light ball on a plate whose springs outweigh it is thrown at the coil's release-wave speed x₀·√(k/mₛ), not
+  by any lumped share): the catalog keeps its springs there (below).
+- Catalog springs (machines/catalog_mechanisms.py, web/sim/catalog-mechanisms.js the same, number for number):
+  - sized for the most the item can ever deflect them, whatever it is set to (batch 2 sized them by the setting, so a launcher's spring weighed 81 times
+    more held 45 cm than 5 cm, and nothing held at 0): the launcher's to rest − max(3 cm, closed coils), the pad's and bumper's to their closed coils,
+    the trampoline's to the mat pressed half its height (as before), the gate's to 85° or its closed coils (as before), the catapult's to its arm
+    cocked 60° (its rest length still follows the cocked arm's height), the hanging spring's for the item's own 0.2 kg weight's bounce (`HANG_RATED`:
+    a heavier weight stretches it past what its steel was sized for, as a real one would take a set; the engine keeps it linear);
+  - at the most stress music wire takes without a set, `SPRING_STRESS` 1.0 GPa (45 % of S_ut = 2.2 GPa for 1 mm wire: Shigley table 10-6, set not
+    removed; it was a 0.7 GPa working stress): m = ρ·4G·(½k·travel²)/τ², 2.5 g a joule. The default launcher's springs weigh 6.7 g each (3.7 g held 6 cm
+    before), the default pad's 2.2 g, the default hanging spring's 3.0 g;
+  - `_spring_cap(P, moved, n, fk, travel)`: a stiffness prop is built at most where a third of its springs' steel is `SPRING_SHARE` (0.3) of the plate,
+    mat or bumper plate and a light ball (`LIGHT_BALL`, 2.7 g), written into `resolved` as the old cap was. There a launcher's throw is within 2.1 %
+    of a 400-node coil (p4 `mass`, 7 launchers from the default to the smallest at its cap: −2.0 to +0.8 %); past it the steel would outweigh what it throws. No
+    default is capped; the default launcher can be built up to 4960 N/m (slider 5000), the default pad to 10000. Capped e.g.: the 6 × 2 cm launcher on
+    50 cm springs asked 5000 N/m is built at 33.9 N/m; the default launcher on 50 cm springs at 332 N/m; a 6 × 10 cm pad on 12 cm springs at 2088 N/m;
+    the default trampoline's 50 g mat at 959 N/m (slider 3000). The gate and the catapult are not capped (their swings are their springs' fundamental);
+  - the pad's starting compression and the trampoline's sag take half of each spring's weight ((m + mₛ)·g/k for their two springs), the hanging
+    spring's coil-closure bound (2m + mₛ)·g/k;
+  - the launcher's and hanging spring's card texts (`source`) say so.
+- Summary falls rule (items.py `_Fall`, web/sim/items.js the same): a weld group any of whose parts a pin, rope (or chain) or pulley joint holds is not
+  a body that can fall, as a pivoted one is not: a swing's seat, a rope pendulum's bob, a hanging chain's links, an Atwood machine's weights, a pulley
+  lift's pail now report "falls over: false (0 of 0)" (the swing reported "true (1/1)", the Atwood machine "1/2"). fuzz-live.mjs has a group `hung`
+  (in its defaults) for them. ai/goals.mjs trackTools.bodiesOf (the AI's own check, not this side's file) still counts them: it should skip the same
+  weld groups, or the AI and the summary disagree on such items.
+- Document admission (document.ts): a spring's `mass` must be zero or more; a document that does not fit the format is refused in one line, with its
+  place in it: "<id>: the document does not fit the format: Expected a value greater than or equal to 0 at ["joints"][0]["mass"]" (a worker passes on
+  an error's last line only, which was the bare path before).
+- What changed in the scenes (batch 2's engine and builder → now): all 12 scenarios keep their goals; nine run exactly as
+  before (atwood, ball-drop, car-ramp-dominoes, conveyor-delivery, empty, pendulum-dominoes, plinko, rube-goldberg, wrecking-ball: the same tracks). newtons-cradle's
+  ends move 1.4 mm (its balls touch after the first strikes: they are carried on); spring-launch's ball 17 mm (its springs' steel, 2.2 → 6.7 g each, and the
+  launch's sub-steps); trampoline's basketball 89 mm, its stories' top speeds 2.6 / 2.9 / 4.1 → 2.7 / 3.0 / 4.4 m/s, and "Basketball hits Tennis
+  ball" is listed again (batch 2 had lost it). The starter (machines/check.py): --sweep 15 of 15 land, --grid 130 of 143 (as batch 2).
+- Speed (node, best of 10 each, interleaved, this machine): the 12 scenarios 608 ms before batch 2, 726 ms with it (+19.3 %; its
+  CONTRACT's "within +8 % but the trampoline" was wrong for spring-launch, +19 %), 683 ms now (+12.2 %): trampoline 38 → 151 → 101 ms (its light mat is
+  sub-stepped while balls strike it), spring-launch 27.7 → 32.9 → 34.2 ms, every other scenario within 6 % of before batch 2 (atwood and empty, under 3 ms,
+  19 and 29 %).
+- Known limits: a crowded scene with a stiff spring in it follows the spring in fewer sub-steps (the work budget), steady but its rebounds followed less
+  closely; sequential impacts are for round solids touching at one point (a slab struck through a slab is solved as one, as before); the catalog's
+  spring steel is an ideal lower bound (the steel the stored energy needs: coil curvature and end turns add some); a document's spring heavier than what
+  it moves is still lumped (a throw then too fast: the catalog never builds one); the ultralight slab and the motor past `SANE_SPEED` as before.
+- Checked (the final engine, its bundle rebuilt, the server reloaded): research/rw-validate-p4.ts all PASS (crash with its 5000-scene fuzz,
+  energy, stiff, mass, impacts), rw-validate-p3.ts 99 of 99, -p2 and -poly pass, rw-validate.ts and -slop print the same as before this repair;
+  python3 machines/test_rg.py PASS (the starter's goal met), test_catalog 139/139, test_everyday 38/38, test_mechanisms 58/58; tools/parity/run.sh (every
+  step 0 mismatches), node tools/parity-engine.mjs --catalog (ALL IDENTICAL: 131 scenes × 3 runs in node and Chromium, 4 extra rates, 4 error
+  messages), node --no-warnings tools/parity/fuzz-live.mjs --n 2000 in 4 shards (4154 cases, 0 mismatches, the `hung` group included); engine-fuzz
+  seed 99991 × 10,000 (above).

@@ -510,8 +510,9 @@ const groups = {
 		// Where JavaScript's sin/cos could show: an item at a multiple of 30 degrees (sin/cos are 0, +-1/2, +-sqrt(3)/2, +-1) holding parts whose offsets
 		// have 5 decimals (or a half of one: 6 decimals ending in 5), so that a position lands exactly on a rounding tie by construction. Every numeric prop
 		// gets 4 or 5 decimals, the angle props (a pendulum's start angle, a lever's tilt, a gate's) multiples of 30, the item sits at round places.
-		// web/sim/trig.js holds CPython's own sin/cos for the multiples of 30 degrees where V8's differ in the last bit (cos(+-120), sin(+-240), ...: found
-		// here by comparing); those "hard" angles get many more scenes, and a pendulum and a gate hang at them with lengths whose quarter is a tie.
+		// web/sim/trig.js holds the sin/cos of the multiples of 30 degrees that both sides use (pymath.js, and the builders through machines/crmath.py);
+		// V8's own differ from it in the last bit at some (cos(+-120), sin(+-240), ...: found here by comparing); those "hard" angles get many more
+		// scenes, and a pendulum and a gate hang at them with lengths whose quarter is a tie.
 		const { TRIG30_SIN, TRIG30_COS, TRIG30_RANGE } = await import(`${SIM}/trig.js`)
 		const D2R = Math.PI / 180
 		const hard = []
@@ -622,7 +623,7 @@ const groups = {
 	},
 
 	async live() {
-		const base = "http://localhost:8790"
+		const base = process.env.PARITY_SERVER ?? "http://localhost:8790"
 		let cat
 		try {
 			cat = await (await fetch(`${base}/api/catalog`)).json()

@@ -1,16 +1,20 @@
 # CI for the physics sandbox:
 #   checks    (Linux, Node 24 = Vercel's runtime, and Node 26) syntax of every JS/TS/Python file; vercel.json's function patterns; the
-#             generated files (vendor, scenario list, web/sim's sprites.js and unicode.js); the node:test files that do not load web/sim;
-#             the engine's real-world validators (research/rw-validate*.ts)
+#             generated files (vendor, scenario list, web/sim's sprites.js and unicode.js); the engine bundle; every node:test file; the
+#             engine's real-world validators (research/rw-validate*.ts); the static site build
 #   machines  (Linux) the Python scene builder's tests (every machines/test_*.py), which run the engine from tooling/src/sim
-#   macos     (macOS arm64) everything that needs the engine bundle: every node:test file (Node 24 and 26), the static site build, the
-#             Vercel deploy check (`npm run check:vercel`: vercel build on the exact upload, then the built functions are called), web/sim's
-#             trig.js against macOS libm, and the Python <-> JS parity suite (tools/parity/run.sh) against web/server.py started in the job
-# The engine bundle (web/sim/engine-worker.js, engine-math.js) is git-ignored and built here by `npm run build:engine`, which needs
-# tools/apple-pow-tables.ts: not in this public repository until the open-source pow replacement lands. .github/scripts/engine-bundle.sh
-# tries the build: on Linux, without the tables, the steps that load web/sim are skipped with a notice; on macOS the bundle is built with
-# pow = Math.pow instead (.github/scripts/stub-pow.sh: the same bits as the Apple tables on macOS; never deployed). Both switch to the
-# real bundle by themselves from the first commit where `npm run build:engine` works from a clean checkout.
+#   macos     (macOS arm64) the engine bundle, every node:test file (Node 24 and 26), the static site build, the Vercel deploy check
+#             (`npm run check:vercel`: vercel build on the exact upload, then the built functions are called), web/sim's trig.js against
+#             macOS libm, and the Python <-> JS parity suite (tools/parity/run.sh) against web/server.py started in the job
+#   parity-linux  (Linux x64) the same parity suite on glibc's libm and V8 built without fused multiply-adds: the builders' sin/cos at
+#             multiples of 30 degrees and their powers are platform-free (machines/crmath.py), so it is expected to pass here too, except
+#             where another libm function lands exactly on a rounding tie (the hanging chain's documented case, tools/parity/mechanisms.mjs
+#             --groups chainties, not in the suite); non-blocking until it has passed on main (see the job)
+# The engine bundle (web/sim/engine-worker.js, engine-math.js) is committed, and every job that needs it rebuilds it with
+# `npm run build:engine` from the clean checkout (its pow is tools/crpow.ts, correctly rounded, written for this project: nothing outside
+# the repository is needed) and fails if the result differs from the committed bundle, or if the bundle is not committed
+# (.github/scripts/engine-bundle.sh), as a Vercel deploy would. The validators run the engine with the bundle's math
+# (tools/engine-math-node.mjs), as the server's worker does.
 name: CI
 
 on:
@@ -64,10 +68,10 @@ jobs:
       - name: vercel.json function patterns match files of this commit
         if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
         run: node .github/scripts/vercel-functions.mjs
-      - name: Engine bundle (npm run build:engine, when buildable)
+      - name: Engine bundle (npm run build:engine; must equal the committed one)
         id: engine
         if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        run: .github/scripts/engine-bundle.sh build "the node:test files that load web/sim, and the static site build"
+        run: .github/scripts/engine-bundle.sh
       - name: Generated files are up to date (vendor, scenario list, web/sim/sprites.js and unicode.js)
         if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
         run: |
@@ -183,9 +187,9 @@ jobs:
         run: |
           .github/scripts/ci-paths.sh
           mkdir -p ci-logs
-      - name: Engine bundle (the real one when buildable, else stub pow)
+      - name: Engine bundle (npm run build:engine; must equal the committed one)
         id: engine
-        run: .github/scripts/engine-bundle.sh build-or-stub
+        run: .github/scripts/engine-bundle.sh
       - name: web/sim/trig.js is up to date (CPython on macOS libm)
         if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         run: |
@@ -221,6 +225,54 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: macos-logs
+          path: ci-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  parity-linux:
+    name: Python <-> JS parity (Linux x64, glibc)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    # glibc's libm and V8 on x64 are not the development machine's: machines/crmath.py and web/sim read the same table for sin/cos at
+    # multiples of 30 degrees and compute the same correctly rounded powers, so this is expected to pass. The builders' other libm calls
+    # (tan, atan2, acos, asin, sinh/cosh/asinh, log10, sin/cos at other angles) are still glibc's in Python and V8's in web/sim: a last-bit
+    # difference shows only where a printed number lands exactly on a rounding tie (the hanging chain's documented case,
+    # tools/parity/mechanisms.mjs --groups chainties, is not in the suite), and no run here has proven the rest yet. It does not block a
+    # merge until it has passed on main once; then delete this line.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          # Node 26, as in the macOS job's parity step (fuzz-live.mjs's fetch() dies in undici's parser under Node 24.20)
+          node-version: 26
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Platform
+        run: |
+          uname -a
+          ldd --version | head -n 1
+          python3 -c 'import sys; print(sys.version)'
+          node --version
+      - name: npm ci
+        run: npm ci
+      - name: Link the paths the research scripts assume
+        run: |
+          .github/scripts/ci-paths.sh
+          mkdir -p ci-logs
+      - name: Engine bundle (npm run build:engine; must equal the committed one)
+        id: engine
+        run: .github/scripts/engine-bundle.sh
+      - name: Parity suite (tools/parity/run.sh, with web/server.py on :8790)
+        if: ${{ steps.engine.outputs.built == 'true' }}
+        run: PARITY_JOBS=4 .github/scripts/parity-macos.sh
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parity-linux-logs
           path: ci-logs/
           if-no-files-found: ignore
           retention-days: 14

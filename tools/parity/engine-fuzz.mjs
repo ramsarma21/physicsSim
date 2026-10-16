@@ -10,6 +10,9 @@
 // would), documents the engine refused on admission (a clean message: listed), exceptions while stepping (FAIL), non-finite placements (FAIL),
 // the slowest scenes, and (for review, not a failure) "wild" scenes where a solid moved faster than --wild m/s or turned faster than 50·wild rad/s.
 // Exits 1 on any exception while stepping or any non-finite number.
+// The engine runs with the browser bundle's math, as the server's worker does (tools/engine-math-node.mjs, registered before the engine is
+// imported below: in this process and in every shard it forks), so a scene behaves here as on the server and in the page, on any machine.
+import "../engine-math-node.mjs"
 import { fork } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"

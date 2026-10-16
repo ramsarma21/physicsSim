@@ -33,16 +33,38 @@ export function looksOf(cat) {
 	LOOKS = { fp: cat.fingerprint, map }
 	return map
 }
-const colourOf = (looks) => {
-	// (what it looks like by default: "a tapered paper cup (its other materials, aluminium, glass or wood, change its look)" is paper)
-	const t = String(looks ?? "").toLowerCase().replace(/\([^)]*\)/g, " ")
+// (a pool ball's colour follows its number, as web/models/balls.js draws it: 0 the white cue ball, 8 black, 9-15 striped)
+const POOL = ["white", "yellow", "blue", "red", "purple", "orange", "green", "maroon", "black"]
+const poolColour = (n) => {
+	const k = Math.max(0, Math.min(15, Math.round(Number(n))))
+	return k > 8 ? `${POOL[k - 8]}-striped` : POOL[k]
+}
+const colourOf = (looks, item = null, T = null) => {
+	// (an item's own colour first: a ball's `color` prop, a pool ball's number)
+	if (typeof item?.props?.color === "string" && item.props.color.trim()) return item.props.color.trim().toLowerCase()
+	if (item?.type === "billiard-ball") {
+		const n = Number(item.props?.number ?? T?.props?.number?.default)
+		if (Number.isFinite(n)) return poolColour(n)
+	}
+	// (what it looks like by default: "a tapered paper cup (its other materials, aluminium, glass or wood, change its look)" is paper; the
+	// colour of its parts is not its colour: "a toy car on black rubber wheels" is not black, nor "yellow-green felt with the white seam" white)
+	const t = String(looks ?? "")
+		.toLowerCase()
+		.replace(/\([^)]*\)/g, " ")
+		.replace(/\b(on|with|and|in)\b[^,;:]*?\b(wheels?|legs?|seams?|stitch(es|ed)?|frame|spine|edges?|tyres?|tires?|cords?)\b/g, " ")
 	let best = null
 	for (const c of COLOURS) {
 		const i = t.search(new RegExp(`\\b${c}\\b`))
 		if (i >= 0 && (best === null || i < best.i)) best = { c, i }
 	}
+	// ("a dark red hardcover" is dark red, not dark)
+	if (best && (best.c === "dark" || best.c === "light")) {
+		const next = new RegExp(`^${best.c}\\s+([a-z-]+)`).exec(t.slice(best.i))?.[1]
+		if (next && COLOURS.includes(next) && !["dark", "wooden", "wood", "steel", "glass", "paper", "cardboard", "striped"].includes(next)) return `${best.c} ${next}`
+	}
 	return best?.c ?? null
 }
+const an = (w) => (/^[aeiou]/i.test(String(w)) ? "an" : "a")
 /** The word a person would use for its kind ("ball", "ramp", "cup", "dominoes"). */
 function kindOf(item, T) {
 	if (!T) return item.type
@@ -91,7 +113,7 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 		const it = byId.get(r.id)
 		const Ty = T[r.type]
 		const kind = kindOf(it, Ty)
-		const colour = colourOf(looks[r.type])
+		const colour = colourOf(looks[r.type], it, Ty)
 		;(kinds.get(kind) ?? kinds.set(kind, []).get(kind)).push(r.id)
 		const w = r.box ? r.box.x1 - r.box.x0 : null
 		const h = r.box ? r.box.y1 - r.box.y0 : null
@@ -100,15 +122,19 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 		const m = typeof res.mass === "number" ? `, ${mass(res.mass)}` : ""
 		const keyProps = Object.entries(r.props).filter(([k]) => !["material", "bounce", "friction", "rolling", "side", "invisible_in_3d"].includes(k))
 		// what is right under it (when it is not resting on anything): the nearest top below its bottom, across its width
+		// (a bottom within 2 cm of a top, not held up for a release, stands on it: "in the air; -1.2 cm above the table" was a box on a belt)
 		let under = ""
+		let standsOn = null
 		if (r.box && /^nothing/.test(r.rests_on ?? "")) {
 			let best = null
 			for (const o of d.items) {
-				if (o.id === r.id || !o.box) continue
-				if (o.box.x1 < r.box.x0 || o.box.x0 > r.box.x1 || o.box.y1 > r.box.y0 + 1e-4) continue
+				if (o.id === r.id || !o.box || safety(scene.items.find((i) => i.id === o.id))) continue
+				if (o.box.x1 < r.box.x0 || o.box.x0 > r.box.x1 || o.box.y1 > r.box.y0 + 0.02) continue
 				if (!best || o.box.y1 > best.box.y1) best = o
 			}
-			under = best ? `; ${len(r.box.y0 - best.box.y1)} above ${best.type === "table" ? "the table" : best.id}` : `; ${len(r.box.y0)} above the table`
+			const gap = best ? r.box.y0 - best.box.y1 : r.box.y0
+			if (Math.abs(gap) <= 0.02 && !r.held) standsOn = best && best.type !== "table" ? best.id : "table"
+			else under = `; ${gap < 0 ? `its bottom ${len(-gap)} below the top of` : `${len(gap)} above`} ${!best || best.type === "table" ? "the table" : best.id}`
 		}
 		const holds = rows.filter((o) => o.rests_on === r.id).map((o) => o.id)
 		const how = r.unknown ? "UNKNOWN TYPE" : r.fixed ? "fixed in place" : r.moves ? (r.held ? `dynamic, held (on a pull pin) until the release at ${scene.release ?? 0.5} s` : "dynamic (free to move)") : "static (never moves)"
@@ -121,11 +147,11 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 		if (mine.length) run.push(mine.slice(0, 6).map((e) => `${e.a === r.id ? `hits ${nameOf(e.b)}` : `is hit by ${nameOf(e.a)}`} at ${e.t.toFixed(2)} s${e.speed != null ? ` (${e.speed.toFixed(2)} m/s)` : ""}`).join(", "))
 		if (st?.text) run.push(st.text)
 		if (fp && r.moves && fp.moved > 0.01 && !(r.parts?.length > 1)) run.push(`ends at x ${f2(fp.x)}, y ${f2(fp.y)}`)
-		if (r.moves && (!st || st.moved_at == null) && !mine.length) run.push("does not move")
+		if (r.moves && (!st || st.moved_at == null) && !mine.length && !/\b(doesn['’]t|does not|never) move/i.test(st?.text ?? "")) run.push("does not move")
 		const pi = planOf.get(r.id)
 		info.push({ r, it, kind, colour, lines: [
-			`- ${r.id} · “${r.name}” · a ${colour ? `${colour} ` : ""}${kind}: ${r.type} (${Ty?.name ?? "?"}; looks: ${looks[r.type] ?? "—"}) · ${size}${m}`,
-			`  where: ${third((r.box?.x0 + r.box?.x1) / 2)} of the table, ${r.rests_on === "table" ? "standing on the table" : /^nothing/.test(r.rests_on ?? "") ? `in the air` : `resting on ${nameOf(r.rests_on)}`}${under}; ${how}${holds.length ? `; holds up ${holds.map(nameOf).join(", ")}` : ""}`,
+			`- ${r.id} · “${r.name}” · ${an(colour ?? kind)} ${colour ? `${colour} ` : ""}${kind}: ${r.type} (${Ty?.name ?? "?"}; looks: ${looks[r.type] ?? "—"}) · ${size}${m}`,
+			`  where: ${third((r.box?.x0 + r.box?.x1) / 2)} of the table, ${r.rests_on === "table" || standsOn === "table" ? "standing on the table" : standsOn ? `standing on ${nameOf(standsOn)}` : /^nothing/.test(r.rests_on ?? "") ? `in the air` : `resting on ${nameOf(r.rests_on)}`}${under}; ${how}${holds.length ? `; holds up ${holds.map(nameOf).join(", ")}` : ""}`,
 			`  in the last run: ${run.length ? run.join("; ") : "—"}`,
 			`  exact: anchor (${f3(r.x)}, ${f3(r.y)}), angle ${fa(r.angle)}°, outline x ${f3(r.box?.x0)}…${f3(r.box?.x1)}, y ${f3(r.box?.y0)}…${f3(r.box?.y1)}; props ${keyProps.length ? keyProps.map(([k, v]) => `${k} ${typeof v === "string" ? JSON.stringify(v) : v}`).join(", ") : "defaults"}${pi?.why ? `; the plan's reason for it: ${String(pi.why).slice(0, 160)}` : ""}`
 		] })

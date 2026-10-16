@@ -165,7 +165,7 @@ try {
 	for (const [g, r] of Object.entries(per)) console.log(`  ${g.padEnd(24)} ${String(r.n).padStart(5)} cases, ${r.bad} mismatches`)
 	// ---- the whole pipeline of ?engine=browser against the running server
 	if (!noEngine) {
-		const base8790 = "http://localhost:8790"
+		const base8790 = process.env.PARITY_SERVER ?? "http://localhost:8790"
 		let up = true
 		try {
 			await fetch(`${base8790}/api/catalog`)

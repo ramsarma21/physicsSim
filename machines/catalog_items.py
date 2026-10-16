@@ -8,6 +8,8 @@ A ball's bounce is chosen so that bounce x 0.93 (hardwood) is its real restituti
 """
 import math
 
+from crmath import cos, cr_pow, cube, sin, sq  # powers correctly rounded, sin/cos at multiples of 30 degrees from web/sim's table (crmath.py): the same bits as web/sim on any machine
+
 NEEDED = ("register", "ItemType", "Prop", "ball_type", "MATERIALS", "measured", "add_look", "LOOK_FILL", "LOOK_SHADE", "D2R",
           "WOOD_PLANKS")
 
@@ -34,7 +36,7 @@ def _b(e_on_wood):
 
 def _sphere_density(mass, diameter, wall=None):
     r = diameter / 2
-    vol = (4 / 3) * math.pi * (r ** 3 - (max(0.0, r - wall) ** 3 if wall else 0.0))
+    vol = (4 / 3) * math.pi * (cube(r) - (cube(max(0.0, r - wall)) if wall else 0.0))
     return round(mass / vol, 1)
 
 
@@ -65,8 +67,8 @@ def _hanger_clear(w_deg, bob=None, y=0.012, w=0.08):
     if bob is not None:
         L, r = bob
         a = w_deg * D2R
-        dx = max(abs(L * math.sin(a)) - w / 2, 0.0)
-        dy = max((y - 0.006) + L * math.cos(a), 0.0)
+        dx = max(abs(L * sin(a)) - w / 2, 0.0)
+        dy = max((y - 0.006) + L * cos(a), 0.0)
         return math.hypot(dx, dy) >= r + 0.0045
     return True
 
@@ -100,7 +102,7 @@ def _child_ball(c, part, parent, lx, ly, r, material, words, look=None, **extra)
 def _hung_ball(c, tag, px, py, length, deg, diameter, bob_density, rod_thickness=0.004, rod_depth=0.01, rod_density=None, rod_words="a light wooden rod", rod_look="light wood"):
     """A light wooden rod pivoted to the world at (px, py), a ball welded to its lower end; swung out by deg (bob at L sin a, -L cos a)."""
     a = deg * D2R
-    rod = c.slab(f"rod{tag}", rod_thickness, length, rod_depth, px + (length / 2) * math.sin(a), py - (length / 2) * math.cos(a), langle=deg,
+    rod = c.slab(f"rod{tag}", rod_thickness, length, rod_depth, px + (length / 2) * sin(a), py - (length / 2) * cos(a), langle=deg,
                  material=c.mat(base="domino wood", overrides={}, density=rod_density), words=rod_words, look=rod_look,
                  pivot={"x": 0.0, "y": round(length / 2, 5)})
     _child_ball(c, f"bob{tag}", rod, 0.0, -length / 2, diameter / 2, c.mat(density=bob_density), f"a {c.P.get('material', 'steel')} pendulum bob")
@@ -291,14 +293,14 @@ def _weight(key, name, kg):
     dens = MATERIALS["steel weight"]["density"]
 
     def build(c, P):
-        s = (P["mass"] / dens) ** (1 / 3)
+        s = cr_pow(P["mass"] / dens, 1 / 3)
         c.slab("weight", s, s, s, 0, 0, words=f"a {name.lower()}")
     register(ItemType(key, name, "Blocks & shapes", build, material="steel weight", materials=["steel weight"],
                       props=[Prop("mass", "Weight", kg, 0.1, 50.0, 0.1, "kg", "A solid cube of steel with this weight")],
                       tags=["weight", "mass", "metal", "iron", "heavy", "kilogram", "cube", "calibration"],
                       description=f"A solid steel cube weighing {kg:g} kg: it lands with a thud and pushes things hard.",
                       source="Weights use the conventional density 8000 kg/m³ (OIML R 111).",
-                      facts=f"{kg:g} kg · a {(kg / dens) ** (1 / 3) * 100:.1f} cm cube", edit=[{"kind": "rotate"}]))
+                      facts=f"{kg:g} kg · a {cr_pow(kg / dens, 1 / 3) * 100:.1f} cm cube", edit=[{"kind": "rotate"}]))
 
 
 def _blocks():
@@ -336,7 +338,7 @@ def _blocks():
         rho = MATERIALS[P["material"]]["density"]
         c.ball("log", r, material=c.mat(density=round(rho * 3 * P["length"] / (4 * r), 4)), inertia=0.5, shape="cylinder", length=P["length"],
                words="a wooden log")
-    mass = 700 * math.pi * 0.06 ** 2 * 0.25
+    mass = 700 * math.pi * sq(0.06) * 0.25
     register(ItemType("wooden-log", "Wooden log", "Blocks & shapes", build_log, material="varnished hardwood", materials=BLOCK_WOODS,
                       props=[Prop("diameter", "Diameter", 0.12, 0.02, 0.6, 0.005, "m"), Prop("length", "Length (front to back)", 0.25, 0.02, 1.0, 0.005, "m", "Only for the 3D look and the weight")],
                       tags=["wood", "cylinder", "roller", "trunk", "rolling", "tree", "dowel", "round"],
@@ -479,7 +481,7 @@ def _rods():
                material=c.mat(base="varnished hardwood", overrides={}))
         t = tilt * D2R
         # the plank turns about a point `off` along it from its middle; that point sits at the fulcrum's top
-        c.slab("plank", L, th, 0.06, -off * math.cos(t), ph - off * math.sin(t), langle=tilt, words="a lever plank", pivot={"x": round(off, 5), "y": 0.0})
+        c.slab("plank", L, th, 0.06, -off * cos(t), ph - off * sin(t), langle=tilt, words="a lever plank", pivot={"x": round(off, 5), "y": 0.0})
     register(ItemType("lever", "Lever", "Rods & hinges", build_lever, material="varnished hardwood", materials=WOOD_PLANKS + ["steel", "aluminium"],
                       props=[Prop("length", "Length", 1.0, 0.2, 3.0, 0.01, "m"), Prop("thickness", "Thickness", 0.02, 0.005, 0.1, 0.001, "m"),
                              Prop("pivot_height", "Fulcrum height", 0.12, 0.03, 1.0, 0.005, "m", "Where the plank turns, above the floor"),
@@ -493,7 +495,7 @@ def _rods():
     # --- hinged gate
     def build_gate(c, P):
         L, th, d, a = P["length"], P["thickness"], P["depth"], P["start_angle"] * D2R
-        c.slab("gate", th, L, d, (L / 2) * math.sin(a), -(L / 2) * math.cos(a), langle=P["start_angle"], words="a hinged wooden gate", pivot={"x": 0.0, "y": round(L / 2, 5)})
+        c.slab("gate", th, L, d, (L / 2) * sin(a), -(L / 2) * cos(a), langle=P["start_angle"], words="a hinged wooden gate", pivot={"x": 0.0, "y": round(L / 2, 5)})
         if P["hanger"]:
             # the gate's top corners swing on a circle of radius th / 2 round the pivot: the low bar's underside sits th / 2 + 4.5 mm above it; past level
             # the bar goes over the reach of its far corners
@@ -556,7 +558,7 @@ def _groups():
             _hung_ball(c, str(i + 1), i * step, 0.0, L, a if i == 0 else 0.0, d, MATERIALS[P["material"]]["density"], rod_thickness=0.001, rod_depth=0.09,
                        rod_density=round(0.001 / (0.001 * L * 0.09), 1), rod_words="a fine string", rod_look="fabric")
         if P["frame"]:
-            reach = L * math.sin(math.radians(min(abs(a), 90.0))) + r + 0.03
+            reach = L * sin(math.radians(min(abs(a), 90.0))) + r + 0.03
             left, right = -reach, (n - 1) * step + reach
             top, base = 0.0145, -(L + r + 0.05)   # the top bar's underside is 2.5 mm above the rods' top ends
             frame = c.mat(base="steel", overrides={})

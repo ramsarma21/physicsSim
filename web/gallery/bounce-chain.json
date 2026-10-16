@@ -1,0 +1,138 @@
+{
+ "version": 2,
+ "id": "gallery-bounce-chain",
+ "name": "Bounce chain",
+ "seconds": 5,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "ramp",
+   "type": "plank",
+   "name": "Ramp",
+   "x": -0.18978,
+   "y": 1.28827,
+   "angle": -15,
+   "props": {
+    "length": 0.6,
+    "thickness": 0.022,
+    "depth": 0.12,
+    "legs": true
+   }
+  },
+  {
+   "id": "ball",
+   "type": "superball",
+   "name": "Superball",
+   "x": -0.41086,
+   "y": 1.39047,
+   "held": true,
+   "props": {
+    "side": 0
+   }
+  },
+  {
+   "id": "pad1",
+   "type": "bounce-pad",
+   "name": "Bounce pad 1",
+   "x": 0.7,
+   "y": 0,
+   "props": {
+    "stiffness": 5000,
+    "width": 0.2
+   }
+  },
+  {
+   "id": "pad2",
+   "type": "bounce-pad",
+   "name": "Bounce pad 2",
+   "x": 1.58,
+   "y": 0,
+   "props": {
+    "stiffness": 5000,
+    "width": 0.2
+   }
+  },
+  {
+   "id": "pad3",
+   "type": "bounce-pad",
+   "name": "Bounce pad 3",
+   "x": 2.175,
+   "y": 0,
+   "props": {
+    "stiffness": 5000,
+    "width": 0.2
+   }
+  },
+  {
+   "id": "basket",
+   "type": "basket",
+   "name": "Basket",
+   "x": 2.544,
+   "y": 0,
+   "props": {
+    "width": 0.35,
+    "wall": 0.15
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "hits",
+   "item": "ball",
+   "target": "pad1",
+   "label": "It bounces off pad 1"
+  },
+  {
+   "kind": "hits",
+   "item": "ball",
+   "target": "pad2",
+   "label": "It bounces off pad 2"
+  },
+  {
+   "kind": "hits",
+   "item": "ball",
+   "target": "pad3",
+   "label": "It bounces off pad 3"
+  },
+  {
+   "kind": "in",
+   "item": "ball",
+   "container": "basket",
+   "label": "The superball lands in the basket"
+  }
+ ]
+}

@@ -1,13 +1,16 @@
-// The engine's transcendental math, in plain JS, so a run gives the same bits in every browser.
+// The engine's transcendental math, in plain JS, so a run gives the same bits in every browser and on the server, on any machine.
 // Math.sin, cos, atan2, exp, hypot and pow are NOT specified to the last bit: Node 26's V8 and Chromium's V8 already differ by 1 ulp on
-// 3% (sin, cos), 10% (exp) and 17% (atan2) of inputs, and Safari's engine differs on hypot and pow too. The starter scene is chaotic, so a
-// 1 ulp step shows up as a different track. These are ports of what V8 runs in node (src/base/ieee754.cc: FreeBSD msun / fdlibm 5.3,
-// with V8's exp(1) special case and its hypot with Kahan summation), checked bit for bit against node's Math by tools/test-fdlibm.mjs.
-// tools/build-engine.mjs makes the bundle use these instead of Math.sin etc. (esbuild `define`), so no global is touched.
+// 3% (sin, cos), 10% (exp) and 17% (atan2) of inputs, Safari's engine differs on hypot and pow too, and node itself differs between
+// machines (its pow is the system libm's). The starter scene is chaotic, so a 1 ulp step shows up as a different track. sin, cos, atan2,
+// exp and hypot are ports of what V8 runs in node on macOS arm64 (src/base/ieee754.cc: FreeBSD msun / fdlibm 5.3, with V8's exp(1)
+// special case and its hypot with Kahan summation), checked bit for bit against node's Math there by tools/test-fdlibm.mjs; pow is
+// tools/crpow.ts, correctly rounded (checked against MPFR by tools/test-crpow.mjs).
+// tools/build-engine.mjs makes the bundle use these instead of Math.sin etc. (esbuild `define`), so no global is touched; the server's
+// engine (research/poc/worker.ts) and the node tools load the engine through tools/engine-math-node.mjs, which does the same in node.
 // Beyond |x| = 2^19*pi/2 (about 8.2e5 rad) sin and cos reduce the angle with fdlibm's big-table routine, which is not ported: they fall
 // back to the engine's own Math there (a scene never turns that far).
 
-import { EXP_COEF, EXP_TAB, LOG_COEF, LOG_TAB } from "./apple-pow-tables.ts"
+import { pow as crpow } from "./crpow.ts"
 
 const f64 = new Float64Array(1)
 const u32 = new Uint32Array(f64.buffer)
@@ -53,6 +56,16 @@ export const fma = (a: number, b: number, c: number): number => {
 	const b2 = u - r
 	const err = r - (u - b2) + (e - b2) // r + e = u + err exactly
 	if (err === 0) return s + u
+	// The usual case, without the bit operations of round-to-odd: u small beside s (|u| < 2^-50 |s|, so s + u lies within 8 ulps of s,
+	// where every halfway point between doubles is a multiple of ulp(s)/4). s + u is a multiple of min(lsb(u), ulp(s)/2), so unless it is
+	// itself a halfway point it is at least that far from one, more than |err| <= ulp(u)/2: s + u + err rounds as s + u does. A halfway
+	// point is the rounding error w of v = s + u being half the gap to v's neighbour: then v + 2w is that neighbour exactly.
+	if ((u < 0 ? -u : u) < (s < 0 ? -s : s) * 8.881784197001252e-16) {
+		const v = s + u
+		const w = u - (v - s) // s + u = v + w exactly (|s| > |u|)
+		const w2 = w + w
+		if (w === 0 || v + w2 - v !== w2) return v
+	}
 	f64[0] = u
 	if ((u32[LO] & 1) === 0) {
 		// u is even: round to odd means the neighbour of u on the side of err
@@ -450,117 +463,6 @@ export const hypot = (a: number, b: number): number => {
 	return Math.sqrt(sum) * max
 }
 
-// ---- pow
-// node calls the system libm's pow, and on macOS (arm64) that is Apple's own routine, not fdlibm's and not correctly rounded: about 1 in 750
-// of the cubes (x ** 3) it returns the neighbour of the correctly rounded value, so a port that rounds correctly would give another track
-// for a ball sized to the micrometre. This is that routine, instruction by instruction (the code and its tables read out of
-// libsystem_m.dylib of macOS 26 with lldb; the tables are in apple-pow-tables.ts): 2^(y * log2 x) in double-double, with the fused
-// multiply-adds the machine code has (`fma` above, exact). Checked against node's own x ** y bit for bit by tools/test-fdlibm.mjs.
-// Handled here: a normal, non-zero x and any y between 2^-64 and 2^64 in size (a negative x only for an integer y); everything else (zero,
-// subnormal, infinite, NaN, huge or tiny y) goes to the engine's own Math.pow (the engine's exponents are 2, 3 and 4 only).
-const nativePow = Reflect.get(Math, "pow") as (x: number, y: number) => number
-const hexWord = (s: string, at: number): number => parseInt(s.slice(at, at + 8), 16) >>> 0
-const hexDouble = (s: string, at: number): number => fromWords(hexWord(s, at), hexWord(s, at + 8))
-const [P0, P1, P2, P3, P4, P5, P6, P7, P8, P9, P10] = LOG_COEF.split(" ").map((h) => hexDouble(h, 0)) as [number, number, number, number, number, number, number, number, number, number, number]
-const [Q0, Q1, Q2, Q3, Q4] = EXP_COEF.split(" ").map((h) => hexDouble(h, 0)) as [number, number, number, number, number]
-const logEntries = LOG_TAB.split(" ")
-const LOG_TAIL = Uint32Array.from(logEntries, (e) => hexWord(e, 0)) // high word of a small correction to log2(c)
-const LOG_INVC = Uint32Array.from(logEntries, (e) => hexWord(e, 8)) // high word of 1/c (its low word is zero)
-const LOG_C = Float64Array.from(logEntries, (e) => hexDouble(e, 16)) // log2(c)
-const expEntries = EXP_TAB.split(" ")
-const EXP_HI = Float64Array.from(expEntries, (e) => hexDouble(e, 0)) // 2^(j/128)
-const EXP_LO = Float64Array.from(expEntries, (e) => hexDouble(e, 16)) // its correction
-const POW_TOP = hexDouble("4100040000000000", 0) // above this 128 * y * log2 x: overflow
-const POW_BOTTOM = hexDouble("c100cc0000000000", 0) // below this: underflow to zero
-
-// 2^(t/128) for t = d3 + d4 (a double-double): the exponent part of pow. `neg`: the result is negative.
-const applePow2 = (d3: number, d4: number, neg: boolean): number => {
-	if (d3 > POW_TOP) return neg ? -Infinity : Infinity
-	if (d3 < POW_BOTTOM) return neg ? -0 : 0
-	const fl = Math.floor(d3)
-	const k = fl | 0
-	const f = d3 - fl
-	const j = k & 0x7f
-	const tab = EXP_HI[j] as number
-	const d1 = d4 - (EXP_LO[j] as number) + f
-	let p = fma(f, Q0, Q1)
-	p = fma(f, p, Q2)
-	p = fma(d1, p, Q3)
-	p = fma(d1, p, Q4)
-	p = d1 * p
-	// the scale 2^(k >> 7) in two halves: 2^(k >> 8) added to the exponent of the table value, 2^(the rest) multiplied in after
-	const a = k >> 8
-	const b = (k >> 7) - a
-	const sign = neg ? 0x80000000 : 0
-	const scaled = fromWords((hiOf(tab) + (((a & 0xfff) << 20) ^ sign)) >>> 0, loOf(tab))
-	return fma(scaled, p, scaled) * fromWords((((b & 0xfff) << 20) + 0x3ff00000) >>> 0, 0)
-}
-
-const applePow = (ax: number, y: number, neg: boolean): number => {
-	const hi = hiOf(ax)
-	const lo = loOf(ax)
-	const mantHi = hi & 0xfffff
-	if (mantHi === 0 && lo === 0) {
-		// a power of two: log2 x = n is exact
-		const e = (hi - 0x3ff00000) | 0
-		if (e === 0) return neg ? -1 : 1
-		const d0 = e / 8192
-		const d3 = d0 * y
-		return applePow2(d3, fma(d0, y, -d3), neg)
-	}
-	const i = (mantHi + 0x1000) >> 13
-	const n = ((hi + 0xc0181000) | 0) >> 20
-	const invc = fromWords(LOG_INVC[i] as number, 0)
-	const z = fromWords(0x3ff00000 | mantHi, lo)
-	const zhi = fromWords(0x3ff00000 | mantHi, lo & 0xffe00000)
-	const r0 = invc * z
-	const zlo = z - zhi
-	const r = r0 - 1 // invc * z - 1 = r + rlo
-	const rlo = fma(invc, zlo, fma(invc, zhi, -r0))
-	let d3 = fma(r, P0, P1)
-	d3 = fma(r, d3, P2)
-	d3 = fma(r, d3, P3)
-	d3 = fma(r, d3, P4)
-	const r2 = r * r
-	d3 = r2 * r2 * d3
-	let d6 = fma(P5, r, P7)
-	let d7 = fma(P6, r, P8)
-	let d5 = fma(P5, r, -(d6 - P7))
-	d7 = fma(P5, rlo, d7)
-	d7 = d5 + d7
-	const d4 = fma(d6, r, P9)
-	d5 = fma(d7, r, P10)
-	d7 = fma(d6, r, -(d4 - P9))
-	d5 = fma(d6, rlo, d5)
-	d5 = d7 + d5
-	d6 = d4 * r
-	d5 = d5 * r
-	d7 = fma(d4, r, -d6)
-	d5 = fma(d4, rlo, d5)
-	d7 = d7 + d5
-	const logc = LOG_C[i] as number
-	let d0 = n + logc + d6 + d3 // the high part of log2 x, with its last bit cleared
-	f64[0] = d0
-	u32[LO] &= 0xfffffffe
-	d0 = f64[0]
-	d5 = n - d0 + logc + d6 + d3
-	const d2 = fromWords(LOG_TAIL[i] as number, 0) + d5 + d7
-	const d1 = y * 128
-	const t = d1 * d0
-	return applePow2(t, fma(d1, d2, fma(d1, d0, -t)), neg)
-}
-
-export const pow = (x: number, y: number): number => {
-	if (y === 2) return x * x // exact, and what the library gives (checked)
-	if (y === 1) return x
-	if (y === 0.5) return x === -Infinity ? Infinity : Math.sqrt(x + 0) // V8 answers a square root before it calls the library
-	const ay = y < 0 ? -y : y
-	if (!(ay >= 5.421010862427522e-20 && ay <= 1.8446744073709552e19)) return nativePow(x, y)
-	const ax = x < 0 ? -x : x
-	if (!(ax >= 2.2250738585072014e-308 && ax < Infinity)) return nativePow(x, y)
-	if (x < 0) {
-		if (Math.floor(y) !== y) return nativePow(x, y) // NaN
-		return applePow(ax, y, y % 2 !== 0)
-	}
-	return applePow(ax, y, false)
-}
+// ---- pow: correctly rounded (tools/crpow.ts), so it is the same function on every machine and in every engine, and the same as Python's
+// exact fractions where the builders need that (machines/crmath.py)
+export const pow = crpow
