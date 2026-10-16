@@ -834,9 +834,10 @@ class _Fall {
 
 /** Plain-language results: the goals, each moving item's story, and the first hits between items in order. A goal is
  *  {kind: "in", item, container} (it ends between the container's walls), {kind: "falls", item | items: [id]} (every rigid body of them ends
- *  fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given) or
- *  {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), as ai/goals.mjs
- *  checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others). */
+ *  fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given),
+ *  {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), {kind: "off", item}
+ *  (it ends off the table) or {kind: "walls", item, container} (it ends between a cup's, a jar's or a mug's own walls: walls_inside), as
+ *  ai/goals.mjs checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others). */
 export function summarize(scene, doc, track) {
 	const items = new Map((scene.items ?? []).map((i) => [i.id, i]))
 	const name = (iid) => (items.has(iid) ? (truthy(items.get(iid).name) ? items.get(iid).name : TYPES[items.get(iid).type].name) : iid)
@@ -958,9 +959,58 @@ export function summarize(scene, doc, track) {
 				d = hypot(c1[0] - c0[0], c1[1] - c0[1])
 			}
 			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} moves at least ${_short_m(least)}`, ok: sids.length > 0 && d >= least, kind: "moves", item: g.item, moved_m: pyRound(d, 4) })
+		} else if (kind === "off" && known(g.item)) {
+			// (ai/goals.mjs "off": the mean of its moving parts ends past the table top's ends, or below its top: it left the table)
+			const sids = doc.solids.filter((s) => s.item === g.item && s.kind === "dynamic").map((s) => s.id)
+			const top = doc.solids.find((s) => s.itemType === "table" && s.part === "top" && s.body.kind === "slab")
+			let ok = false
+			if (sids.length && top !== undefined) {
+				const p = fr[0].placements[top.id] || top.at
+				const ty = p.y + top.body.height / 2
+				const x0 = p.x - top.body.width / 2
+				const x1 = p.x + top.body.width / 2
+				const cx = pySum(sids.map((i) => fr[fr.length - 1].placements[i].x)) / sids.length
+				const cy = pySum(sids.map((i) => fr[fr.length - 1].placements[i].y)) / sids.length
+				ok = cx < x0 || cx > x1 || cy < ty - 0.01
+			}
+			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} ends off the table`, ok, kind: "off", item: g.item })
+		} else if (kind === "walls" && known(g.item) && known(g.container)) {
+			// (an "in" goal for a container the "in" check doesn't know, a plastic cup, a glass jar or a coffee mug: judged by its own walls at the
+			// run's end, as web/ai/goals.js does, so the results show it too)
+			const ok = walls_inside(doc, fr[fr.length - 1].placements, g.item, g.container)
+			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} ends in the ${pyLower(name(g.container))}`, ok, kind: "walls", item: g.item, container: g.container })
 		}
 	}
 	return { goals, stories, events: first.slice(0, 16) }
+}
+
+/** Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right")
+ *  parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top, each part where the run's last frame has it.
+ *  False when the container has no such parts or the item no moving solid. */
+export function walls_inside(doc, last, iid, cid) {
+	const part = (names) => doc.solids.find((s) => s.item === cid && names.includes(s.part))
+	const L = part(["left", "wall-left"])
+	const R = part(["right", "wall-right"])
+	const F = part(["floor", "body", "base", "bottom"])
+	if (L === undefined || R === undefined || F === undefined) return false
+	const pose = (s) => (s.id in last ? [last[s.id].x, last[s.id].y, "angle" in last[s.id] ? last[s.id].angle : 0] : [s.at.x, s.at.y, "angle" in s ? s.angle : 0])
+	const l = _corners(L, pose(L))
+	const r = _corners(R, pose(R))
+	const f = _corners(F, pose(F))
+	const inL = maxOf(l.map((q) => q[0]))
+	const inR = minOf(r.map((q) => q[0]))
+	const top = pymin(maxOf(l.map((q) => q[1])), maxOf(r.map((q) => q[1])))
+	const floor = maxOf(f.map((q) => q[1]))
+	let n = 0
+	for (const s of doc.solids) {
+		if (s.item !== iid || s.kind !== "dynamic") continue
+		n += 1
+		if (!(s.id in last)) return false
+		const p = last[s.id]
+		const rad = "radius" in s.body ? s.body.radius : 0
+		if (!(floor - 0.01 <= p.y - rad && p.y - rad <= top && inL <= p.x && p.x <= inR)) return false
+	}
+	return n > 0
 }
 
 /** A slab's (tapered: its true trapezoid) or a polygon's corners in the world, counter-clockwise. */

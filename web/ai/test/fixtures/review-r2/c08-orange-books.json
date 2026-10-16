@@ -1,0 +1,140 @@
+{
+ "source": "V8820 (live, real models, 16 Oct) c08-orange-books-r2.json",
+ "base": "gallery/pulley-lift",
+ "text": "Replace the apple with an orange and put a stack of three hardcover books under the pillow.",
+ "answers": [
+  {
+   "kind": "change",
+   "reply": "I swapped the apple for an orange (182 g \u2192 131 g) and stacked three hardcover books under the pillow, raising it about 10.5 cm.",
+   "patches": [
+    {
+     "op": "replace_type",
+     "id": "golf",
+     "type": "orange",
+     "props": {}
+    },
+    {
+     "op": "set_item",
+     "id": "golf",
+     "name": "Orange"
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "book1",
+      "type": "hardcover-book",
+      "name": "Book 1",
+      "place": {
+       "on": "table",
+       "x": 1.163
+      },
+      "why": "bottom of the book stack under the pillow"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "book2",
+      "type": "hardcover-book",
+      "name": "Book 2",
+      "place": {
+       "on": "book1",
+       "x": 1.163
+      },
+      "why": "middle of the book stack"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "book3",
+      "type": "hardcover-book",
+      "name": "Book 3",
+      "place": {
+       "on": "book2",
+       "x": 1.163
+      },
+      "why": "top of the book stack"
+     }
+    },
+    {
+     "op": "set_place",
+     "id": "pillow",
+     "place": {
+      "on": "book3",
+      "x": 1.163
+     }
+    },
+    {
+     "op": "set_goals",
+     "goals": [
+      {
+       "kind": "moves",
+       "label": "The pail lifts the orange at least 40 cm",
+       "item": "golf",
+       "min_m": 0.4
+      },
+      {
+       "kind": "hits",
+       "label": "The counterweight lands on the pillow",
+       "item": "lift",
+       "target": "pillow"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "fix",
+   "reply": "I raised the pulley lift 10 cm (1.25 m \u2192 1.35 m), so its weight falls further onto the pillow and the pail lifts the orange higher. The orange and books stay as they were.",
+   "patches": [
+    {
+     "op": "move",
+     "id": "lift",
+     "dy": 0.1,
+     "why": "a longer fall before the weight lands on the raised pillow lifts the pail further"
+    },
+    {
+     "op": "set_tune",
+     "tune": [
+      {
+       "id": "lift",
+       "param": "y",
+       "min": 1.25,
+       "max": 1.5
+      },
+      {
+       "id": "lift",
+       "param": "weight",
+       "min": 1,
+       "max": 2
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "fix",
+   "reply": "I raised the pulley lift 10 cm (the orange rides up with it). The counterweight now falls about 10 cm further before landing on the pillow, so the pail can lift the orange higher.",
+   "patches": [
+    {
+     "op": "move",
+     "id": "lift",
+     "dy": 0.1,
+     "why": "give back the fall height the 11 cm book stack took away"
+    },
+    {
+     "op": "set_tune",
+     "tune": [
+      {
+       "id": "lift",
+       "param": "y",
+       "min": 1.3,
+       "max": 1.45
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

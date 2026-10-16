@@ -554,13 +554,13 @@ test("safety walls stand at the table's ends unless the plan has walls there", (
 	assert.equal(solve({ title: "None", items: [] }, { safetyWalls: false }).scene.items.length, 1, "just the table")
 })
 
-test("goals: kept for the containers the engine checks, left out (with a warning) for others or unknown ids", () => {
+test("goals: kept for the containers the engine checks, a glass jar's by its walls (the engine's \"walls\" kind), left out (with a warning) for unknown ids", () => {
 	const r = solve({ title: "Goals", items: [
 		{ id: "box", type: "box", place: { on: "table", x: 2 } },
 		{ id: "jar", type: "glass-jar", place: { on: "table", x: 1 } },
 		{ id: "b", type: "superball", place: { on: "air", x: 2, y_m: 0.6 } }
 	], goals: [{ label: "in the box", item: "b", container: "box" }, { label: "in the jar", item: "b", container: "jar" }, { label: "?", item: "zz", container: "box" }] })
-	assert.deepEqual(r.scene.goals, [{ kind: "in", item: "b", container: "box", label: "in the box" }])
+	assert.deepEqual(r.scene.goals, [{ kind: "in", item: "b", container: "box", label: "in the box" }, { kind: "walls", item: "b", container: "jar", label: "in the jar" }])
 	assert.ok(r.issues.some((i) => i.code === "goal_unchecked"))
 	assert.ok(r.issues.some((i) => i.code === "goal_ref"))
 })

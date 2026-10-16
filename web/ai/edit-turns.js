@@ -85,18 +85,25 @@ export function newOverlaps(beforeWarnings, afterWarnings) {
  * m/s, between things the edit left as they were) that no longer happen. lost: lostStages lines; contacts: runChanges' contact lines (the
  * "no longer hits" ones are taken); said: the lead's own words (a line it already tells is left out). -> ≤ max lines.
  */
-export function headsUpLines({ lost = [], contacts = [], said = "", targets = [], max = 3 }) {
+export function headsUpLines({ lost = [], contacts = [], said = "", targets = [], skip = [], max = 3 }) {
 	const lead = ` ${String(said ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ")} `
+	// (a line may come with the things it is about, {text, ids}: one about a thing in `skip` (the failing goal's own things, which the lead
+	// already tells about, and what the change swapped or replaced) is left out, whatever it is called)
+	const skipIds = new Set(skip)
+	const textOf = (l) => String(typeof l === "string" ? l : l?.text ?? "")
+	const about = (l) => (typeof l === "string" ? [] : Array.isArray(l?.ids) ? l.ids : [])
 	// (the line's subject: "Dominoes: 3 of 7 fall (was 7 of 7)", "Seesaw no longer turns", "Ball 1 no longer hits Ramp 2": a thing the lead
 	// already tells about is left out: the lead says what it does instead)
-	const subject = (line) => String(line).split(/:| no longer | now /)[0].trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim()
-	const told = (line) => {
+	const subject = (line) => String(line).split(/:| no longer | now /)[0].trim().toLowerCase().replace(/^the /, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim()
+	const told = (l) => {
+		const line = textOf(l)
 		const sub = subject(line)
+		if (about(l).some((id) => skipIds.has(id))) return true
 		return (sub.length >= 3 && lead.includes(` ${sub} `)) || targets.some((t) => t?.ok === false && String(t.label ?? "").length > 3 && String(line).toLowerCase().includes(String(t.label).toLowerCase().replace(/[.!]+$/, "")))
 	}
 	const out = []
-	for (const l of lost) if (!told(l) && !out.includes(l)) out.push(String(l))
-	for (const c of contacts) if (/ no longer hits /.test(c) && !told(c) && !out.includes(c)) out.push(String(c))
+	for (const l of lost) if (textOf(l) && !told(l) && !out.includes(textOf(l))) out.push(textOf(l))
+	for (const c of contacts) if (/ no longer hits /.test(textOf(c)) && !told(c) && !out.includes(textOf(c))) out.push(textOf(c))
 	return out.slice(0, max)
 }
 export const headsUpText = (lines) => (lines?.length ? `Heads-up, in the new run: ${and(lines)}.` : "")
@@ -118,3 +125,198 @@ export function aimReply(name, patch, label) {
 }
 /** The honest ending of a "make it work" that still fails. */
 export const stillFailsText = (labels) => (labels?.length ? `It still doesn't fully work: ${and(labels.map((l) => String(l).replace(/[.!]+$/, "")))} ${labels.length > 1 ? "fail" : "fails"} in the run.` : "")
+
+// ---------------------------------------------------------------- the offer after a change that stopped a goal (ai/DESIGN.md §16)
+const capFirst = (s) => String(s ?? "").replace(/^./, (c) => c.toUpperCase())
+const lcFirst = (s) => String(s ?? "").replace(/^(AI\b)?./, (c, ai) => (ai ? c : c.toLowerCase()))
+/** A goal's label inside a sentence: "The egg lands in the box" -> "the egg lands in the box" (a name, "Ball 2 lands…", stays). */
+export const inSentence = (label) => {
+	const t = String(label ?? "").replace(/[.!]+$/, "")
+	return /^(The|A|An|All|Every|Each|Both)\b/.test(t) ? lcFirst(t) : t
+}
+/**
+ * What the card says after the search for a fix: found -> {before: "Want me to ", say, checked} ("Want me to lower the box 4 cm? (checked:
+ * Ball 2 lands in the box ✓)"); nothing works -> {text, button} (said plainly, how much was tried, and the button that asks the AI to rework
+ * it, never a question without one; after a rework that still doesn't work, no button: it is not offered again). null while it looks.
+ */
+export function offerWords(fx, { rework = false } = {}) {
+	if (!fx || fx.state === "searching") return null
+	if (fx.state === "found") return { before: "Want me to ", say: fx.say, checked: inSentence(fx.checked ?? "it works") }
+	const button = rework ? null : "Ask the AI to rework it"
+	// (stopped because the person moved on: nothing is offered for a scene that is gone; stopped by its Stop: the rework is still theirs to ask)
+	if (fx.state === "stopped" && fx.movedOn === "undo") return { text: "You undid this change, so I stopped looking for a fix.", button: null }
+	if (fx.state === "stopped" && fx.movedOn) return { text: "I stopped looking for a fix when the scene changed.", button: null }
+	// (stopped because the scene went, and it is back: the same, with what can be asked again: V8832 y7)
+	if (fx.state === "stopped") return { text: fx.back ? "I stopped looking for a fix when the scene changed." : "I stopped looking for a fix.", button }
+	if (fx.state === "error") return { text: "I couldn’t look for a fix just now.", button }
+	// (the person's own change puts it out of reach, a ball wider than the box: nothing else can fix it, so nothing is offered: the lead says
+	// why and that nothing else can change it, so nothing more is said here)
+	if (fx.outOfReach) return { text: "", button: null }
+	const tried = fx.runs ? ` (I tried ${fx.runs} in the physics${fx.reworked ? " and the AI’s reworks" : ""}${fx.timedOut ? ", for a minute" : ""})` : fx.reworked ? " (the AI’s reworks too)" : ""
+	if (fx.quiet) return { text: "", button }
+	return { text: rework ? `It still doesn’t work, and I couldn’t find a change that does${tried}.` : `I couldn’t find a change that works${tried}.`, button }
+}
+/** The "Looking for a fix…" line's detail, from the search's progress ({phase, runs}). */
+export function progressWords(p) {
+	if (p?.phase === "ai") return ` · asking the AI to rework it${p?.runs ? ` (after ${p.runs} physics runs)` : ""}`
+	if (p?.phase === "ai-check") return " · checking the AI’s version in the physics"
+	if (p?.phase === "ai-fix") return " · fine-tuning the AI’s version"
+	// (one line for both searches, while setting each part up again still runs: never one phrasing, then the other, on every update)
+	if (p?.phase === "stage" || p?.staging) return p?.runs ? ` · ${p.runs} physics runs, setting each part up again` : " · setting each part up again"
+	return p?.runs ? ` · ${p.runs} physics runs` : ""
+}
+/** What "Ask the AI to rework it" asks when the search left no words of its own: the goal to win back, keeping what was just changed (never
+ *  "change whatever else": the app marks it a "make it work" itself, request.rework). */
+export function reworkWords(goal, human = []) {
+	const what = (Array.isArray(human) ? human : []).slice(0, 2).map((x) => String(x).replace(/ \([^)]*\)/g, "")).join(" and ")
+	return `Make it work again so that ${inSentence(goal ?? "it works again")}${what ? `, keeping what I just changed (${what})` : ""}. Say what you changed.`
+}
+/**
+ * An idea of the AI's that names a thing by its kind ("Swap the hollow plastic ball for a basketball") while the card calls it by its name on
+ * screen ("Ball 2"): said as the screen says it; when several things are of that kind, which one is meant can't be told, so it is dropped
+ * (-> null). items: the things on the table; kindOf(type): the catalog's name for a kind ("Hollow plastic ball", "Soda can, standing").
+ */
+export function nameAsShown(s, items = [], kindOf = () => "") {
+	let label = String(s?.label ?? "")
+	let prompt = String(s?.prompt ?? "")
+	const byType = new Map()
+	for (const it of items) byType.set(it.type, [...(byType.get(it.type) ?? []), it])
+	for (const [type, list] of byType) {
+		const kind = String(kindOf(type) ?? "").replace(/,.*$/, "").replace(/\s*\(.*\)$/, "").trim().toLowerCase()
+		if (!kind || kind.split(/\s+/).length < 2) continue
+		const src = `\\bthe ${escRe(kind)}\\b`
+		if (!new RegExp(src, "i").test(`${label} ${prompt}`)) continue
+		if (!list.some((it) => !String(it.name ?? "").toLowerCase().includes(kind))) continue
+		if (list.length > 1) return null
+		const re = new RegExp(src, "gi")
+		label = label.replace(re, String(list[0].name))
+		prompt = prompt.replace(re, String(list[0].name))
+	}
+	// (a thing whose name on screen is only its kind's word, "Dominoes", is said as a group is, by its kind: "add 3 more dominoes to the
+	// dominoes", never "to Dominoes" (V8832 swap / button / p3))
+	for (const it of items) {
+		const nm = String(it.name ?? "")
+		if (!/^[A-Z][a-z]+$/.test(nm)) continue
+		const stem = nm.toLowerCase().replace(/(oes|ies|es|s)$/, "")
+		if (stem.length < 3 || !`${String(it.type ?? "").replace(/-/g, " ")} ${kindOf(it.type) ?? ""}`.toLowerCase().includes(stem)) continue
+		const re = new RegExp(`\\b(to|of|on|onto|into|in|before|after|with|from|by|past|over|near|behind|beside|hits?|knocks?|reach(?:es)?) ${escRe(nm)}\\b`, "g")
+		label = label.replace(re, (m, w) => `${w} the ${nm.toLowerCase()}`)
+		prompt = prompt.replace(re, (m, w) => `${w} the ${nm.toLowerCase()}`)
+	}
+	return label === s.label && prompt === (s.prompt ?? "") ? s : { ...s, label: capFirst(label), prompt }
+}
+/** A chip that asks for an outcome without saying "make it work": "Land the apple in the bucket", "Knock all the cans over". */
+const OUTCOME_IDEA = /^(land|get|send|drop|knock|topple|tip|reach|fling|launch|make)\b.*\b(in|into|over|down|off|onto|land|lands|fall|falls)\b/i
+/** Words that change a thing: an idea with one of them about a failing goal's own things is a fix ("Bigger box to catch: make the box above
+ *  the seesaw 1.5 times wider", "Lower the box a bit"). */
+const CHANGE_W = /\b(swap|replace|use|move[sd]?|lower|raise|shift|slide|tilt|turn|widen|narrow|resize|lift|drop|nudge|angle|space|bigger|smaller|wider|narrower|taller|shorter|higher|closer|further|farther|steeper|flatter|times (wider|bigger|taller|longer))\b/i
+/** An idea that is a fix in other words: it says what it is for ("so they topple easily", "so the tennis ball bounces higher") or tunes how
+ *  things go ("heavier", "stiffer trampolines", "use empty cans", "… instead"). Beside a goal that fails, a fix offered or looked for, or on a
+ *  fix's own card, it is an unchecked fix next to the checked one (V8820, 24 of 44 broken cards), so it is never shown there. */
+export const FIX_IDEA = /\bso (that )?(it|they|the|its|their)\b|\b(heav(y|ier)|light(er)?|stiff(er)?|soft(er)?|bounc(y|ier)|tipp(y|ier)|wobbl(y|ier)|topples?|toppling|tips? (it |them )?over|knocks? (it |them )?over|more easily|easier|reliabl[ey]|bounces? higher|higher|farther|further|faster|slower|stronger|weaker|harder|full|fuller|empty|emptier|filled|instead)\b/i
+const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+/** Does an idea swap, replace or take away one of the kinds the person's change put in (kinds: their names, "orange", "soda can")? "Swap the
+ *  orange for an apple" after "swap the bowling ball for an orange" undoes their choice (V8820 x8: the orange became an apple). */
+export function undoesKinds(text, kinds = []) {
+	const t = String(text ?? "")
+	for (const k0 of kinds) {
+		const k = String(k0 ?? "").trim().toLowerCase()
+		if (k.length < 3) continue
+		const kr = `${escRe(k)}(e?s)?`
+		if (new RegExp(`\\b(swap|swapping|swapped|replace|replacing|replaced|remove|removing|take (away|out|off)|get rid of|delete|lose|ditch|trade)\\b[^.;:]{0,40}\\b${kr}\\b|\\b(instead of|in place of|rather than)\\s+(the\\s+|a\\s+|an\\s+)?(\\w+\\s+){0,2}${kr}\\b|\\b(turn|change|make)\\s+(the\\s+)?(\\w+\\s+){0,2}${kr}\\s+(into|to)\\s+(a|an|the|some)\\b|\\b${kr}\\s+(becomes?|turns? into)\\b`, "i").test(t)) return true
+	}
+	return false
+}
+const CHIP_STOP = new Set(["the", "and", "with", "from", "into", "onto", "make", "made", "move", "moved", "swap", "swapped", "more", "less", "left", "right", "down", "than", "them", "that", "this", "each", "it's", "its"])
+const chipWords = (t) => new Set(String(t ?? "").toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3 && !CHIP_STOP.has(w) && !/^\d/.test(w)))
+/**
+ * The chips under an edit's card (r: its report): the checked fix first (one click puts it on the table), or, when nothing works, the AI's
+ * rework (once: never after a rework, opts.rework); then the AI's own next edits, never one that asks to make it work (the offer or the
+ * button says that, checked) and never one when it already works; then examples read off the scene (opts.examples, the latest card only),
+ * never one about what a fix just moved. opts.isOutcome: words that state an outcome ("make it land in the box").
+ */
+export function editChips(r = {}, { rework = false, examples = [], asked = "", isOutcome = (t) => FIX_RE.test(t), mine = null, scene = undefined } = {}) {
+	const list = []
+	const fx = r.fix
+	const failed = (r.goals ?? []).filter((g) => g.ok === false)
+	const works = (r.goals ?? []).length > 0 && !failed.length && !(r.targets ?? []).some((t) => t.ok === false)
+	// (a reply that changed nothing is about the scene of the card before it (opts.scene: that card's report; null: no card put the scene on
+	// the table): its ideas and examples follow that scene's goals and fix, never "Move the box 10 cm left" right after the egg landed ✓, nor
+	// "Move the basket 10 cm left" beside a goal that fails (V8832 y2 / y19). With no such card, no example at all)
+	const sc = r.replyOnly && scene !== undefined ? scene : null
+	const scFailed = !!sc && ((sc.goals ?? []).some((g) => g.ok === false) || (sc.targets ?? []).some((t) => t.ok === false))
+	const scFixing = !!sc && (!!sc.fix || !!sc.fixNeeded)
+	const scJustFixed = !!sc && (sc.mode === "fix" || !!sc.fixApplied)
+	const noExamples = r.replyOnly && scene !== undefined && (!sc || scFailed || scFixing || scJustFixed || !(sc.goals ?? []).length)
+	// (the kinds the person's change put in: an idea never swaps, replaces or takes one away; opts.mine, else what the report keeps)
+	const kinds = Array.isArray(mine) ? mine : Array.isArray(r.mineKinds) ? r.mineKinds : []
+	if (fx?.state === "found" && fx.sceneJSON) list.push({ label: fx.label, prompt: `${capFirst(fx.say)} (checked: ${inSentence(fx.checked)} ✓)`, fix: true, go: true, apply: "fix" })
+	else if (fx && ["none", "stopped", "error"].includes(fx.state)) {
+		if (fx.near?.sceneJSON) list.push({ label: `Try: ${fx.near.label}`, prompt: `${capFirst(fx.near.say)}: the closest I found${fx.near.happened ? `, but ${inSentence(fx.near.happened)}` : " (it still misses)"}`, apply: "near" })
+		// (on an edit's card the button sits right after the words that say nothing works: a chip here would say it twice)
+		if (!rework && r.replyOnly) list.push({ label: "Ask the AI to rework it", prompt: fx.rework?.text ?? "", fix: true, rework: true })
+	} else if (fx?.state === "searching") {
+		// (the checked fix is on its way: no other fix is offered meanwhile)
+	} else if (r.fixNeeded && !fx && !rework) list.push({ label: "Ask the AI to rework it", prompt: "", fix: true, rework: true })
+	else if (failed.length && !r.replyOnly && r.mode !== "fix" && !rework) {
+		const g = String(failed[0].label).replace(/[.!]+$/, "")
+		list.push({ label: `Fix it so ${inSentence(g)}`, prompt: `Fix it so this happens in the run: ${g}. Change only what is needed for that (say what you moved), and keep everything else as it is.`, fix: true })
+	}
+	const outcome = (s) => isOutcome(s) || FIX_RE.test(s)
+	// (out of reach: only ideas about the things that can't fit, never one that tries to win the goal some other way: "Heavier hit on the
+	// seesaw" beside "the bowling ball can't fit the box's 5 cm opening": V8817 h1)
+	const reachW = fx?.outOfReach ? chipWords(fx.why ?? "") : null
+	const offReach = (t) => !!reachW && ![...chipWords(t)].some((w) => reachW.has(w) && !["can", "fit", "opening", "across"].includes(w))
+	// (what a fix just changed: an idea about it would move it back)
+	const fixed = r.mode === "fix" ? chipWords((r.human ?? []).join(" ")) : new Set()
+	const aboutFixed = (t) => fixed.size > 0 && [...chipWords(t)].some((w) => fixed.has(w))
+	// (an idea that is an outcome in other words, "Land the apple in the bucket", beside a checked fix or while one is being looked for, is a second,
+	// unchecked "make it work": c06, 16 Oct)
+	const fixing = list.some((x) => x.fix) || !!fx || !!r.fixNeeded
+	// (a goal that fails, a fix offered or looked for, or a fix's own card: an idea that is a fix in other words is unchecked, never shown;
+	// right after a fix that works, no idea at all: each would change the machine again (c00; V8820 swaps: "Add more dominoes" after "the
+	// tennis ball lands in the box ✓"))
+	// (an edit that went on the table with its fix, "Done, and I moved the bowling ball 1 cm left so it works", is a fix that just worked too)
+	const broken = failed.length > 0 || (r.targets ?? []).some((t) => t.ok === false) || fixing || r.mode === "fix" || !!r.fixApplied || scFailed || scFixing || scJustFixed
+	// (the words of the goals that fail: an idea that changes one of their things is a fix in other words)
+	const failW = chipWords([...failed, ...(r.targets ?? []).filter((t) => t.ok === false)].map((g) => g.label).join(" "))
+	// (while a goal fails, or a fix is offered, looked for or asked of the AI, or right after a fix: no idea of the AI's at all. Each is a tuning of
+	// the machine nobody checked, and word lists kept letting them through beside the checked fix: "Use more soda cans", "Let dominoes grow
+	// slightly", "Switch the fan on later", "Use real-size boxes" (V8832 P7))
+	const ideas = broken ? [] : r.suggestions ?? []
+	for (const s of ideas) {
+		if (!s?.label || list.some((x) => x.label.toLowerCase() === String(s.label).toLowerCase())) continue
+		const both = `${s.label} ${s.prompt ?? ""}`
+		if (outcome(both) || aboutFixed(both) || offReach(both)) continue
+		if (fixing && OUTCOME_IDEA.test(String(s.label))) continue
+		if (undoesKinds(both, kinds)) continue
+		if (broken && FIX_IDEA.test(both)) continue
+		// (nor one that changes what a failing goal is about, "Lower the box a bit" beside "Ball 2 never lands in the box": a fix, unchecked)
+		if (!reachW && failW.size && CHANGE_W.test(both) && [...chipWords(both)].some((w) => failW.has(w))) continue
+		// (out of reach: only an idea that changes the size of what can't fit or of its opening: moving the box changes nothing)
+		if (reachW && !/\b(wid\w*|narrow\w*|bigg?\w*|larg\w*|small\w*|tiny|size|resize|opening|fit)\b/i.test(both)) continue
+		list.push(s)
+	}
+	// (right after a fix that works, no example that changes the machine again: "Make Ramp 1 steeper" beside "the egg lands in the box ✓", c00;
+	// and beside a goal that fails none either: "Make the ramp steeper" next to the checked fix reads as another, unchecked one)
+	if (list.length < 2 && !(r.mode === "fix" && works) && !broken && !noExamples) {
+		const said = String(asked ?? "").toLowerCase()
+		// (while it works, never an example that moves a goal's own thing: "Move the box 10 cm left" right after "the egg lands in the box ✓")
+		const goalW = chipWords((r.goals ?? []).map((g) => g.label).join(" "))
+		for (const ex of examples) {
+			if (list.length >= 3) break
+			if (said.includes(String(ex).toLowerCase().slice(0, 12)) || list.some((x) => x.prompt === ex)) continue
+			// (a "make it work" example beside the card's own offer or its "Ask the AI to rework it" button would be a second, unchecked one that
+			// keeps nothing the person chose)
+			if (outcome(ex) && (works || list.some((x) => x.fix) || !!fx || r.fixNeeded)) continue
+			if (aboutFixed(ex) || offReach(ex) || undoesKinds(ex, kinds)) continue
+			if (reachW && !/\b(wid\w*|narrow\w*|bigg?\w*|larg\w*|small\w*|tiny|size|resize|opening|fit)\b/i.test(ex)) continue
+			if (works && /^move\b/i.test(ex) && [...chipWords(ex)].some((w) => goalW.has(w))) continue
+			// (beside a goal that fails, an example about that goal's own things reads as a fix, and it is unchecked: "Move the box 10 cm left" beside
+			// "the egg never lands in the box", next to the checked one)
+			if (broken && [...chipWords(ex)].some((w) => goalW.has(w))) continue
+			list.push({ label: ex, prompt: ex })
+		}
+	}
+	return list
+}

@@ -45,6 +45,7 @@ export const SLOP = 0.0005
 const OVERLAP_TOL = 0.0004 // deeper than this counts as overlapping (the resting distances are all larger than 0, so a solved scene has none)
 const ROOM_GAP = 0.006 // the clearance an item moved out of the way keeps
 const CONTAINERS_CHECKED = new Set(["box", "cup", "bucket", "basket"]) // the containers web/sim's inside() (the goal check) knows
+const CONTAINERS_BY_WALLS = new Set(["plastic-cup", "glass-jar", "coffee-mug"]) // and the ones ./goals.js judges by their walls in the run
 const LONG_PROPS = ["length", "width"] // what a leaned item's span sets, in order of preference
 const LEGS_MIN = 0.03 // the 3D view draws a plank's legs only where its end is at least this high (view3d.js)
 const AIR_NUDGE = 0.015 // an item given its height in the air is lifted at most this much to clear a body it was put a hair inside
@@ -978,6 +979,16 @@ export function solve(plan, opts = {}) {
 			continue
 		}
 		if (!CONTAINERS_CHECKED.has(byId.get(cont).type)) {
+			// (a plastic cup or a glass jar: judged by its walls in each run (./goals.js wallsInside), never left out; the engine's own check
+			// is for the four it knows, so it is kept out of the scene's goals)
+			if (CONTAINERS_BY_WALLS.has(byId.get(cont).type)) {
+				say("info", "goal_unchecked", `The goal “${label ?? ""}” is judged by ${byId.get(cont).name}'s own walls in the run (the engine's "in" check is for a box, cup, bucket or basket)`)
+				const gw = { kind: "in", item, container: cont, label: label ?? `${byId.get(item).name} ends in the ${byId.get(cont).name.toLowerCase()}` }
+				allGoals.push(gw)
+				// (and in the scene's goals as the engine's "walls" kind, so the results under the view show it too: V8817 c12)
+				goals.push({ ...gw, kind: "walls" })
+				continue
+			}
 			say("warn", "goal_unchecked", `The goal “${label ?? ""}” needs ${byId.get(cont).name} to be a box, cup, bucket or basket (the ones the engine checks): left out`)
 			continue
 		}
@@ -1801,7 +1812,7 @@ export function planFromScene(scene) {
 			out.push({ ...base, place })
 		} else out.push({ ...base, place: { on: "air", x: it.x, y_m: r6(it.y - top), angle_deg: Number(it.angle) || 0, keep: true } })
 	}
-	const plan = { title: scene?.name ?? "Scene", seconds: scene?.seconds, release: scene?.release, items: out, goals: (scene?.goals ?? []).map((g) => ({ label: g.label, item: g.item, container: g.container })), stage: scene?.stage }
+	const plan = { title: scene?.name ?? "Scene", seconds: scene?.seconds, release: scene?.release, items: out, goals: (scene?.goals ?? []).filter((g) => g && typeof g === "object").map((g) => ({ ...g })), stage: scene?.stage }
 	if (table) plan.table = { x: table.x, ...(Number(table.y) ? { y: table.y } : {}), props: { ...(table.props ?? {}) } }
 	return pinDrifters(plan, items)
 }

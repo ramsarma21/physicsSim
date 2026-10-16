@@ -471,9 +471,13 @@ dialog.np-dialog { --ui-w: 640px; }
 .ai-sugg.go .ai-ic { color: var(--card); }
 .ai-sugg.go:hover { border-color: color-mix(in srgb, var(--ok) 60%, #000); filter: brightness(1.05); }
 .ai-checked { color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
-.ai-fixline { display: flex; align-items: center; gap: 8px; margin: -2px 0 10px; font-size: 13px; color: var(--ink-2); }
+.ai-fixline { display: flex; align-items: center; gap: 8px; margin: -2px 0 10px; font-size: 13px; color: var(--ink-2); flex-wrap: nowrap; min-width: 0; }
 .ai-fixline .ai-spin { width: 14px; height: 14px; flex: none; }
+/* (one row in the 410 px drawer: the words cut short with "…", the Stop always on the right: V8820, three cramped columns) */
+.ai-fixline-t { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ai-fixline-n { color: var(--ink-3); font-size: 12px; }
+.ai-fixline .ai-fixstop { margin-left: auto; flex: none; white-space: nowrap; display: inline-flex; align-items: center; gap: 3px; font-size: 12px; }
+.ai-fixline .ai-fixstop .ai-ic, .ai-fixline .ai-fixstop svg { width: 11px; height: 11px; fill: currentColor; }
 .ai-tag-fix { color: var(--ok); }
 .ai-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; padding-top: 8px; border-top: 1px solid var(--line); }
 .ai-link-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 3px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
@@ -490,8 +494,19 @@ dialog.np-dialog { --ui-w: 640px; }
 .ai-more-body .ai-timeline-sum { margin-bottom: 8px; }
 .ai-reply-text b { font-weight: 600; color: var(--ink-2); }
 @media (prefers-reduced-motion: reduce) { .ai-details::after { transition: none; } }
-/* (next edits are offered on the latest reply only: an older card's ideas were for the scene as it was then) */
-.ai-thread > li.ai-bot:not(:last-child) .ai-chips { display: none; }
+/* (next edits, and the button that asks the AI to rework it, are offered on the latest reply only: an older card's ideas were for the scene as
+   it was then. The panel marks the older cards (.ai-stale) by turn: anything after the latest card never hides its buttons) */
+.ai-thread > li.ai-bot.ai-stale .ai-chips, .ai-thread > li.ai-bot.ai-stale .ai-offer-btn, .ai-thread > li.ai-bot.ai-stale .ai-again-btn, .ai-thread > li.ai-bot.ai-stale .ai-check, .ai-thread > li.ai-bot.ai-stale .ai-retry { display: none; }
+.ai-offer-btn { display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0; padding: 4px 11px 4px 8px; border-radius: var(--r-pill, 999px); font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.3; cursor: pointer; vertical-align: baseline;
+	color: var(--ai-a); background: var(--ai-soft); border: 1px solid color-mix(in srgb, var(--ai-a) 35%, var(--line)); }
+.ai-offer-btn:hover { border-color: color-mix(in srgb, var(--ai-a) 65%, var(--line)); }
+.ai-offer-btn .ai-ic { width: 15px; height: 15px; flex: none; }
+.ai-offer-btn .ai-ic svg { width: 13px; height: 13px; fill: currentColor; }
+/* (after the search's Stop: the physics again, no AI call) */
+.ai-again-btn { display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0; padding: 4px 11px 4px 8px; border-radius: var(--r-pill, 999px); font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.3; cursor: pointer; vertical-align: baseline; color: var(--ink-2); background: var(--card); border: 1px solid var(--line-2); }
+.ai-again-btn:hover { color: var(--ink); border-color: var(--line); }
+.ai-again-btn .ai-ic { width: 15px; height: 15px; flex: none; }
+.ai-again-btn .ai-ic svg { width: 13px; height: 13px; fill: currentColor; }
 
 /* ---------- whether the AI can be used here (./access.js): said in place of the box, before anything is typed ---------- */
 .ai-access { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 12px 13px; border-radius: var(--ai-radius); border: 1px solid var(--line-2); background: var(--card); }

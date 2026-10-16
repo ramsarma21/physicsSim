@@ -91,7 +91,7 @@ test("a fix in words: an instruction, what was done, and a short chip label (rea
 	assert.deepEqual(w([{ kind: "move", ids: ["box"], dx: 0, dy: -0.04 }]), { say: "lower the box 4 cm", did: "lowered the box 4 cm", label: "Lower the box 4 cm" })
 	assert.equal(w([{ kind: "move", ids: ["box"], dx: 0.01, dy: -0.02 }]).say, "move the box 1 cm right and 2 cm down")
 	assert.equal(w([{ kind: "move", ids: ["seesaw"], dx: -0.02, dy: 0 }]).say, "move the seesaw (with the tennis ball on it) 2 cm left")
-	assert.deepEqual(w([{ kind: "move", ids: ["dominoes", "seesaw"], dx: -0.08, dy: 0, follows: "box" }]), { say: "shift the dominoes, the seesaw and the tennis ball 8 cm left to line up with the box", did: "shifted the dominoes, the seesaw and the tennis ball 8 cm left to line up with the box", label: "Shift 3 things 8 cm left" })
+	assert.deepEqual(w([{ kind: "move", ids: ["dominoes", "seesaw"], dx: -0.08, dy: 0, follows: "box" }]), { say: "shift the dominoes, the seesaw and the tennis ball 8 cm left to line up with the box", did: "shifted the dominoes, the seesaw and the tennis ball 8 cm left to line up with the box", label: "Shift the dominoes and the seesaw 8 cm left" })
 	assert.equal(w([{ kind: "turn", id: "ramp2", d: 1 }]).say, "tilt Ramp 2 1° flatter (19.8° → 18.8°)")
 	assert.equal(w([{ kind: "prop", id: "seesaw", key: "tilt", from: 12.452, to: 11.5 }]).say, "tilt the seesaw less (12.5° → 11.5°)")
 	assert.equal(w([{ kind: "prop", id: "dominoes", key: "spacing", from: 0.568, to: 0.48 }]).label, "Space the dominoes closer together")
