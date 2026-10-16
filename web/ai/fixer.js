@@ -21,6 +21,9 @@ import { catalog as simCatalog } from "../sim/index.js"
 export const FIX_MS = 12000 // the search's time budget
 export const FIX_RUNS = 320 // and its most engine runs (the page runs about 30 a second on four workers)
 export const FIX_EXTRA_MS = 2500 // once a fix is found: how much longer it looks for a smaller one
+// a slower machine running the tests (a CI runner) stretches every search's time budget by AI_FIX_TIME_SCALE, so it gets as many runs as
+// the budgets were measured with (node only: a page has no process.env, so there it is always 1)
+export const TIME_SCALE = Math.max(1, Number(globalThis.process?.env?.AI_FIX_TIME_SCALE) || 1)
 const G = 9.81
 
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v)
@@ -1783,13 +1786,13 @@ export function judgeRun(targets, sim, scene) {
 export async function findFix(ctx, opts = {}) {
 	const t0 = now()
 	const { signal } = opts
-	const budgetMs = num(opts.budgetMs) ?? FIX_MS
+	const budgetMs = (num(opts.budgetMs) ?? FIX_MS) * TIME_SCALE
 	const maxRuns = num(opts.maxRuns) ?? FIX_RUNS
-	const extraMs = num(opts.extraMs) ?? FIX_EXTRA_MS
+	const extraMs = (num(opts.extraMs) ?? FIX_EXTRA_MS) * TIME_SCALE
 	// (a heavy scene runs few candidates in its time: up to hardMs it goes on until it has run minRuns, V8817 c02: 117–128 runs in 35 s on the
 	// 24-domino scene, while a light one runs 30 a second)
 	const minRuns = num(opts.minRuns) ?? 0
-	const hardMs = Math.max(budgetMs, num(opts.hardMs) ?? budgetMs)
+	const hardMs = Math.max(budgetMs, num(opts.hardMs) != null ? num(opts.hardMs) * TIME_SCALE : budgetMs)
 	const P = Math.max(1, Math.min(8, Math.round(num(opts.parallel) ?? 2)))
 	const { scene, sim } = ctx
 	const targets = ctx.targets ?? fixTargets({ goals: ctx.goals, scene, before: ctx.before, sim })
@@ -2213,7 +2216,7 @@ export function probeRun(targets, sim, scene, item) {
 export async function restageFix(ctx, opts = {}) {
 	const t0 = now()
 	const { signal } = opts
-	const budgetMs = num(opts.budgetMs) ?? 30000
+	const budgetMs = (num(opts.budgetMs) ?? 30000) * TIME_SCALE
 	const maxRuns = num(opts.maxRuns) ?? 600
 	const P = Math.max(1, Math.min(8, Math.round(num(opts.parallel) ?? 2)))
 	const out = { status: "none", runs: 0, ms: 0 }

@@ -23,7 +23,7 @@ import { checkGoals, goalItems, goalRefs, goalKind as goalKindOf, goalLabel } fr
 import { createStageTuner, judgeRun as judgeStages } from "./stage-tune.js"
 import { quotaWords, resetWords, OFF_WORDS, SIGN_IN_WORDS } from "./access.js"
 export { quotaWords, resetWords, OFF_WORDS, SIGN_IN_WORDS }
-import { findFix as searchFix, restageFix, probeRun, fixTargets, judge as judgeTargets, outcomeWords, FIX_MS, riderMap, groupNames, chainStop, tippers as fixerTippers, chainBreak, claimLabel, characterBreak, placeName } from "./fixer.js"
+import { findFix as searchFix, restageFix, TIME_SCALE, probeRun, fixTargets, judge as judgeTargets, outcomeWords, FIX_MS, riderMap, groupNames, chainStop, tippers as fixerTippers, chainBreak, claimLabel, characterBreak, placeName } from "./fixer.js"
 import { build as buildDoc, catalog as simCatalog, MATERIALS, layout as simLayout, inside as simInside } from "../sim/index.js"
 import { conceptRoute, pickConcept, withDeadline, dropPictureLines, dropPictureSentences, mentionsPicture, CONCEPT_LABEL, CONCEPT_NOTE, IMAGINE_DEADLINE_MS } from "./imagine.js"
 import { routeKind, REPLY_KINDS, cleanTargets, targetWords, overlapFeedback, fixFeedback, newOverlaps, headsUpLines, lastUserTurn, namedInTurn, aimReply } from "./edit-turns.js"
@@ -5221,6 +5221,7 @@ export function createOrchestrator(deps) {
 	 */
 	let tippersCache = null
 	async function makeItWork(ctx, { signal, onProgress, budgetMs = MAKE_IT_WORK_MS, job = {}, ai = true, physics = true } = {}) {
+		if (physics) budgetMs *= TIME_SCALE // (1 in a page; a slow test machine's stretch for the physics search, ./fixer.js TIME_SCALE)
 		const t0 = now()
 		const until = Date.now() + budgetMs
 		const ctl = new AbortController()

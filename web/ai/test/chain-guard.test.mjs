@@ -9,7 +9,7 @@ import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { createOrchestrator, relabelGoals, humanChangeList, MAKE_IT_WORK_MS, REWORKS, AI_CALLS, SEARCH_MS, AI_AFTER_MS } from "../orchestrator.js"
-import { chainBreak, chainOf, fixTargets, claimLabel, pathClaims } from "../fixer.js"
+import { chainBreak, chainOf, fixTargets, claimLabel, pathClaims, TIME_SCALE } from "../fixer.js"
 import { offerWords, progressWords, editChips } from "../edit-turns.js"
 import { prepare, finish } from "../../sim/index.js"
 import { handle } from "../../sim/engine-worker.js"
@@ -112,7 +112,7 @@ test("the background make-it-work's budget: a minute, the search half of it, two
 	assert.ok(calls <= 2, `${calls} model calls for one broken edit`)
 	assert.ok(res.aiCalls <= 2)
 	assert.equal(res.status, "none")
-	assert.ok(Date.now() - t0 < 45000)
+	assert.ok(Date.now() - t0 < 45000 * TIME_SCALE) // (its rework answers are checked in the physics: a slower test machine gets the stretch)
 	// (the card's words: tried for a minute at most)
 	assert.equal(offerWords({ state: "none", runs: 300, reworked: true, timedOut: true }).text, "I couldn’t find a change that works (I tried 300 in the physics and the AI’s reworks, for a minute).")
 })
