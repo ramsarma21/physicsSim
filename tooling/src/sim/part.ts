@@ -334,6 +334,8 @@ export type Joint =
 			readonly compressOnly?: boolean
 			readonly coils?: number
 			readonly coilRadius?: number
+			/** The spring's own mass, kg, zero or more: from a fixed end, its fundamental mode's share (Rayleigh's third, light) moves with the body it pushes, which holds half its weight; between two moving ones, a uniform bar's consistent mass (physics.ts). */
+			readonly mass?: number
 	  }
 	/**
 	 * A rope: slack until taut, never longer than `length`. One drawn as a chain (`render.style: "chain"`) or flagged `collide`

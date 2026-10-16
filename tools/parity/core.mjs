@@ -1161,7 +1161,7 @@ const groups = {
 	},
 
 	async live() {
-		let base = "http://localhost:8790"
+		let base = process.env.PARITY_SERVER ?? "http://localhost:8790"
 		try {
 			const cat = await (await fetch(`${base}/api/catalog`)).json()
 			const js = items.catalog()
@@ -1419,7 +1419,7 @@ Object.assign(groups, {
 	},
 
 	async "ev-live"() {
-		const base = "http://localhost:8790"
+		const base = process.env.PARITY_SERVER ?? "http://localhost:8790"
 		let cat
 		try {
 			cat = await (await fetch(`${base}/api/catalog`)).json()

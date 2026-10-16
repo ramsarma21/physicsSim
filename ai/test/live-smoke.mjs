@@ -38,7 +38,7 @@ const summarise = {
 	observe: (r) => `${r.objects.length} objects (${r.objects.map((o) => o.label).join(", ")}); camera ${r.view.camera}`,
 	plan: (r) => `"${r.title}": ${r.items.map((i) => `${i.id}:${i.type}`).join(", ")}; missing ${r.missing.length}; goals ${r.goals.length}; tune ${r.tune.length}; ${r.seconds} s`,
 	refine: (r) => `done ${r.done}, score ${r.score_0_10}, ${r.issues.length} issues, ${r.patches.length} patches (${r.patches.map((p) => p.op).join(", ")})`,
-	edit: (r) => `${r.mode}: ${r.mode === "patch" ? r.patches.map((p) => `${p.op} ${p.id ?? p.item?.id ?? ""}`).join(", ") : r.plan.title} | "${r.reply}"`
+	edit: (r) => `${r.kind ?? "?"} ${r.mode}: ${r.mode === "patch" ? r.patches.map((p) => `${p.op} ${p.id ?? p.item?.id ?? ""}`).join(", ") : r.plan.title} | "${r.reply}"`
 }
 
 const results = []

@@ -5,7 +5,8 @@
 //   use_catalog_module("catalog_items", register_all)     // items.js hands register_all its FRAMEWORK: register, ItemType, Prop, ball_type, MATERIALS, ...
 // in the order of items.py's CATALOG_MODULES. Python keyword arguments are one trailing options object (see items.js); a Python int that matters
 // (a material's density written 2500, not 2500.0: it prints differently in the material instance's hash key) is `I(2500)`; Python's `-r` for an
-// int r is `0 - r` (an int has no negative zero); `x ** 3` is cube() and `x ** (1 / 3)` the engine's own pow (the same libm routine as CPython's).
+// int r is `0 - r` (an int has no negative zero); `x ** 3` is cube() and `x ** (1 / 3)` the engine's own pow, both correctly rounded as
+// machines/crmath.py's cube() and cr_pow() are on the Python side; `x ** 2` is sq() there and x * x (or pow(x, 2), the same) here.
 //
 // Every number says where it comes from (regulation, textbook, handbook); a guess says "provisional".
 // A ball's bounce is chosen so that bounce x 0.93 (hardwood) is its real restitution on a hard surface.

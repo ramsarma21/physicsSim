@@ -5,7 +5,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { CASES } from "./cases.mjs"
-import { OUT } from "./lib/env.mjs"
+import { OUT, SUMMARY } from "./lib/env.mjs"
 
 const argv = process.argv.slice(2)
 const opt = {}
@@ -33,8 +33,10 @@ const k = (rs, name) => {
 console.log(`runs: ${runs.join(", ")}\n`)
 console.log("| arm | n | pass | pass (byte-identical) | exact | untouched | untouched byte | no extra items | no new overlap | works or says why | question/ambiguous: no change | asks when ambiguous | answer right | p50 s | p90 s | model calls/edit | $/edit |")
 console.log("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+const SAVE = { runs, arms, rows: [], categories: [], pairs: [] }
 for (const a of arms) {
 	const rs = recs[a]
+	SAVE.rows.push({ arm: a, n: rs.length, pass: rs.filter((r) => r.eval?.pass).length / rs.length, pass_byte: rs.filter((r) => r.eval?.pass_byte).length / rs.length, exact: k(rs, "exact"), untouched: k(rs, "untouched"), untouched_byte: k(rs, "untouched_byte"), works_or_said: k(rs, "works_or_said"), noChange: k(rs, "noChange"), ask: k(rs, "ask"), p50_s: pct(rs.map((r) => r.ms), 0.5) / 1000, p90_s: pct(rs.map((r) => r.ms), 0.9) / 1000, usd: rs.reduce((q, r) => q + (r.cost ?? 0), 0) / Math.max(1, rs.length), failures: rs.filter((r) => !r.eval?.pass).map((r) => `${r.case}: ${(r.eval?.fail ?? []).join(" | ").slice(0, 200)}`) })
 	const calls = rs.map((r) => (r.calls ?? []).filter((c) => !["tune"].includes(c.step)).length)
 	console.log(`| ${a} | ${rs.length} | ${fmt(rs.filter((r) => r.eval?.pass).length / rs.length)} | ${fmt(rs.filter((r) => r.eval?.pass_byte).length / rs.length)} | ${k(rs, "exact")} | ${k(rs, "untouched")} | ${k(rs, "untouched_byte")} | ${k(rs, "extra")} | ${k(rs, "overlap")} | ${k(rs, "works_or_said")} | ${k(rs, "noChange")} | ${k(rs, "ask")} | ${k(rs, "answer")} | ${fmt(pct(rs.map((r) => r.ms), 0.5) / 1000, 1)} | ${fmt(pct(rs.map((r) => r.ms), 0.9) / 1000, 1)} | ${fmt(calls.reduce((p, q) => p + q, 0) / Math.max(1, calls.length), 2)} | ${fmt(rs.reduce((s, r) => s + (r.cost ?? 0), 0) / Math.max(1, rs.length), 3)} |`)
 }
@@ -67,6 +69,12 @@ if (pairs.length) {
 			else none++
 		}
 		console.log(`| ${A} → ${Bn} | ${both} | ${onlyA} | ${onlyB} | ${none} | ${onlyB - onlyA >= 0 ? "+" : ""}${onlyB - onlyA} |`)
+		SAVE.pairs.push({ A, B: Bn, both, onlyA, onlyB, none, wins: wins.slice(), losses: losses.slice() })
 		if (opt.detail) console.log(`  ${Bn} wins: ${wins.join(", ")}\n  ${Bn} losses: ${losses.join(", ")}`)
 	}
+}
+
+if (opt.save) {
+	fs.mkdirSync(SUMMARY, { recursive: true })
+	fs.writeFileSync(path.join(SUMMARY, `compare-${runs.join("+")}.json`), JSON.stringify(SAVE, null, 1))
 }

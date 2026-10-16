@@ -32,6 +32,8 @@ const goodPlan = () => ({
 	assumptions: ["none"]
 })
 const errorsOf = (step, v, ctx = {}) => validate(step, v, { catalog, ...ctx }).errors
+/** An edit answer's kind and targets (§14): every edit answer carries them. */
+const K = (kind = "change", targets = []) => ({ kind, targets })
 const hasError = (errors, re) => assert.ok(errors.some((e) => re.test(e)), `expected an error matching ${re}; got:\n${errors.join("\n")}`)
 
 test("a sound plan passes, normalised (lean gets on: air, align dropped where meaningless)", () => {
@@ -216,6 +218,33 @@ test("observation: a sound one passes; labels, boxes, supports and relations are
 	hasError(e2, /relations\[1\]\.a "ghost" is not an object label/)
 })
 
+test("observation: an object with a null box (named, but not in the picture) moves to uncertain with a warning, not a failure", () => {
+	const obs = {
+		objects: [
+			{ label: "mug", count: 1, bbox: [0.6, 0.4, 0.7, 0.6], est_size_m: { w: 0.12, h: 0.1 }, material: "ceramic", color: "white", state: "resting", supports: "table" },
+			{ label: "cat", count: 1, bbox: null, est_size_m: null, material: "", color: "", state: "resting", supports: "table" },
+			{ label: "water", count: 1, bbox: null, est_size_m: null, material: "water", color: "", state: "resting", supports: "Mug" },
+			{ label: "coaster", count: 1, bbox: [0.6, 0.6, 0.7, 0.62], est_size_m: null, material: "cork", color: "", state: "resting", supports: "Cat" }
+		],
+		relations: [{ a: "cat", rel: "left_of", b: "mug" }, { a: "mug", rel: "on", b: "coaster" }, { a: "water", rel: "inside", b: "mug" }],
+		motion_story: [],
+		view: { camera: "side", plane: "image right = +x" },
+		scale_hint: null,
+		uncertain: ["the mug's size"]
+	}
+	const r = validate("observe", obs, { images: 1 })
+	assert.deepEqual(r.errors, [])
+	assert.deepEqual(r.value.objects.map((o) => o.label), ["mug", "coaster"])
+	assert.deepEqual(r.value.uncertain, ["the mug's size", '"cat" is not seen in the picture', '"water" is not seen in the picture'])
+	assert.deepEqual(r.value.relations, [{ a: "mug", rel: "on", b: "coaster" }])
+	assert.equal(r.value.objects[1].supports, null)
+	assert.equal(r.warnings.filter((w) => /bbox null/.test(w)).length, 2)
+	// a missing box is still an error for the repair
+	const missing = structuredClone(obs)
+	delete missing.objects[0].bbox
+	hasError(validate("observe", missing, { images: 1 }).errors, /bbox/)
+})
+
 test("refine: done with patches is contradictory; patches are checked against the plan", () => {
 	const plan = validate("plan", goodPlan(), { catalog }).value
 	assert.equal(validate("refine", { done: true, score_0_10: 9, issues: [], patches: [] }, { catalog, plan }).ok, true)
@@ -263,15 +292,15 @@ test("patches: removing a support leaves a dangling reference; add/replace/set_p
 
 test("edit: patch mode against a hand-made scene (no plan), plan mode with a whole plan, mode/fields consistency", () => {
 	const scene = scenario("rube-goldberg")
-	const ok = validate("edit", { mode: "patch", reply: "Moved the box.", patches: [{ op: "move", id: "box", dx: 0.1 }, { op: "move", id: "ball1", dy: 0.05 }] }, { catalog, scene })
+	const ok = validate("edit", { ...K(), mode: "patch", reply: "Moved the box.", patches: [{ op: "move", id: "box", dx: 0.1 }, { op: "move", id: "ball1", dy: 0.05 }] }, { catalog, scene })
 	assert.deepEqual(ok.errors, [])
-	const q = validate("edit", { mode: "patch", reply: "Nothing to change: the seesaw flings ball 2.", patches: [] }, { catalog, scene })
+	const q = validate("edit", { ...K("answer"), mode: "patch", reply: "Nothing to change: the seesaw flings ball 2.", patches: [] }, { catalog, scene })
 	assert.equal(q.ok, true)
-	hasError(errorsOf("edit", { mode: "patch", reply: "x" }, { scene }), /needs patches/)
-	hasError(errorsOf("edit", { mode: "plan", reply: "x" }, { scene }), /needs plan/)
-	hasError(errorsOf("edit", { mode: "plan", reply: "x", plan: { ...goodPlan(), seconds: 99 } }, { scene }), /edit\.plan\.seconds is 99/)
-	assert.equal(validate("edit", { mode: "plan", reply: "A new scene.", plan: goodPlan() }, { catalog, scene }).ok, true)
-	hasError(errorsOf("edit", { mode: "patch", reply: "x", patches: [{ op: "remove", id: "ramp1" }, { op: "move", id: "ramp1", dx: 1 }] }, { scene }), /"ramp1" is not an item of the scene/)
+	hasError(errorsOf("edit", { ...K(), mode: "patch", reply: "x" }, { scene }), /needs patches/)
+	hasError(errorsOf("edit", { ...K(), mode: "plan", reply: "x" }, { scene }), /needs plan/)
+	hasError(errorsOf("edit", { ...K(), mode: "plan", reply: "x", plan: { ...goodPlan(), seconds: 99 } }, { scene }), /edit\.plan\.seconds is 99/)
+	assert.equal(validate("edit", { ...K(), mode: "plan", reply: "A new scene.", plan: goodPlan() }, { catalog, scene }).ok, true)
+	hasError(errorsOf("edit", { ...K(), mode: "patch", reply: "x", patches: [{ op: "remove", id: "ramp1" }, { op: "move", id: "ramp1", dx: 1 }] }, { scene }), /"ramp1" is not an item of the scene/)
 })
 
 test("planFromScene: every item kept exactly (on air at its anchor), the table left out, goals carried", () => {
@@ -353,24 +382,61 @@ test("patches: up to 150, and `ids` sends one move or set_props to many items (e
 
 test("names that state a number the patches change follow it (a set_item is added); a billiard ball's number is not a count", () => {
 	const p = validate("plan", dominoPlan(), { catalog }).value
-	const r = validate("edit", { mode: "patch", reply: "15 now", patches: [{ op: "set_props", id: "row", props: { count: 15 } }, { op: "set_props", id: "big", props: { diameter: 0.15 } }] }, { catalog, plan: p })
+	const r = validate("edit", { ...K(), mode: "patch", reply: "15 now", patches: [{ op: "set_props", id: "row", props: { count: 15 } }, { op: "set_props", id: "big", props: { diameter: 0.15 } }] }, { catalog, plan: p })
 	assert.deepEqual(r.errors, [])
 	const names = r.value.patches.filter((x) => x.op === "set_item").map((x) => [x.id, x.name])
 	assert.deepEqual(names, [["row", "Row of 15 dominoes"], ["big", "15 cm ball"]])
-	const r2 = validate("edit", { mode: "patch", reply: "ok", patches: [{ op: "set_props", id: "row", props: { count: 15 } }, { op: "set_item", id: "row", name: "Long row" }] }, { catalog, plan: p })
+	const r2 = validate("edit", { ...K(), mode: "patch", reply: "ok", patches: [{ op: "set_props", id: "row", props: { count: 15 } }, { op: "set_item", id: "row", name: "Long row" }] }, { catalog, plan: p })
 	assert.equal(r2.value.patches.filter((x) => x.op === "set_item").length, 1, "the model's own rename wins")
 })
 
-test("edit: undo asks for no patches; notes and assumptions may come back; the scene's missing list is kept", () => {
+test("edit: undo asks for no patches; notes and assumptions may come back; missing is this request's, the scene's list is plan_missing", () => {
 	const p = validate("plan", dominoPlan(), { catalog }).value
-	let r = validate("edit", { mode: "patch", reply: "Press Undo (⌘Z) to go back.", patches: [], undo: true }, { catalog, plan: p })
+	let r = validate("edit", { ...K("undo"), mode: "patch", reply: "Press Undo (⌘Z) to go back.", patches: [], undo: true }, { catalog, plan: p })
 	assert.equal(r.ok, true)
-	hasError(validate("edit", { mode: "patch", reply: "x", patches: [{ op: "remove", id: "big" }], undo: true }, { catalog, plan: p }).errors, /undo is true: the app goes back/)
-	r = validate("edit", { mode: "patch", reply: "Bigger.", patches: [{ op: "set_props", id: "big", props: { diameter: 0.2 } }], notes: "A 20 cm ball now.", assumptions: ["bigger ball"] }, { catalog, plan: p })
+	hasError(validate("edit", { ...K("change"), mode: "patch", reply: "x", patches: [{ op: "remove", id: "big" }], undo: true }, { catalog, plan: p }).errors, /undo is true: the app goes back/)
+	r = validate("edit", { ...K(), mode: "patch", reply: "Bigger.", patches: [{ op: "set_props", id: "big", props: { diameter: 0.2 } }], notes: "A 20 cm ball now.", assumptions: ["bigger ball"] }, { catalog, plan: p })
 	assert.equal(r.value.notes, "A 20 cm ball now.")
-	assert.deepEqual(r.value.missing.map((m) => m.asked), ["a dog"])
-	r = validate("edit", { mode: "patch", reply: "Which ball?", patches: [] }, { catalog, plan: p })
+	assert.deepEqual(r.value.missing, [], "the build's 'a dog' is not this request's")
+	assert.deepEqual(r.value.plan_missing.map((m) => m.asked), ["a dog"], "the scene keeps its list")
+	// a copy of the plan's entry is dropped from missing (with a warning), unless the request asks for that thing again
+	const dog = { asked: "a dog", reason: "no animals", substitute_type: null }
+	r = validate("edit", { ...K(), mode: "patch", reply: "Bigger.", patches: [{ op: "set_props", id: "big", props: { diameter: 0.2 } }], missing: [dog] }, { catalog, plan: p, text: "make the big ball bigger" })
+	assert.deepEqual(r.value.missing, [])
+	assert.ok(r.warnings.some((w) => /missing: 1 entry the plan already had dropped/.test(w)), r.warnings.join("; "))
+	assert.deepEqual(r.value.plan_missing.map((m) => m.asked), ["a dog"])
+	r = validate("edit", { ...K(), mode: "patch", reply: "No dogs.", patches: [{ op: "set_props", id: "big", props: { diameter: 0.2 } }], missing: [dog] }, { catalog, plan: p, text: "add a dog next to the ball" })
+	assert.deepEqual(r.value.missing.map((m) => m.asked), ["a dog"], "asked for again: reported again")
+	assert.equal(validate("edit", { ...K(), mode: "patch", reply: "x", patches: [{ op: "set_props", id: "big", props: { diameter: 0.2 } }], plan_missing: [dog] }, { catalog, plan: dominoPlan2NoMissing() }).value.plan_missing, undefined, "never the model's")
+	r = validate("edit", { ...K("ask", [{ says: "the ball", ids: ["big", "small"] }]), mode: "patch", reply: "Which ball?", patches: [] }, { catalog, plan: p })
 	assert.deepEqual(r.value.missing, [], "a question keeps its own (empty) list")
+})
+const dominoPlan2NoMissing = () => ({ ...validate("plan", dominoPlan(), { catalog }).value, missing: [] })
+
+test("edit kind and targets (§14): the measured checks get the repair turn; small slips are tidied", () => {
+	const scene = scenario("rube-goldberg")
+	const none = { mode: "patch", reply: "x", patches: [] }
+	const move = [{ op: "move", id: "box", dx: 0.1 }]
+	hasError(errorsOf("edit", { ...none, targets: [] }, { scene }), /kind must be one of change, ask, answer, fix, undo, new/)
+	hasError(errorsOf("edit", { ...none, kind: "maybe", targets: [] }, { scene }), /kind must be one of/)
+	hasError(errorsOf("edit", { ...none, kind: "change" }, { scene }), /targets must be a list \(\[\] when the request names nothing\)/)
+	for (const kind of ["ask", "answer", "undo"]) hasError(errorsOf("edit", { ...none, kind, targets: [], patches: move }, { scene }), new RegExp(`kind "${kind}" changes nothing: "patches": \\[\\]`))
+	const t = validate("edit", { ...none, kind: "ask", targets: [{ says: "the ball", ids: "ball1" }, { says: "it", id: "box", because: "just talked about", extra: 1 }, "junk"] }, { catalog, scene })
+	assert.equal(t.ok, true)
+	assert.deepEqual(t.value.targets, [{ says: "the ball", ids: ["ball1"] }, { says: "it", ids: ["box"], because: "just talked about" }])
+	assert.ok(t.warnings.some((w) => /targets\[2\] dropped/.test(w)))
+	const n = validate("edit", { kind: "change", targets: [], mode: "new", reply: "A new scene.", why: "start over" }, { catalog, scene })
+	assert.deepEqual([n.ok, n.value.kind], [true, "new"])
+	const n2 = validate("edit", { kind: "new", targets: [], mode: "patch", reply: "A new scene.", patches: [] }, { catalog, scene })
+	assert.deepEqual([n2.ok, n2.value.mode, n2.value.kind, n2.value.patches], [true, "new", "new", undefined])
+	const c = validate("edit", { kind: "new", targets: [], mode: "patch", reply: "Moved.", patches: move }, { catalog, scene })
+	assert.deepEqual([c.ok, c.value.kind], [true, "change"])
+	const u = validate("edit", { kind: "undo", targets: [], mode: "patch", reply: "Press Undo.", patches: [] }, { catalog, scene })
+	assert.deepEqual([u.ok, u.value.undo], [true, true])
+	const u2 = validate("edit", { kind: "answer", targets: [], mode: "patch", reply: "Press Undo.", patches: [], undo: true }, { catalog, scene })
+	assert.deepEqual([u2.ok, u2.value.kind], [true, "undo"])
+	const f = validate("edit", { kind: "fix", targets: [], mode: "patch", reply: "I moved the box 10 cm right.", patches: move }, { catalog, scene })
+	assert.deepEqual([f.ok, f.value.kind, f.value.targets, f.value.patches.length], [true, "fix", [], 1])
 })
 
 test("covers: without an observation only tidied (ids that are no item dropped); remove patches clean goals and covers", () => {
@@ -555,10 +621,40 @@ test("reply and suggestions (§13.9): tidied, never a repair: at most 2 sentence
 		{ label: "Wider pot", prompt: "Make the pot 10 cm wider" },
 		{ label: "Add a bell", prompt: "Add a bell the ball rings on its way" }
 	])
-	const e = validate("edit", { mode: "patch", reply: "I made the box 2 cm wider (26 → 28 cm).", patches: [], suggestions: "not a list" }, { catalog, plan: goodPlan() })
+	const e = validate("edit", { ...K(), mode: "patch", reply: "I made the box 2 cm wider (26 → 28 cm).", patches: [], suggestions: "not a list" }, { catalog, plan: goodPlan() })
 	assert.deepEqual(e.errors, [])
 	assert.equal(e.value.suggestions, undefined)
-	const n = validate("edit", { mode: "new", reply: "Building a new scene.", why: "start over", suggestions: [{ label: "Add a cup", prompt: "Add a cup at the end" }] }, { catalog, plan: goodPlan() })
+	const n = validate("edit", { ...K("new"), mode: "new", reply: "Building a new scene.", why: "start over", suggestions: [{ label: "Add a cup", prompt: "Add a cup at the end" }] }, { catalog, plan: goodPlan() })
 	assert.equal(n.ok, true)
 	assert.equal(n.value.suggestions.length, 1)
+})
+
+test("edit (repair 2026-10-15 night): a swap's shared props outside the new kind's range get its default, with its knobs cut to the range", () => {
+	const plan = { title: "car", seconds: 4, items: [{ id: "car", type: "toy-car", name: "Red toy car", props: { length: 0.1, wheel_diameter: 0.022, body_mass: 0.06 }, place: { on: "table", x: 0.5 } }], goals: [], tune: [{ id: "car", param: "body_mass", min: 0.06, max: 0.5 }, { id: "car", param: "length", min: 0.05, max: 0.15 }] }
+	const r = validate("edit", { ...K("change", [{ says: "the red car", ids: ["car"] }]), mode: "patch", reply: "I swapped the car for a truck.", patches: [{ op: "replace_type", id: "car", type: "truck" }] }, { catalog, plan })
+	assert.equal(r.ok, true, r.errors.join("; "))
+	const T = catalog.types.truck.props
+	assert.deepEqual(r.value.patches[0].props, { length: T.length.default, wheel_diameter: T.wheel_diameter.default, body_mass: T.body_mass.default })
+	assert.ok(r.warnings.some((w) => /the toy-car's length 0\.1 is outside a truck's range, so it is set to/.test(w)), r.warnings.join("; "))
+	const after = applyPatches(plan, r.value.patches, catalog)
+	assert.deepEqual(after.tune, [{ id: "car", param: "body_mass", min: T.body_mass.min, max: 0.5 }].filter((k) => k.min < k.max), "a knob is cut to the new range, or goes")
+	// a shared prop in range is kept as it was (and the patch says nothing about it)
+	const ok = validate("edit", { ...K(), mode: "patch", reply: "x", patches: [{ op: "replace_type", id: "car", type: "truck" }] }, { catalog, plan: { ...plan, items: [{ ...plan.items[0], props: { length: T.length.min + 0.01 } }], tune: [] } })
+	assert.deepEqual(ok.value.patches[0].props ?? {}, {})
+})
+
+test("edit (repair 2026-10-15 night): an edit reply over 45 words keeps its first sentence; a real start-over under Edit is kind new without a repair", async () => {
+	const long = "The seesaw tips because the red ball lands on its left end at about two metres a second, which lifts the right end and flings the yellow ball up. If you made the red ball heavier, it would fling the yellow ball higher and further, maybe past the box."
+	let r = validate("edit", { ...K("answer"), mode: "patch", reply: long, patches: [] }, { catalog, plan: null, scene: scenario("rube-goldberg") })
+	assert.equal(r.value.reply, long.split(". ")[0] + ".")
+	assert.ok(r.warnings.some((w) => /reply had \d+ words: cut to its first sentence/.test(w)))
+	const short = "I moved the box 10 cm to the left, closer to the seesaw."
+	assert.equal(validate("edit", { ...K(), mode: "patch", reply: short, patches: [] }, { catalog, scene: scenario("rube-goldberg") }).value.reply, short)
+	const { START_OVER } = await import("../schemas.mjs")
+	for (const t of ["start over: just a tennis ball rolling down a ramp into a cup", "clear the table and build a seesaw", "from scratch, a row of dominoes"]) assert.ok(START_OVER.test(t), t)
+	for (const t of ["new scene: the same machine but with a bowling ball", "build the same machine but with a tennis ball", "clear the ball off the ramp", "start the ball higher"]) assert.ok(!START_OVER.test(t), t)
+	const scene = scenario("rube-goldberg")
+	const nu = { ...K("new"), mode: "new", reply: "I'll build that as a new scene.", why: "A different scene." }
+	assert.deepEqual(validate("edit", nu, { catalog, scene, intent: "edit", text: "start over: just a tennis ball rolling down a ramp into a cup" }).soft, [])
+	assert.equal(validate("edit", nu, { catalog, scene, intent: "edit", text: "build the same machine but with a tennis ball" }).soft.length, 1, "a change worded as a build still gets the one repair")
 })

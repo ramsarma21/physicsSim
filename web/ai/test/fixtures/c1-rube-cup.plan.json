@@ -1,0 +1,152 @@
+{
+ "title": "Four-stage pendulum to cup machine",
+ "seconds": 6,
+ "release": 0.5,
+ "items": [
+  {
+   "id": "pendulum",
+   "type": "pendulum",
+   "name": "Pendulum",
+   "props": {
+    "length": 0.5,
+    "bob_diameter": 0.05,
+    "bob_mass": 0.5,
+    "start_angle": -45
+   },
+   "place": {
+    "on": "air",
+    "x": 0,
+    "y_m": 0.54
+   },
+   "held": true,
+   "why": "Stage 1: pulled out 45\u00b0 to the left. At the release it swings down and its bob, 4 cm above the table at the bottom, strikes the first domino"
+  },
+  {
+   "id": "dominoes",
+   "type": "domino-row",
+   "name": "Growing domino row",
+   "props": {
+    "count": 9,
+    "first_height": 0.098,
+    "growth": 1.193
+   },
+   "place": {
+    "on": "table",
+    "x": 0.04
+   },
+   "why": "Stage 2: nine dominoes, each bigger than the last, from 9.8 cm up to about 40 cm tall. The wave gains energy as it runs to the right"
+  },
+  {
+   "id": "ledge",
+   "type": "plank",
+   "name": "Raised ledge",
+   "props": {
+    "length": 0.4
+   },
+   "place": {
+    "on": "air",
+    "x": 1.21,
+    "y_m": 0.289,
+    "angle_deg": 0
+   },
+   "why": "Stage 3: a flat shelf whose top is 30 cm up. It starts 4 cm right of the last domino, and the golf ball rolls along it"
+  },
+  {
+   "id": "ball",
+   "type": "golf-ball",
+   "name": "Golf ball",
+   "place": {
+    "on": "ledge",
+    "x": 1.02
+   },
+   "why": "Rests 1 cm in from the ledge's left edge, so the falling 40 cm domino strikes the ball before it strikes the ledge's corner",
+   "props": {}
+  },
+  {
+   "id": "funnel",
+   "type": "funnel",
+   "name": "Funnel",
+   "props": {
+    "mouth": 0.4,
+    "height": 0.1,
+    "outlet": 0.08
+   },
+   "place": {
+    "on": "air",
+    "x": 1.61,
+    "y_m": 0.27
+   },
+   "why": "Stage 4: its 40 cm mouth sits just under the ledge's right end and catches the ball at any speed. It guides the ball down through its outlet"
+  },
+  {
+   "id": "cup",
+   "type": "cup",
+   "name": "Cup",
+   "props": {
+    "width": 0.1,
+    "wall": 0.08
+   },
+   "place": {
+    "on": "table",
+    "x": 1.61
+   },
+   "why": "Finale: the cup stands right under the funnel's outlet, which is about 3 cm above its rim"
+  }
+ ],
+ "missing": [],
+ "goals": [
+  {
+   "kind": "hits",
+   "label": "The pendulum strikes the first domino",
+   "item": "pendulum",
+   "target": "dominoes",
+   "before_s": 2
+  },
+  {
+   "kind": "hits",
+   "label": "The last domino strikes the golf ball",
+   "item": "dominoes",
+   "target": "ball"
+  },
+  {
+   "kind": "moves",
+   "label": "The last domino pushes the golf ball along the ledge",
+   "item": "ball",
+   "min_m": 0.3
+  },
+  {
+   "kind": "in",
+   "label": "The golf ball drops into the cup",
+   "item": "ball",
+   "container": "cup"
+  }
+ ],
+ "tune": [
+  {
+   "id": "cup",
+   "param": "x",
+   "min": 1.55,
+   "max": 1.67
+  },
+  {
+   "id": "funnel",
+   "param": "x",
+   "min": 1.58,
+   "max": 1.66
+  },
+  {
+   "id": "ball",
+   "param": "x",
+   "min": 1.015,
+   "max": 1.03
+  }
+ ],
+ "notes": "The four stages are: (1) the pendulum swings at about 1.7 m/s into the dominoes; (2) the growing row topples; (3) the 40 cm last domino shoves the golf ball along the raised ledge; (4) the ball rolls off the ledge into the funnel, which drops it into the cup. The whole chain takes about 3.5 s.",
+ "assumptions": [
+  "The pendulum, ledge and funnel stand on their own stands or legs, which are part of those items",
+  "A golf ball is used because it rolls freely and fits easily through the 8 cm funnel outlet and into the 10 cm cup",
+  "A funnel was added before the cup so that the drop works whatever speed the ball leaves the ledge at",
+  "I laid the machine out left to right in the order things happen"
+ ],
+ "differences": []
+}

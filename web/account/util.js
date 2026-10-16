@@ -58,7 +58,7 @@ export function h(tag, attrs = {}, ...kids) {
 	for (const c of kids.flat()) if (c != null && c !== false) e.append(c instanceof Node ? c : document.createTextNode(String(c)))
 	return e
 }
-export const icon = (name, cls = "acct-ic") => h("span", { class: cls, "aria-hidden": "true", html: ICONS[name] })
+export const icon = (name, cls = "") => h("span", { class: cls ? `acct-ic ${cls}` : "acct-ic", "aria-hidden": "true", html: ICONS[name] })
 
 export const ICONS = {
 	scenes: `<svg viewBox="0 0 24 24"><path d="M4 5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2 0v4h4V5zm8 0a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2zm2 0v4h2V5zM4 15a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zm2 0v4h2v-4zm8 0a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-2a2 2 0 0 1-2-2zm2 0v4h2v-4z"/></svg>`,
@@ -77,6 +77,7 @@ export const ICONS = {
 	signout: `<svg viewBox="0 0 24 24"><path d="M5 3h8v2H5v14h8v2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2zm11.6 4.6L21 12l-4.4 4.4-1.4-1.4 2-2H9v-2h8.2l-2-2z"/></svg>`,
 	warn: `<svg viewBox="0 0 24 24"><path d="M12 2 1 21h22zm-1 7h2v6h-2zm0 8h2v2h-2z"/></svg>`,
 	upload: `<svg viewBox="0 0 24 24"><path d="M6.5 20A5.5 5.5 0 0 1 5.6 9.07 7 7 0 0 1 19 10.5a4.75 4.75 0 0 1-.5 9.5H13v-5.17l1.6 1.58L16 15l-4-4-4 4 1.4 1.4 1.6-1.57V20z"/></svg>`,
+	ai: `<svg viewBox="0 0 24 24"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z" opacity=".75"/></svg>`,
 	google: `<svg viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.56c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.56-2.77c-.98.66-2.23 1.06-3.72 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.84 14.1A6.6 6.6 0 0 1 5.5 12c0-.73.13-1.44.34-2.1V7.06H2.18A11 11 0 0 0 1 12c0 1.78.43 3.45 1.18 4.94z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1A11 11 0 0 0 2.18 7.06L5.84 9.9C6.71 7.31 9.14 5.38 12 5.38z"/></svg>`
 }
 
@@ -110,8 +111,14 @@ export function nameFor(scene) {
 	const n = String(scene?.name ?? "").trim()
 	return !n || (n === "Empty table" && thingsIn(scene) > 0) ? "Untitled scene" : n.slice(0, 80)
 }
-/** Name rules shared with saves (web/sim/api.js): letters, digits, spaces, _ - ' ; trimmed; 60 characters at most. */
-export const cleanName = (s) => String(s ?? "").replace(/[^\p{L}\p{N}_\-' ]/gu, "").replace(/\s+/g, " ").trim().slice(0, 60)
+/** The name rule of My scenes, the same as the server's (api/_lib/scenes.mjs normName): letters, digits, spaces and ordinary punctuation
+ *  (_ - ' ’ . , : ; ( ) & ! ? + #); spaces collapsed, trimmed, 60 characters at most; no letter or digit at all is no name (""). Names are
+ *  only ever shown as text. */
+const NAME_DROP = /[^\p{L}\p{N}_\-'\u2019.,:;()&!?+# ]/gu
+export const cleanName = (s) => {
+	const t = [...String(s ?? "").replace(/\s+/g, " ").replace(NAME_DROP, "").replace(/ {2,}/g, " ").trim()].slice(0, 60).join("").trim()
+	return /[\p{L}\p{N}]/u.test(t) ? t : ""
+}
 /** For search: lower case, no accents. */
 export const fold = (s) => String(s ?? "").normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
 

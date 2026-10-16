@@ -1,6 +1,6 @@
 // Bundles tools/engine-worker-entry.ts (the physics engine: tooling/src/sim on planck.js + effect) into web/sim/engine-worker.js:
 // an ES module for `new Worker(url, {type: "module"})`, minified, target es2022, with web/sim/engine-worker.js.map beside it.
-// Also tools/engine-math-entry.ts (x ** y as node on macOS computes it, the same bits in every browser) into web/sim/engine-math.js.
+// Also tools/engine-math-entry.ts (x ** y correctly rounded, the same bits in every browser) into web/sim/engine-math.js.
 //   node tools/build-engine.mjs            (npm run build:engine)
 // esbuild comes from node_modules at the project root (a plain `npm ci` there, as on Vercel) or from tooling/node_modules.
 import { createRequire } from "node:module"
@@ -9,6 +9,7 @@ import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { gzipSync } from "node:zlib"
 import path from "node:path"
+import { afterLower, DEFINE, INJECT, LOWER_POW, lowerOptions } from "./engine-math-transform.ts"
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const found = [path.join(root, "node_modules"), path.join(root, "tooling", "node_modules")].find((d) => existsSync(path.join(d, "esbuild", "package.json")))
@@ -31,16 +32,16 @@ const noNode = {
 	}
 }
 
-// The same bits in every browser: Math.sin, cos, atan2, exp, hypot and pow are replaced, wherever the bundle names them (planck keeps
-// `var sin = Math.sin` at load time, so a global patch would be too late), by tools/fdlibm.ts (see there for why). `a ** b` is first lowered
-// to Math.pow(a, b) in the engine's own files, so that goes through the same substitution.
+// The same bits in every browser and on the server: Math.sin, cos, atan2, exp, hypot and pow are replaced, wherever the bundle names them
+// (planck keeps `var sin = Math.sin` at load time, so a global patch would be too late), by tools/fdlibm.ts (see there for why). `a ** b` is
+// first lowered to Math.pow(a, b) in the engine's own files, so that goes through the same substitution. The rules are in
+// tools/engine-math-transform.ts, which tools/engine-math-node.mjs applies to the engine in node (the server's worker) the same way.
 const lowerPow = {
 	name: "lower-exponent-operator",
 	setup(b) {
-		b.onLoad({ filter: /[\\/](tooling[\\/]src|planck[\\/]dist)[\\/].*\.(ts|mjs)$/ }, async (a) => {
-			const ts = a.path.endsWith(".ts")
-			const t = await esbuild.transform(await readFile(a.path, "utf8"), { loader: ts ? "ts" : "js", target: "es2022", supported: { "exponent-operator": false }, sourcefile: a.path, sourcemap: "inline" })
-			return { contents: t.code.replaceAll("Math.pow(", "__fdPow("), loader: "js", resolveDir: path.dirname(a.path) }
+		b.onLoad({ filter: LOWER_POW }, async (a) => {
+			const t = await esbuild.transform(await readFile(a.path, "utf8"), lowerOptions(a.path))
+			return { contents: afterLower(t.code), loader: "js", resolveDir: path.dirname(a.path) }
 		})
 	}
 }
@@ -57,8 +58,8 @@ const result = await esbuild.build({
 	legalComments: "none",
 	logLevel: "warning",
 	metafile: true,
-	define: { "Math.sin": "__fdSin", "Math.cos": "__fdCos", "Math.atan2": "__fdAtan2", "Math.exp": "__fdExp", "Math.hypot": "__fdHypot", "Math.pow": "__fdPow" },
-	inject: [path.join(root, "tools", "fdlibm-inject.ts")],
+	define: DEFINE,
+	inject: [INJECT],
 	plugins: [noNode, lowerPow]
 })
 

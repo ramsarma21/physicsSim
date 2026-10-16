@@ -1,0 +1,260 @@
+{
+ "_note": "An AI-built scene (round 3 acceptance, run 'pend3', 15 Oct): its plan and the scene it solved to, as the app had them. The golf ball's plan place is {on: shelf, right_of: dominoes}; a 6.7 cm tennis ball no longer fits there, and the solver put it 33 cm left, in the pendulum's path (partB/V/repro-swap.mjs).",
+ "plan": {
+  "title": "Pendulum, dominoes and golf ball",
+  "seconds": 4,
+  "release": 0.5,
+  "items": [
+   {
+    "id": "shelf",
+    "type": "plank",
+    "name": "Shelf",
+    "props": {
+     "length": 0.635
+    },
+    "place": {
+     "lean": {
+      "from": {
+       "on": "air",
+       "x": 0.3,
+       "y": 0.4
+      },
+      "to": {
+       "on": "air",
+       "x": 0.935,
+       "y": 0.4
+      }
+     },
+     "on": "air"
+    },
+    "why": "A level shelf 40 cm up on its legs; the dominoes and the golf ball stand on it, and its right end is the drop-off"
+   },
+   {
+    "id": "pendulum",
+    "type": "pendulum",
+    "name": "Pendulum",
+    "props": {
+     "length": 0.5,
+     "start_angle": -29.375
+    },
+    "place": {
+     "on": "air",
+     "x": 0.6,
+     "y_m": 0.95
+    },
+    "why": "Pivot 95 cm up above the shelf; pulled 40\u00b0 to the left, its bob swings down and strikes the first domino near its top at the bottom of the swing"
+   },
+   {
+    "id": "dominoes",
+    "type": "domino-row",
+    "name": "Ten dominoes",
+    "props": {
+     "count": 10,
+     "first_height": 0.05,
+     "growth": 1
+    },
+    "place": {
+     "on": "shelf",
+     "x": 0.61
+    },
+    "why": "Ten standard 5 cm dominoes on the shelf. The first stands just right of the bob's lowest point."
+   },
+   {
+    "id": "golf",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "place": {
+     "on": "shelf",
+     "right_of": {
+      "id": "dominoes",
+      "gap_m": 0.003
+     }
+    },
+    "why": "Sits at the very end of the shelf, within about 1 cm of the edge, so the last domino's nudge rolls it off",
+    "props": {}
+   },
+   {
+    "id": "box",
+    "type": "box",
+    "name": "Box",
+    "props": {
+     "width": 0.36,
+     "hung": false
+    },
+    "place": {
+     "on": "table",
+     "x": 1.19444
+    },
+    "why": "An open box standing on the table just right of and below the shelf's end, to catch the falling golf ball"
+   }
+  ],
+  "missing": [],
+  "goals": [
+   {
+    "kind": "hits",
+    "label": "The pendulum hits the first domino",
+    "item": "pendulum",
+    "target": "dominoes",
+    "before_s": 1.5
+   },
+   {
+    "kind": "falls",
+    "label": "All ten dominoes fall",
+    "item": "dominoes"
+   },
+   {
+    "kind": "in",
+    "label": "The golf ball lands in the box",
+    "item": "golf",
+    "container": "box"
+   }
+  ],
+  "tune": [
+   {
+    "id": "box",
+    "param": "x",
+    "min": 1,
+    "max": 1.35
+   },
+   {
+    "id": "pendulum",
+    "param": "start_angle",
+    "min": -60,
+    "max": -25
+   }
+  ],
+  "notes": "The bob reaches the bottom of its swing after about 0.35 s and topples the row. The wave runs about 26 cm along the shelf. The last domino nudges the golf ball off the shelf's end, and it drops about 28 cm into the box.",
+  "assumptions": [
+   "The shelf is a 63.5 cm wooden plank standing on its own legs, 40 cm above the table",
+   "The pendulum hangs from its own stand above the shelf so the bob just clears the shelf top",
+   "Standard 5 cm dominoes of equal size, since no size was given",
+   "The box stands on the table, close to the shelf's end, because the ball leaves the shelf slowly and falls almost straight down"
+  ],
+  "differences": [],
+  "reply": "I built a pendulum that swings into ten 5 cm dominoes on a 40 cm high shelf. The last domino nudges a golf ball off the shelf's end into a box on the table below.",
+  "suggestions": [
+   {
+    "label": "Make the drop more dramatic",
+    "prompt": "Raise the shelf to 80 cm so the golf ball falls further into the box"
+   },
+   {
+    "label": "Use growing dominoes",
+    "prompt": "Make the ten dominoes grow in size so the last one gives the golf ball a harder push"
+   },
+   {
+    "label": "Swap in a wrecking ball",
+    "prompt": "Replace the pendulum with a wrecking ball that knocks the first domino"
+   }
+  ]
+ },
+ "scene": {
+  "version": 2,
+  "id": "pendulum-dominoes-and-golf-ball",
+  "name": "Pendulum, dominoes and golf ball",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.55908203125,
+   "x1": 3.19091796875,
+   "y0": -0.15625,
+   "y1": 2.34375
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "shelf",
+    "type": "plank",
+    "name": "Shelf",
+    "x": 0.6175,
+    "y": 0.411,
+    "angle": 0,
+    "props": {
+     "length": 0.635
+    }
+   },
+   {
+    "id": "pendulum",
+    "type": "pendulum",
+    "name": "Pendulum",
+    "x": 0.6,
+    "y": 0.95,
+    "angle": 0,
+    "props": {
+     "start_angle": -29.375
+    }
+   },
+   {
+    "id": "dominoes",
+    "type": "domino-row",
+    "name": "Ten dominoes",
+    "x": 0.61,
+    "y": 0.4235,
+    "angle": 0,
+    "props": {
+     "count": 10,
+     "first_height": 0.05,
+     "growth": 1
+    }
+   },
+   {
+    "id": "golf",
+    "type": "golf-ball",
+    "name": "Golf ball",
+    "x": 0.894115,
+    "y": 0.44385,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "box",
+    "type": "box",
+    "name": "Box",
+    "x": 1.19444,
+    "y": 0.012,
+    "angle": 0,
+    "props": {
+     "width": 0.36,
+     "hung": false
+    }
+   },
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "x": -0.52,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 3.12,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "in",
+    "item": "golf",
+    "container": "box",
+    "label": "The golf ball lands in the box"
+   }
+  ]
+ }
+}

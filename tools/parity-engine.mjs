@@ -4,7 +4,8 @@
 // no-Workers fallback. Rebuilds the bundle first. The server is only asked questions (GET/POST /api/...); a second copy of its worker
 // (research/poc/worker.ts) is started here as a reference for what the server's POST can't do (other rates), and stopped at the end.
 // The scenes include ones whose balls are sized to a micrometre-ish value (the starter with another wall or ball, ball-drop with another
-// ball): their masses come out of x ** 3 and x ** 4, which node takes from the system's libm pow; the bundle must give the same bits.
+// ball): their masses come out of x ** 3 and x ** 4, which both engines take from tools/crpow.ts (correctly rounded): the same bits.
+// The server's worker runs the engine with the bundle's math (tools/engine-math-node.mjs), so this holds on any machine.
 //   node tools/parity-engine.mjs [--server http://localhost:8790] [--catalog] [--saved] [--runs 3] [--rates 24,60,240,480]
 //     --catalog  also one scene per catalog item (the item dropped on the table), --saved  also web/saved/*.json
 //     --rates    extra rates for the starter scene, against the reference worker (default 24,60,240,480)
@@ -357,11 +358,11 @@ if (starterDoc) {
 	await page.close()
 }
 
-// ---------------------------------------------------------------- engine-math.js: x ** 3 in Chromium equals node's on the micrometre grid of diameters
+// ---------------------------------------------------------------- engine-math.js: its cube in Chromium equals node's on the micrometre grid of diameters
 {
 	const xs = []
 	for (let um = 5000; um <= 1000000; um += 5) xs.push(um / 1e6, um / 2e6)
-	const cube = (x) => x ** 3
+	const { cube } = await import(pathToFileURL(path.join(root, "web", "sim", "engine-math.js")).href)
 	const got = await pageMain.evaluate((a) => window.parity.cubes(a), xs)
 	let diff = 0
 	let first = null
@@ -371,8 +372,8 @@ if (starterDoc) {
 			first ??= `${x}: Chromium ${got[i]}, node ${cube(x)}`
 		}
 	})
-	if (diff) bad(`engine-math.js cube differs from node's x ** 3 on ${diff} of ${xs.length} sizes; first ${first}`)
-	console.log(`${diff ? "DIFF" : "ok  "} engine-math.js cube in Chromium equals node's x ** 3 on ${xs.length} sizes`)
+	if (diff) bad(`engine-math.js cube in Chromium differs from node's on ${diff} of ${xs.length} sizes; first ${first}`)
+	console.log(`${diff ? "DIFF" : "ok  "} engine-math.js cube in Chromium equals node's on ${xs.length} sizes`)
 }
 
 // ---------------------------------------------------------------- report

@@ -304,12 +304,13 @@ export function hypot(...args) {
 }
 
 // ---------------------------------------------------------------- libm: what JavaScript's Math gives instead (reported by prims.mjs)
-// sin/cos/pow/log10 are the engine's own (V8: fdlibm; the other browsers differ again); CPython calls the platform libm. They agree to the last
-// bit most of the time (pow(x, 3): always in the checks; sin/cos: all but about 4% of random arguments, by one unit in the last place), and
+// sin/cos/log10 are the engine's own (V8: fdlibm; the other browsers differ again); CPython calls the platform libm. They agree to the last
+// bit most of the time (sin/cos: all but about 4% of random arguments, by one unit in the last place), and
 // every number the builders print goes through round(.., 5 or 6), so a last-bit difference shows only when a value sits exactly on a rounding
 // tie. That happens by construction at multiples of 30 degrees (sin/cos 0, +-1/2, +-1: an offset of five decimals times 1/2 is a tie), where
-// V8 differs from CPython at cos(+-120 deg) and six more such angles in +-3600: for those arguments (degrees * D2R) the table made by
-// tools/parity/gen_trig.py gives CPython's values, in every browser. Everything else is Math.sin / Math.cos.
+// V8 differs from CPython (macOS libm) at cos(+-120 deg) and six more such angles in +-3600, and glibc's libm at others again: for those
+// arguments (degrees * D2R) the table made by tools/parity/gen_trig.py gives fixed values, in every browser, and the builders' sin and cos
+// (machines/crmath.py) read the same table, so both sides agree on any machine. Everything else is Math.sin / Math.cos.
 function thirtyDegrees(x) {
 	const d = Math.round(x / D2R)
 	return d !== 0 && d % 30 === 0 && d >= -TRIG30_RANGE && d <= TRIG30_RANGE && d * D2R === x ? d / 30 + TRIG30_RANGE / 30 : -1
@@ -322,7 +323,9 @@ export const cos = (x) => {
 	const i = thirtyDegrees(x)
 	return i < 0 ? Math.cos(x) : TRIG30_COS[i]
 }
-// cube(x): the engine's own deterministic pow (web/sim/engine-math.js, the same bits in every browser), so ball volumes come out as the server's do
+// cube(x): x ** 3 correctly rounded (web/sim/engine-math.js, tools/crpow.ts: the same bits in every browser), which is what the builders'
+// machines/crmath.py cube() gives on any machine (CPython's own x ** 3 is the platform libm's, which Apple's and glibc's each round
+// differently now and then), so ball volumes come out as the server's do
 export { cube } from "./engine-math.js"
 export const log10 = Math.log10
 export const floorLog10 = (x) => Math.floor(Math.log10(x))

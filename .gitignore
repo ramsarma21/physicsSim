@@ -22,7 +22,7 @@ renders/
 shots/
 snapshots/
 old-tests/
-scenes/
+/scenes/
 control/inbox/
 web/sim/*.map
 
@@ -34,6 +34,7 @@ research/poc/*
 !research/poc/dense_track.ts
 !research/rw-validate*.ts
 !research/review/
+research/*-before-*.ts
 
 # AI bench/experiment outputs (code, cases and eval images stay)
 ai/bench/results/
@@ -52,7 +53,11 @@ tooling/src/*
 tooling/src/sim/sheet.ts
 tooling/src/sim/sprite.ts
 
-# Apple-libm-derived pow constants: kept out of the public repo until replaced by an open-source correctly-rounded pow
+# Apple-libm-derived pow constants: no longer used (pow is tools/crpow.ts, written for this project); never commit a copy
 tools/apple-pow-tables.ts
-web/sim/engine-math.js
-web/sim/engine-worker.js
+# (and pow.patch / pow-files/ if ever copied here: their diffs still hold the removed Apple-derived pow)
+/pow.patch
+/pow-files/
+
+# generated caches
+ai/.cache/

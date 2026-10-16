@@ -1,0 +1,57 @@
+{
+	"$comment": "Stored pre-pass and image prompt of ai/experiments/imagine/results/p2/imagine/c1-rube-cup__s0 (prepass.json, c1-rube-cup__flare__photo__0.json): ai/imagine.mjs must give this prompt byte for byte for this pre-pass.",
+	"case": "c1-rube-cup",
+	"request": "Build a Rube Goldberg machine with at least four stages that ends with a ball dropping into a cup.",
+	"prepass": {
+		"cast": [
+			{
+				"type": "steel-ball",
+				"count": 1,
+				"role": "starts the chain by rolling down the first ramp",
+				"size": "2.5 cm across"
+			},
+			{
+				"type": "plank",
+				"count": 2,
+				"role": "steep start ramp, then a level raised shelf",
+				"size": "1 m wide × 2.2 cm tall"
+			},
+			{
+				"type": "domino",
+				"count": 8,
+				"role": "topple in a row along the shelf",
+				"size": "0.8 cm wide × 5 cm tall"
+			},
+			{
+				"type": "golf-ball",
+				"count": 1,
+				"role": "pushed off the shelf by the last domino",
+				"size": "4.3 cm across"
+			},
+			{
+				"type": "glass-sheet",
+				"count": 1,
+				"role": "low ramp guiding the golf ball toward the cup",
+				"size": "60 cm wide × 1 cm tall"
+			},
+			{
+				"type": "cup",
+				"count": 1,
+				"role": "final target the golf ball drops into",
+				"size": "8 cm wide × 10 cm tall"
+			}
+		],
+		"missing": [],
+		"layout": "Plank 1 stands on its own legs at 30°, from 80 cm high at x = 0.10 m down to 30 cm high at x = 0.97 m. The steel ball is held at the top of plank 1. Plank 2 stands level on its own legs at 30 cm high, from x = 0.97 m to x = 1.97 m. Eight dominoes stand upright on plank 2, 3 cm apart, from x = 1.50 m to x = 1.71 m. The golf ball rests on plank 2 at its right end, x = 1.95 m. The glass sheet stands on its own legs at 15°, from 28 cm high at x = 1.97 m down to 12.5 cm high at x = 2.55 m. The cup stands on the table at x = 2.62 m, with its 10.3 cm rim below the sheet's low end.",
+		"story": [
+			"The steel ball is released and rolls down the steep plank.",
+			"It runs along the level shelf and hits the first domino.",
+			"The dominoes topple one after another along the shelf.",
+			"The last domino pushes the golf ball off the end of the shelf.",
+			"The golf ball drops onto the glass ramp and rolls down it.",
+			"It leaves the ramp's low end and drops into the cup."
+		]
+	},
+	"prompt": "A photograph of a tabletop physics demonstration, seen exactly from the side: the camera is level with the tabletop and looks straight at it, so the whole setup lies in one flat plane, left to right (no perspective tilt, no top-down or angled view). A long plain light-wood tabletop runs across the whole picture in front of a plain light-grey studio backdrop; soft even light; everything in sharp focus. It shows the moment just before it starts: Build a Rube Goldberg machine with at least four stages that ends with a ball dropping into a cup.\n\nExactly these objects and nothing else, at their true real-world sizes relative to each other:\n- 1 × steel ball bearing (2.5 cm across; polished silver steel) — starts the chain by rolling down the first ramp\n- 2 × wooden plank (1 m wide × 2.2 cm tall; varnished natural wood, standing on wooden legs down to the table while legs is on (legs false: a bare board)) — steep start ramp, then a level raised shelf\n- 8 × domino (0.8 cm wide × 5 cm tall; light wood with dark pips) — topple in a row along the shelf\n- 1 × golf ball (4.3 cm across; white and dimpled) — pushed off the shelf by the last domino\n- 1 × glass sheet (60 cm wide × 1 cm tall) — low ramp guiding the golf ball toward the cup\n- 1 × cup (8 cm wide × 10 cm tall; a tapered paper cup (its other materials, aluminium, glass or wood, change its look)) — final target the golf ball drops into\n\nLayout at the start, left to right: Plank 1 stands on its own legs at 30°, from 80 cm high at x = 0.10 m down to 30 cm high at x = 0.97 m. The steel ball is held at the top of plank 1. Plank 2 stands level on its own legs at 30 cm high, from x = 0.97 m to x = 1.97 m. Eight dominoes stand upright on plank 2, 3 cm apart, from x = 1.50 m to x = 1.71 m. The golf ball rests on plank 2 at its right end, x = 1.95 m. The glass sheet stands on its own legs at 15°, from 28 cm high at x = 1.97 m down to 12.5 cm high at x = 2.55 m. The cup stands on the table at x = 2.62 m, with its 10.3 cm rim below the sheet's low end.\n\nEvery object visibly rests on the table or on another object, or hangs from its own stand; a thing that waits in the air or on a slope at the start is held by a thin wooden pin on a thin post. Show clearly where each thing touches what holds it up.\n\nNo people, no hands, no other furniture, no clutter, no shelves or walls behind the table. No text, no arrows, no labels.",
+	"model": "openai-group/gpt-image-2.5-flare"
+}

@@ -1,5 +1,5 @@
 {
-	"$comment": "Step -> model routing for ai/core.mjs callModel(), chosen by the benchmark in ai/bench/ (2026-10-15; tables, numbers and reasons: ai/research/benchmark.md). Every thinking step runs on Claude Opus 5.5 (the user's preference, confirmed or matched by the measurements), at the reasoning effort the benchmark found best for that step: observe medium (end to end on the picture cases, 2 samples x 26: pass 0.96 vs 0.90 at low, +11 s), plan medium, refine medium, edit low (for plan, high was no better and slower; for edits, medium/high changed things the user did not ask for). Route: claude-group (Anthropic-native: prompt caching of the catalog, 0 errors in ~1,500 bench calls). Fallbacks: the same model on AWS Bedrock (an independent backend; no strict json_schema there, which these steps do not use), then a different family measured as the best fast stand-in for that step. retries 1 per route: a hung or failing route moves on to an independent backend quickly instead of retrying it twice. timeoutMs is about 3x the slowest answer measured for the primary; budgetMs leaves room for one fallback. models: per-route quirks (vision, prompt caching via cache_control on the system prompt, params the route rejects). 2026-10-15 (repair): plan timeoutMs 180 → 300 s (a classroom Rube Goldberg photo's plan took 145 s on its second try after the first was cut at 180 s), and every step streams on the routes that stream their thinking as it goes (quirk stream: true: claude-group, the OpenAI group; Bedrock buffers the whole answer, so it is called plainly): an attempt with no progress for idleTimeoutMs (90 s) is dropped at once and the next try or route starts, while a long plan that keeps thinking may use its whole timeout. 2026-10-15 (round 2, ai/research/benchmark.md §13): \"rate\" is refine's rate-only final check (payload rate_only: true): the same system prompt as refine (so it reads the prompt cache), effort low, a short answer {score_0_10, issues}; observe.simpleParams is the effort for a picture the request calls a sketch or a drawing (low: as good on the bench's sketches, about half the time). Quirk cacheTtl \"1h\" (claude-group and Bedrock Opus 5.5, checked through the gateway): the static system prompts stay cached for an hour instead of 5 minutes, so the first build after a pause reads the 44k-token catalog prompt from the cache.",
+	"$comment": "Step -> model routing for ai/core.mjs callModel(), chosen by the benchmark in ai/bench/ (2026-10-15; tables, numbers and reasons: ai/research/benchmark.md). Every thinking step runs on Claude Opus 5.5 (the user's preference, confirmed or matched by the measurements), at the reasoning effort the benchmark found best for that step: observe medium (end to end on the picture cases, 2 samples x 26: pass 0.96 vs 0.90 at low, +11 s), plan medium, refine medium, edit low (for plan, high was no better and slower; for edits, medium/high changed things the user did not ask for). Route: claude-group (Anthropic-native: prompt caching of the catalog, 0 errors in ~1,500 bench calls). Fallbacks: the same model on AWS Bedrock (an independent backend; no strict json_schema there, which these steps do not use), then a different family measured as the best fast stand-in for that step. retries 1 per route: a hung or failing route moves on to an independent backend quickly instead of retrying it twice. timeoutMs is about 3x the slowest answer measured for the primary; budgetMs leaves room for one fallback. models: per-route quirks (vision, prompt caching via cache_control on the system prompt, params the route rejects). 2026-10-15 (repair): plan timeoutMs 180 → 300 s (a classroom Rube Goldberg photo's plan took 145 s on its second try after the first was cut at 180 s), and every step streams on the routes that stream their thinking as it goes (quirk stream: true: claude-group, the OpenAI group; Bedrock buffers the whole answer, so it is called plainly): an attempt with no progress for idleTimeoutMs (90 s) is dropped at once and the next try or route starts, while a long plan that keeps thinking may use its whole timeout. 2026-10-15 (round 2, ai/research/benchmark.md §13): \"rate\" is refine's rate-only final check (payload rate_only: true): the same system prompt as refine (so it reads the prompt cache), effort low, a short answer {score_0_10, issues}; observe.simpleParams is the effort for a picture the request calls a sketch or a drawing (low: as good on the bench's sketches, about half the time). Quirk cacheTtl \"1h\" (claude-group and Bedrock Opus 5.5, checked through the gateway): the static system prompts stay cached for an hour instead of 5 minutes, so the first build after a pause reads the 44k-token catalog prompt from the cache. 2026-10-15 (round 3, ai/DESIGN.md §15, ai/research/round3-plan.md §3): \"prepass\" is the imagine step's catalog pre-pass (cast, layout, story; Opus 5.5 at low effort, p50 about 9-17 s), and \"imagine\" (kind \"image\": not a chat step, read by ai/imagine.mjs) draws the concept picture through the gateway's /images/generations: gpt-image-2.5-flare at quality high, 1536x1024, JPEG 85 (about 100 KB, about 14 s), then sunburst with the same params, then Gemini 3 Pro Image without them (quirk imageParams: false; a square PNG). Its timeoutMs is per attempt, budgetMs the whole step with the pre-pass, usdPerOutputToken the price used for usage.costInUSD (the gateway gives an image's tokens, not its price). 2026-10-15 (round 3 repair): the whole imagine step fits inside the client's 75 s deadline, so its fallbacks can still help before the client plans from the words: imagine budgetMs 70 s with 30 s per picture attempt (flare 13-17 s, sunburst 22-24 s, Gemini 18-20 s measured), and the pre-pass gets the budget less one picture attempt (40 s): prepass timeoutMs 40 s (7-31 s measured, and a six-stage chain's still streaming at 35 s: a 35 s cap cut it off with no time left for a fallback), idleTimeoutMs 20 s (a hung stream, no byte for 20 s, is dropped, so Bedrock still gets 20 s), retries 0 (a failing or hung Opus goes straight to Bedrock, then gpt-6.1-sol, instead of waiting out a second try on the same route). Worst case: a 14 s pre-pass, a 30 s flare hang, then sunburst's 24 s: about 68 s.",
 	"version": 2,
 	"defaults": {
 		"retries": 1,
@@ -101,6 +101,20 @@
 			"family": "xai",
 			"vision": false,
 			"cache": false
+		},
+		"openai-group/gpt-image-2.5-flare": {
+			"family": "openai",
+			"image": true
+		},
+		"openai-group/gpt-image-2.5-sunburst": {
+			"family": "openai",
+			"image": true
+		},
+		"gemini-group/gemini-3-pro-image-preview": {
+			"family": "gemini",
+			"image": true,
+			"imageParams": false,
+			"usdPerOutputToken": 0.00012
 		}
 	},
 	"steps": {
@@ -216,6 +230,47 @@
 			"retries": 1,
 			"needsVision": false,
 			"stream": true
+		},
+		"prepass": {
+			"model": "claude-group/claude-opus-5-5",
+			"fallbacks": [
+				"aws-bedrock/global.anthropic.claude-opus-5-5",
+				{
+					"model": "openai-group/gpt-6.1-sol",
+					"params": {
+						"max_tokens": 6000,
+						"reasoning_effort": "low"
+					}
+				}
+			],
+			"params": {
+				"max_tokens": 6000,
+				"reasoning_effort": "low"
+			},
+			"timeoutMs": 40000,
+			"idleTimeoutMs": 20000,
+			"budgetMs": 45000,
+			"retries": 0,
+			"needsVision": false,
+			"stream": true
+		},
+		"imagine": {
+			"kind": "image",
+			"model": "openai-group/gpt-image-2.5-flare",
+			"fallbacks": [
+				"openai-group/gpt-image-2.5-sunburst",
+				"gemini-group/gemini-3-pro-image-preview"
+			],
+			"params": {
+				"size": "1536x1024",
+				"quality": "high",
+				"output_format": "jpeg",
+				"output_compression": 85
+			},
+			"timeoutMs": 30000,
+			"budgetMs": 70000,
+			"retries": 1,
+			"usdPerOutputToken": 0.00004
 		}
 	}
 }

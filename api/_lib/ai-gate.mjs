@@ -4,9 +4,13 @@
 //   2. Allowed: AI_ALLOWED_EMAILS (addresses and @domain entries) makes Build with AI invite-only for signed-in people (403 not_allowed).
 //   3. Limits, checked atomically in the database when a step is about to run (gate.charge(), after the function's queue gave it a slot, so
 //      a "busy" retry costs nothing): this caller's steps this hour and today, this caller's dollars today, and the whole site's dollars today.
+//      The dollars are RESERVED, not just compared: the step's estimate (STEP_USD, about its 99th-percentile cost) is added to the caller's day
+//      and the site's in the same statement that checks the caps, so steps running side by side can't all pass a cap they'd break together.
 //      Over a limit: 403 {code: "quota" | "site_quota"} - never 429, which web/ai/orchestrator.js treats as "busy" and retries.
-//   4. After the step (gate.run(fn) wraps it): its usage.costInUSD, from the answer or the error, is added to the caller's day and the site's.
-// Without accounts configured (no publishable key) this is exactly the function's old access check.
+//   4. After the step (gate.run(fn) wraps it): the reservation becomes its real usage.costInUSD (from the answer or the error; none known: the
+//      reservation is given back). A cap can be passed only by what steps already running cost beyond their estimates. A request the step
+//      refused as bad input (400) before any model call is not counted as a step either.
+// Without accounts configured (no publishable key, or no database) this is exactly the function's old access check.
 import { HttpError, logLine } from "./http.mjs"
 import { bearerToken, clerkSettings, verifySessionToken } from "./auth.mjs"
 import { dbConfigured, getDb } from "./db.mjs"
@@ -24,10 +28,19 @@ export function aiLimits(env = process.env) {
 		siteUsdPerDay: num(env.AI_SITE_USD_PER_DAY, 30),
 	}
 }
-/** Is sign-in required for Build with AI on this deployment? (both Clerk keys set, and AI_REQUIRE_SIGN_IN is not "0") */
+/** What each step reserves of the dollar caps before it runs (about the 99th percentile of its measured cost, ai/bench/results: plan p99
+ *  $0.34, observe $0.19, refine $0.13, edit $0.24 with a long tail but p90 $0.04; imagine about $0.06 for the picture (an estimate from its
+ *  tokens, in its usage.costInUSD) + $0.03-0.06 for the pre-pass, $0.08-0.11 in all on the first route, and $0.19-0.22 measured when the
+ *  picture falls back to Gemini, whose tokens cost 3x: so $0.25). The real cost replaces it once the step is done. */
+export const STEP_USD = { observe: 0.2, plan: 0.35, refine: 0.15, edit: 0.1, imagine: 0.25 }
+const DEFAULT_STEP_USD = 0.35
+/** Accounts are on for the AI gate: a publishable key and a database (the same rule as the scenes function's accountsOn), not switched off. */
+const accountsOn = (env) => !!clerkSettings(env) && dbConfigured(env) && (env.ACCOUNTS ?? "").toLowerCase() !== "off"
+/** Is sign-in required for Build with AI on this deployment? (both Clerk keys and the database set, and AI_REQUIRE_SIGN_IN is not "0".
+ *  Clerk connected without the database leaves the AI function's own access check in place: nobody could be counted.) */
 export function signInRequired(env = process.env) {
 	const s = clerkSettings(env)
-	return !!s?.secretKey && env.AI_REQUIRE_SIGN_IN !== "0" && (env.ACCOUNTS ?? "").toLowerCase() !== "off"
+	return !!s?.secretKey && accountsOn(env) && env.AI_REQUIRE_SIGN_IN !== "0"
 }
 
 /** Does this email match AI_ALLOWED_EMAILS ("a@b.c,@example.com")? true when the list is empty. */
@@ -47,8 +60,10 @@ const cookieValue = (req, name) => {
 	}
 	return undefined
 }
-/** The counter key of a caller the function's own access check let in: the invite cookie's nonce, or the preview token. */
+/** The counter key of a caller the function's own access check let in: the preview token, or the invite cookie's nonce. (The token first: a
+ *  caller holding it could otherwise pick any nonce in an unchecked cookie beside it and dodge its own count.) */
 function accessKey(req) {
+	if (req.headers?.["x-ai-access"]) return "tok"
 	const v = cookieValue(req, "ai_session")
 	if (v) {
 		try {
@@ -56,7 +71,7 @@ function accessKey(req) {
 			if (typeof n === "string" && /^[0-9a-f]{8,32}$/.test(n)) return `inv_${n}`
 		} catch {}
 	}
-	return req.headers?.["x-ai-access"] ? "tok" : "open"
+	return "open"
 }
 
 const day = (now) => now.toISOString().slice(0, 10)
@@ -69,8 +84,7 @@ const NO_LIMITS = { ok: true, who: null, charge: async () => null, run: (fn) => 
  */
 export async function aiGate(req, step, { accessProblem, env = process.env, now = () => new Date(), fetch: fetchImpl } = {}) {
 	const deps = { env, ...(fetchImpl ? { fetch: fetchImpl } : {}) }
-	const accounts = clerkSettings(env) && (env.ACCOUNTS ?? "").toLowerCase() !== "off"
-	const token = accounts ? bearerToken(req) : null
+	const token = accountsOn(env) ? bearerToken(req) : null
 	let key = null
 	let account = null
 	if (token) {
@@ -80,10 +94,6 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 		} catch (e) {
 			const h = e instanceof HttpError ? e : new HttpError(503, "unavailable", "Sign-in can't be checked right now. Try again.", { retryable: true })
 			return { ok: false, status: h.status, code: h.code, error: h.message, extra: h.extra }
-		}
-		if (!dbConfigured(env)) {
-			if (env.VERCEL) return { ok: false, status: 503, code: "not_configured", error: "Build with AI's limits need the database, which this deployment doesn't have yet", extra: {} }
-			return { ...NO_LIMITS, who: { key: `sub_${who.sub}` } } // (off Vercel, a local `vercel dev` without a database: no limits)
 		}
 		try {
 			account = await accountFor(await getDb(env), who, deps)
@@ -107,8 +117,9 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 
 	const lim = aiLimits(env)
 	const userUsd = account?.aiUsdPerDay ?? lim.userUsdPerDay
-	let charged = null
-	/** Counts this step against the limits; null when it may run, else the refusal. */
+	const est = STEP_USD[step] ?? DEFAULT_STEP_USD
+	let charged = null // {key, day, hour, est}: what this step reserved
+	/** Counts this step against the limits and reserves its estimated cost; null when it may run, else the refusal. */
 	async function charge() {
 		const t = now()
 		const d = day(t)
@@ -117,28 +128,40 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 		let db
 		try {
 			db = await getDb(env)
+			// one statement, three guarded upserts, each only if the one before it went through: the site's dollars, then this caller's steps
+			// and dollars today, then this caller's steps this hour. A row is returned only for a guard that held (the row lock of the upsert
+			// makes each check-and-add atomic, so parallel steps line up instead of all reading the same old total).
 			const r = (
 				await db.query(
-					`with up as (
-						insert into counters (key, bucket, n) values ($1, $2, 1), ($1, $3, 1)
-						on conflict (key, bucket) do update set n = counters.n + 1
-						returning bucket, n
+					`with site as (
+						insert into counters (key, bucket, n, usd) select '*', $3, 0, $4::numeric where $4::numeric <= $7::numeric
+						on conflict (key, bucket) do update set usd = counters.usd + excluded.usd where counters.usd + excluded.usd <= $7::numeric
+						returning 1 as ok
+					), usr as (
+						insert into counters (key, bucket, n, usd) select $1, $3, 1, $4::numeric where exists (select 1 from site) and $4::numeric <= $6::numeric
+						on conflict (key, bucket) do update set n = counters.n + 1, usd = counters.usd + excluded.usd
+							where counters.usd + excluded.usd <= $6::numeric and counters.n < $8::int
+						returning 1 as ok
+					), hr as (
+						insert into counters (key, bucket, n) select $1, $2, 1 where exists (select 1 from usr)
+						on conflict (key, bucket) do update set n = counters.n + 1 where counters.n < $5::int
+						returning 1 as ok
 					)
-					select (select n from up where bucket = $2) as hour_n, (select n from up where bucket = $3) as day_n,
-						coalesce((select usd from counters where key = $1 and bucket = $3), 0)::float8 as user_usd,
-						coalesce((select usd from counters where key = '*' and bucket = $3), 0)::float8 as site_usd`,
-					[key, hour, dayB]
+					select (select count(*) from site)::int as site_ok, (select count(*) from usr)::int as user_ok, (select count(*) from hr)::int as hour_ok`,
+					[key, hour, dayB, est, lim.stepsPerHour, userUsd, lim.siteUsdPerDay, lim.stepsPerDay]
 				)
 			)[0]
 			let refusal = null
-			if (r.site_usd >= lim.siteUsdPerDay) refusal = { code: "site_quota", error: `Build with AI has reached today's limit for this site. It resets at 00:00 UTC.` }
-			else if (r.user_usd >= userUsd || r.day_n > lim.stepsPerDay) refusal = { code: "quota", error: `You've used today's Build with AI allowance. It resets at 00:00 UTC.` }
-			else if (r.hour_n > lim.stepsPerHour) refusal = { code: "quota", error: `You've used this hour's Build with AI allowance. Try again after the hour.`, hourly: true }
+			if (!r.site_ok) refusal = { code: "site_quota", error: `Build with AI has reached today's limit for this site. It resets at 00:00 UTC.` }
+			else if (!r.user_ok) refusal = { code: "quota", error: `You've used today's Build with AI allowance. It resets at 00:00 UTC.` }
+			else if (!r.hour_ok) refusal = { code: "quota", error: `You've used this hour's Build with AI allowance. Try again after the hour.`, hourly: true }
 			if (!refusal) {
-				charged = { key, day: dayB }
+				charged = { key, day: dayB, hour, est }
 				return null
 			}
-			await db.query("update counters set n = greatest(0, n - 1) where key = $1 and bucket in ($2, $3)", [key, hour, dayB]) // (a refused step doesn't count)
+			// (a refused step doesn't count: what the guards before the refusing one added is given back)
+			if (r.user_ok) await db.query("update counters set n = greatest(0, n - 1), usd = greatest(0, usd - $3::numeric) where key = $1 and bucket = $2", [key, dayB, est])
+			if (r.site_ok) await db.query("update counters set usd = greatest(0, usd - $2::numeric) where key = '*' and bucket = $1", [dayB, est])
 			logLine({ event: "ai_quota", code: refusal.code, who: String(key).slice(0, 6) })
 			const resets = refusal.hourly ? new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), t.getUTCHours() + 1)).toISOString() : resetsAt(t)
 			return { status: 403, code: refusal.code, error: refusal.error, extra: { resetsAt: resets } }
@@ -147,15 +170,26 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 			return { status: h.status, code: h.code, error: h.message, extra: h.extra }
 		}
 	}
-	/** Adds what this step cost to the caller's day and to the site's. */
-	async function record(usage) {
+	/**
+	 * The step is done: its reservation becomes what it really cost (none known: the reservation is given back), for the caller and the site.
+	 * refused: the step turned the request down before any model call (a 400 from its payload's checks, e.g. a picture sent to imagine): with
+	 * nothing spent, it does not count as one of the caller's steps this hour or today either.
+	 */
+	async function record(usage, { refused = false } = {}) {
+		if (!charged) return
+		const c = charged
+		charged = null
 		const usd = Number(usage?.costInUSD)
-		if (!charged || !(usd > 0) || !Number.isFinite(usd)) return
+		const actual = Number.isFinite(usd) && usd > 0 ? Math.min(usd, 100) : 0
+		const delta = Math.round((actual - c.est) * 1e4) / 1e4
+		const uncount = refused && actual === 0
+		if (!delta && !uncount) return
 		try {
 			const db = await getDb(env)
-			await db.query("insert into counters (key, bucket, usd) values ($1, $2, $3), ('*', $2, $3) on conflict (key, bucket) do update set usd = counters.usd + excluded.usd", [charged.key, charged.day, Math.min(usd, 100)])
+			if (delta) await db.query("update counters set usd = greatest(0, usd + $3::numeric) where bucket = $2 and key in ($1, '*')", [c.key, c.day, delta])
+			if (uncount) await db.query("update counters set n = greatest(0, n - 1) where key = $1 and bucket in ($2, $3)", [c.key, c.day, c.hour])
 		} catch {
-			logLine({ event: "ai_usage_lost", usd })
+			logLine({ event: "ai_usage_lost", usd: actual })
 		}
 	}
 	/** Runs the step and records what it cost (from its answer, or its error's usage) before the answer goes out. */
@@ -164,7 +198,7 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 		try {
 			out = await fn()
 		} catch (e) {
-			await record(e?.usage)
+			await record(e?.usage, { refused: e?.code === "bad_input" })
 			throw e
 		}
 		await record(out?.usage)

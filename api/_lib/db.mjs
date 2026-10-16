@@ -5,7 +5,7 @@
 // Postgres). docs/ACCOUNTS.md §3.
 import { HttpError, logLine, scrubSecrets } from "./http.mjs"
 
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2 // 2: scenes.saved_as (the app's Save links a scene to its scenario), the deleted-scenes index
 const QUERY_TIMEOUT_MS = 10000 // (a database asleep after 5 idle minutes wakes in about a second)
 
 export const DDL = [
@@ -44,6 +44,8 @@ export const DDL = [
 		deleted_at timestamptz
 	)`,
 	`create index if not exists scenes_owner_recent on scenes (owner_id, updated_at desc) where deleted_at is null`,
+	`alter table scenes add column if not exists saved_as text`,
+	`create index if not exists scenes_owner_deleted on scenes (owner_id, deleted_at) where deleted_at is not null`,
 	`create table if not exists counters (
 		key text not null,
 		bucket text not null,

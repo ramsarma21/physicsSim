@@ -1,0 +1,136 @@
+{
+ "version": 2,
+ "id": "gallery-domino-run",
+ "name": "Domino effect",
+ "seconds": 7,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "pendulum",
+   "type": "pendulum",
+   "name": "Pendulum",
+   "x": -0.1,
+   "y": 0.392,
+   "props": {
+    "length": 0.35,
+    "bob_diameter": 0.05,
+    "bob_mass": 0.3,
+    "start_angle": -50
+   }
+  },
+  {
+   "id": "row1",
+   "type": "domino-row",
+   "name": "Domino run",
+   "x": -0.0668,
+   "y": 0,
+   "props": {
+    "count": 24,
+    "first_height": 0.05,
+    "growth": 1,
+    "spacing": 0.6
+   }
+  },
+  {
+   "id": "row2",
+   "type": "domino-row",
+   "name": "Growing dominoes",
+   "x": 0.6615,
+   "y": 0,
+   "props": {
+    "count": 9,
+    "first_height": 0.05,
+    "growth": 1.35,
+    "spacing": 0.6
+   }
+  },
+  {
+   "id": "ledge",
+   "type": "wooden-block",
+   "name": "Pedestal",
+   "fixed": true,
+   "x": 1.9074,
+   "y": 0.165,
+   "props": {
+    "width": 0.12,
+    "height": 0.33,
+    "depth": 0.12
+   }
+  },
+  {
+   "id": "ball",
+   "type": "billiard-ball",
+   "name": "8-ball",
+   "x": 1.881,
+   "y": 0.3591,
+   "props": {
+    "number": 8
+   }
+  },
+  {
+   "id": "bucket",
+   "type": "bucket",
+   "name": "Bucket",
+   "x": 2.2274,
+   "y": 0
+  }
+ ],
+ "goals": [
+  {
+   "kind": "hits",
+   "item": "pendulum",
+   "target": "row1",
+   "label": "The pendulum starts the run"
+  },
+  {
+   "kind": "falls",
+   "item": "row1",
+   "label": "All 24 dominoes of the run fall"
+  },
+  {
+   "kind": "falls",
+   "item": "row2",
+   "label": "The growing dominoes fall, up to the giant"
+  },
+  {
+   "kind": "in",
+   "item": "ball",
+   "container": "bucket",
+   "label": "The giant knocks the 8-ball into the bucket"
+  }
+ ]
+}

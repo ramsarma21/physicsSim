@@ -15,13 +15,16 @@
 .lib-btn-state[data-state="saving"] { opacity: 1; transform: none; background: var(--changed); animation: pulse 0.9s infinite alternate; }
 .lib-btn-state[data-state="saved"] { opacity: 1; transform: none; background: var(--ok); }
 .lib-btn-state[data-state="error"] { opacity: 1; transform: none; background: var(--bad); }
-@media (max-width: 780px) { .lib-btn { width: var(--ctl-h); padding: 0; } .lib-btn-t { display: none; } .lib-btn-state { left: 18px; top: 4px; } }
+/* icon only where the bar is one full row (1280-1439 px: the words would squeeze the status to its dot) and on narrow bars */
+@media (max-width: 780px), (min-width: 1280px) and (max-width: 1439px) { .lib-btn { width: var(--ctl-h); padding: 0; } .lib-btn-t { display: none; } .lib-btn-state { left: 18px; top: 4px; } }
 
 /* ---------- the dialog ---------- */
 dialog.lib-dialog { --ui-w: 1040px; }
 .lib-dialog .lib-card { height: min(780px, calc(100dvh - 48px)); }
-.lib-head { flex: none; padding: 18px 64px 12px 22px; display: flex; flex-direction: column; gap: 14px; }
-.lib-titles { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.lib-dialog .lib-card.lib-none { height: auto; } /* (nothing yet: the dialog fits its message) */
+.lib-card.lib-none .lib-tools { display: none; }
+.lib-head { flex: none; padding: 18px 22px 12px; display: flex; flex-direction: column; gap: 14px; }
+.lib-titles { display: flex; align-items: center; gap: 12px; min-width: 0; padding-right: 44px; }
 .lib-logo { flex: none; width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
 .lib-logo svg { width: 20px; height: 20px; fill: currentColor; }
 .lib-titles h2 { margin: 0; font-size: 20px; letter-spacing: -0.015em; line-height: 1.2; }
@@ -96,7 +99,10 @@ dialog.lib-dialog { --ui-w: 1040px; }
 .lib-more svg { width: 16px; height: 16px; fill: currentColor; }
 .lib-item:hover .lib-more, .lib-item:focus-within .lib-more, .lib-more[aria-expanded="true"] { opacity: 1; transform: none; }
 .lib-more:hover { background: var(--card); }
-@media (hover: none) { .lib-more { opacity: 1; transform: none; } }
+@media (hover: none) {
+	.lib-more { opacity: 1; transform: none; }
+	.lib-more::before { content: ""; position: absolute; inset: -9px; } /* (a 44 px touch target around the 28-30 px button: its padding box + 9 px a side) */
+}
 /* renaming: a field over the name */
 .lib-rename {
 	position: absolute; left: -2px; right: -2px; top: calc(100cqw * 9 / 16 + 5px); height: 30px; padding: 0 8px; z-index: 3;
@@ -149,6 +155,12 @@ dialog.lib-dialog { --ui-w: 1040px; }
 .lib-banner.warn { background: var(--bad-soft); border-color: color-mix(in srgb, var(--bad) 28%, transparent); }
 .lib-banner.warn .lib-banner-ic { color: var(--bad); }
 
+/* "N scenes in this browser aren't in your account yet. Copy them" (after "Not now" on the copy offer) */
+.lib-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 28px 0 0; padding-top: 14px; border-top: 1px solid var(--line); font-size: var(--fs-md); color: var(--ink-3); }
+.lib-foot[hidden] { display: none; }
+.lib-foot-ic svg { width: 16px; height: 16px; }
+.lib-foot-go { padding: 2px; }
+
 /* ---------- the undo bar ---------- */
 .lib-snack {
 	position: absolute; left: 50%; bottom: 18px; z-index: 5; transform: translateX(-50%); display: flex; align-items: center; gap: 14px;
@@ -156,7 +168,8 @@ dialog.lib-dialog { --ui-w: 1040px; }
 	color: var(--bg); font-size: var(--fs-md); font-weight: 550; box-shadow: var(--shadow-lg); animation: lib-snack-in var(--dur-2) var(--ease);
 }
 .lib-snack:not(:has(button)) { padding-right: 16px; }
-.lib-snack > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-card.lib-none:has(.lib-snack:not([hidden])) .lib-body { padding-bottom: 96px; } /* (the empty state, shrunk to fit: the bar never covers New scene) */
+.lib-snack > span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.35; } /* (two lines at most: "still on the table" fits on a phone) */
 .lib-snack.out { animation: lib-snack-out 150ms ease-in forwards; }
 .lib-snack-act {
 	flex: none; height: 30px; padding: 0 12px; border-radius: var(--r-sm); border: 0; font-weight: 700; font-size: var(--fs-md);
@@ -194,7 +207,8 @@ dialog.lib-dialog { --ui-w: 1040px; }
 .lib-r-all:hover { border-color: var(--ink-3); }
 .lib-r-all .acct-ic svg { width: 15px; height: 15px; }
 .lib-r-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.lib-r-card { all: unset; box-sizing: border-box; display: flex; flex-direction: column; gap: 5px; min-width: 0; cursor: pointer; border-radius: 10px; }
+.lib-r-li { display: flex; min-width: 0; }
+.lib-r-card { all: unset; flex: 1; box-sizing: border-box; display: flex; flex-direction: column; gap: 5px; min-width: 0; cursor: pointer; border-radius: 10px; }
 .lib-r-card .lib-thumb { border-radius: 9px; }
 .lib-r-card:hover .lib-thumb { transform: translateY(-2px); border-color: color-mix(in srgb, var(--accent) 45%, var(--line-2)); box-shadow: 0 8px 20px rgba(30, 24, 16, 0.12); }
 .lib-r-card:focus-visible { outline: none; }
@@ -229,16 +243,17 @@ dialog.lib-dialog { --ui-w: 1040px; }
 .acct-menu-who > span:last-child { display: flex; flex-direction: column; min-width: 0; }
 .acct-menu-who b { font-size: var(--fs-base); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .acct-menu-who small { font-size: var(--fs-sm); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 780px) { .acct-signin { width: var(--ctl-h); padding: 0; justify-content: center; } .acct-signin-t { display: none; } }
+@media (max-width: 959px), (min-width: 1280px) and (max-width: 1439px) { .acct-signin { width: var(--ctl-h); padding: 0; justify-content: center; } .acct-signin-t { display: none; } }
 
 /* ---------- phones: a full-height sheet ---------- */
 @media (max-width: 640px) {
 	.lib-dialog .lib-card { height: calc(100dvh - 10px); }
-	.lib-head { padding: 14px 56px 10px 16px; gap: 12px; }
+	.lib-head { padding: 14px 16px 10px; gap: 12px; }
+	.lib-dialog .lib-card.lib-none { height: auto; }
 	.lib-logo { width: 34px; height: 34px; }
 	.lib-titles h2 { font-size: 18px; }
 	.lib-where { font-size: var(--fs-sm); }
-	.lib-sort { max-width: 118px; padding-right: 26px; }
+	.lib-sort { max-width: 112px; padding-right: 26px; }
 	.lib-new { width: 38px; padding: 0; justify-content: center; }
 	.lib-new > span:not(.acct-ic) { display: none; }
 	.lib-q { font-size: 16px; } /* (iOS zooms into a field under 16 px) */
@@ -257,4 +272,34 @@ dialog.lib-dialog { --ui-w: 1040px; }
 
 @media (prefers-reduced-motion: reduce) {
 	.lib-skel .lib-thumb, .lib-btn-state { animation: none !important; }
+}
+
+/* ---------- "Build with AI needs an account" (./ai-signin.js) and "Delete account…" (./account.js): small centred cards ---------- */
+dialog.acct-sheet { --ui-w: 420px; }
+dialog.acct-del { --ui-w: 460px; }
+.acct-sheet-card, .acct-del-card { padding: 30px 28px 22px; align-items: center; text-align: center; overflow-y: auto; }
+.acct-sheet-logo, .acct-del-logo { flex: none; width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center; margin-bottom: 14px; background: var(--accent-soft); color: var(--accent); }
+.acct-sheet-logo svg, .acct-del-logo svg { width: 26px; height: 26px; fill: currentColor; }
+.acct-del-logo { background: var(--bad-soft); color: var(--bad); }
+.acct-sheet-card h2, .acct-del-card h2 { margin: 0 0 8px; font-size: 20px; letter-spacing: -0.015em; line-height: 1.25; text-wrap: balance; padding: 0 24px; }
+#acct-sheet-p, #acct-del-p { margin: 0 0 20px; color: var(--ink-2); font-size: var(--fs-base); line-height: 1.55; max-width: 38ch; text-wrap: pretty; }
+.acct-sheet-card .acct-google { height: 44px; width: 100%; max-width: 300px; justify-content: center; padding: 0 20px 0 16px; font-size: var(--fs-base); }
+.acct-sheet-card .acct-google .acct-g svg { width: 19px; height: 19px; }
+.acct-sheet-note { display: flex; align-items: center; gap: 6px; margin: 12px 0 4px; font-size: var(--fs-sm); color: var(--ink-3); }
+.acct-sheet-note-ic svg { width: 15px; height: 15px; fill: var(--ok); }
+.acct-sheet-later { margin-top: 8px; }
+.acct-del-l { display: flex; flex-direction: column; gap: 6px; width: 100%; text-align: left; font-size: var(--fs-md); font-weight: 600; color: var(--ink-2); }
+.acct-del-q { height: 40px; padding: 0 12px; border-radius: var(--r-md); border: 1px solid var(--line-field); background: var(--card); color: var(--ink); font-size: 16px; letter-spacing: 0.06em; }
+.acct-del-q:focus { outline: none; border-color: var(--bad); box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 20%, transparent); }
+.acct-del-msg { margin: 10px 0 0; font-size: var(--fs-sm); color: var(--bad); text-align: left; width: 100%; }
+.acct-del-msg:empty { display: none; }
+.acct-del-acts { display: flex; justify-content: flex-end; gap: 8px; width: 100%; margin-top: 18px; }
+.acct-del-acts button { height: 38px; padding: 0 16px; border-radius: var(--r-md); }
+.acct-danger { border: 0; background: var(--bad); color: #fff; font-weight: 650; }
+.acct-danger:disabled { opacity: 0.45; cursor: default; }
+.acct-danger:not(:disabled):hover { filter: brightness(1.08); }
+.acct-menu .acct-danger-item, .acct-menu .acct-danger-item .acct-ic { color: var(--bad); }
+@media (max-width: 640px) {
+	.acct-sheet-card, .acct-del-card { padding: 26px 18px calc(18px + env(safe-area-inset-bottom)); }
+	.acct-del-acts button { flex: 1; }
 }

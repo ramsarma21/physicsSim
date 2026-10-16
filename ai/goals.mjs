@@ -223,6 +223,8 @@ function trackTools(doc, track) {
 		for (let k = 0; k < 50 && r.parent && !r.pivot && solidById.has(r.parent); k++) r = solidById.get(r.parent)
 		return r
 	}
+	// the solids a pin, a rope or chain, or a pulley holds: their weld groups hang or swing, they do not fall over (machines/items.py _Fall)
+	const held = new Set((doc.joints ?? []).filter((j) => ["pin", "rope", "pulley"].includes(j.kind)).flatMap((j) => [j.a, j.b]).filter((x) => x != null))
 	const groupsBy = new Map() // item id -> [{root, members: [solid]}]
 	for (const s of doc.solids) {
 		if (s.kind !== "dynamic") continue
@@ -233,11 +235,11 @@ function trackTools(doc, track) {
 		gr.members.push(s)
 	}
 	/** An item's rigid bodies that can fall: weld groups that are not hinged (to the world or to a parent: a pendulum's rod, a lever's
-	 *  plank); round ones (a car's wheels) only when the item has nothing else. Each with its outline box at the start. */
+	 *  plank) nor held by a pin, a rope or a pulley (a swing's seat, an Atwood machine's weights); round ones (a car's wheels) only when the item has nothing else. Each with its outline box at the start. */
 	const bodiesCache = new Map()
 	const bodiesOf = (id) => {
 		if (bodiesCache.has(id)) return bodiesCache.get(id)
-		const all = (groupsBy.get(id) ?? []).filter((gr) => !gr.root.pivot)
+		const all = (groupsBy.get(id) ?? []).filter((gr) => !gr.root.pivot && !gr.members.some((m) => held.has(m.id)))
 		const round = (gr) => gr.members.every((m) => m.body?.kind === "ball")
 		const keep = all.some((gr) => !round(gr)) ? all.filter((gr) => !round(gr)) : all
 		const out = keep.map((gr) => {

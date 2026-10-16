@@ -4,11 +4,14 @@
 //   window.sandboxLibrary   (installed here, at once)  changed(S), fresh(kind, scenarioId), holds(), open(), renderRecent(el, done)
 //   window.sandboxApp       (web/app.js)              open(scene), rename(name)
 // Where scenes are kept: ./store.js (this browser, or the signed-in person's account). Who is signed in: ./auth.js. Styles: ./account.css.
+// On a deploy whose Build with AI needs sign-in: ./ai-signin.js (the "needs an account" sheet in front of the AI). The account menu also
+// deletes the account (DELETE /api/scenes/me, after typing DELETE).
+import { createAiSignIn } from "./ai-signin.js"
 import { createAuth } from "./auth.js"
 import { createAutosave } from "./autosave.js"
 import { createLibrary } from "./library.js"
 import { createStore } from "./store.js"
-import { ago, h, icon, ICONS, isTextual, MAC } from "./util.js"
+import { ago, h, icon, ICONS, isTextual, MAC, plural } from "./util.js"
 
 const $ = (s, root = document) => root.querySelector(s)
 const app = () => window.sandbox ?? null
@@ -88,14 +91,20 @@ function syncChip() {
 		chip.append(h("button", { type: "button", class: "acct-signin", disabled: off, title: off ? "Sign-in is unavailable right now" : "Sign in with Google: keep your scenes in your account and open them on any device", "aria-label": "Sign in with Google", on: { click: () => signIn() } }, h("span", { class: "acct-g", html: ICONS.google, "aria-hidden": "true" }), h("span", { class: "acct-signin-t", text: "Sign in" })))
 	}
 }
+/** Google sign-in (the page goes to Google and comes back): the scene on the table is written first. Throws when it can't start. */
+async function signInNow() {
+	await autosave.flush({ now: true }) // (Google takes the page away for a moment: the scene is written first)
+	await auth.signIn()
+}
 async function signIn() {
 	try {
-		await autosave.flush() // (Google takes the page away for a moment: the scene is written first)
-		await auth.signIn()
+		await signInNow()
 	} catch (e) {
 		toast(`Couldn’t sign in: ${e.message}`)
 	}
 }
+const aiSignIn = createAiSignIn({ auth, signIn: signInNow, toast })
+window.sandboxLibrary.aiSignIn = aiSignIn // (for tests and the console)
 let menu = null
 let menuBtn = null
 function openMenu(b) {
@@ -103,6 +112,8 @@ function openMenu(b) {
 	const u = auth.user
 	menuBtn = b
 	const item = (ic, label, act) => h("button", { type: "button", role: "menuitem", tabindex: "-1", on: { click: () => (closeMenu(true), act()) } }, icon(ic, "ui-ic"), label)
+	const del = store.backend().deleteAccount ? item("trash", "Delete account…", () => confirmDeleteAccount()) : null
+	del?.classList.add("acct-danger-item")
 	menu = h(
 		"div",
 		{ class: "ui-menu acct-menu", role: "menu", "aria-label": "Account" },
@@ -111,13 +122,15 @@ function openMenu(b) {
 		item("scenes", "My scenes", () => library.open()),
 		item("signout", "Sign out", async () => {
 			try {
-				await autosave.flush()
+				await autosave.flush({ now: true })
 				await auth.signOut()
 				toast("Signed out: My scenes is this browser’s again")
 			} catch (e) {
 				toast(`Couldn’t sign out: ${e.message}`)
 			}
-		})
+		}),
+		del ? h("hr", { "aria-hidden": "true" }) : null,
+		del
 	)
 	document.body.append(menu)
 	const r = b.getBoundingClientRect()
@@ -152,6 +165,77 @@ function closeMenu(refocus = false) {
 }
 addEventListener("resize", () => closeMenu())
 
+// ---------------------------------------------------------------- Delete account… (typed confirmation; DELETE /api/scenes/me, then sign out)
+const DELETED_KEY = "sandbox:account-deleted" // sessionStorage: said once after the reload that finishes a deletion
+function confirmDeleteAccount() {
+	const u = auth.user
+	if (!u || document.querySelector("dialog.acct-del")) return
+	const count = h("span", { text: "every scene in it" })
+	const field = h("input", { type: "text", class: "acct-del-q", autocomplete: "off", spellcheck: "false", autocapitalize: "characters", "aria-describedby": "acct-del-p", enterkeyhint: "done" })
+	const msg = h("p", { class: "acct-del-msg", role: "alert" })
+	const cancel = h("button", { type: "button", class: "ghost", text: "Cancel", on: { click: () => done() } })
+	const go = h("button", { type: "button", class: "acct-danger", text: "Delete account", disabled: true, on: { click: () => run() } })
+	const dlg = h(
+		"dialog",
+		{ class: "ui-dialog acct-del", "aria-labelledby": "acct-del-t", "aria-describedby": "acct-del-p" },
+		h(
+			"div",
+			{ class: "ui-card acct-del-card", tabindex: "-1" },
+			h("button", { type: "button", class: "ui-x", "aria-label": "Close", title: "Close (Esc)", html: ICONS.close, on: { click: () => done() } }),
+			h("span", { class: "acct-del-logo", html: ICONS.warn, "aria-hidden": "true" }),
+			h("h2", { id: "acct-del-t", text: "Delete your account?" }),
+			h("p", { id: "acct-del-p" }, "This deletes the account of ", h("b", { text: u.email || u.name || "this person" }), " and ", count, ", on every device, for good. It can’t be undone. Scenes kept in this browser stay here."),
+			h("label", { class: "acct-del-l" }, h("span", { text: "Type DELETE to confirm" }), field),
+			msg,
+			h("div", { class: "acct-del-acts" }, cancel, go)
+		)
+	)
+	let busy = false
+	const done = () => {
+		if (busy) return
+		dlg.close()
+		dlg.remove()
+	}
+	field.addEventListener("input", () => (go.disabled = field.value.trim().toUpperCase() !== "DELETE"))
+	field.addEventListener("keydown", (e) => e.key === "Enter" && !go.disabled && (e.preventDefault(), run()))
+	dlg.addEventListener("cancel", (e) => (e.preventDefault(), done()))
+	dlg.addEventListener("keydown", (e) => e.stopPropagation())
+	async function run() {
+		if (busy) return
+		busy = true
+		go.disabled = cancel.disabled = field.disabled = true
+		go.textContent = "Deleting…"
+		msg.textContent = ""
+		try {
+			await autosave.flush({ now: true }) // (nothing still on its way to the account after it is gone)
+			await store.backend().deleteAccount()
+		} catch (e) {
+			busy = false
+			go.disabled = cancel.disabled = field.disabled = false
+			go.textContent = "Delete account"
+			msg.textContent = `Couldn’t delete the account: ${e.message}`
+			return
+		}
+		busy = false
+		done()
+		try {
+			await auth.signOut()
+		} catch {}
+		if (auth.state === "signed-in") {
+			// (the sign-in is gone on the server, but this page couldn't tell the provider: a reload starts signed out)
+			try {
+				sessionStorage.setItem(DELETED_KEY, "1")
+			} catch {}
+			return location.reload()
+		}
+		toast("Your account and its scenes were deleted")
+	}
+	document.body.append(dlg)
+	dlg.showModal()
+	field.focus()
+	store.backend().usage?.().then((x) => Number.isFinite(x?.scenes) && (count.textContent = x.scenes ? `its ${plural(x.scenes, "scene")}` : "everything in it (no scenes yet)"), () => {})
+}
+
 // ---------------------------------------------------------------- keys: O (or ⌘O) opens My scenes
 addEventListener("keydown", (e) => {
 	if (e.defaultPrevented || e.altKey || isTextual(e.target)) return
@@ -181,11 +265,16 @@ function main() {
 		syncButton()
 	})
 	auth.ready.then(syncChip)
+	auth.ready.then(() => aiSignIn.install(), () => {})
 	whenReady().then(async () => {
 		await auth.ready.catch(() => {})
 		await autosave.start()
 		if (btn) btn.disabled = false
 		syncButton()
+		aiSignIn.resume() // (back from Google: the AI opens where the person left off)
+		try {
+			if (sessionStorage.getItem(DELETED_KEY)) (sessionStorage.removeItem(DELETED_KEY), toast("Your account and its scenes were deleted"))
+		} catch {}
 		const n = await autosave.adoptSaved()
 		if (n) console.info(`My scenes: kept ${n} scene${n === 1 ? "" : "s"} saved before it existed`)
 	})

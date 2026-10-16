@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# The Python <-> JS parity suite (tools/parity/run.sh) as CI runs it, on macOS: web/sim matches CPython built on the platform libm down to
-# rounding ties, and that libm is macOS's. Needs the engine bundle (.github/scripts/engine-bundle.sh build).
+# The Python <-> JS parity suite (tools/parity/run.sh) as CI runs it, on macOS (the development machine's platform) and on Linux (the
+# parity-linux job, glibc's libm): the builders' math that reaches a rounding tie by construction (sin/cos at multiples of 30 degrees,
+# x ** 3, x ** (1/3)) comes from machines/crmath.py, which gives web/sim's bits on any machine; their other libm calls are the platform's
+# (a last-bit difference shows only at an exact tie: the hanging chain's documented case, tools/parity/mechanisms.mjs --groups chainties,
+# is not among run.sh's steps). Needs the engine bundle (.github/scripts/engine-bundle.sh).
 #  - The steps are run.sh's own `node ...` lines (so a step added there runs here too), PARITY_JOBS (default 3, the runner's cores) at a
 #    time, last first: they are independent (each writes its own temp folder and only reads the server); one after another they take
 #    ~14 min on the runner, 3 at a time ~9.
@@ -37,7 +40,12 @@ pw_version="${pw_version:-1.60.0}"
 echo "::group::playwright-core $pw_version and its headless Chromium"
 npm install --prefix "$tmp/pw" --no-save --no-package-lock --no-audit --no-fund "playwright-core@$pw_version"
 pw="$tmp/pw/node_modules/playwright-core"
-node "$pw/cli.js" install --only-shell chromium || node "$pw/cli.js" install chromium
+if [ "$(uname)" = Linux ]; then
+	# with the shared libraries headless Chromium needs (apt, through sudo: hosted runners allow it)
+	node "$pw/cli.js" install --with-deps --only-shell chromium || node "$pw/cli.js" install --with-deps chromium
+else
+	node "$pw/cli.js" install --only-shell chromium || node "$pw/cli.js" install chromium
+fi
 echo "::endgroup::"
 export PLAYWRIGHT_CORE="$pw"
 
@@ -72,6 +80,22 @@ done < <(grep -E '^node ' tools/parity/run.sh)
 echo "parity: $n steps from tools/parity/run.sh, ${PARITY_JOBS:-3} at a time, last first (run.sh ends with the longest: fuzz-live)"
 ls ci-logs/parity/*.cmd | awk '{ a[NR] = $0 } END { for (i = NR; i > 0; i--) print a[i] }' | xargs -P "${PARITY_JOBS:-3}" -n 1 "$self" --one
 
+# A step that cannot reach the server or Playwright prints "...; skipped" and exits 0, so its live comparisons would pass unseen: the
+# server must still be up after the run, and no step may have skipped a part.
+guard=0
+if ! kill -0 "$server" 2>/dev/null; then
+	echo "::error title=web/server.py died::web/server.py exited during the parity run, so the steps that compare against it may have skipped"
+	tail -n 50 ci-logs/server.log
+	guard=1
+fi
+skips="$(grep -lE '; skipped|not reachable|not answering|playwright-core not found' ci-logs/parity/*.log || true)"
+if [ -n "$skips" ]; then
+	for f in $skips; do
+		echo "::error title=Parity step skipped a part::$(tail -n 1 "${f%.log}.cmd" | cut -c1-160): $(grep -hE '; skipped|not reachable|not answering|playwright-core not found' "$f" | head -n 1 | cut -c1-200)"
+	done
+	guard=1
+fi
+
 failed=0
 for f in ci-logs/parity/*.cmd; do
 	b="${f%.cmd}"
@@ -90,4 +114,8 @@ if [ "$failed" -gt 0 ]; then
 	echo "parity: $failed of $n steps failed"
 	exit 1
 fi
-echo "parity: all $n steps passed"
+if [ "$guard" -ne 0 ]; then
+	echo "parity: all $n steps exited 0, but the server died or a step skipped part of its checks (errors above)"
+	exit 1
+fi
+echo "parity: all $n steps passed, the server stayed up, no step skipped a part"

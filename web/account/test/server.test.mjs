@@ -9,6 +9,7 @@ import { parsePublishableKey, verifySessionToken } from "../../../api/_lib/auth.
 import { handle, publicConfig } from "../../../api/scenes/index.mjs"
 import { aiGate, emailAllowed } from "../../../api/_lib/ai-gate.mjs"
 import { normName, parseThumb } from "../../../api/_lib/scenes.mjs"
+import { STEP_USD } from "../../../api/_lib/ai-gate.mjs"
 import { scrubSecrets } from "../../../api/_lib/http.mjs"
 
 const STARTER = JSON.parse(readFileSync(new URL("../../scenarios/rube-goldberg.json", import.meta.url), "utf8"))
@@ -122,6 +123,8 @@ describe("scenes", () => {
 		assert.deepEqual(on.json, { ok: true, accounts: { provider: "clerk", publishableKey: clerk.pk }, storage: true, ai: { signInRequired: true } })
 		assert.equal(on.headers["cache-control"], "no-store")
 		assert.deepEqual(publicConfig({ ...ENV, ACCOUNTS: "off" }).accounts, null)
+		// Clerk connected but not the database yet: accounts stay off (the page stays local, the AI keeps its own access check)
+		assert.deepEqual(publicConfig({ NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerk.pk, CLERK_SECRET_KEY: SK }), { accounts: null, storage: false, ai: { signInRequired: false } })
 		const off = await api("GET", "/api/scenes", { env: { ...ENV, ACCOUNTS: "off" } })
 		assert.equal(off.status, 503)
 		assert.equal(off.json.code, "not_configured")
@@ -139,7 +142,7 @@ describe("scenes", () => {
 		assert.equal(me.json.user.name, "Ana Lima")
 		assert.equal(me.json.user.email, "ana@example.com")
 		assert.equal(me.json.user.isNew, true)
-		assert.deepEqual(me.json.usage, { scenes: 0, bytes: 0, maxScenes: 500, maxBytes: 50 << 20 })
+		assert.deepEqual(me.json.usage, { scenes: 0, bytes: 0, maxScenes: 500, maxBytes: 10 << 20 })
 		assert.equal(me.json.aiToday.steps, 0)
 		assert.equal(me.json.aiToday.maxUsd, 3)
 		const again = await api("GET", "/api/scenes/me")
@@ -148,11 +151,11 @@ describe("scenes", () => {
 	})
 	test("create, list, get, rename, update with If-Match, 412 when stale, picture, delete, restore", async () => {
 		const png = dataUrl("image/png", PNG_1x1)
-		const c = await api("POST", "/api/scenes", { body: { name: "Ramp test!!", scene: scene("ignored"), thumb: png } })
+		const c = await api("POST", "/api/scenes", { body: { name: "Ramp <test>  ✨", scene: scene("ignored"), thumb: png } })
 		assert.equal(c.status, 201, c.text)
 		const meta = c.json.scene
 		assert.match(meta.id, /^s_[a-z2-7]{16}$/)
-		assert.equal(meta.name, "Ramp test") // (normalised as the in-page save does)
+		assert.equal(meta.name, "Ramp test") // (normalised: symbols dropped, spaces collapsed)
 		assert.equal(meta.items, STARTER.items.length)
 		assert.equal(meta.version, 1)
 		assert.match(meta.thumb, new RegExp(`^/api/scenes/${meta.id}/thumb\\?v=[0-9a-f]{16}$`))
@@ -227,6 +230,8 @@ describe("scenes", () => {
 		assert.equal((await api("GET", "/api/scenes/s_aaaaaaaaaaaaaaaa")).status, 404)
 		assert.equal((await api("GET", "/api/scenes/..%2F..%2Fetc")).status, 404)
 		assert.equal((await api("GET", "/api/scenes/' or 1=1 --")).status, 404)
+		assert.equal((await api("GET", "/api/scenes/%E0%A4%A")).status, 404)
+		assert.equal((await api("GET", "/api/scenes/%E0%A4%A/thumb")).status, 404)
 		assert.equal((await api("GET", `/api/scenes/${mine.id}`)).status, 200, "still there for its owner")
 	})
 	test("bad input: clean()'s message, unknown fields, not JSON, wrong methods, foreign origins", async () => {
@@ -254,12 +259,17 @@ describe("scenes", () => {
 		const own = await api("POST", "/api/scenes", { env: vercel, token: clerk.token({ azp: "https://app-abc.vercel.app" }), body: { scene: scene("Own origin") }, headers: { origin: "https://app-abc.vercel.app", "sec-fetch-site": "same-origin" } })
 		assert.equal(own.status, 201, own.text)
 	})
-	test("names are normalised like the in-page save; an empty one becomes Scene HHMMSS", async () => {
+	test("names keep letters, digits and ordinary punctuation; an empty one (or punctuation alone) becomes Scene HHMMSS", async () => {
 		assert.equal(normName("  <b>Hi</b> there's a ramp/2  "), "bHib there's a ramp2")
+		assert.equal(normName("Ramp: test! <b>x</b> ✨"), "Ramp: test! bxb")
+		assert.equal(normName("Ramp v2.1 (fast), A & B?"), "Ramp v2.1 (fast), A & B?")
+		assert.equal(normName("Ball: ramp → cup #2"), "Ball: ramp cup #2")
 		assert.equal(normName("x".repeat(80)).length, 60)
 		assert.match(normName("!!!"), /^Scene \d{6}$/)
 		const r = await api("POST", "/api/scenes", { body: { name: "<img src=x onerror=alert(1)>", scene: scene() } })
-		assert.equal(r.json.scene.name, "img srcx onerroralert1")
+		assert.equal(r.json.scene.name, "img srcx onerroralert(1)")
+		const ai = await api("POST", "/api/scenes", { body: { scene: scene("Marble run: 3 ramps, 1 cup") } })
+		assert.equal(ai.json.scene.name, "Marble run: 3 ramps, 1 cup", "an AI-made name keeps its punctuation")
 	})
 	test("pictures: only real WebP / JPEG / PNG, at most 150 KB; SVG or HTML refused", async () => {
 		assert.equal(parseThumb(dataUrl("image/webp", WEBP_HEAD)).type, "image/webp")
@@ -298,6 +308,78 @@ describe("scenes", () => {
 		assert.equal(r.status, 429)
 		assert.ok(Number(r.headers["retry-after"]) > 0)
 		assert.equal(r.json.retryable, true)
+	})
+	test("storage: deleted scenes count while they can be restored, and the bin empties itself (oldest first) to make room", async () => {
+		const env = { ...ENV, SCENES_MAX_BYTES_PER_USER: String(1 << 20) }
+		const pic = dataUrl("image/png", Buffer.concat([PNG_1x1, Buffer.alloc(140 * 1024)]))
+		const made = []
+		for (let i = 0; i < 12; i++) {
+			const c = await api("POST", "/api/scenes", { sub: "user_bin", env, body: { scene: scene(`bin ${i}`), thumb: pic } })
+			assert.equal(c.status, 201, `create ${i}: ${c.text}`)
+			made.push(c.json.scene.id)
+			assert.equal((await api("DELETE", `/api/scenes/${c.json.scene.id}`, { sub: "user_bin", env })).status, 200)
+		}
+		const acct = (await api("GET", "/api/scenes/me", { sub: "user_bin" })).json.user.id
+		const kept = (await db.pg.query("select count(*)::int as n, sum(scene_bytes + coalesce(octet_length(thumb), 0))::float8 as b from scenes where owner_id = $1", [acct])).rows[0]
+		assert.ok(kept.b <= 1 << 20, `create + delete in a loop never holds more than the account's bytes (${kept.n} rows, ${kept.b} bytes)`)
+		assert.ok(kept.n < 12, "the oldest deleted scenes were removed to make room")
+		assert.equal((await api("POST", `/api/scenes/${made.at(-1)}/restore`, { sub: "user_bin", env })).status, 200, "the newest deleted scene still comes back")
+		const old = await api("POST", `/api/scenes/${made[0]}/restore`, { sub: "user_bin", env })
+		assert.equal(old.status, 404)
+		assert.match(old.json.error, /removed to make room/)
+	})
+	test("storage: keys the app never reads are dropped; a scene is at most 256 KB", async () => {
+		const padded = await api("POST", "/api/scenes", { body: { scene: { ...scene("Padded"), junk: "x".repeat(900000), camera: { x: 1 } } } })
+		assert.equal(padded.status, 201, padded.text)
+		assert.ok(padded.json.scene.bytes < 64 * 1024, `stored ${padded.json.scene.bytes} bytes`)
+		const got = (await api("GET", `/api/scenes/${padded.json.scene.id}`)).json.data
+		assert.deepEqual(Object.keys(got).sort(), ["goals", "id", "items", "name", "release", "seconds", "stage", "version"].filter((k) => k in got).sort())
+		assert.ok(!("junk" in got) && !("camera" in got))
+		const bigProps = Object.fromEntries(Array.from({ length: 7000 }, (_, i) => [`p${i}`, "y".repeat(40)]))
+		const r = await api("POST", "/api/scenes", { body: { scene: scene("Fat", { items: [{ ...STARTER.items[0], props: bigProps }] }) } })
+		assert.equal(r.status, 413)
+		assert.match(r.json.error, /256 KB/)
+	})
+	test("storage: past the site's limit (SCENES_SITE_MAX_BYTES) every save that grows is refused with 403 storage_full", async () => {
+		const total = Number((await db.pg.query("select coalesce(sum(scene_bytes + coalesce(octet_length(thumb), 0)), 0)::float8 as b from scenes")).rows[0].b)
+		const env = { ...ENV, SCENES_SITE_MAX_BYTES: String(Math.max(1 << 20, total + 330 * 1024)) }
+		const room = Number(env.SCENES_SITE_MAX_BYTES) - total
+		const pic = dataUrl("image/png", Buffer.concat([PNG_1x1, Buffer.alloc(140 * 1024)]))
+		const codes = []
+		for (let i = 0; i < Math.ceil(room / (150 * 1024)) + 1; i++) codes.push((await api("POST", "/api/scenes", { sub: "user_site", env, body: { scene: scene(`s${i}`), thumb: pic } })).json?.code ?? 201)
+		assert.equal(codes.at(-1), "storage_full", codes.join(","))
+		const full = await api("POST", "/api/scenes", { sub: "user_other", env, body: { scene: scene("other"), thumb: pic } })
+		assert.equal(full.status, 403)
+		assert.equal(full.json.code, "storage_full", "everyone's saves stop, not just one person's")
+		assert.match(full.json.error, /storage is full/)
+		const small = await api("POST", "/api/scenes", { sub: "user_other", env, body: { scene: scene("tiny") } })
+		assert.ok([201, 403].includes(small.status))
+	})
+	test("savedAs: the app's scenario a scene was saved as is kept and returned; changing it alone is not an edit", async () => {
+		const c = await api("POST", "/api/scenes", { body: { scene: scene("My ramp"), savedAs: "my-ramp" } })
+		assert.equal(c.status, 201, c.text)
+		assert.equal(c.json.scene.savedAs, "my-ramp")
+		const list = (await api("GET", "/api/scenes")).json.scenes
+		assert.equal(list.find((m) => m.id === c.json.scene.id).savedAs, "my-ramp")
+		const moved = await api("PUT", `/api/scenes/${c.json.scene.id}`, { body: { savedAs: "ada's-ramp" } })
+		assert.equal(moved.status, 200, moved.text)
+		assert.deepEqual([moved.json.scene.savedAs, moved.json.scene.version, moved.json.scene.updatedAt], ["ada's-ramp", 1, c.json.scene.updatedAt])
+		assert.equal((await api("PUT", `/api/scenes/${c.json.scene.id}`, { body: { savedAs: null } })).json.scene.savedAs, null)
+		for (const bad of ["a/b", "x".repeat(81), 42, "<b>"]) assert.equal((await api("POST", "/api/scenes", { body: { scene: scene(), savedAs: bad } })).status, 400, String(bad))
+	})
+	test("copying this browser's scenes in (copy: true) has its own daily count and never uses up the hour's writes", async () => {
+		const env = { ...ENV, SCENES_WRITES_PER_HOUR: "2", SCENES_COPIES_PER_DAY: "3" }
+		const codes = []
+		for (let i = 0; i < 4; i++) codes.push((await api("POST", "/api/scenes", { sub: "user_copy", env, body: { scene: scene(`copied ${i}`), copy: true } })).status)
+		assert.deepEqual(codes, [201, 201, 201, 429])
+		const r = await api("POST", "/api/scenes", { sub: "user_copy", env, body: { scene: scene("copied 4"), copy: true } })
+		assert.equal(r.json.copy, true)
+		assert.match(r.json.error, /3 scenes a day/)
+		assert.ok(Number(r.headers["retry-after"]) > 0)
+		const own = []
+		for (let i = 0; i < 3; i++) own.push((await api("POST", "/api/scenes", { sub: "user_copy", env, body: { scene: scene(`own ${i}`) } })).status)
+		assert.deepEqual(own, [201, 201, 429], "the hour's writes were all still there for the autosave")
+		assert.equal((await api("POST", "/api/scenes", { sub: "user_copy", env, body: { scene: scene(), copy: "yes" } })).status, 400)
 	})
 	test("the same verified email on another Clerk instance (production) links to the same account and its scenes", async () => {
 		const prod = testClerk("clerk.physics-sandbox.example", { kid: "prod-1" })
@@ -432,8 +514,48 @@ describe("the AI gate", () => {
 		assert.deepEqual([g.status, g.code], [403, "not_allowed"])
 		assert.equal((await gate(bearer("user_a"), { ...ENV, AI_ALLOWED_EMAILS: "ana@example.com" })).ok, true)
 	})
-	test("on Vercel a signed-in caller without a database is refused (fails closed)", async () => {
-		const g = await gate(bearer(), { NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerk.pk, CLERK_SECRET_KEY: SK, VERCEL: "1", ALLOWED_ORIGINS: ORIGIN })
-		assert.deepEqual([g.status, g.code], [503, "not_configured"])
+	test("Clerk without a database: accounts are off, so a token is ignored and the function's own check decides (fails closed)", async () => {
+		const env = { NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: clerk.pk, CLERK_SECRET_KEY: SK, VERCEL: "1", ALLOWED_ORIGINS: ORIGIN }
+		const g = await gate(bearer(), env)
+		assert.deepEqual([g.status, g.code], [401, "unauthorized"], "not sign_in: signing in wouldn't help")
+		const anon = await gate({}, env)
+		assert.equal(anon.code, "unauthorized")
+	})
+	test("parallel steps can't pass the dollar caps together: each reserves its estimate in the statement that checks the cap", async () => {
+		const env = { ...ENV, AI_USER_USD_PER_DAY: "3", AI_SITE_USD_PER_DAY: "500" }
+		const now = () => new Date("2026-10-18T10:00:00Z")
+		const gates = await Promise.all(Array.from({ length: 12 }, () => gate(bearer("user_par"), env, denyAll, now)))
+		const charges = await Promise.all(gates.map((g) => g.charge()))
+		const allowed = charges.filter((c) => c === null).length
+		assert.equal(allowed, Math.floor(3 / STEP_USD.plan), `${allowed} of 12 ran`)
+		assert.ok(charges.filter(Boolean).every((c) => c.code === "quota"))
+		await Promise.all(gates.map((g, i) => (charges[i] === null ? g.run(async () => ({ usage: { costInUSD: STEP_USD.plan } })) : null)))
+		const acct = (await api("GET", "/api/scenes/me", { sub: "user_par" })).json.user.id
+		const row = (await db.pg.query("select n, usd::float8 as usd from counters where key = $1 and bucket = 'ai:d:2026-10-18'", [acct])).rows[0]
+		assert.ok(row.usd <= 3, `recorded $${row.usd}`)
+		assert.equal(row.n, allowed, "the refused ones are not counted")
+		// the real cost replaces the estimate; a step that fails with no cost known gives its reservation back
+		const env2 = { ...ENV, AI_USER_USD_PER_DAY: "1", AI_SITE_USD_PER_DAY: "500" }
+		const day = () => new Date("2026-10-19T10:00:00Z")
+		const g1 = await gate(bearer("user_par"), env2, denyAll, day)
+		assert.equal(await g1.charge(), null)
+		await assert.rejects(g1.run(async () => { throw new Error("gateway down") }))
+		const g2 = await gate(bearer("user_par"), env2, denyAll, day)
+		assert.equal(await g2.charge(), null)
+		await g2.run(async () => ({ usage: { costInUSD: 0.05 } }))
+		const r2 = (await db.pg.query("select n, usd::float8 as usd from counters where key = $1 and bucket = 'ai:d:2026-10-19'", [acct])).rows[0]
+		assert.deepEqual(r2, { n: 2, usd: 0.05 })
+		const site = (await db.pg.query("select usd::float8 as usd from counters where key = '*' and bucket = 'ai:d:2026-10-19'")).rows[0]
+		assert.equal(site.usd, 0.05, "the site's day: the same real cost")
+	})
+	test("a step refused by the site's cap gives back what it reserved", async () => {
+		const env = { ...ENV, AI_USER_USD_PER_DAY: "3", AI_SITE_USD_PER_DAY: "0.5" }
+		const now = () => new Date("2026-10-20T10:00:00Z")
+		const a = await gate(bearer("user_site1"), env, denyAll, now)
+		assert.equal(await a.charge(), null)
+		const b = await gate(bearer("user_site2"), env, denyAll, now)
+		assert.equal((await b.charge())?.code, "site_quota")
+		const site = (await db.pg.query("select usd::float8 as usd from counters where key = '*' and bucket = 'ai:d:2026-10-20'")).rows[0]
+		assert.equal(site.usd, STEP_USD.plan, "only the step that runs holds a reservation")
 	})
 })

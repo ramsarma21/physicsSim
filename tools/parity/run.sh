@@ -17,6 +17,7 @@
 #   fuzz-live.mjs                         random scenes of all 113 types, the scenarios and the catalog against the running server, through web/sim and through
 #                                         the app's local API with the engine bundle (the whole static-deploy pipeline): doc, resolved, warnings, summary, track
 # (tools/parity/gen_trig.py, gen_sprites.py and gen_unicode.py write the generated tables web/sim/trig.js, sprites.js and unicode.js.)
+# The running server is http://localhost:8790 unless PARITY_SERVER says another (e.g. PARITY_SERVER=http://localhost:8795 for a second checkout).
 set -e
 cd "$(dirname "$0")/../.."
 node tools/parity/prims.mjs "$@"

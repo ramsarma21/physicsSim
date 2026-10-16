@@ -457,7 +457,6 @@ dialog.np-dialog { --ui-w: 640px; }
 .ai-bad-mark { color: var(--bad, #c0392b); font-weight: 700; }
 .ai-heads { margin: 0 0 10px; padding: 7px 10px; border-radius: 10px; font-size: 12.5px; line-height: 1.45; color: var(--ink-2);
 	background: color-mix(in srgb, var(--changed, #b86e00) 9%, var(--card)); border: 1px solid color-mix(in srgb, var(--changed, #b86e00) 28%, transparent); }
-.ai-concept { display: block; max-width: 100%; max-height: 160px; margin: 0 0 10px; border-radius: 10px; border: 1px solid var(--line); object-fit: cover; }
 .ai-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 10px; }
 .ai-sugg { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 6px 11px 6px 8px; border-radius: var(--r-pill, 999px); font: inherit; font-size: 12.5px; line-height: 1.3; text-align: left; cursor: pointer;
 	color: var(--ink); background: var(--ai-soft); border: 1px solid color-mix(in srgb, var(--ai-a) 26%, var(--line)); }
@@ -467,6 +466,15 @@ dialog.np-dialog { --ui-w: 640px; }
 .ai-sugg span { overflow: hidden; text-overflow: ellipsis; }
 .ai-sugg.fix { background: color-mix(in srgb, var(--ok) 10%, var(--card)); border-color: color-mix(in srgb, var(--ok) 40%, var(--line)); }
 .ai-sugg.fix .ai-ic { color: var(--ok); }
+/* the checked fix: the reply's own offer ("Want me to …?"), one click away */
+.ai-sugg.go { color: var(--card); font-weight: 600; background: var(--ok); border-color: color-mix(in srgb, var(--ok) 80%, #000); box-shadow: 0 1px 6px color-mix(in srgb, var(--ok) 30%, transparent); }
+.ai-sugg.go .ai-ic { color: var(--card); }
+.ai-sugg.go:hover { border-color: color-mix(in srgb, var(--ok) 60%, #000); filter: brightness(1.05); }
+.ai-checked { color: var(--ink-2); font-size: 12.5px; white-space: nowrap; }
+.ai-fixline { display: flex; align-items: center; gap: 8px; margin: -2px 0 10px; font-size: 13px; color: var(--ink-2); }
+.ai-fixline .ai-spin { width: 14px; height: 14px; flex: none; }
+.ai-fixline-n { color: var(--ink-3); font-size: 12px; }
+.ai-tag-fix { color: var(--ok); }
 .ai-foot { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; padding-top: 8px; border-top: 1px solid var(--line); }
 .ai-link-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; padding: 3px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
 .ai-link-btn:hover { color: var(--ink); }
@@ -484,3 +492,141 @@ dialog.np-dialog { --ui-w: 640px; }
 @media (prefers-reduced-motion: reduce) { .ai-details::after { transition: none; } }
 /* (next edits are offered on the latest reply only: an older card's ideas were for the scene as it was then) */
 .ai-thread > li.ai-bot:not(:last-child) .ai-chips { display: none; }
+
+/* ---------- whether the AI can be used here (./access.js): said in place of the box, before anything is typed ---------- */
+.ai-access { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 12px 13px; border-radius: var(--ai-radius); border: 1px solid var(--line-2); background: var(--card); }
+.ai-access[hidden] { display: none; }
+.ai-access-ic { flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--ai-soft); color: var(--ai-a); }
+.ai-access-ic svg { width: 17px; height: 17px; fill: currentColor; }
+.ai-access[data-kind="off"] .ai-access-ic { background: color-mix(in srgb, var(--ink-3) 14%, var(--card)); color: var(--ink-2); }
+.ai-access[data-kind="quota"] .ai-access-ic { background: color-mix(in srgb, #d98a00 14%, var(--card)); color: #b06f00; }
+.ai-access-t { flex: 1 1 220px; min-width: 0; }
+.ai-access-t b { display: block; font-size: 13.5px; line-height: 1.35; }
+.ai-access-t p { margin: 3px 0 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.45; }
+.ai-access-acts { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 40px; }
+.ai-google { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 14px 0 11px; border-radius: 999px; border: 1px solid var(--line-2); background: var(--card); color: var(--ink); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: border-color 0.15s, box-shadow 0.15s; }
+.ai-google:hover { border-color: var(--ink-3); box-shadow: var(--shadow); }
+.ai-g { display: grid; place-items: center; }
+.ai-g svg { width: 17px; height: 17px; display: block; }
+.ai-refusal .ai-err-ic { background: var(--ai-soft); }
+.ai-refusal .ai-err-ic svg { fill: var(--ai-a); }
+.ai-refusal.ai-k-quota .ai-err-ic { background: color-mix(in srgb, #d98a00 16%, var(--card)); }
+.ai-refusal.ai-k-quota .ai-err-ic svg { fill: #b06f00; }
+.ai-refusal.ai-k-off .ai-err-ic { background: color-mix(in srgb, var(--ink-3) 16%, var(--card)); }
+.ai-refusal.ai-k-off .ai-err-ic svg { fill: var(--ink-2); }
+.ai-refusal .ai-res-actions { margin-top: 8px; }
+/* the top bar's Edit with AI where this deployment has no AI: it still opens, to say why */
+.ai-btn.ai-off { opacity: 0.62; filter: saturate(0.2); }
+/* the plan's stages on the card */
+.ai-stages .ai-stage-n { font-weight: 600; color: var(--ink-3); }
+
+/* New → Build with AI: needs an account (said before anything is typed), or not here / not today */
+.np-access { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-bottom: 10px; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--card); }
+.np-access[hidden] { display: none; }
+.np-access .ai-access-ic { width: 28px; height: 28px; }
+.np-access .ai-access-acts { padding-left: 38px; }
+.np-choice.np-off { opacity: 0.7; }
+.np-choice.np-off span:last-child { color: var(--ink-3); }
+
+/* the empty drawer where the AI can't be used: the welcome gives way to why (muted, no float) */
+.ai-hero-art.ai-hero-art-off { background: var(--card); border: 1px solid var(--line-2); box-shadow: none; animation: none; }
+.ai-hero-art.ai-hero-art-off svg { fill: var(--ink-3); }
+
+/* ---------- round 3: the concept sketch (New → Build with AI), the edit card per kind, the example gallery ---------- */
+/* the concept sketch in the progress card: the picture, said to be AI-made, what it is built from and the idea step by step */
+.ai-concept-fig { margin: 10px 0 2px; padding: 0; animation: ai-in 0.3s ease both; }
+.ai-concept-frame { position: relative; border-radius: 11px; overflow: hidden; border: 1px solid var(--line); background: var(--view-bg); aspect-ratio: 3 / 2; }
+.ai-concept-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ai-concept-tag {
+	position: absolute; left: 8px; top: 8px; display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; border-radius: 999px;
+	font-size: 11px; font-weight: 700; letter-spacing: 0.01em; color: #fff; background: rgba(20, 16, 40, 0.72); backdrop-filter: blur(6px);
+}
+.ai-concept-tag svg { width: 12px; height: 12px; fill: currentColor; display: block; }
+.ai-concept-cap { margin: 7px 1px 0; font-size: 12px; line-height: 1.45; color: var(--ink-2); }
+.ai-cast { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; }
+.ai-cast li { padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--ink); background: var(--ai-soft); border: 1px solid color-mix(in srgb, var(--ai-a) 22%, var(--line)); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ai-story { margin: 8px 0 0; padding-left: 20px; font-size: 12px; line-height: 1.45; color: var(--ink-2); display: flex; flex-direction: column; gap: 2px; }
+.ai-story li::marker { color: var(--ai-a); font-weight: 700; }
+
+/* the result card: the sketch as a small thumbnail beside the reply; a click shows it next to the scene's start */
+.ai-lead-row { display: flex; align-items: flex-start; gap: 12px; }
+.ai-lead-row .ai-lead { flex: 1; min-width: 0; }
+.ai-cthumb {
+	flex: none; position: relative; width: 92px; padding: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; cursor: zoom-in;
+	background: var(--view-bg); aspect-ratio: 3 / 2; transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s;
+}
+.ai-cthumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.ai-cthumb span { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 0 3px; font-size: 10.5px; font-weight: 700; text-align: center; color: #fff; background: linear-gradient(transparent, rgba(10, 8, 24, 0.75)); }
+.ai-cthumb:hover { border-color: color-mix(in srgb, var(--ai-b) 55%, var(--line)); box-shadow: 0 4px 14px color-mix(in srgb, var(--ai-a) 18%, transparent); transform: translateY(-1px); }
+
+/* concept | the scene's start, side by side */
+dialog.ai-cmp {
+	width: min(1180px, calc(100vw - 48px)); max-width: none; max-height: calc(100vh - 48px); padding: 0; border: 1px solid var(--line); border-radius: 16px;
+	background: var(--panel); color: var(--ink); box-shadow: 0 24px 70px rgba(20, 16, 40, 0.35);
+}
+dialog.ai-cmp::backdrop { background: rgba(14, 12, 28, 0.55); backdrop-filter: blur(3px); }
+.ai-cmp-head { display: flex; align-items: center; gap: 10px; padding: 14px 14px 4px 20px; }
+.ai-cmp-head h2 { flex: 1; margin: 0; font-size: 16px; letter-spacing: -0.01em; }
+.ai-cmp-body { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 14px; padding: 10px 20px 18px; }
+.ai-cmp-body figure { margin: 0; min-width: 0; }
+/* (both frames one shape, each picture whole inside it: the 3:2 sketch and the 16:9 start sit side by side and their captions line up) */
+.ai-cmp-pic { position: relative; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--view-bg); aspect-ratio: 16 / 10; display: grid; place-items: center; }
+.ai-cmp-pic img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.ai-cmp-pic .ai-spin { width: 22px; height: 22px; }
+.ai-cmp-pic p { margin: 0; padding: 0 20px; text-align: center; font-size: 13px; color: var(--ink-3); }
+.ai-cmp-body figcaption { margin-top: 8px; font-size: 12.5px; line-height: 1.45; color: var(--ink-2); }
+.ai-cmp-body figcaption b { display: block; margin-bottom: 1px; font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--ink-3); }
+.ai-cmp-body figure:first-child figcaption b { color: var(--ai-a); }
+
+/* Edit with AI: one card per kind */
+.ai-ask-chips { margin: 4px 0 2px; }
+.ai-editcard .ai-res-kind { margin-bottom: 4px; }
+.ai-delta { list-style: none; margin: -2px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 13px; line-height: 1.45; color: var(--ink); }
+.ai-delta li { position: relative; padding-left: 16px; }
+.ai-delta li::before { content: ""; position: absolute; left: 3px; top: 0.62em; width: 6px; height: 6px; border-radius: 50%; background: var(--ai-grad); }
+.ai-delta li.skip { color: var(--changed); }
+.ai-delta li.skip::before { background: var(--changed); }
+.ai-delta li.same { color: var(--ink-3); }
+.ai-delta li.same::before { content: "✓"; width: auto; height: auto; top: 0; left: 1px; border-radius: 0; background: none; color: var(--ok); font-weight: 700; font-size: 12px; }
+.ai-kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0 0 10px; font-size: 12.5px; line-height: 1.45; }
+.ai-kv dt { color: var(--ink-3); font-weight: 600; }
+.ai-kv dd { margin: 0; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.ai-info { margin: 0 0 8px; font-size: 12px; line-height: 1.45; color: var(--ink-3); }
+
+/* New → Build with AI: the concept sketch setting, one line under the box */
+.np-concept { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin-top: 10px; font-size: 12.5px; color: var(--ink-2); }
+.np-concept-k { font-weight: 650; color: var(--ink); }
+.np-seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: 9px; background: var(--bg, var(--panel)); border: 1px solid var(--line); }
+.np-seg button { border: 0; background: transparent; padding: 3px 11px; border-radius: 7px; font: inherit; font-size: 12px; color: var(--ink-3); cursor: pointer; }
+.np-seg button:hover:not(:disabled) { color: var(--ink); }
+.np-seg button[aria-checked="true"] { background: var(--card); color: var(--ink); font-weight: 650; box-shadow: var(--shadow); }
+.np-seg button:disabled { cursor: default; }
+.np-concept-hint { color: var(--ink-3); font-size: 12px; }
+.np-concept.np-concept-photo .np-seg { opacity: 0.6; }
+.np-concept[hidden] { display: none; }
+
+/* Start from an example: the gallery of machines built with AI (web/gallery), then the classic machines */
+.np-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.np-gallery[hidden], .np-ex-t[hidden] { display: none; }
+.np-gal-head { margin-top: 0; }
+.np-gal { width: 100%; height: 100%; display: flex; align-items: stretch; gap: 0; padding: 0; border: 1px solid var(--line-2); border-radius: 12px; overflow: hidden; background: var(--card); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, transform 0.12s; }
+.np-gal:hover { border-color: color-mix(in srgb, var(--ai-b) 50%, var(--line-2)); box-shadow: 0 6px 18px color-mix(in srgb, var(--ai-a) 14%, transparent); transform: translateY(-1px); }
+.np-gal[aria-busy="true"] { opacity: 0.6; cursor: progress; }
+.np-gal-img { position: relative; flex: none; width: 128px; align-self: stretch; min-height: 72px; background: var(--view-bg); border-right: 1px solid var(--line); }
+.np-gal-img img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.np-gal-t { flex: 1; display: flex; flex-direction: column; gap: 2px; padding: 7px 10px 8px; min-width: 0; }
+.np-gal-t b { font-size: 13px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.np-gal-n { position: absolute; left: 5px; bottom: 5px; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; color: #fff; background: rgba(20, 16, 40, 0.68); backdrop-filter: blur(4px); white-space: nowrap; }
+.np-gal-t > span { font-size: 11.5px; line-height: 1.35; color: var(--ink-3); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.np-gal-li { display: contents; }
+@media (prefers-reduced-motion: reduce) { .ai-concept-fig, .ai-cthumb, .np-gal { animation: none !important; transition: none !important; } }
+
+/* the progress card's header (what it is doing, the timer, Cancel) stays at the top of the drawer while its steps and the concept sketch scroll */
+.ai-card.ai-progress { overflow: clip; }
+.ai-progress .ai-card-head { position: sticky; top: 0; z-index: 2; margin: -12px -14px 2px; padding: 12px 14px 6px; background: var(--card); border-radius: var(--ai-radius) var(--ai-radius) 0 0; }
+
+/* an error's own words and the step it stopped at, folded under the card */
+.ai-err-more { margin-top: 8px; font-size: 12px; color: var(--ink-3); }
+.ai-err-more > summary { cursor: pointer; width: max-content; }
+.ai-err-more > summary:hover { color: var(--ink-2); }
+.ai-err-more p { margin: 4px 0 0; overflow-wrap: anywhere; line-height: 1.45; }

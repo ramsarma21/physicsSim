@@ -101,7 +101,9 @@ const JointRecord = Schema.Union([
 		damping: Finite,
 		compressOnly: Schema.optionalKey(Schema.Boolean),
 		coils: Schema.optionalKey(Finite),
-		coilRadius: Schema.optionalKey(Finite)
+		coilRadius: Schema.optionalKey(Finite),
+		/** kg, zero or more: the spring's own mass (its coils move with what it pushes: tooling/src/sim/physics.ts); none without it. */
+		mass: Schema.optionalKey(Finite.check(Schema.isGreaterThanOrEqualTo(0)))
 	}),
 	Schema.Struct({
 		kind: Schema.Literal("rope"),
@@ -289,7 +291,15 @@ export type SceneDocument = typeof SceneDocument.Type
  * drawing use. An unknown material name is refused here rather than discovered mid-simulation.
  */
 export const admitDocument = (input: unknown): { readonly document: SceneDocument; readonly scene: SimScene<string> } => {
-	const document = Schema.decodeUnknownSync(SceneDocument)(input)
+	// (a document that does not fit is refused in one line, its place in the document included: a worker passes on an error's last line only)
+	let document: SceneDocument
+	try {
+		document = Schema.decodeUnknownSync(SceneDocument)(input)
+	} catch (e) {
+		const lines = (e instanceof Error ? e.message : String(e)).split("\n").map((l) => l.trim()).filter((l) => l !== "")
+		const id = typeof input === "object" && input !== null && typeof (input as { id?: unknown }).id === "string" ? `${(input as { id: string }).id}: ` : ""
+		throw new Error(`${id}the document does not fit the format: ${lines.join(" ")}`)
+	}
 	const material = (name: string): Material => {
 		const record = document.materials[name]
 		if (record === undefined) {

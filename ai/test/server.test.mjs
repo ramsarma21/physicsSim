@@ -80,8 +80,18 @@ test("the step's own 400 comes back as a 400 (the payload is checked in the proc
 	assert.match(r.json.error, /text is missing/)
 })
 
+test("imagine is a step: words only (a picture is a 400 from the process), and the queue lists its slots", async () => {
+	const r = await post("/api/ai/imagine", { payload: { text: "a ball rolls into a cup", images: ["data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="] } })
+	assert.equal(r.status, 400)
+	assert.equal(r.json.code, "bad_input")
+	assert.match(r.json.error, /from words only/)
+	assert.equal(gw.requests.length, 0)
+	const st = await (await fetch(base + "/api/ai/progress")).json()
+	assert.deepEqual(st.steps.imagine, { running: 0, waiting: 0, slots: 1 })
+})
+
 test("a good answer: 200 {ok, result, model, ms, usage}; the key reached the gateway as a Bearer token", async () => {
-	gw.script("m1", [{ content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }) }])
+	gw.script("m1", [{ content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }) }])
 	const r = await post("/api/ai/edit", { payload: { text: "hi", scene: { items: [{ id: "table", type: "table", x: 1.3, y: 0 }] } }, client: { requestId: "abc" } })
 	assert.equal(r.status, 200, JSON.stringify(r.json))
 	assert.equal(r.json.ok, true)
@@ -134,7 +144,7 @@ const progress = async (rid) => {
 }
 
 test("a step that finds every slot busy waits its turn (first come, first served) instead of failing; progress shows it waiting", async () => {
-	const answer = { content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }), delayMs: 300 }
+	const answer = { content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }), delayMs: 300 }
 	gw.script("m1", [answer, answer])
 	const first = post("/api/ai/edit", EDIT("q-first"))
 	await new Promise((r) => setTimeout(r, 120))
@@ -213,7 +223,7 @@ test("per-step slots: a step at its own cap waits while another step runs at onc
 		})
 		const b2 = `http://127.0.0.1:${port}`
 		const p2 = (path, body) => fetch(b2 + path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then(async (r) => ({ status: r.status, json: await r.json(), retry: r.headers.get("retry-after") }))
-		gw.fallback = (req) => (/a ball/.test(JSON.stringify(req.body?.messages?.at(-1) ?? "")) ? { hang: true } : { content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }) })
+		gw.fallback = (req) => (/a ball/.test(JSON.stringify(req.body?.messages?.at(-1) ?? "")) ? { hang: true } : { content: JSON.stringify({ kind: "answer", targets: [], mode: "patch", reply: "Nothing to change.", patches: [] }) })
 		const hog = p2("/api/ai/plan", { payload: { text: "a ball" }, client: { requestId: "hog2" } })
 		await new Promise((r) => setTimeout(r, 200))
 		const waiting = p2("/api/ai/plan", { payload: { text: "a ball" }, client: { requestId: "wait2" } })

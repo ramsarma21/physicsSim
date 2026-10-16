@@ -7,8 +7,42 @@
 //   import { mountNewProject } from "./ai/new-project.js"
 //   const np = mountNewProject({ scenarios, current, blank, loadScenario, save, download, buildAI, toast })
 //   np.open({ ai: true, text, files })   // (opens on Build with AI, with these words and pictures)
+// Where the AI can't be used (./access.js), Build with AI says so before anything is typed: "needs an account" with Continue with Google (the
+// accounts layer's sign-in sheet, which keeps what was typed), today's allowance used up and when it resets, or no AI on this deployment (no box).
 // Styles: ai.css (.np-*), on ui.css's dialog card (.ui-dialog, .ui-card, .ui-start), so it looks like the intro and the help sheet.
+// Build with AI has one setting under the box, "Concept sketch: Auto · Always · Off" (ai/research/round3-plan.md §5; Off until chosen): kept in
+// this browser (conceptSetting(), read by panel.js's build too) and passed as `imagine` to the build; with a photo attached it shows as off (the photo is the
+// reference). Start from an example opens with the gallery (web/gallery/index.json: machines built with AI, each with its start frame): one
+// click opens that scene (window.sandboxApp.open), no AI and no account needed.
 import { prepareImages, MAX_IMAGES } from "./orchestrator.js"
+import { aiAccess, atWhen } from "./access.js"
+
+// ---- the concept sketch setting: "auto" (a sketch for multi-step machines), "always", "off"; kept in this browser (try/catch: a private
+// window or blocked storage keeps it for this page only). Off until chosen: on chains, Auto did not beat Off by the §8 D ship rule (judges
+// +0.13 with a CI across 0, +81 s p50), so it stays a choice, not the default.
+const CONCEPT_KEY = "sandbox:ai-concept"
+export const CONCEPT_DEFAULT = "off"
+const CONCEPT_MODES = [
+	["auto", "Auto"],
+	["always", "Always"],
+	["off", "Off"]
+]
+const CONCEPT_HINTS = { auto: "Auto: for multi-step machines", always: "Always: an AI sketch before every new scene", off: "Off: built from your words alone" }
+let conceptMem = null
+/** The concept sketch setting as chosen ("auto" | "always" | "off"). */
+export function conceptSetting() {
+	try {
+		const v = localStorage.getItem(CONCEPT_KEY)
+		if (CONCEPT_MODES.some(([k]) => k === v)) return v
+	} catch {}
+	return conceptMem ?? CONCEPT_DEFAULT
+}
+function setConceptSetting(v) {
+	conceptMem = v
+	try {
+		localStorage.setItem(CONCEPT_KEY, v)
+	} catch {}
+}
 
 const EXAMPLES = [
 	{ label: "A Rube Goldberg chain", text: "A Rube Goldberg chain reaction: a ball rolls down a ramp and knocks over a row of growing dominoes; the last domino knocks a second ball off a ledge so it drops into a box." },
@@ -18,6 +52,10 @@ const EXAMPLES = [
 ]
 const ICONS = {
 	blank: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15h18v2h-2v4h-2v-4H7v4H5v-4H3z"/><path d="M6 6h12v2H6z" opacity=".35"/></svg>`,
+	lock: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V8a3 3 0 0 0-6 0zm3 4a1.5 1.5 0 0 0-.75 2.8V18h1.5v-1.2A1.5 1.5 0 0 0 12 14z"/></svg>`,
+	clock: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 3v4.6l3.4 2-1 1.7L11 12.7V7z"/></svg>`,
+	off: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.9 5.6 5.6 1.9-2.4.8L8.4 2.1 10.1 8.1zM3.3 2 2 3.3l5.1 5.1L4.5 10l5.6 1.9L12 17.5l1.5-4.4L20.7 22l1.3-1.3z"/></svg>`,
+	google: `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.2-2.7l-3.5-2.7c-1 .7-2.2 1-3.7 1-2.9 0-5.3-1.9-6.2-4.5H2.2v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.1a6.6 6.6 0 0 1 0-4.2V7.1H2.2a11 11 0 0 0 0 9.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.2 7.1l3.6 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>`,
 	ai: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z" opacity=".75"/></svg>`,
 	grid: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4zm9 0h7v7h-7zM4 13h7v7H4zm9 0h7v7h-7z"/></svg>`,
 	close: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z"/></svg>`,
@@ -49,6 +87,7 @@ function h(tag, attrs = {}, ...kids) {
 
 export function mountNewProject(host) {
 	const S = { pick: "ai", images: [], pending: 0, busy: false }
+	const access = aiAccess()
 	const dlg = h("dialog", { class: "ui-dialog np-dialog", "aria-labelledby": "np-title", "aria-describedby": "np-sub" })
 	const close = (value = "") => {
 		if (!dlg.open || dlg.classList.contains("ui-closing")) return
@@ -86,19 +125,45 @@ export function mountNewProject(host) {
 	const examples = h("div", { class: "np-examples", role: "list", "aria-label": "Examples" }, EXAMPLES.map((ex) => h("div", { role: "listitem", class: "np-ex-li" }, h("button", { type: "button", class: "np-ex", title: ex.text, onclick: () => ((input.value = ex.text), syncAI(), input.focus()) }, ex.label))))
 	const msg = h("p", { class: "np-msg", "aria-live": "polite" })
 	const libRow = h("div", { class: "np-lib", hidden: true }) // (My scenes, web/account/: host.library(el, done) fills it with the person's recent scenes)
-	const paneAI = h(
-		"div",
-		{ class: "np-pane", "data-pane": "ai" },
-		h("div", { class: "np-box" }, attachRow, input),
-		h("div", { class: "np-row" }, btnPhoto, h("span", { class: "np-hint" }, "Enter builds · Shift+Enter for a new line"), btnBuild),
-		h("p", { class: "np-ex-t" }, "Or start from one of these:"),
-		examples,
-		fileInput
-	)
+	// (why the AI can't be used here now, before anything is typed: ./access.js)
+	const accessNote = h("div", { class: "np-access", role: "note", hidden: true })
+	const npBox = h("div", { class: "np-box" }, attachRow, input)
+	const npRow = h("div", { class: "np-row" }, btnPhoto, h("span", { class: "np-hint" }, "Enter builds · Shift+Enter for a new line"), btnBuild)
+	const exTitle = h("p", { class: "np-ex-t" }, "Or start from one of these:")
+	// the concept sketch setting: one line under the box
+	const conceptBtns = CONCEPT_MODES.map(([v, label]) => h("button", { type: "button", role: "radio", "data-v": v, "aria-checked": "false", onclick: () => (setConceptSetting(v), syncConcept()) }, label))
+	const conceptHint = h("span", { class: "np-concept-hint" })
+	const conceptGroup = h("div", { class: "np-seg", role: "radiogroup", "aria-labelledby": "np-concept-k" }, conceptBtns)
+	const conceptRow = h("div", { class: "np-concept", title: "Before planning, the AI can draw a concept sketch of your idea to plan from. The build always follows your words." }, h("span", { class: "np-concept-k", id: "np-concept-k" }, "Concept sketch"), conceptGroup, conceptHint)
+	conceptGroup.addEventListener("keydown", (e) => {
+		const d = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0
+		if (!d || S.images.length) return
+		e.preventDefault()
+		const i = CONCEPT_MODES.findIndex(([k]) => k === conceptSetting())
+		const next = CONCEPT_MODES[(i + d + CONCEPT_MODES.length) % CONCEPT_MODES.length][0]
+		setConceptSetting(next)
+		syncConcept()
+		conceptBtns.find((b) => b.dataset.v === next)?.focus()
+	})
+	function syncConcept() {
+		const photo = S.images.length > 0
+		const v = photo ? "off" : conceptSetting()
+		for (const b of conceptBtns) {
+			b.setAttribute("aria-checked", String(b.dataset.v === v))
+			b.disabled = photo
+			b.tabIndex = b.dataset.v === v ? 0 : -1
+		}
+		conceptHint.textContent = photo ? "Off: your photo is the reference" : CONCEPT_HINTS[v]
+		conceptRow.classList.toggle("np-concept-photo", photo)
+	}
+	const paneAI = h("div", { class: "np-pane", "data-pane": "ai" }, accessNote, npBox, npRow, conceptRow, exTitle, examples, fileInput)
 
-	// Start from an example
+	// Start from an example: the gallery (machines built with AI, web/gallery/), then the built-in machines and the ones saved here
+	const galleryTitle = h("p", { class: "np-ex-t np-gal-head", hidden: true }, "Examples")
+	const gallery = h("div", { class: "np-gallery", role: "list", "aria-label": "Examples", hidden: true })
+	const classicTitle = h("p", { class: "np-ex-t", hidden: true }, "Classic machines")
 	const list = h("div", { class: "np-list", role: "list" })
-	const paneEx = h("div", { class: "np-pane", "data-pane": "example" }, list)
+	const paneEx = h("div", { class: "np-pane", "data-pane": "example" }, galleryTitle, gallery, classicTitle, list)
 
 	const card = h(
 		"div",
@@ -115,9 +180,69 @@ export function mountNewProject(host) {
 		for (const b of choices.querySelectorAll("[data-pick]")) b.setAttribute("aria-pressed", String(b.dataset.pick === key))
 		for (const p of [paneBlank, paneAI, paneEx]) p.hidden = p.dataset.pane !== key
 		msg.textContent = ""
-		if (key === "example") renderList()
-		if (focus) (key === "ai" ? input : key === "blank" ? paneBlank.querySelector("button") : list.querySelector("button"))?.focus({ preventScroll: true })
+		if (key === "example") (renderList(), renderGallery())
+		if (focus) (key === "ai" ? input : key === "blank" ? paneBlank.querySelector("button") : paneEx.querySelector("button"))?.focus({ preventScroll: true })
 	}
+	// ---- the gallery (web/gallery/index.json): read once, shown at once when it is there; nothing if it can't be read
+	let galleryP = null
+	const loadGallery = () =>
+		(galleryP ??= fetch("gallery/index.json")
+			.then((r) => (r.ok ? r.json() : []))
+			.then((all) => (Array.isArray(all) ? all : []).filter((e) => e && typeof e.slug === "string" && typeof e.title === "string" && (e.scene || /^[a-z0-9-]+$/.test(e.slug))))
+			.catch(() => []))
+	const sceneOf = new Map() // slug -> Promise<scene> (fetched on hover, so the click opens it at once)
+	const fetchScene = (e) => {
+		if (!sceneOf.has(e.slug)) {
+			const p = fetch(e.scene ?? `gallery/${e.slug}.json`).then((r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`)
+				return r.json()
+			})
+			sceneOf.set(e.slug, p)
+			p.catch(() => sceneOf.delete(e.slug))
+		}
+		return sceneOf.get(e.slug)
+	}
+	async function renderGallery() {
+		const all = await loadGallery()
+		gallery.hidden = galleryTitle.hidden = !all.length
+		classicTitle.hidden = !all.length
+		if (gallery.childElementCount || !all.length) return
+		for (const e of all) {
+			const stages = Number.isInteger(e.stages) && e.stages > 2 ? `${e.stages} stages` : null
+			gallery.append(
+				h(
+					"div",
+					{ role: "listitem", class: "np-gal-li" },
+					h(
+						"button",
+						{ type: "button", class: "np-gal", title: e.description ? `${e.title}: ${e.description}` : e.title, onclick: (ev) => doGallery(e, ev.currentTarget), onpointerenter: () => fetchScene(e), onfocus: () => fetchScene(e) },
+						h("span", { class: "np-gal-img" }, e.thumb ? h("img", { src: e.thumb, alt: "", loading: "lazy", width: "640", height: "360" }) : null, stages ? h("small", { class: "np-gal-n" }, stages) : null),
+						h("span", { class: "np-gal-t" }, h("b", {}, e.title), e.description ? h("span", {}, e.description) : null)
+					)
+				)
+			)
+		}
+	}
+	/** One click: the example's scene goes on the table (one undo step, played from the start). No AI, no account. */
+	async function doGallery(e, btn) {
+		if (btn.getAttribute("aria-busy") === "true") return
+		btn.setAttribute("aria-busy", "true")
+		try {
+			const scene = await fetchScene(e)
+			if (!Array.isArray(scene?.items)) throw new Error("it isn’t a scene")
+			if (!window.sandboxApp?.open) throw new Error("this page can’t open scenes")
+			close("example")
+			try {
+				window.sandboxLibrary?.fresh?.("example", scene.id)
+			} catch {}
+			window.sandboxApp.open(scene)
+		} catch (err) {
+			msg.textContent = `Couldn’t open “${e.title}”: ${err.message}`
+		} finally {
+			btn.removeAttribute("aria-busy")
+		}
+	}
+	loadGallery() // (read while the dialog is first shown: the example tab has its cards at once)
 	function renderList() {
 		list.innerHTML = ""
 		const all = (host.scenarios?.() ?? []).filter((s) => s.id !== "empty")
@@ -130,9 +255,39 @@ export function mountNewProject(host) {
 		}
 		if (!all.length) list.append(h("p", { class: "np-lede" }, "The examples are still loading…"))
 	}
+	function renderAccess(st = access.state) {
+		const kind = st.kind
+		// (signed out where the AI needs an account: the box stays, and Build (or Continue) goes to Google and back with the words kept)
+		const noBox = kind === "off" || kind === "quota" || kind === "access" || (kind === "sign_in" && st.unavailable)
+		npBox.hidden = noBox
+		npRow.hidden = noBox
+		conceptRow.hidden = noBox
+		exTitle.hidden = noBox
+		examples.hidden = noBox
+		accessNote.hidden = kind === "ok"
+		accessNote.dataset.kind = kind
+		accessNote.replaceChildren()
+		const tile = choices.querySelector('[data-pick="ai"]')
+		tile?.classList.toggle("np-off", kind === "off" || kind === "quota" || kind === "access")
+		const sub = tile?.querySelector("span:last-child")
+		if (sub) sub.textContent = kind === "off" ? "Not available here" : kind === "quota" ? (st.when ? `Back ${atWhen(st.when)}` : "Back later today") : kind === "sign_in" ? "Needs an account" : kind === "access" ? "No access here" : "Describe it, or add a photo"
+		if (kind !== "ok") {
+			const title = kind === "sign_in" && !st.unavailable ? "Build with AI needs an account" : st.title
+			const text = kind === "sign_in" && !st.unavailable ? "Sign in with Google to use AI. You’ll come right back here, and what you type is kept." : kind === "off" ? "This copy of the sandbox runs without the AI service. Everything else works: start from an example or a blank table, and add real objects from the catalog (/)." : st.text
+			accessNote.append(h("span", { class: "ai-access-ic", html: ICONS[kind === "sign_in" ? "lock" : kind === "quota" ? "clock" : "off"], "aria-hidden": "true" }), h("div", { class: "ai-access-t" }, h("b", {}, title), h("p", {}, text)))
+			const acts = []
+			if (kind === "sign_in" && !st.unavailable) acts.push(h("button", { type: "button", class: "ai-google", onclick: () => access.signIn({ kind: "new", text: input.value }) || (msg.textContent = "Sign-in isn’t available on this page.") }, h("span", { class: "ai-g", html: ICONS.google, "aria-hidden": "true" }), "Continue with Google"))
+			if (noBox) acts.push(h("button", { type: "button", class: "np-btn", onclick: () => pick("example", true) }, h("span", { class: "np-ic", html: ICONS.grid }), "Start from an example"), h("button", { type: "button", class: "np-btn", onclick: () => doBlank() }, h("span", { class: "np-ic", html: ICONS.blank }), "Blank scene"))
+			if (acts.length) accessNote.append(h("div", { class: "ai-access-acts" }, acts))
+		}
+		syncAI()
+	}
+	access.onChange(() => renderAccess())
+	const aiBlocked = () => access.state.kind !== "ok" && !(access.state.kind === "sign_in" && !access.state.unavailable)
 	function syncAI() {
-		btnBuild.disabled = S.busy || (!input.value.trim() && !S.images.length) || S.pending > 0
+		btnBuild.disabled = S.busy || (!input.value.trim() && !S.images.length) || S.pending > 0 || aiBlocked()
 		input.placeholder = S.images.length ? "What should happen in this picture? (or just press Build)" : "Describe a machine, or add a photo of one…"
+		syncConcept()
 	}
 	input.addEventListener("input", syncAI)
 	input.addEventListener("keydown", (e) => {
@@ -193,10 +348,17 @@ export function mountNewProject(host) {
 	async function doAI() {
 		const text = input.value.trim()
 		if (S.busy || (!text && !S.images.length) || S.pending) return
+		if (access.state.kind !== "ok") {
+			// (the accounts layer catches Build first when sign-in is needed; this is the way in it doesn't see)
+			if (access.state.kind === "sign_in" && !access.state.unavailable) access.signIn({ kind: "new", text: input.value })
+			return renderAccess()
+		}
 		S.busy = true
 		syncAI()
 		try {
-			const ok = await host.buildAI?.(text, S.images.slice())
+			// (the concept sketch setting goes with it; with a photo there is none: the photo is the reference. panel.js reads conceptSetting()
+			// itself when the app's buildAI passes only the words and pictures)
+			const ok = await host.buildAI?.(text, S.images.slice(), { imagine: S.images.length ? "off" : conceptSetting() })
 			if (ok === false) {
 				msg.textContent = "A build is running in Edit with AI: wait for it (or stop it), then build this."
 				return
@@ -222,7 +384,11 @@ export function mountNewProject(host) {
 			keepName.textContent = `“${cur.name || "This scene"}”`
 			msg.textContent = ""
 			if (typeof opts.text === "string" && opts.text) input.value = opts.text
-			pick(opts.pick ?? (opts.ai || opts.text || opts.files ? "ai" : S.pick ?? "ai"))
+			access.check()
+			// (no AI here, or not today: New opens on the examples, unless Build with AI itself was asked for, which then says why)
+			const away = ["off", "quota", "access"].includes(access.state.kind)
+			pick(opts.pick ?? (opts.ai || opts.text || opts.files ? "ai" : away && S.pick === "ai" ? "example" : S.pick ?? "ai"))
+			renderAccess()
 			if (!dlg.open) {
 				dlg.classList.remove("ui-closing")
 				dlg.showModal()

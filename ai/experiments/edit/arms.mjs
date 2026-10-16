@@ -1,15 +1,22 @@
 // The arms of the edit A/B. Each: (case, prepared base, record) -> {scene (what ends on the table; null = unchanged), reply, notes, report}
 //   base  the frozen app pipeline exactly as the AI panel runs an edit (web/ai/orchestrator.js + ai/steps.mjs edit + refine ≤ 2 with
 //         real renders + the tuner + the quick path)
-//   d1    base, but the edit step reads the rich scene digest (lib/rich-digest.mjs) instead of the app's        [digest, in the app pipeline]
-//   a1    the app's edit step (prompt and digest) -> deterministic application (lib/apply.mjs) -> one physics run -> the reply plus what
+//   d1    base, but the edit step reads the rich scene digest (not run to the end: too slow next to the others; a1 → a1d measures the digest)
+//   a1    the app's edit step (prompt and digest) -> deterministic application (lib/apply.mjs v1) -> one physics run -> the reply plus what
 //         changed in the run; no critic, no renders (the fast path for every change)                          [application + fast path]
-//   a1d   a1 with the rich digest                                                                              [digest, new application]
-//   n1    the new edit prompt (prompts/edit-v2.md: targets first, ask when truly ambiguous, questions change nothing, exact numbers, no
-//         collateral changes unless asked to make it work) + rich digest + a1's application; "make it work" requests get up to 2 more
-//         rounds driven by the run's goal results                                                               [prompt]
-//   n2    n1 + the post-edit verifier (lib/verify.mjs: exact diff + a fast Opus-low check) with one repair turn  [verifier]
-//   n2s   n2 with the edit step on Sonnet 5.5 (low)                                                             [fast model]
+//   a1d   a1 with the rich digest                                                                              [digest, old prompt]
+//   n1o   the new prompt (prompts/edit-v2.md) with the app's digest                                            [prompt, old digest]
+//   n1    the new prompt + the rich digest + a1's application; "make it work" gets ≤ 2 more rounds + the tuner  [prompt + digest]
+//   n2    n1 + the model verifier (lib/verify.mjs: exact diff + a fast Opus-low check) with one repair turn      [verifier]
+//   n5x   n1 with apply v3 (integrate/apply-edit.js: hovering things follow, wall nudge)                         [application v3]
+//   n5    n5x + verifier + a deterministic overlap repair turn                                                 [verifier, v3]
+//   n5r   n5 + a separate reference-resolution call first (lib/resolve.mjs)                                    [resolver]
+//   h5    n5, but "make it work" requests go to the app's own loop (critic with renders + tuner)               [fix via critic]
+//   n6    n5x + the deterministic overlap repair turn (no model verifier) + aim on top of the answer for fixes  [overlap repair]
+//   n7    n6 + aim-first: for "make it work", the container alone aimed at the free path before anything else  [fix: aim first]
+//   n8    n7 + tuner knob ranges widened to include the scene's own values, and a tuner start from the scene   [fix: widened tuner]
+//   n9    n8 + never worse: a fix is judged by goalDistance, and a fix that is not better than nothing is not applied   [fix: never worse]
+// The recommended configuration is n7 (integrate/: edit.md, rich-digest.mjs, edit-step.mjs, apply-edit.js, aim-container.js, edit-path.js).
 import { frozen } from "./lib/env.mjs"
 import { simPool, withSlot } from "./lib/pool.mjs"
 import { editStep } from "./lib/step.mjs"
@@ -17,6 +24,7 @@ import { applyEdit } from "./lib/apply.mjs"
 import { exactDiff, verifyEdit } from "./lib/verify.mjs"
 import { resolveRefs } from "./lib/resolve.mjs"
 import { richDigest } from "./lib/rich-digest.mjs"
+import { aimContainer } from "./lib/aim.mjs"
 
 const clone = (o) => (o === undefined || o === null ? o : JSON.parse(JSON.stringify(o)))
 const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v)
@@ -124,7 +132,7 @@ async function runWithGoals(scene, goals) {
 
 const FIX_RE = /\b(make (it|this|them|everything) work|works? again|fix|so (that|it)|get it (to )?work|still work)\b/i
 
-export async function newEdit(c, B, rec, { prompt = "v2", digest = "rich", verify = false, effort = null, fixRounds = 2, editModel = null, resolver = false, applyV = 1, overlapRepair = false, fixVia = "loop" } = {}) {
+export async function newEdit(c, B, rec, { prompt = "v2", digest = "rich", verify = false, effort = null, fixRounds = 2, editModel = null, resolver = false, applyV = 1, overlapRepair = false, fixVia = "loop", aim = false, aimFirst = false, widen = false, neverWorse = false } = {}) {
 	const F = await frozen()
 	const payload = { text: c.text, scene: clone(B.scene), plan: clone(B.plan) ?? undefined, history: c.history ?? [], sim: B.sim }
 	// a separate reference-resolution pass first: a truly ambiguous request gets its question at once; else the edit call is told the targets
@@ -175,9 +183,52 @@ export async function newEdit(c, B, rec, { prompt = "v2", digest = "rich", verif
 		const failing = delta.results.filter((g) => g.ok !== true)
 		return { ans: a, r, sim, delta, failing, overlaps: r.warnings ?? [], bad: failing.length + (r.warnings?.length ?? 0), diff: await exactDiff(B.scene, r.scene) }
 	}
+	// (neverWorse) a fix is judged by what fails and by how far the goals are from happening (the app's goalDistance), never by fewer words
+	const score = (x) => (x.error ? Infinity : x.bad * 10 + (F.orch.goalDistance(x.r.scene, x.sim, x.r.plan?.goals?.length ? x.r.plan.goals : goals) || 0))
+	const better = (a, b) => (neverWorse ? score(a) < score(b) - 1e-9 : a.bad < b.bad || (a.bad === b.bad && a.diff.length < b.diff.length))
 	let v = await version(ans)
+	// "make it work", first the cheap deterministic try: aim a container at where the thing comes down (on top of the answer's own changes)
+	const aimAt = async (cur) => {
+		for (const g of cur.failing.filter((x) => (x.kind ?? "in") === "in" && x.container)) {
+			const t0 = Date.now()
+			const r = await aimContainer({ scene: cur.r.scene, plan: cur.r.plan }, g, { F, simulate: (sc) => runWithGoals(sc, goals), apply: (ps) => applyEdit({ scene: B.scene, plan: B.plan, sim: B.sim }, [...cur.ans.patches, ...ps], { v: applyV }) })
+			rec.calls.push({ step: "aim", ms: Date.now() - t0, runs: r?.runs, found: !!r?.patches })
+			if (r?.patches) {
+				const v3 = await version({ ...cur.ans, patches: [...cur.ans.patches, ...r.patches] })
+				if (!v3.error && v3.bad < cur.bad) return { ...v3, aimed: r.patches }
+			}
+		}
+		return null
+	}
+	// (aimFirst) the least change of all first: the container alone, aimed at where the thing flies in the scene as it is (not after the
+	// answer's own changes); the user's own last change is never undone this way (a container the previous turn named is left alone)
+	let aimedFirst = null
+	if (kind === "fix" && aimFirst && !v.error) {
+		const lastTurn = [...(c.history ?? [])].reverse().find((h) => h.role === "user")?.text ?? ""
+		const v0 = await version({ ...ans, patches: [] })
+		if (!v0.error && v0.failing.length) {
+			const named = (id) => new RegExp(`\\b${String(B.scene.items.find((i) => i.id === id)?.name ?? id).split(/\s+/)[0]}\\b`, "i").test(lastTurn)
+			for (const g of v0.failing.filter((x) => (x.kind ?? "in") === "in" && x.container && !named(x.container))) {
+				const t0 = Date.now()
+				const r = await aimContainer({ scene: B.scene, plan: B.plan }, g, { F, simulate: (sc) => runWithGoals(sc, goals), apply: (ps) => applyEdit({ scene: B.scene, plan: B.plan, sim: B.sim }, ps, { v: applyV }) })
+				rec.calls.push({ step: "aim-first", ms: Date.now() - t0, runs: r?.runs, found: !!r?.patches })
+				if (r?.patches) {
+					const p = r.patches[0]
+					const words = [p.dx ? `${Math.abs(p.dx * 100).toFixed(0)} cm ${p.dx > 0 ? "right" : "left"}` : null, p.dy ? `${Math.abs(p.dy * 100).toFixed(0)} cm ${p.dy > 0 ? "up" : "down"}` : null].filter(Boolean).join(" and ")
+					const name = B.scene.items.find((i) => i.id === g.container)?.name ?? g.container
+					const v3 = await version({ ...ans, kind: "fix", patches: r.patches, reply: `I moved ${name.toLowerCase().startsWith("the ") ? name : `the ${name.toLowerCase()}`} ${words}, to where the ball now comes down, so “${g.label}” works again. Nothing else changed.` })
+					if (!v3.error && v3.bad < v0.bad) {
+						aimedFirst = v3
+						break
+					}
+				}
+			}
+		}
+	}
+	if (aimedFirst) v = aimedFirst
+	else if (kind === "fix" && aim && !v.error && v.failing.length) v = (await aimAt(v)) ?? v
 	// "make it work": up to fixRounds more rounds, told what the run did (the goals that still fail, the order of hits)
-	if (kind === "fix" && !v.error) {
+	if (kind === "fix" && !v.error && !aimedFirst) {
 		let last = v
 		for (let round = 0; round < fixRounds && v.bad; round++) {
 			const runText = (last.sim.summary?.events ?? []).slice(0, 16).map((e) => `${e.t.toFixed(2)} s ${e.text}${e.speed != null ? ` (${e.speed.toFixed(2)} m/s)` : ""}`).join("; ")
@@ -187,22 +238,57 @@ export async function newEdit(c, B, rec, { prompt = "v2", digest = "rich", verif
 			const v2 = await version(a2)
 			if (v2.error) continue
 			last = v2
-			if (v2.bad < v.bad || (v2.bad === v.bad && v2.diff.length < v.diff.length)) v = v2
+			if (better(v2, v)) v = v2
 		}
+		if (aim && v.failing.length) v = (await aimAt(v)) ?? v
 		// the tuner (the app's own: a bounded search over the knobs the answer gave) when the run still fails
-		for (const cand of [...new Set([v, last])]) {
+		// (widen) each knob's range also covers the value the scene had before the answer (the answers tend to push one way: a heavier ball
+		// "needs" a steeper seesaw, while the run wanted a flatter one) and the tuner also starts from the scene as it was, with the same knobs
+		const cat = await F.catalog.getCatalog()
+		const widened = (plan, from) => {
+			const p = clone(plan)
+			p.tune = (p.tune ?? []).map((k) => {
+				const it0 = from.items.find((i) => i.id === k.id)
+				if (!it0) return k
+				const T = cat.index.types[it0.type]
+				const was = k.param === "x" ? it0.x : k.param === "y" || k.param === "y_m" ? it0.y : k.param === "angle" || k.param === "angle_deg" ? it0.angle ?? 0 : it0.props?.[k.param] ?? T?.props?.[k.param]?.default
+				if (typeof was !== "number") return k
+				const span = Math.max(Math.abs(k.max - k.min), Math.abs(was) * 0.5, 0.05)
+				let lo = Math.min(k.min, was - span / 2)
+				let hi = Math.max(k.max, was + span / 2)
+				const pr = T?.props?.[k.param]
+				if (pr && typeof pr.min === "number") lo = Math.max(lo, pr.min)
+				if (pr && typeof pr.max === "number") hi = Math.min(hi, pr.max)
+				return lo < hi ? { ...k, min: lo, max: hi } : k
+			})
+			return p
+		}
+		const tuneFrom = [...new Set([v, last])]
+		if (widen && v.failing.length) {
+			const v0 = await version({ ...v.ans, patches: (v.ans.patches ?? []).filter((p) => p.op === "set_tune") })
+			if (!v0.error) tuneFrom.push(v0)
+		}
+		for (const cand of tuneFrom) {
 			if (!v.failing.length || v.overlaps.length) break
 			if (!(cand.r.plan?.tune?.length)) continue
 			const t0 = Date.now()
-			const tr = await F.orch.tune({ plan: cand.r.plan, scene: cand.r.scene, sim: cand.sim, goals: cand.r.plan.goals?.length ? cand.r.plan.goals : goals, simulate: (sc, sig) => simPool().simulate(sc, sig), maxRuns: 120, maxMs: 45000 })
+			const tplan = widen ? widened(cand.r.plan, B.scene) : cand.r.plan
+			const tr = await F.orch.tune({ plan: tplan, scene: cand.r.scene, sim: cand.sim, goals: cand.r.plan.goals?.length ? cand.r.plan.goals : goals, simulate: (sc, sig) => simPool().simulate(sc, sig), maxRuns: 120, maxMs: 45000 })
 			rec.calls.push({ step: "tune", ms: Date.now() - t0, runs: tr.runs, changed: tr.changed })
 			if (!tr.changed?.length) continue
 			const knobPatches = tr.changed.map((k) => (k.param === "x" ? { op: "move", id: k.id, x: k.to } : k.param === "y" || k.param === "y_m" ? { op: "move", id: k.id, y_m: k.to } : k.param === "angle" || k.param === "angle_deg" ? { op: "move", id: k.id, angle_deg: k.to } : /\./.test(k.param) ? null : { op: "set_props", id: k.id, props: { [k.param]: k.to } })).filter(Boolean)
 			const v3 = await version({ ...cand.ans, patches: [...cand.ans.patches, ...knobPatches] })
-			if (!v3.error && v3.bad < v.bad) {
+			if (!v3.error && (neverWorse ? better(v3, v) : v3.bad < v.bad)) {
 				v = v3
 				v.tuned = tr.changed
 			}
+		}
+	}
+	if (kind === "fix" && neverWorse && !v.error && v.failing.length) {
+		const v0 = await version({ ...ans, patches: [] })
+		if (!v0.error && !better(v, v0)) {
+			const still = v0.failing.map((g) => `“${g.label}”`)
+			return { scene: null, reply: `I tried ${rec.calls.filter((x) => /^edit|^tune|^aim/.test(x.step)).length} ways to make ${and(still)} work again while keeping what you chose, and none of them did without making the run worse, so I left the scene as it was.`, notes: [], report: { kind, gaveUp: true, failing: v0.failing.map((g) => g.label) } }
 		}
 	}
 	// the verifier: did it do exactly what was asked? (a fast model check of the exact diff) and, deterministic, does anything now start inside
@@ -262,6 +348,10 @@ export const ARMS = {
 	n5r: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: true, applyV: 3, overlapRepair: true, resolver: true }),
 	n5d: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: false, applyV: 3, overlapRepair: true }),
 	h5d: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: false, applyV: 3, overlapRepair: true, fixVia: "orchestrator" }),
+	n6: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: false, applyV: 3, overlapRepair: true, aim: true }),
+	n7: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: false, applyV: 3, overlapRepair: true, aim: true, aimFirst: true }),
+	n8: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: false, applyV: 3, overlapRepair: true, aim: true, aimFirst: true, widen: true }),
+	n9: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: false, applyV: 3, overlapRepair: true, aim: true, aimFirst: true, widen: true, neverWorse: true }),
 	n5x: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: false, applyV: 3, overlapRepair: false }),
 	n3: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: true, resolver: true }),
 	n2m: (c, B, rec) => newEdit(c, B, rec, { prompt: "v2", digest: "rich", verify: true, effort: "medium" })

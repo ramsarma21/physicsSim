@@ -2,8 +2,9 @@
 //   node tools/parity/prims.mjs [--seed N] [--quick]
 // Exact functions (round, repr, format, hypot, sum, float(), sha1, repr of strings) must match on every input: a mismatch fails the run.
 // Platform math (sin, cos, x ** 3, log10) is JavaScript's own and CPython's is the C library's: those are only counted and shown, except
-// sin/cos at multiples of 30 degrees (where ties arise by construction), which must match, and the 1M-placement check at the end, which shows
-// whether any printed number can still differ.
+// sin/cos at multiples of 30 degrees (where ties arise by construction), which must match the builders' (machines/crmath.py sin and cos read
+// pymath.js's table, web/sim/trig.js: the same bits on any machine), and the 1M-placement check at the end, which shows whether any printed
+// number can still differ.
 import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
@@ -300,12 +301,15 @@ function check(name, cases, jsFn, { exact = true, op = name, show = (c) => JSON.
 		check(`${name}`, cases, (c) => bits(fn(fromBits(c))), { exact: false, op: name.startsWith("sin") ? "sin" : name.startsWith("cos") ? "cos" : "cube" })
 	}
 	const deg = () => ri(-100000, 100000) * (Math.PI / 180)
-	// every multiple of 30 degrees in +-3600, and the same through D2R at the call sites' exact expression
+	// every multiple of 30 degrees in +-3600, and the same through D2R at the call sites' exact expression: the builders' sin and cos
+	// (machines/crmath.py) must give the table's values exactly; how many of them this machine's libm rounds otherwise is only counted
 	{
 		const cases = []
 		for (let k = -120; k <= 120; k++) cases.push(bits((30 * k) * (Math.PI / 180)))
-		check("sin, multiples of 30 deg (the table)", cases, (c) => bits(M.sin(fromBits(c))), { exact: true, op: "sin" })
-		check("cos, multiples of 30 deg (the table)", cases, (c) => bits(M.cos(fromBits(c))), { exact: true, op: "cos" })
+		check("sin, multiples of 30 deg = crmath.sin", cases, (c) => bits(M.sin(fromBits(c))), { exact: true, op: "crsin" })
+		check("cos, multiples of 30 deg = crmath.cos", cases, (c) => bits(M.cos(fromBits(c))), { exact: true, op: "crcos" })
+		check("sin, multiples of 30 deg vs this libm", cases, (c) => bits(M.sin(fromBits(c))), { exact: false, op: "sin" })
+		check("cos, multiples of 30 deg vs this libm", cases, (c) => bits(M.cos(fromBits(c))), { exact: false, op: "cos" })
 	}
 	trig("sin, radians -1745..1745", M.sin, () => U(-1745, 1745), 200000)
 	trig("cos, radians -1745..1745", M.cos, () => U(-1745, 1745), 200000)
@@ -321,6 +325,26 @@ function check(name, cases, jsFn, { exact = true, op = name, show = (c) => JSON.
 	for (let k = -12; k <= 8; k++) for (let j = -8; j <= 8; j++) l10.push(bits(nextUp(Number(`1e${k}`), j)))
 	for (let i = 0; i < 20000 * K; i++) l10.push(bits(logU(1e-9, 1e9)))
 	check("floor(log10(x)), near powers of ten and random", l10, (c) => String(M.floorLog10(fromBits(c))), { exact: false, op: "floorlog10" })
+}
+
+// ---- powers: pymath.js's cube and engine-math.js's pow are correctly rounded (tools/crpow.ts), and so are machines/crmath.py's cube and
+// cr_pow, which the builders use for x ** 3 and x ** (1/3): the same bits on every machine, so these must match exactly
+{
+	const E = await import(`${SIM}/engine-math.js`)
+	const cubes = []
+	for (let i = 0; i < 300000 * K; i++) {
+		const r = rng()
+		cubes.push(bits(r < 0.4 ? ri(1, 500000) / 1e6 : r < 0.6 ? ri(1, 100000) / 1e5 : r < 0.8 ? logU(0.0025, 0.5) : r < 0.9 ? ri(1, 1 << 18) / 2 ** ri(10, 24) : logU(1e-30, 1e30)))
+	}
+	check("cube = crmath.cube: radii, shells, short mantissas, any size", cubes, (c) => bits(M.cube(fromBits(c))), { op: "crcube" })
+	const roots = []
+	const dens = [7850, 8000, 1100, 700, 2700, 1000, 11340, 950, 1.2]
+	for (let i = 0; i < 60000 * K; i++) {
+		const r = rng()
+		roots.push(bits(r < 0.5 ? ri(1, 2000000) / 1000 / pick(dens) : r < 0.8 ? (3 * logU(0.001, 50)) / (4 * Math.PI * pick(dens)) : logU(1e-12, 1e12)))
+	}
+	for (const k of [1, 8, 27, 64, 125, 0.001, 0.008, 2, 3]) roots.push(bits(k))
+	check("x ** (1/3) = crmath.cr_pow(x, 1/3): weights' sides, bobs' radii, any size", roots, (c) => bits(E.pow(fromBits(c), 1 / 3)), { op: "crcbrt" })
 }
 
 // ---- where a last-bit sin/cos difference could reach a printed number: Ctx.world's x, y = round(origin + offset turned by the angle, 5)

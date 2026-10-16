@@ -3,10 +3,15 @@
 // account", the copy-this-browser offer) can be tried and tested on the local server with no accounts, keys or network.
 //   ?accountmock=1          signed out first; "Sign in" signs in at once as a made-up person
 //   ?accountmock=signedin   signed in from the start
+//   &aisignin=0             Build with AI doesn't ask for sign-in (by default it does, as on a deploy with accounts)
 // The pretend account's scenes are kept in sessionStorage ("sandbox-mock-cloud"), so a reload keeps them for this tab. The API follows
-// docs/ACCOUNTS.md section 4 (the same shapes, status codes and If-Match rule), with a little latency.
+// docs/ACCOUNTS.md section 4 (the same shapes, status codes, name rule, savedAs and If-Match rule, account deletion), with a little latency.
+import { cleanName, PARAMS } from "./util.js"
 
 const KEY = "sandbox-mock-cloud"
+const CONFIG = { storage: true, ai: { signInRequired: PARAMS.get("aisignin") !== "0" } }
+const SAVED_AS_RE = /^[\p{L}\p{N}_'\-]{1,80}$/u
+const nameOf = (v) => cleanName(v) || "Untitled scene"
 const PERSON = { id: "user_mock_ada", name: "Ada Lovelace", email: "ada@example.com" }
 const LATENCY_MS = 160
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -33,7 +38,7 @@ const etag = (s) => {
 	return (h >>> 0).toString(16).padStart(8, "0")
 }
 function metaOf(r) {
-	return { id: r.id, name: r.name, items: things(r.scene), bytes: JSON.stringify(r.scene).length + (r.thumb?.length ?? 0), version: r.version, createdAt: new Date(r.createdAt).toISOString(), updatedAt: new Date(r.updatedAt).toISOString(), thumb: r.thumb ? `/api/scenes/${r.id}/thumb?v=${etag(r.thumb)}` : null }
+	return { id: r.id, name: r.name, items: things(r.scene), bytes: JSON.stringify(r.scene).length + (r.thumb?.length ?? 0), version: r.version, createdAt: new Date(r.createdAt).toISOString(), updatedAt: new Date(r.updatedAt).toISOString(), thumb: r.thumb ? `/api/scenes/${r.id}/thumb?v=${etag(r.thumb)}` : null, savedAs: r.savedAs ?? null }
 }
 
 let installed = false
@@ -51,22 +56,29 @@ function installServer(getUser) {
 		const who = getUser()
 		const parts = url.pathname.split("/").filter(Boolean).slice(2) // after api/scenes
 		if (parts[0] === "me" && method === "GET") {
-			const out = { ok: true, accounts: { provider: "mock" }, storage: true }
+			const out = { ok: true, accounts: { provider: "mock" }, ...CONFIG }
 			if (who && headers.get("Authorization") === `Bearer mock.${who.id}`) {
 				const live = Object.values(db.scenes).filter((r) => !r.deletedAt)
-				Object.assign(out, { user: who, usage: { scenes: live.length, bytes: live.reduce((n, r) => n + metaOf(r).bytes, 0), maxScenes: 500, maxBytes: 52428800 } })
+				Object.assign(out, { user: who, usage: { scenes: live.length, bytes: live.reduce((n, r) => n + metaOf(r).bytes, 0), maxScenes: 500, maxBytes: 10485760 } })
 			}
 			return json(200, out)
 		}
 		if (!who || headers.get("Authorization") !== `Bearer mock.${who.id}`) return fail(401, "sign_in", "Sign in to reach your scenes", { expired: false })
 		const body = init.body ? JSON.parse(init.body) : {}
 		const [id, part] = parts
+		if (body.savedAs !== undefined && body.savedAs !== null && !(typeof body.savedAs === "string" && SAVED_AS_RE.test(body.savedAs))) return fail(400, "bad_input", "savedAs must be a scenario id")
+		if (id === "me") {
+			if (method !== "DELETE") return fail(405, "bad_input", "use GET or DELETE")
+			if (body.confirm !== "delete my account") return fail(400, "bad_input", 'to delete the account, send {confirm: "delete my account"}')
+			save({ user: null, scenes: {} })
+			return json(200, { ok: true, deleted: true, signInDeleted: true })
+		}
 		if (!id) {
 			if (method === "GET") return json(200, { ok: true, scenes: Object.values(db.scenes).filter((r) => !r.deletedAt).sort((a, b) => b.updatedAt - a.updatedAt).map(metaOf) })
 			if (method === "POST") {
 				if (!body.scene || !Array.isArray(body.scene.items)) return fail(400, "bad_input", "That isn’t a scene")
 				const now = Date.now()
-				const r = { id: newId(), name: String(body.name || "Untitled scene").slice(0, 60), scene: { ...body.scene }, thumb: body.thumb ?? null, version: 1, createdAt: now, updatedAt: now, deletedAt: null }
+				const r = { id: newId(), name: nameOf(body.name ?? body.scene.name), scene: { ...body.scene }, thumb: body.thumb ?? null, savedAs: body.savedAs ?? null, version: 1, createdAt: now, updatedAt: now, deletedAt: null }
 				r.scene.name = r.name
 				r.scene.id = r.id
 				db.scenes[r.id] = r
@@ -92,9 +104,10 @@ function installServer(getUser) {
 			const want = headers.get("If-Match")
 			if (want && want !== `"v${r.version}"`) return fail(412, "conflict", "This scene was changed on another device since you opened it", { current: metaOf(r) })
 			let edit = false
-			if (body.name !== undefined && body.name !== r.name) ((r.name = String(body.name).slice(0, 60)), (edit = true))
+			if (body.name !== undefined && nameOf(body.name) !== r.name) ((r.name = nameOf(body.name)), (edit = true))
 			if (body.scene !== undefined && JSON.stringify(body.scene) !== JSON.stringify(r.scene)) ((r.scene = { ...body.scene }), (edit = true))
 			if (body.thumb !== undefined) r.thumb = body.thumb
+			if (body.savedAs !== undefined) r.savedAs = body.savedAs
 			r.scene.name = r.name
 			if (edit) ((r.version += 1), (r.updatedAt = Date.now()))
 			save(db)
@@ -122,6 +135,7 @@ export async function createMockProvider({ signedIn = false } = {}) {
 	console.info("account: ?accountmock — a pretend sign-in and a pretend /api/scenes (development only)")
 	return {
 		name: "mock",
+		config: CONFIG,
 		get user() {
 			return user
 		},

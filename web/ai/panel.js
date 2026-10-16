@@ -11,10 +11,23 @@
 // queue, the model's thinking and writing in tokens). After a build it folds the same way (unless it was opened during the build). Phone: a bottom
 // sheet that gets out of the way. Older result cards offer "Restore this version" (the last 6 builds keep their scene); only the latest has Undo.
 // The pipeline is ./orchestrator.js; the critique pictures come from ./shot.js. Conversation turns are kept per ?profile in this browser.
-import { createOrchestrator, prepareImages, STEP_LABELS, MAX_IMAGES, AiError } from "./orchestrator.js"
+// After an edit that stops a goal, the reply says what happens instead and "Looking for a fix…" while ./fixer.js searches (on ./fix-pool.js's
+// workers); then it offers the checked fix as the first chip ("Want me to lower the box 4 cm? (checked: Ball 2 lands in the box ✓)"). A click (or
+// "yes") puts that exact scene on the table at once, as its own undo step: "Done — I lowered the box 4 cm. Ball 2 lands in the box ✓". With no
+// checked fix in the budget it says so, and offers the closest miss and "Ask the AI to rework it".
+// Round 3 (ai/research/round3-plan.md §5): a new scene from words gets the "Picturing the scene" row and, the moment it arrives, the concept
+// sketch in the progress card (labelled AI-generated, with what it is built from and the idea step by step); the result card keeps it as a small
+// thumbnail that opens it next to the scene's start. An edit is answered with one card per kind (./edit-turns.js): a question with a chip per
+// reading, an answer, an undo, "Build it as a new scene…", or the edit card: exactly what changed in real units, "Everything else is exactly as
+// it was (N items untouched)", a heads-up and the pre-checked fix chip (Details: what it understood, why, time, model). Never a concept there.
+import { createOrchestrator, prepareImages, STEP_LABELS, MAX_IMAGES, AiError, ACTION_KINDS, statesOutcome, planAfterFix, fixInfo } from "./orchestrator.js"
 import { createShot } from "./shot.js"
+import { createFixPool } from "./fix-pool.js"
+import { aiAccess, atWhen } from "./access.js"
+import { conceptRoute } from "./imagine.js"
+import { conceptSetting } from "./new-project.js"
 
-const TIMELINE = ["observe", "plan", "solve", "simulate", "reconcile", "refine", "tune", "apply"]
+const TIMELINE = ["imagine", "observe", "plan", "solve", "simulate", "reconcile", "stagetune", "refine", "tune", "fix", "apply"]
 const ICONS = {
 	sparkle: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.9 5.6 5.6 1.9-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.9z"/><path d="M19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9z" opacity=".75"/></svg>`,
 	close: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.4 5 12 10.6 17.6 5 19 6.4 13.4 12 19 17.6 17.6 19 12 13.4 6.4 19 5 17.6 10.6 12 5 6.4z"/></svg>`,
@@ -30,6 +43,10 @@ const ICONS = {
 	chain: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="7" r="2.5"/><path d="M8 10l9 6-1 1.6-9-6zM15.5 9h2v9h-2zM19 9h2v9h-2z"/></svg>`,
 	pins: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="16" r="4"/><path d="M14 6a1.5 1.5 0 0 1 3 0c0 1-.6 1.6-.6 2.6 0 1.4 1.6 2.6 1.6 5.4 0 3-1.1 5-2.5 5s-2.5-2-2.5-5c0-2.8 1.6-4 1.6-5.4 0-1-.6-1.6-.6-2.6z"/></svg>`,
 	car: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l12-5 .6 1.8L3.6 10.8z" opacity=".55"/><path d="M5 14h3l2-3h5l3 3h1a1 1 0 0 1 1 1v2h-2a2 2 0 0 1-4 0H9a2 2 0 0 1-4 0H4v-2a1 1 0 0 1 1-1z"/></svg>`,
+	lock: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10V8a5 5 0 0 1 10 0v2h1a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1zm2 0h6V8a3 3 0 0 0-6 0zm3 4a1.5 1.5 0 0 0-.75 2.8V18h1.5v-1.2A1.5 1.5 0 0 0 12 14z"/></svg>`,
+	clock: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16zm1 3v4.6l3.4 2-1 1.7L11 12.7V7z"/></svg>`,
+	off: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5l1.9 5.6 5.6 1.9-2.4.8L8.4 2.1 10.1 8.1zM3.3 2 2 3.3l5.1 5.1L4.5 10l5.6 1.9L12 17.5l1.5-4.4L20.7 22l1.3-1.3z"/></svg>`,
+	google: `<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#4285F4" d="M22.5 12.3c0-.8-.1-1.5-.2-2.3H12v4.3h5.9a5 5 0 0 1-2.2 3.3v2.7h3.5c2.1-1.9 3.3-4.7 3.3-8z"/><path fill="#34A853" d="M12 23c3 0 5.5-1 7.2-2.7l-3.5-2.7c-1 .7-2.2 1-3.7 1-2.9 0-5.3-1.9-6.2-4.5H2.2v2.8A11 11 0 0 0 12 23z"/><path fill="#FBBC05" d="M5.8 14.1a6.6 6.6 0 0 1 0-4.2V7.1H2.2a11 11 0 0 0 0 9.8z"/><path fill="#EA4335" d="M12 5.4c1.6 0 3.1.6 4.2 1.7l3.1-3.1A11 11 0 0 0 2.2 7.1l3.6 2.8C6.7 7.3 9.1 5.4 12 5.4z"/></svg>`,
 	photo: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l1.5 2H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.5zm3 4a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6z"/></svg>`
 }
 const ERROR_TITLES = {
@@ -41,9 +58,18 @@ const ERROR_TITLES = {
 	nothing: "Nothing to build",
 	engine: "The physics couldn’t run it",
 	input: "Something’s missing",
-	cancelled: "Stopped"
+	cancelled: "Stopped",
+	sign_in: "Sign in with Google to use AI",
+	quota: "You’ve used today’s AI allowance",
+	off: "AI isn’t available on this deployment",
+	access: "No access to the AI here"
 }
-const HISTORY_TURNS = 16
+const HISTORY_TURNS = 20 // (kept, and sent with an edit: the last ≤ 20 turns, the replies as shown, questions included: round3-plan §4.2 (1))
+/** What a concept sketch is, said with it everywhere it shows. */
+const CONCEPT_TAG = "Concept sketch · AI-generated"
+const CONCEPT_CAPTION = "An AI picture of the idea, made from your words. The build follows your words, not the picture."
+const KEEP_CONCEPTS = 3 // turns whose concept sketch (and start frame) are kept in this browser's storage
+const CONCEPT_MAX = 400000 // a kept concept's data URL, in characters (a bigger one, like the Gemini fallback's ~0.7 M, is drawn again smaller first)
 const num0 = (v) => (Number.isFinite(v) ? v : 0)
 const MAX_TEXT = 8000 // the server's limit for a request's words
 
@@ -93,8 +119,42 @@ export function aboutScene(text, scene, typeNames = new Map()) {
 	}
 	return false
 }
+/** A yes to the reply's offer: "yes", "yes please", "do it", "sure", "go ahead". */
+export const YES_RE = /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|please( do)?|do it|go ahead|yes,? (please|do it)|sounds good|let'?s do (it|that)|do that|apply it|fix it)[\s.!]*$/i
+const capFirst = (s) => String(s ?? "").replace(/^./, (c) => c.toUpperCase())
+const lcFirstWord = (s) => String(s ?? "").replace(/^(AI\b)?./, (c, ai) => (ai ? c : c.toLowerCase()))
+/** A phone or a tablet has no ⌘Z: the words say Undo / Redo there. */
+const touchScreen = () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches
+const lcFirst = (s) => {
+	const t = String(s ?? "")
+	return /^(The|A|An|All|Every|Each|Both|Only|None|It|Its|Now)\b/.test(t) ? t[0].toLowerCase() + t.slice(1) : t
+}
 /** Undo asked for in words, and nothing else: "undo", "undo that", "go back", "put it back the way it was", "revert". */
 export const isUndoAsk = (t) => /^\s*(please\s+)?(undo( (that|it|this|the last (change|build|one)))?|go back|revert( (that|it|this))?|put (it|everything) back( the way it was| as it was)?|restore the (old|previous|last) (scene|version))[\s.!]*$/i.test(String(t ?? ""))
+/** The words of a "start over" request, for New → Build with AI's box: "start over with a catapult…" -> "A catapult…" (also "from scratch",
+ *  "instead,", "scrap this and …"). */
+export function newSceneWords(text) {
+	let s = String(text ?? "").trim()
+	for (let i = 0; i < 3; i++) {
+		const was = s
+		s = s
+			.replace(/^(please\s+)?(can you\s+|let['’]?s\s+)?(start (over|again|afresh|fresh)|begin again|scrap (this|that|it)|throw (this|that|it) away)\s*(and|with|:|,|-|—)?\s*/i, "")
+			.replace(/^(and\s+)?(from scratch|instead)\s*[,:—-]?\s*/i, "")
+			.replace(/^(and\s+)?(build|make|create)\s+(me\s+)?a new scene\s*(with|of|:)?\s*/i, "")
+			.replace(/,?\s*(from scratch|instead)\s*([.!]*)$/i, "$2")
+			.trim()
+		if (s === was) break
+	}
+	return s ? s[0].toUpperCase() + s.slice(1) : String(text ?? "").trim()
+}
+/** An edit's first change line as a phrase to quote: "Made the dominoes closer together" -> "made the dominoes closer together" (a name
+ *  like "Ball 2 …" keeps its capital). */
+const changePhrase = (s) =>
+	String(s ?? "")
+		.replace(/\s*\([^)]*\)/g, "")
+		.trim()
+		.replace(/[.!]+$/, "")
+		.replace(/^([A-Z][a-z]+)\b(?!\s+\d)/, (w) => w.toLowerCase())
 
 // ================================================================ the panel
 export function mountAiPanel(host) {
@@ -118,11 +178,15 @@ export function mountAiPanel(host) {
 		}
 	}
 	let shot = null
+	const conceptSmall = new Map() // a concept picture over the guard -> {p, url}: its smaller copy for keeping (shrinkConcept)
 	const getShot = () => (shot ??= createShot({ looks: () => host.getCatalog()?.looks }))
 	// ?aimock=1 (development only): the AI steps are answered by ./dev-mock.js, everything else is the real thing
 	const mockP = new URLSearchParams(location.search).get("aimock") === "1" ? import("./dev-mock.js").then((m) => m.withMock(host.api)) : null
 	const api = mockP ? async (...a) => (await mockP)(...a) : host.api
-	const ai = createOrchestrator({ api, shot: { render: (sim, opts) => getShot().render(sim, opts) } })
+	// the fix search's workers (./fix-pool.js): made on the first edit, let go when idle
+	let fixPool = null
+	const getFixPool = () => (fixPool ??= createFixPool())
+	const ai = createOrchestrator({ api, shot: { render: (sim, opts) => getShot().render(sim, opts) }, fixPool: getFixPool })
 
 	// ---- state
 	const saved = store.get()
@@ -142,6 +206,8 @@ export function mountAiPanel(host) {
 		since: num0(saved?.since) // "Start over" happened then: older turns are gone
 	}
 	S.mode = "edit" // (what the drawer does: syncMode() says, from the scene on screen)
+	S.fixJob = null // the fix search running after an edit ({ctl, turnId})
+	for (const t of S.turns) if (t.report?.fix?.state === "searching") t.report.fix = { ...t.report.fix, state: "stopped" } // (it stopped with the page)
 
 	// ---- DOM
 	const drawer = h("aside", { class: "ai-drawer", id: "ai-drawer", role: "dialog", "aria-modal": "false", "aria-labelledby": "ai-title", hidden: true })
@@ -165,7 +231,9 @@ export function mountAiPanel(host) {
 
 	// what the drawer works on, said up front: the scene on screen (it is changed, never replaced)
 	const editingName = h("b", {}, "")
-	const editing = h("div", { class: "ai-editing", role: "note" }, h("span", { class: "ai-editing-k" }, "Editing"), editingName, h("button", { type: "button", class: "ai-link", onclick: () => host.openNew?.({ ai: true }), title: "A brand-new scene: New → Build with AI (N)" }, "New scene…"))
+	const editingK = h("span", { class: "ai-editing-k" }, "Editing")
+	const editingNew = h("button", { type: "button", class: "ai-link", onclick: () => host.openNew?.({ ai: true }), title: "A brand-new scene: New → Build with AI (N)" }, "New scene…")
+	const editing = h("div", { class: "ai-editing", role: "note" }, editingK, editingName, editingNew)
 	const attachRow = h("div", { class: "ai-attach-row", "aria-label": "Attached images" })
 	const input = h("textarea", { class: "ai-input", rows: "3", maxlength: String(MAX_TEXT), placeholder: "Change this scene… e.g. swap the red ball for a basketball", "aria-label": "Ask for a change to the scene", spellcheck: "true", enterkeyhint: "send" })
 	const fileInput = h("input", { type: "file", accept: "image/*", multiple: true, hidden: true })
@@ -174,7 +242,9 @@ export function mountAiPanel(host) {
 	const hint = h("span", { class: "ai-hint" }, "Enter to change it · Shift+Enter for a new line")
 	const counter = h("span", { class: "ai-count", hidden: true, "aria-live": "polite" })
 	const box = h("div", { class: "ai-box" }, attachRow, input, h("div", { class: "ai-box-bar" }, btnAttach, hint, counter, btnSend))
-	const composer = h("form", { class: "ai-composer", novalidate: true }, editing, box, fileInput)
+	// can the AI be used here (./access.js): when not, the box gives way to why, and what to do (sign in, wait for the allowance, or nothing here)
+	const accessBox = h("div", { class: "ai-access", role: "note", hidden: true })
+	const composer = h("form", { class: "ai-composer", novalidate: true }, editing, accessBox, box, fileInput)
 	const dropZone = h("div", { class: "ai-drop", hidden: true }, h("div", { class: "ai-drop-in" }, icon("image", "ai-ic ai-drop-ic"), h("b", {}, "Drop images for this change"), h("span", {}, `The AI sees them with your words · up to ${MAX_IMAGES}`)))
 	// the folded drawer: one line at the view's corner (what is happening, or the result), Stop while building, Show to open it again
 	const miniTitle = h("b", {}, "")
@@ -218,10 +288,25 @@ export function mountAiPanel(host) {
 	function renderHero() {
 		hero.innerHTML = ""
 		hero.hidden = S.turns.length > 0
+		syncAccessBox()
 		if (hero.hidden) return
+		// (where the AI can't be used, the empty drawer says so first, in place of the welcome that says what it does: ./access.js)
+		if (away()) {
+			const st = access.state
+			hero.append(
+				...[
+					h("div", { class: "ai-hero-art ai-hero-art-off", "aria-hidden": "true", html: ICONS[st.kind === "quota" ? "clock" : "off"] }),
+					h("h3", {}, st.title),
+					h("p", {}, st.text),
+					st.kind === "off" && host.openNew ? h("button", { type: "button", class: "ai-chip-btn", onclick: () => host.openNew({ pick: "example" }) }, "Start from an example") : null
+				].filter(Boolean)
+			)
+			return
+		}
 		const n = host.getCatalog()?.types?.length ?? 113
 		const has = realItems().length > 0
 		hero.append(
+			...[
 			h("div", { class: "ai-hero-art", "aria-hidden": "true", html: ICONS.sparkle }),
 			h("h3", {}, has ? "Say what to change." : "Describe it. Watch it work."),
 			h(
@@ -231,10 +316,11 @@ export function mountAiPanel(host) {
 					? "Only what you ask for changes: everything else stays exactly where it is. Each change is run in the physics engine, and one ⌘Z takes it back."
 					: `The table is empty: say what should happen and it is built here from ${n} real objects at their true sizes and weights, run in the physics engine and refined until it works.`
 			),
-			has
+			has && access.state.kind === "ok"
 				? h("div", { class: "ai-examples", role: "list" }, editExamples().map((ex) => h("div", { class: "ai-ex-li", role: "listitem" }, h("button", { type: "button", class: "ai-ex", onclick: () => ((input.value = ex.text), autosize(), syncSend(), input.focus()), title: "Put this in the box (Enter changes it)" }, icon(ex.icon, "ai-ic ai-ex-ic"), h("span", {}, ex.text)))))
 				: null,
 			h("p", { class: "ai-hero-new" }, "A whole new scene? ", h("button", { type: "button", class: "ai-link", onclick: () => host.openNew?.({ ai: true }) }, "New → Build with AI"), host.openNew ? null : "")
+			].filter(Boolean) // (append() would write a null as the word "null")
 		)
 	}
 
@@ -244,14 +330,64 @@ export function mountAiPanel(host) {
 		const has = realItems().length > 0
 		S.mode = has ? "edit" : "new"
 		const name = host.getScene()?.name || "this scene"
-		editingName.textContent = has ? name : "an empty table"
-		editingName.title = has ? `Changes to “${name}” keep everything you don't mention exactly as it is` : ""
+		// (while a new scene is built, the composer says so: it is not an edit of the scene still on the table)
+		const building = S.running?.request?.mode === "new" ? String(S.running.request.text ?? "").trim() : null
+		editingK.textContent = building !== null ? "New scene" : "Editing"
+		editingName.textContent = building !== null ? building || "from your picture" : has ? name : "an empty table"
+		editingName.title = building !== null ? building : has ? `Changes to “${name}” keep everything you don't mention exactly as it is` : ""
+		editingNew.hidden = building !== null
 		headSub.textContent = has ? "Only what you ask changes" : "Builds on the empty table"
 		input.placeholder = has ? "Change this scene… e.g. swap the red ball for a basketball" : "Describe a machine to build on the empty table…"
 		hint.textContent = has ? "Enter to change it · Shift+Enter for a new line" : "Enter to build · Shift+Enter for a new line"
 		if (!S.job) btnSend.title = has ? "Change it (Enter)" : "Build (Enter)"
 		if (!hero.hidden && hero.dataset.has !== String(has)) ((hero.dataset.has = String(has)), renderHero())
 	}
+
+	// ---------------------------------------------------------------- whether the AI can be used here, said before anything is typed
+	const access = aiAccess()
+	const blocked = () => access.state.kind !== "ok"
+	/** The AI can't be used here at all (no AI on this deployment, the allowance used up, no access): nothing to type, only why. */
+	const away = () => ["off", "quota", "access"].includes(access.state.kind)
+	/** The notice in place of the box: hidden when the AI can be used, or when the empty drawer's hero already says why. */
+	const syncAccessBox = () => (accessBox.hidden = access.state.kind === "ok" || (away() && !hero.hidden))
+	function renderAccess(st = access.state) {
+		const off = st.kind !== "ok"
+		box.hidden = off
+		editing.hidden = off && st.kind !== "sign_in"
+		syncAccessBox()
+		accessBox.dataset.kind = st.kind
+		accessBox.replaceChildren()
+		host.button?.classList.toggle("ai-off", st.kind === "off")
+		if (host.button) {
+			host.button.dataset.title ??= host.button.title
+			host.button.title = st.kind === "off" || st.kind === "quota" ? `Edit with AI: ${lcFirstWord(st.title)}` : host.button.dataset.title
+		}
+		if (off) {
+			// (the allowance used up: the card in the thread already says it in full; here only when the AI is back)
+			const back = st.kind === "quota" ? (st.when ? atWhen(st.when) : /resets (.+)$/.exec(st.title ?? "")?.[1]?.replace(/^it /, "") ?? "later") : null
+			accessBox.append(icon(st.kind === "sign_in" ? "lock" : st.kind === "quota" ? "clock" : "off", "ai-ic ai-access-ic"), h("div", { class: "ai-access-t" }, back ? h("b", {}, `AI is back ${back}`) : [h("b", {}, st.title), h("p", {}, st.text)]))
+			const acts = []
+			if (st.kind === "sign_in" && !st.unavailable) acts.push(h("button", { type: "button", class: "ai-google", onclick: () => (saveDraft(), access.signIn({ kind: "edit" }) || note("Sign-in isn’t available on this page")) }, h("span", { class: "ai-g", html: ICONS.google, "aria-hidden": "true" }), "Continue with Google"))
+			if (st.kind === "off" && host.openNew) acts.push(h("button", { type: "button", class: "ai-chip-btn", onclick: () => host.openNew({ pick: "example" }) }, "Start from an example"))
+			if (acts.length) accessBox.append(h("div", { class: "ai-access-acts" }, acts))
+		}
+		if (!hero.hidden) renderHero()
+		syncSend()
+	}
+	access.onChange(() => renderAccess())
+	// (what is typed in the box is kept for this tab: a trip to Google to sign in, or a reload, doesn't lose it)
+	const DRAFT_KEY = `${KEY}:draft`
+	function saveDraft() {
+		try {
+			if (input.value.trim()) sessionStorage.setItem(DRAFT_KEY, input.value)
+			else sessionStorage.removeItem(DRAFT_KEY)
+		} catch {}
+	}
+	input.addEventListener("input", saveDraft)
+	try {
+		const d = sessionStorage.getItem(DRAFT_KEY)
+		if (d && !input.value) input.value = d
+	} catch {}
 
 	function autosize() {
 		input.style.height = "auto"
@@ -270,6 +406,15 @@ export function mountAiPanel(host) {
 			e.preventDefault()
 			submit()
 		}
+		// ⌘Z with nothing typed is the scene's Undo (as the toast and the Undo button say); ⌘⇧Z / ⌘Y its Redo. With words in the box it is the box's own.
+		const key = e.key.toLowerCase()
+		if ((e.metaKey || e.ctrlKey) && !e.altKey && (key === "z" || key === "y") && !input.value) {
+			e.preventDefault()
+			if (key === "z" && !e.shiftKey) host.undo?.()
+			else if (host.redo) host.redo()
+			else window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", shiftKey: true, metaKey: e.metaKey, ctrlKey: e.ctrlKey })) // (the app's own ⌘⇧Z)
+			syncUndoButtons()
+		}
 	})
 	composer.addEventListener("submit", (e) => {
 		e.preventDefault()
@@ -285,7 +430,7 @@ export function mountAiPanel(host) {
 		btnSend.append(icon(running ? "stop" : "send"))
 		btnSend.title = running ? "Stop building" : "Build (Enter)"
 		btnSend.setAttribute("aria-label", running ? "Stop building" : "Build")
-		btnSend.disabled = !running && !input.value.trim() && !S.images.length
+		btnSend.disabled = !running && ((!input.value.trim() && !S.images.length) || blocked())
 		host.button?.classList.toggle("busy", running)
 	}
 
@@ -432,10 +577,20 @@ export function mountAiPanel(host) {
 		// (another tab of this profile may have saved turns since this one last looked: they are kept, not written over)
 		if (mergeStored() && !S.job) (renderThread(), syncUndoButtons())
 		const kept = new Set(S.turns.filter((t) => t.sceneJSON).slice(-KEEP_VERSIONS).map((t) => t.id))
-		const turns = S.turns.filter((t) => t.state !== "running").slice(-HISTORY_TURNS).map((t) => ({ ...slimTurn(t), ...(kept.has(t.id) ? { sceneJSON: t.sceneJSON, plan: t.plan ?? null } : {}) }))
+		// (a concept sketch is 100–300 KB: only the last few are kept in this browser; older cards lose their thumbnail after a reload)
+		const keptConcepts = new Set(S.turns.filter((t) => t.report?.concept).slice(-KEEP_CONCEPTS).map((t) => t.id))
+		const noConcept = (t) => (t.report?.concept || t.report?.startFrame ? { ...t, report: { ...t.report, concept: undefined, startFrame: undefined } } : t)
+		const turns = S.turns
+			.filter((t) => t.state !== "running")
+			.slice(-HISTORY_TURNS)
+			.map((t) => ({ ...slimTurn(t), ...(kept.has(t.id) ? { sceneJSON: t.sceneJSON, plan: t.plan ?? null } : {}) }))
+			.map((t) => (keptConcepts.has(t.id) ? t : noConcept(t)))
 		const extra = { gone: S.gone, since: S.since }
-		// (out of room in this browser's storage: the conversation is kept without the older versions)
-		if (!store.set({ turns, lastBuild: S.lastBuild, ...extra })) store.set({ turns: turns.map((t) => (t.id === S.lastBuild?.turnId ? t : { ...t, sceneJSON: undefined, plan: undefined })), lastBuild: S.lastBuild, ...extra })
+		// (out of room in this browser's storage: the conversation is kept without the older versions and sketches; then without any sketch)
+		if (!store.set({ turns, lastBuild: S.lastBuild, ...extra })) {
+			const lean = turns.map((t) => (t.id === S.lastBuild?.turnId ? t : noConcept({ ...t, sceneJSON: undefined, plan: undefined })))
+			if (!store.set({ turns: lean, lastBuild: S.lastBuild, ...extra })) store.set({ turns: lean.map(noConcept), lastBuild: S.lastBuild, ...extra })
+		}
 	}
 	// another tab of this profile saved its conversation: its turns show here too (after this tab's build, if one is running)
 	addEventListener("storage", (e) => {
@@ -443,7 +598,7 @@ export function mountAiPanel(host) {
 		if (mergeStored()) (renderThread(), syncUndoButtons())
 	})
 	function slimTurn(t) {
-		if (t.role === "user") return { id: t.id, at: t.at, role: "user", text: t.text, images: (t.images ?? []).map((im) => ({ name: im.name, thumb: im.thumb })), mode: t.mode, ...(t.asked ? { asked: true } : {}) }
+		if (t.role === "user") return { id: t.id, at: t.at, role: "user", text: t.text, ...(t.sent ? { sent: t.sent } : {}), images: (t.images ?? []).map((im) => ({ name: im.name, thumb: im.thumb })), mode: t.mode, ...(t.asked ? { asked: true } : {}) }
 		const r = t.report
 		return {
 			id: t.id,
@@ -451,14 +606,21 @@ export function mountAiPanel(host) {
 			role: "ai",
 			state: t.state,
 			error: t.error,
-			request: t.request ? { text: t.request.text, mode: t.request.mode, images: [], hadImages: (t.request.images ?? []).length || t.request.hadImages || 0, ...(t.request.asked ? { asked: true } : {}) } : null,
+			request: t.request ? { text: t.request.text, mode: t.request.mode, images: [], hadImages: (t.request.images ?? []).length || t.request.hadImages || 0, ...(t.request.asked ? { asked: true } : {}), ...(t.request.imagine ? { imagine: t.request.imagine } : {}) } : null,
 			report: r
 				? {
 						replyOnly: r.replyOnly, reply: r.reply, howItWorks: r.howItWorks, happened: r.happened, problems: r.problems, unsure: r.unsure, title: r.title, mode: r.mode, used: r.used, missing: r.missing,
 						assumptions: r.assumptions, goals: r.goals, refine: r.refine, tune: r.tune, edit: r.edit, timings: r.timings, totalMs: r.totalMs, models: r.models,
 						score: r.score, scoreState: r.scoreState, staleScore: r.staleScore, scoreNote: r.scoreNote, steps: r.steps,
 						differences: r.differences, coverage: r.coverage, quick: r.quick, quickNote: r.quickNote, undo: r.undo, noChange: r.noChange, version: r.version, ratedBy: r.ratedBy, sceneBefore: r.sceneBefore, suggestNew: r.suggestNew,
-						lead: r.lead, human: r.human, planned: r.planned, suggestions: r.suggestions, concept: typeof r.concept === "string" && r.concept.length < 400000 ? r.concept : undefined,
+						lead: r.lead, human: r.human, planned: r.planned, suggestions: r.suggestions,
+						// the concept sketch of a new scene (never an edit's): kept with the turn while its picture is under the 400 KB guard; the scene's
+						// start frame, once rendered for the side-by-side view
+						concept: r.mode === "new" ? slimConcept(r.concept) : undefined,
+						startFrame: r.mode === "new" && typeof r.startFrame === "string" && r.startFrame.length < 200000 ? r.startFrame : undefined,
+						// (why there is no concept sketch, when one was tried: the info line under Details)
+						infos: r.infos ?? (r.issues ?? []).filter((i) => i.level === "info" && /^imagine/.test(i.code ?? "")).map((i) => i.text).slice(0, 2),
+						targets: r.targets, fix: r.fix, fixNeeded: r.fixNeeded, fixApplied: r.fixApplied, stageTune: r.stageTune, stages: r.stages,
 						// what went wrong while building (a check that couldn't run, changes that couldn't be made): shown, never dropped
 						issues: (r.issues ?? []).filter((i) => i.level === "warn" || i.level === "error").slice(0, 8),
 						solverNotes: (r.solverIssues ?? []).filter((i) => i.level !== "info" || ["moved", "kept_on", "lean_length", "shifted", "table_widened", "default_x", "air_height"].includes(i.code)).slice(0, 20),
@@ -466,6 +628,50 @@ export function mountAiPanel(host) {
 					}
 				: null
 		}
+	}
+	/** A concept for keeping: {image, cast, story, how} with its picture under the 400 KB guard (an older turn's bare data URL reads as one). */
+	function slimConcept(c) {
+		if (typeof c === "string") c = { image: c, cast: [], story: [] }
+		if (!c || typeof c.image !== "string" || !/^data:image\//.test(c.image)) return undefined
+		// (a picture over the guard is kept as its smaller copy, once drawn: shrinkConcept)
+		const image = c.image.length < CONCEPT_MAX ? c.image : conceptSmall.get(c.image)?.url
+		if (!image) return undefined
+		return { image, cast: (Array.isArray(c.cast) ? c.cast : []).slice(0, 12), story: (Array.isArray(c.story) ? c.story : []).map(String).slice(0, 6), ...(c.how ? { how: c.how } : {}) }
+	}
+	/** A concept picture over the 400 KB guard (the Gemini fallback's 1408×768 JPEG is ~0.7 M characters) drawn again for keeping: ≤ 1536 px
+	 *  wide as a JPEG at 0.85, smaller only if it is still over. -> Promise<data URL | null>; started when the sketch arrives. */
+	function shrinkConcept(src) {
+		if (typeof src !== "string" || src.length < CONCEPT_MAX) return Promise.resolve(src ?? null)
+		const had = conceptSmall.get(src)
+		if (had) return had.p
+		const entry = { url: null, p: null }
+		entry.p = (async () => {
+			for (const [w, q] of [[1536, 0.85], [1280, 0.8], [1024, 0.75]]) {
+				const url = await redrawJpeg(src, w, q).catch(() => null)
+				if (url && url.length < CONCEPT_MAX) return (entry.url = url)
+			}
+			return null
+		})()
+		conceptSmall.set(src, entry)
+		return entry.p
+	}
+	/** A data URL drawn again at most maxW px wide (its own shape kept) as a JPEG. */
+	function redrawJpeg(src, maxW, q) {
+		return new Promise((resolve, reject) => {
+			const im = new Image()
+			im.onload = () => {
+				const k = Math.min(1, maxW / (im.naturalWidth || maxW))
+				const c = document.createElement("canvas")
+				c.width = Math.max(1, Math.round((im.naturalWidth || maxW) * k))
+				c.height = Math.max(1, Math.round((im.naturalHeight || maxW) * k))
+				const g = c.getContext("2d")
+				g.imageSmoothingQuality = "high"
+				g.drawImage(im, 0, 0, c.width, c.height)
+				resolve(c.toDataURL("image/jpeg", q))
+			}
+			im.onerror = () => reject(new Error("The picture couldn’t be read"))
+			im.src = src
+		})
 	}
 	function renderThread() {
 		thread.innerHTML = ""
@@ -478,7 +684,7 @@ export function mountAiPanel(host) {
 			return h(
 				"li",
 				{ class: "ai-turn ai-user", "data-id": t.id },
-				h("div", { class: "ai-bubble" }, h("span", { class: `ai-tag${t.mode === "new" ? " ai-tag-new" : ""}` }, t.mode === "check" ? "Check" : t.mode === "new" ? "New scene" : t.asked ? "Question" : "Change"), t.text ? h("p", {}, t.text) : null, t.images?.length ? h("div", { class: "ai-bubble-imgs" }, t.images.map((im) => h("img", { src: im.thumb, alt: im.name ?? "image" }))) : null)
+				h("div", { class: "ai-bubble" }, h("span", { class: `ai-tag${t.mode === "new" ? " ai-tag-new" : t.mode === "fix" ? " ai-tag-fix" : ""}` }, t.mode === "check" ? "Check" : t.mode === "new" ? "New scene" : t.mode === "fix" ? "Fix" : t.asked ? "Question" : "Change"), t.text ? h("p", {}, t.text) : null, t.images?.length ? h("div", { class: "ai-bubble-imgs" }, t.images.map((im) => h("img", { src: im.thumb, alt: im.name ?? "image" }))) : null)
 			)
 		}
 		const li = h("li", { class: `ai-turn ai-bot ai-s-${t.state}`, "data-id": t.id })
@@ -490,15 +696,20 @@ export function mountAiPanel(host) {
 	function scrollToEnd(smooth = true) {
 		requestAnimationFrame(() => scroll.scrollTo({ top: scroll.scrollHeight, behavior: smooth && !reduceMotion() ? "smooth" : "auto" }))
 	}
+	/** Back in view after the drawer opens or unfolds: the end of the thread, or, while a build shows its concept sketch, the step working now. */
+	const scrollToNow = (smooth = true) => (S.running?.view?.conceptEl ? revealConcept(S.running.view) : scrollToEnd(smooth))
 
 	// ---- the live progress card
 	function renderProgress(t) {
 		const rows = new Map()
 		const list = h("ol", { class: "ai-steps" })
 		const pics = (t.request.images ?? []).length > 0
-		const steps = TIMELINE.filter((s) => (s !== "observe" || pics) && (s !== "reconcile" || (pics && t.request.mode === "new")) && (s !== "plan" || t.request.mode !== "check"))
+		const edit = t.request.mode === "edit"
+		// (a new scene from words that gets a concept sketch first: "Picturing the scene", and on the observe route "Reading the sketch")
+		const route = t.request.mode === "new" ? conceptRoute({ mode: "new", images: t.request.images ?? [], text: t.request.text, imagine: t.request.imagine ?? "off" }) : null
+		const steps = TIMELINE.filter((s) => (s !== "imagine" || route) && (s !== "observe" || pics || route === "observe") && (s !== "reconcile" || (pics && t.request.mode === "new")) && (s !== "plan" || t.request.mode !== "check") && (!edit || (s !== "refine" && s !== "tune")) && (s !== "fix" || (edit && statesOutcome(t.request.text))) && (s !== "stagetune" || t.request.mode === "new"))
 		for (const s of steps) {
-			const label = s === "plan" && t.request.mode === "edit" ? STEP_LABELS.edit : STEP_LABELS[s]
+			const label = s === "plan" && t.request.mode === "edit" ? STEP_LABELS.edit : s === "imagine" ? STEP_LABELS.imagine ?? "Picturing the scene" : s === "observe" && !pics ? "Reading the sketch" : STEP_LABELS[s]
 			const row = { el: null, state: "pending", t0: 0, ms: null, label, sub: "" }
 			row.badge = h("span", { class: "ai-step-ic", "aria-hidden": "true" })
 			row.text = h("span", { class: "ai-step-l" }, label)
@@ -531,6 +742,8 @@ export function mountAiPanel(host) {
 			// no word from the server for a while on a long step (a static host has no progress to give): say honestly that it is still going
 			if ((row === view.rows.get("plan") || row === view.rows.get("observe")) && n - row.t0 > 25000 && n - (row.beat ?? row.t0) > 12000 && !row.waitSub && !/still working/.test(row.subEl.textContent))
 				row.subEl.textContent = "still working: a detailed scene can take a minute or two"
+			// (the sketch: about 25 s; the build goes on from the words alone if it isn't there in 75 s)
+			if (row === view.rows.get("imagine") && n - row.t0 > 30000 && n - (row.beat ?? row.t0) > 12000 && !row.waitSub && !/still drawing/.test(row.subEl.textContent)) row.subEl.textContent = "still drawing: a sketch takes up to a minute"
 		}
 		if (S.mini && S.running?.view === view) {
 			miniTitle.textContent = view.now
@@ -572,6 +785,29 @@ export function mountAiPanel(host) {
 	function onEvent(t, e) {
 		const v = t.view
 		if (!v) return
+		if (e.type === "concept") return showConcept(t, e)
+		if (e.type === "concept-dropped") {
+			// (reading the sketch or planning from it failed: it is taken down, and the build goes on from the words alone)
+			v.conceptEl?.remove()
+			v.conceptEl = null
+			const row = v.rows.get("imagine")
+			if (row) row.subEl.textContent = "not used: planning from your words"
+			return
+		}
+		if (e.type === "progress" && e.step === "fix") {
+			setRow(v, "fix", "active", { sub: `${e.runs} physics run${e.runs === 1 ? "" : "s"}${e.found ? " · found one" : ""}` })
+			v.now = `Finding a fix · ${e.runs} runs`
+			return
+		}
+		if (e.type === "progress" && e.step === "stagetune") {
+			// (a new scene, physics first: each stage's check made to happen in the engine before the AI looks)
+			const which = e.of > 1 ? `stage ${e.stage} of ${e.of}` : "the goal"
+			setRow(v, "stagetune", "active", { sub: `${which} · ${plural(e.runs, "physics run")}${e.passed ? " · it works" : ""}` })
+			v.now = `Tuning ${which} · ${e.runs} runs`
+			v.draft = "tuning it stage by stage"
+			draftSub.textContent = draftWords(v)
+			return
+		}
 		if (e.type === "progress" && e.step === "tune") {
 			setRow(v, "tune", "active", { sub: `run ${e.runs} of ${e.max}${e.passed ? " · goal met" : ""}` })
 			v.now = `Tuning · run ${e.runs} of ${e.max}`
@@ -590,7 +826,7 @@ export function mountAiPanel(host) {
 			row.beat = performance.now()
 			row.el.classList.add("beat")
 			setTimeout(() => row.el.classList.remove("beat"), 450)
-			v.now = `${STEP_LABELS[step === "plan" && t.request.mode === "edit" ? "edit" : step] ?? "Working"}${e.state === "waiting" ? " · waiting for a slot" : e.tokens ? ` · ${tokensWord(e.tokens)}` : ""}`
+			v.now = `${(step === "observe" || step === "imagine" ? row.label : null) ?? STEP_LABELS[step === "plan" && t.request.mode === "edit" ? "edit" : step] ?? "Working"}${e.state === "waiting" ? " · waiting for a slot" : e.tokens ? ` · ${tokensWord(e.tokens)}` : ""}`
 			if (e.state === "waiting") announce(words)
 			return
 		}
@@ -601,7 +837,8 @@ export function mountAiPanel(host) {
 				draftBadge.hidden = false
 				// (the badge names the version the view shows: the orchestrator's label says which one it is)
 				if (!e.sim) v.draft = "placed · running the physics…"
-				else if (e.label === "tuned") v.draft = "tuned"
+				else if (e.label === "tuned") v.draft = v.phase === "stagetune" ? "tuned stage by stage" : "tuned"
+				else if (e.label === "fixed") v.draft = "fixed so it works"
 				else if (e.label === "the better version") v.draft = "the better version"
 				else if (e.label === "matching your picture" || v.phase === "reconcile") v.draft = "matched to your picture"
 				else if (/^after check (\d+)/.test(e.label ?? "")) v.draft = `changed by check ${/^after check (\d+)/.exec(e.label)[1]}`
@@ -648,8 +885,38 @@ export function mountAiPanel(host) {
 			else setRow(v, "reconcile", e.state === "cancelled" ? "error" : e.state)
 			return
 		}
-		if (step === "observe" || step === "plan" || step === "tune") {
-			if (e.state === "active") announce(e.label)
+		if (step === "stagetune") {
+			if (e.state === "active") {
+				v.phase = "stagetune"
+				v.draft = "tuning it stage by stage"
+				draftSub.textContent = draftWords(v)
+				announce(e.label)
+				return setRow(v, "stagetune", "active", { sub: e.detail ?? "" })
+			}
+			if (e.state === "skipped") return setRow(v, "stagetune", "skipped", { sub: e.label && e.label !== STEP_LABELS.stagetune ? e.label : undefined })
+			if (e.state === "done") return setRow(v, "stagetune", "done", { ms: e.ms, sub: "checking it in the app’s own run" })
+			return setRow(v, "stagetune", e.state === "cancelled" ? "error" : e.state)
+		}
+		// (the tuned version placed and run on the app's own engine: part of the stage tuning row)
+		if (v.phase === "stagetune" && (step === "solve" || step === "simulate")) {
+			const row = v.rows.get("stagetune")
+			if (row && e.state === "active") row.subEl.textContent = step === "solve" ? "placing the tuned version" : "running the tuned version"
+			return
+		}
+		if (step === "imagine") {
+			const row = v.rows.get("imagine")
+			// (no sketch for this build: no row for it)
+			if (e.state === "skipped") return row && (row.el.remove(), v.rows.delete("imagine"))
+			if (e.state === "active") {
+				announce(e.label ?? STEP_LABELS.imagine)
+				return setRow(v, "imagine", "active", { sub: "an AI sketch of your idea, to plan from" })
+			}
+			if (e.state === "done") return setRow(v, "imagine", "done", { ms: e.ms, sub: "" })
+			// (no sketch came: the build goes on from the words alone; why is under Details)
+			return setRow(v, "imagine", e.state === "cancelled" ? "error" : "skipped", { sub: "no sketch: planning from your words" })
+		}
+		if (step === "observe" || step === "plan" || step === "tune" || step === "fix") {
+			if (e.state === "active") announce(step === "observe" ? v.rows.get("observe")?.label ?? e.label : e.label)
 			if (step === "tune" && e.state === "skipped") return setRow(v, "tune", "skipped", { sub: e.label && e.label !== STEP_LABELS.tune ? e.label : undefined })
 			if (step === "tune" && e.state === "active") ((v.draft = "tuning it"), (draftSub.textContent = draftWords(v)))
 			setRow(v, step, e.state === "cancelled" ? "error" : e.state, { ms: e.ms, sub: e.state === "done" ? "" : undefined })
@@ -692,6 +959,8 @@ export function mountAiPanel(host) {
 		setRow(v, step, e.state === "cancelled" ? "error" : e.state, { ms: e.ms, sub: step === "solve" && e.state === "done" ? "" : undefined })
 	}
 	function finishRows(view, report) {
+		const im = view.rows.get("imagine")
+		if (im && (im.state === "pending" || im.state === "active")) setRow(view, "imagine", "skipped", { sub: "no sketch: planned from your words" })
 		const rf = view.rows.get("refine")
 		const failed = (report?.issues ?? []).find((i) => i.code === "refine_failed" || i.code === "final_check_failed")
 		const scoreWords = report?.score != null ? ` · ${report.score}/10` : report?.scoreState === "stale" ? " · not re-checked" : ""
@@ -700,6 +969,10 @@ export function mountAiPanel(host) {
 		else if (rf && rf.state === "pending") setRow(view, "refine", "skipped", { sub: report?.quick ? "a simple change: checked by the physics" : undefined })
 		const rc = view.rows.get("reconcile")
 		if (rc && rc.state === "active") setRow(view, "reconcile", report?.coverage?.fixed?.length ? "done" : "error", { sub: report?.coverage?.fixed?.length ? `matched: ${report.coverage.fixed.slice(0, 2).join(", ")}` : "not matched" })
+		const sr = view.rows.get("stagetune")
+		const stt = report?.stageTune
+		if (sr && stt?.runs) setRow(view, "stagetune", "done", { ms: stt.ms, sub: `${plural(stt.runs, "run")} · ${stt.kept ? `${stt.after?.checks ?? stt.after?.goals} work${stt.after?.passed ? " ✓" : ""}` : stt.partial ? "not all working: left to the AI" : "nothing better"}` })
+		else if (sr && sr.state === "pending") setRow(view, "stagetune", "skipped", { sub: stt?.already ? "everything works in the first run" : undefined })
 		const tn = view.rows.get("tune")
 		if (tn && tn.state === "pending") setRow(view, "tune", "skipped", { sub: (report?.goals ?? []).length ? "goals met, nothing to tune" : "no goals to tune" })
 		// (a tune that made no run was not a tune: what stopped it is said instead)
@@ -715,9 +988,57 @@ export function mountAiPanel(host) {
 		live.textContent = text
 	}
 
+	// ---- the concept sketch (a new scene from words): shown in the progress card the moment it arrives, labelled as the AI's picture of the idea
+	/** "10 × domino · 5 cm" (the size phrase's largest length: "0.8 cm wide × 5 cm tall" -> 5 cm; "2.5 cm across" -> 2.5 cm) */
+	function castWords(x, types) {
+		const name = String(types.get(x.type)?.name ?? String(x.type ?? "").replace(/-/g, " ")).replace(/^[A-Z](?=[a-z])/, (c) => c.toLowerCase())
+		const s = String(x.size ?? "").trim()
+		const lens = [...s.matchAll(/(\d+(?:\.\d+)?)\s*(mm|cm|m)\b/g)].map((m) => ({ t: `${m[1]} ${m[2]}`, m: Number(m[1]) * { mm: 0.001, cm: 0.01, m: 1 }[m[2]] }))
+		const size = lens.length ? lens.sort((a, b) => b.m - a.m)[0].t : s.length <= 12 ? s : ""
+		return { text: `${x.count > 1 ? `${x.count} × ` : ""}${name}${size ? ` · ${size}` : ""}`, title: [x.role ? capFirst(x.role) : null, s || null].filter(Boolean).join(" · ") }
+	}
+	function conceptFigure(c) {
+		const types = new Map((host.getCatalog()?.types ?? []).map((ty) => [ty.key, ty]))
+		const cast = (c.cast ?? []).filter((x) => x?.type).slice(0, 10).map((x) => castWords(x, types))
+		const story = (c.story ?? []).map(String).filter(Boolean).slice(0, 6)
+		return h(
+			"figure",
+			{ class: "ai-concept-fig" },
+			h("div", { class: "ai-concept-frame" }, h("img", { src: c.image, alt: "Concept sketch of your idea, drawn by AI from your words" }), h("span", { class: "ai-concept-tag" }, icon("sparkle"), CONCEPT_TAG)),
+			h("figcaption", { class: "ai-concept-cap" }, CONCEPT_CAPTION),
+			cast.length ? h("ul", { class: "ai-cast", "aria-label": "What it is built from" }, cast.map((x) => h("li", { title: x.title || null }, x.text))) : null,
+			story.length ? h("ol", { class: "ai-story", "aria-label": "The idea, step by step" }, story.map((s) => h("li", {}, s))) : null
+		)
+	}
+	function showConcept(t, e) {
+		const v = t.view
+		if (!v || typeof e.image !== "string" || t.request?.mode !== "new") return
+		v.conceptEl?.remove()
+		v.conceptEl = conceptFigure(e)
+		v.root.querySelector(".ai-steps")?.after(v.conceptEl)
+		shrinkConcept(e.image) // (a picture too big to keep is drawn again smaller now, while the build goes on)
+		const row = v.rows.get("imagine")
+		if (row && row.state === "active") row.subEl.textContent = "here it is: planning from it, your words decide"
+		announce("A concept sketch of the idea is ready, made by AI from your words. Planning the scene now.")
+		if (S.running === t && !S.mini) revealConcept(v)
+	}
+	/** The sketch comes in under the steps: the step working now goes just under the card's (sticky) header with Cancel and the timer, and the
+	 *  sketch below it as far as there is room. The card is never scrolled to its end: that would leave only the last pending row in view. */
+	function revealConcept(v) {
+		requestAnimationFrame(() => {
+			const row = v.root.querySelector(".ai-step.st-active") ?? v.root.querySelector(".ai-step.st-pending")
+			if (!row || !v.root.isConnected) return
+			const sr = scroll.getBoundingClientRect()
+			const headH = v.root.querySelector(".ai-card-head")?.getBoundingClientRect().height ?? 0
+			const want = scroll.scrollTop + (row.getBoundingClientRect().top - sr.top) - headH - 10
+			const top = Math.max(0, Math.min(want, scroll.scrollHeight - scroll.clientHeight))
+			scroll.scrollTo({ top, behavior: reduceMotion() ? "auto" : "smooth" })
+		})
+	}
+
 	// ---- the result card
 	/** What a step is doing, in a few words (the folded chip shows it). */
-	const stepWords = (e, v) => (v.phase === "refine" && ["solve", "simulate", "render"].includes(e.step) ? `Checking · ${v.round || "refining"}` : String(e.label ?? STEP_LABELS[e.step] ?? "Working").replace(/ \d+\/\d+$/, ""))
+	const stepWords = (e, v) => (v.phase === "refine" && ["solve", "simulate", "render"].includes(e.step) ? `Checking · ${v.round || "refining"}` : e.step === "observe" && v.rows.get("observe")?.label === "Reading the sketch" ? "Reading the sketch" : String(e.label ?? STEP_LABELS[e.step] ?? "Working").replace(/ \d+\/\d+$/, ""))
 	const draftWords = (v) => (v?.draft ? `the AI is still working · ${v.draft}` : "the AI is still working on it")
 	/** The latest build's Undo is offered only while that build is still the scene's current history entry (never on older cards, never after a reload). */
 	const canUndo = (t) => t.id === S.lastAppliedId && t.hi != null && host.historyIndex?.() === t.hi
@@ -727,21 +1048,41 @@ export function mountAiPanel(host) {
 	function renderReport(t) {
 		const r = t.report
 		if (r.replyOnly) {
+			// an edit that changes nothing, one card per kind (./edit-turns.js): ask (one question naming the candidates, a chip per reading),
+			// answer, undo (the app's Undo), new ("Build it as a new scene…")
+			const kind = r.edit?.kind ?? (r.suggestNew ? "new" : r.undo ? "undo" : "answer")
 			const latest = S.turns.find((x) => x.id === S.lastAppliedId)
-			const undoIt = r.undo && latest && canUndo(latest) ? h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: (ev) => (ev.currentTarget.remove(), undoTurn(latest, h("button"))) }, icon("undo"), `Undo “${latest.report?.title ?? "the last build"}”`) : null
+			let undoIt = r.undo && latest && canUndo(latest) ? h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: (ev) => (ev.currentTarget.remove(), undoTurn(latest, h("button"))) }, icon("undo"), `Undo “${clip(turnWords(latest).words, 44)}”`) : null
+			// (no build of the AI's to take back: the app's own Undo, one step, while this is the latest reply)
+			if (!undoIt && r.undo && kind === "undo" && t.id === S.turns.filter((x) => x.role === "ai").at(-1)?.id && (host.historyIndex?.() ?? 0) > 0)
+				undoIt = h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: (ev) => (ev.currentTarget.remove(), host.undo?.(), (S.lastAppliedId = null), syncUndoButtons()) }, icon("undo"), touchScreen() ? "Undo" : "Undo (⌘Z)")
 			// a different scene was asked for: nothing changed here; one click takes the same words to New → Build with AI
-			const asNew = r.suggestNew && host.openNew ? h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => host.openNew({ ai: true, text: t.request?.text ?? "" }) }, icon("sparkle"), "Build it as a new scene…") : null
-			return h("div", { class: "ai-card ai-reply" }, h("p", {}, r.reply), r.missing?.length ? h("ul", { class: "ai-missing" }, r.missing.map((m) => h("li", {}, h("span", { class: "ai-miss-asked" }, m.asked ?? "?"), h("span", { class: "ai-miss-none" }, "not in the library")))) : null, undoIt || asNew ? h("div", { class: "ai-res-actions" }, undoIt, asNew) : null, r.suggestNew ? null : chipsFor(t))
+			// (the words go without "start over with": "start over with a catapult…" fills the box with "A catapult…")
+			const asNew = r.suggestNew && host.openNew ? h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => host.openNew({ ai: true, text: newSceneWords(t.request?.text ?? "") }) }, icon("sparkle"), "Build it as a new scene…") : null
+			// (a question back: each reading is a chip that sends the whole request; nothing else is offered beside them)
+			const asks = kind === "ask" ? (r.suggestions ?? []).filter((s) => s?.label && s?.prompt).slice(0, 4) : []
+			const askChips = asks.length ? h("div", { class: "ai-chips ai-ask-chips", role: "group", "aria-label": "Which one?" }, asks.map((s) => h("button", { type: "button", class: "ai-sugg", title: s.prompt, onclick: () => suggest(s) }, icon("sparkle"), h("span", {}, s.label)))) : null
+			return h(
+				"div",
+				{ class: `ai-card ai-reply ai-k-${kind}` },
+				h("p", {}, r.reply),
+				r.missing?.length ? h("ul", { class: "ai-missing" }, r.missing.map((m) => h("li", {}, h("span", { class: "ai-miss-asked" }, m.asked ?? "?"), h("span", { class: "ai-miss-none" }, "not in the library")))) : null,
+				undoIt || asNew ? h("div", { class: "ai-res-actions" }, undoIt, asNew) : null,
+				kind === "ask" ? askChips : kind === "answer" ? chipsFor(t) : null
+			)
 		}
 		const types = new Map((host.getCatalog()?.types ?? []).map((ty) => [ty.key, ty]))
 		// the card is a chat reply: one short first-person sentence (the change in a person's words and what the run really shows), a heads-up
 		// when something is off, a few next edits to try, and everything else under "Details"
 		const card = h("div", { class: "ai-more-body", hidden: !t.detailsOpen })
+		// (an edit's card says what changed itself; its Details start with what the AI understood, why, how long and which model)
+		const editCard = r.mode === "edit" && !r.replyOnly
+		if (editCard) card.append(editFacts(r))
 		if (t.sumEl) card.append(t.sumEl)
 		const okGoals = (r.goals ?? []).filter((g) => g.ok).length
 		const nItems = (r.used ?? []).reduce((a, u) => a + u.count, 0)
 		const checks = (r.refine ?? []).length
-		const verb = r.mode === "edit" ? "changed" : r.mode === "check" ? "checked" : "built"
+		const verb = r.mode === "edit" ? "changed" : r.mode === "check" ? "checked" : r.mode === "fix" ? "fixed" : "built"
 		const stats = [plural(nItems, "item"), checks ? plural(checks, "check") : null, r.tune?.runs ? plural(r.tune.runs, "tuning run") : null, r.totalMs ? `${verb} in ${secs(r.totalMs)}` : null].filter(Boolean).join(" · ")
 		// the score is the critic's verdict on THIS scene; one given to an earlier version is never shown as this one's
 		const badge =
@@ -753,10 +1094,12 @@ export function mountAiPanel(host) {
 						? h("span", { class: "ai-score none quick", title: `${r.quickNote ?? "A simple change: applied right after its physics run, not looked at by the AI"}. “Check it” has the AI look at it.` }, h("small", {}, "physics-checked"))
 						: null
 		// what this was, first: an edit of the scene that was on screen, or a new scene
-		const kind = r.mode === "edit" ? `Edited: ${r.sceneBefore ?? r.title ?? "the scene"}` : r.mode === "check" ? `Checked: ${r.sceneBefore ?? r.title ?? "the scene"}` : "New scene"
-		card.append(h("div", { class: "ai-res-head" }, h("div", {}, h("p", { class: `ai-res-kind ${r.mode === "new" ? "new" : "edit"}` }, kind), h("h3", { class: "ai-res-title" }, r.title ?? "Your scene"), h("p", { class: "ai-res-stats" }, stats)), badge))
-		// what went wrong while building: plain, at the top, never folded away
-		const notices = (r.issues ?? []).filter((i) => i.level === "warn" || i.level === "error")
+		const kind = r.mode === "edit" ? `Edited: ${r.sceneBefore ?? r.title ?? "the scene"}` : r.mode === "check" ? `Checked: ${r.sceneBefore ?? r.title ?? "the scene"}` : r.mode === "fix" ? `Fixed: ${r.sceneBefore ?? r.title ?? "the scene"}` : "New scene"
+		if (!editCard) card.append(h("div", { class: "ai-res-head" }, h("div", {}, h("p", { class: `ai-res-kind ${r.mode === "new" ? "new" : "edit"}` }, kind), h("h3", { class: "ai-res-title" }, r.title ?? "Your scene"), h("p", { class: "ai-res-stats" }, stats)), badge))
+		// (no concept sketch where one was tried: why, in one line)
+		for (const line of r.infos ?? []) card.append(h("p", { class: "ai-info" }, line))
+		// what went wrong while building: plain, at the top, never folded away (an edit's "Not done" lines are on its card)
+		const notices = (r.issues ?? []).filter((i) => (i.level === "warn" || i.level === "error") && !(editCard && i.code === "patch_skipped"))
 		if (notices.length || (r.scoreState === "stale" && r.scoreNote))
 			card.append(
 				h(
@@ -776,6 +1119,9 @@ export function mountAiPanel(host) {
 				)
 			)
 		if (r.planned ?? r.edit?.reply) card.append(h("p", { class: "ai-reply-text", title: "What the AI meant to do, before the physics ran (the reply above is what the run shows)" }, h("b", {}, "What I planned: "), r.planned ?? r.edit.reply))
+		// (what the AI also changed, beyond what was asked, to keep a goal working: put back, so the change is exactly what was asked)
+		const kept = r.edit?.leftAlone ?? []
+		if (kept.length) card.append(h("p", { class: "ai-reply-text ai-left-alone", title: "An edit changes only what you asked for: the app runs it and offers a checked fix when a goal stops" }, h("b", {}, "Left as it was: "), `${kept.length > 1 ? `${kept.slice(0, -1).join(", ")} and ${kept.at(-1)}` : kept[0]} (you didn’t ask to change ${kept.length > 1 ? "those" : "that"}).`))
 		const noChange = r.noChange || r.edit?.noChange
 		if (noChange) card.append(h("p", { class: "ai-how" }, r.mode === "check" ? "The check changed nothing: the scene on the table is as it was." : r.mode === "edit" ? "Nothing in the scene changed: what was asked for left it as it was." : "This is the scene that was already on the table: nothing changed."))
 		// a quick edit says what its physics run showed changed (never just "nothing broke"); the AI did not look at it
@@ -790,7 +1136,7 @@ export function mountAiPanel(host) {
 		// an edit: exactly what changed, and that everything else is as it was (counted on the scene itself, byte for byte)
 		const un = r.edit?.unchanged
 		const sameLine = un && un.of > 0 && !noChange ? h("li", { class: "ai-same" }, un.same === un.of ? "Everything is exactly as it was" : un.same ? `Everything else is exactly as it was (${plural(un.same, "item")} untouched)` : "Every item was changed") : null
-		if (shownChanges.length || sameLine) card.append(section("What changed", h("ul", { class: "ai-list ai-changes" }, shownChanges.slice(0, 8).map((c) => h("li", {}, c)), shownChanges.length > 8 ? h("li", { title: shownChanges.slice(8).join("\n") }, `and ${shownChanges.length - 8} more`) : null, sameLine)))
+		if (!editCard && (shownChanges.length || sameLine)) card.append(section("What changed", h("ul", { class: "ai-list ai-changes" }, shownChanges.slice(0, 8).map((c) => h("li", {}, c)), shownChanges.length > 8 ? h("li", { title: shownChanges.slice(8).join("\n") }, `and ${shownChanges.length - 8} more`) : null, sameLine)))
 		if (r.goals?.length)
 			card.append(
 				section(
@@ -798,6 +1144,16 @@ export function mountAiPanel(host) {
 					h("ul", { class: "ai-goals" }, r.goals.map((g) => h("li", { class: g.ok === true ? "g-ok" : g.ok === false ? "g-bad" : "g-unk", title: g.ok == null ? "This couldn’t be told from the run" : null }, icon(g.ok === true ? "check" : "cross", "ai-ic ai-goal-ic"), h("span", {}, g.label, g.detail ? h("small", { class: "ai-goal-detail" }, ` · ${g.detail}`) : null))))
 				)
 			)
+		// the plan's stages, each checked on the run of the scene on the table (ai/DESIGN.md §13.2)
+		if (r.stages?.length) {
+			const okS = r.stages.filter((x) => x.ok === true).length
+			card.append(
+				section(
+					`Stages · ${okS}/${r.stages.length}`,
+					h("ul", { class: "ai-goals ai-stages" }, r.stages.map((x) => h("li", { class: x.ok === true ? "g-ok" : x.ok === false ? "g-bad" : "g-unk", title: x.ok == null ? "This couldn’t be told from the run" : null }, icon(x.ok === true ? "check" : "cross", "ai-ic ai-goal-ic"), h("span", {}, h("b", { class: "ai-stage-n" }, `Stage ${x.stage} · `), String(x.label ?? "").replace(/^Stage \d+:\s*/i, ""), x.detail && x.kind !== "in" ? h("small", { class: "ai-goal-detail" }, ` · ${x.detail}`) : null))))
+				)
+			)
+		}
 		if (r.used?.length) {
 			const grid = h("div", { class: "ai-used" })
 			for (const u of r.used) {
@@ -837,11 +1193,27 @@ export function mountAiPanel(host) {
 		// every check that gave a score is listed (the badge's own check included, even when it found nothing to change)
 		const rounds = (r.refine ?? []).map((x) => ({ ...x, changes: realChanges(x) })).filter((x) => x.changes.length || x.issues?.length || x.skipped?.length || x.final || x.score != null)
 		const tuned = r.tune && (r.tune.changes?.length || r.tune.changed?.length || r.tune.skipped?.length || r.tune.notes?.length)
+		const staged = r.stageTune && r.stageTune.runs > 0
 		// a check of a version that is not on the table and did not lead to it (an undone version, or one an earlier version beat): its remarks are
 		// about that version. (A check whose changes were kept judged the version before them: read in order, that is plain.)
 		const offTable = (x) => r.version != null && x.version != null && x.version !== r.version && !((x.changes?.length ?? 0) > 0 && !x.reverted && !x.rejected)
-		if (rounds.length || tuned) {
+		if (rounds.length || tuned || staged) {
 			const ul = h("ul", { class: "ai-rounds" })
+			// (physics first: what the stage tuner did before the AI looked)
+			if (staged) {
+				const st = r.stageTune
+				const lines = (st.changes ?? []).filter((c) => !/^No visible change/.test(c))
+				const what = (x) => (x?.checks && x.checks !== x.goals ? `${x.checks} checks` : `${x?.goals ?? "?"} goals`)
+				ul.append(
+					h(
+						"li",
+						{ class: st.kept ? null : "undone" },
+						h("span", { class: "ai-round-n" }, "Tuned stage by stage", h("small", {}, ` · ${plural(st.runs, "run")}, ${secs(st.ms)}`), st.kept ? null : h("span", { class: "ai-tag-undone" }, "not kept")),
+						h("p", { class: "ai-round-issues" }, st.kept ? `Before the AI looked: ${what(st.before)} → ${what(st.after)} working in the physics` : st.note ?? `Nothing it tried did better (${what(st.before)} working)`),
+						st.kept && lines.length ? h("p", { class: "ai-round-changes", title: lines.join("\n") }, brief(lines)) : null
+					)
+				)
+			}
 			for (const x of rounds) {
 				const undone = x.reverted || (x.rejected && x.changes?.length)
 				const other = offTable(x)
@@ -867,7 +1239,7 @@ export function mountAiPanel(host) {
 					h(
 						"li",
 						{ class: r.tune.reverted ? "undone" : null },
-						h("span", { class: "ai-round-n" }, r.tune.runs ? "Tuned" : "Not tuned", r.tune.runs ? h("small", {}, ` · ${plural(r.tune.runs, "run")}, ${secs(r.tune.ms)}`) : null, r.tune.reverted ? h("span", { class: "ai-tag-undone" }, "undone") : null),
+						h("span", { class: "ai-round-n" }, r.tune.runs ? (r.tune.stages ? "Tuned stage by stage" : "Tuned") : "Not tuned", r.tune.runs ? h("small", {}, ` · ${plural(r.tune.runs, "run")}, ${secs(r.tune.ms)}`) : null, r.tune.reverted ? h("span", { class: "ai-tag-undone" }, "undone") : null),
 						lines.length ? h("p", { class: "ai-round-changes", title: lines.join("\n") }, brief(lines)) : null,
 						r.tune.skipped?.length ? h("p", { class: "ai-round-rej" }, r.tune.skipped.join(" · ")) : null,
 						r.tune.notes?.length ? h("p", { class: "ai-round-issues" }, r.tune.notes.join(" · ")) : null,
@@ -890,13 +1262,29 @@ export function mountAiPanel(host) {
 			card.hidden = !t.detailsOpen
 			detailsBtn.setAttribute("aria-expanded", String(t.detailsOpen))
 		} }, "Details")
-		const heads = headsUp(r)
+		const heads = headsUp(r, { editCard })
+		// (an edit: what stopped happening in the new run that the reply does not already say: lost stages, firm hits that are gone)
+		const runHeads = editCard && r.edit?.headsUp?.length ? `Heads-up, in the new run: ${andJoin(r.edit.headsUp.slice(0, 3).map((x) => lcFirst(String(x).replace(/[.!]+$/, ""))))}.` : null
+		const lead = h("p", { class: "ai-lead" }, ...marks(r.lead ?? fallbackLead(r)), ...fixOffer(r))
+		// (a new scene planned from a concept sketch: the sketch as a small thumbnail beside the reply; a click shows it next to the scene's start)
+		const cimg = r.mode === "new" ? (typeof r.concept === "string" ? r.concept : r.concept?.image) : null
+		const leadRow = cimg
+			? h(
+					"div",
+					{ class: "ai-lead-row" },
+					lead,
+					h("button", { type: "button", class: "ai-cthumb", title: `${CONCEPT_TAG}: compare it with your scene`, "aria-label": "Compare the concept sketch with your scene", onclick: () => openCompare(t), onpointerenter: () => startFrame(t).catch(() => {}) }, h("img", { src: cimg, alt: "" }), h("span", {}, "Concept"))
+				)
+			: lead
 		return h(
 			"div",
-			{ class: "ai-card ai-result ai-chat" },
-			h("p", { class: "ai-lead" }, ...marks(r.lead ?? fallbackLead(r))),
+			{ class: `ai-card ai-result ai-chat${editCard ? " ai-editcard" : ""}` },
+			editCard ? h("p", { class: "ai-res-kind edit" }, `Edited: ${r.sceneBefore ?? r.title ?? "the scene"}`) : null,
+			leadRow,
+			editCard ? editDelta(r) : null,
+			r.fix?.state === "searching" ? h("p", { class: "ai-fixline", role: "status" }, h("span", { class: "ai-spin", "aria-hidden": "true" }), "Looking for a fix…", h("span", { class: "ai-fixline-n" }, "")) : null,
 			heads ? h("p", { class: "ai-heads" }, heads) : null,
-			r.concept ? h("img", { class: "ai-concept", src: r.concept, alt: "How the AI pictured it" }) : null,
+			runHeads ? h("p", { class: "ai-heads" }, runHeads) : null,
 			chipsFor(t),
 			h(
 				"div",
@@ -910,15 +1298,136 @@ export function mountAiPanel(host) {
 			card
 		)
 	}
+	/** "a, b and c" */
+	const andJoin = (list) => (list.length > 1 ? `${list.slice(0, -1).join(", ")} and ${list.at(-1)}` : list[0] ?? "")
+	/** What a turn did, to quote in "Undone: … before “…”" and on an Undo button: an edit's (or a fix's) first change line, "made the dominoes
+	 *  closer together", with how many more there were; a new scene's name. */
+	function turnWords(t) {
+		const r = t?.report ?? {}
+		const lines = r.mode === "new" || r.mode === "check" ? [] : (r.human ?? []).filter(Boolean)
+		if (lines.length) return { words: changePhrase(lines[0]), more: lines.length - 1 }
+		if (r.mode === "edit" && t?.request?.text) return { words: changePhrase(t.request.text), more: 0 }
+		return { words: r.title ?? "the last build", more: 0 }
+	}
+	const clip = (s, n) => (String(s).length > n ? `${String(s).slice(0, n - 1).trimEnd()}…` : String(s))
+	/** The edit card's own list: one line per change in real units (before → after), what could not be done, and how much is exactly as it was. */
+	function editDelta(r) {
+		const noChange = r.noChange || r.edit?.noChange
+		const lines = noChange ? [] : r.human?.length ? r.human.map(capFirst) : (r.edit?.changes ?? []).filter((c) => !/^Tuning knobs/.test(c)).map(capFirst)
+		const skipped = (r.edit?.skipped ?? (r.issues ?? []).filter((i) => i.code === "patch_skipped").map((i) => i.text)).map((x) => String(x).replace(/^Not done:\s*/i, "")).filter(Boolean)
+		const un = r.edit?.unchanged
+		const items = [
+			...lines.slice(0, 8).map((c) => h("li", {}, c)),
+			lines.length > 8 ? h("li", { title: lines.slice(8).join("\n") }, `and ${lines.length - 8} more`) : null,
+			...skipped.slice(0, 3).map((x) => h("li", { class: "skip" }, `Not done: ${x}`)),
+			noChange ? h("li", { class: "same" }, "Nothing in the scene changed") : un && un.of > 0 ? h("li", { class: "same" }, un.same ? `Everything else is exactly as it was (${plural(un.same, "item")} untouched)` : "Every item was changed") : null
+		].filter(Boolean)
+		return items.length ? h("ul", { class: "ai-delta", "aria-label": "What changed" }, items) : null
+	}
+	/** An edit's Details, first: what the AI took the words to mean, why, how long it took and with which model (and the repair or fix rounds). */
+	function editFacts(r) {
+		const e = r.edit ?? {}
+		const rows = []
+		if (e.targetWords?.length) rows.push(["Understood", e.targetWords.join(" · ")])
+		if (e.why) rows.push(["Why", e.why])
+		const ff = e.fixFlow
+		if (ff) {
+			const aim = ff.aimed ? `moved ${ff.aimed.name ?? ff.aimed.id} ${[moveWords(ff.aimed.dx_m, "right", "left"), moveWords(ff.aimed.dy_m, "up", "down")].filter(Boolean).join(" and ") || "into place"} (${plural(ff.aimed.runs ?? 0, "physics run")})` : null
+			rows.push(["Made it work", [aim, ff.rounds ? `${plural(ff.rounds, "more AI round")}` : null, ff.fixer ? "then the fix search" : null].filter(Boolean).join(" · ") || "nothing needed"])
+		}
+		if (e.repair) rows.push(["Overlaps", `fixed in one more turn: ${e.repair.before} → ${e.repair.after} at the start${e.repair.kept ? "" : " (not kept: no better)"}`])
+		rows.push(["Time", [r.totalMs ? secs(r.totalMs) : null, r.models?.length ? shortModel(r.models) : null].filter(Boolean).join(" · ") || "—"])
+		return h("dl", { class: "ai-kv" }, rows.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]))
+	}
+	// ---- the concept sketch next to the scene's start (the result card's thumbnail): the difference between the idea and what was built
+	const frames = new Map() // turn id -> Promise<data URL of the scene's start>
+	/** The scene a turn put on the table, at its start, as a small JPEG: from the run on the table when it is still that scene, else run again
+	 *  from the kept version. Rendered once (the critic's hidden camera, ./shot.js) and kept with the turn. */
+	function startFrame(t) {
+		if (t.report?.startFrame) return Promise.resolve(t.report.startFrame)
+		if (frames.has(t.id)) return frames.get(t.id)
+		const p = (async () => {
+			if (!t.sceneJSON) throw new Error("This version of the scene isn’t kept any more.")
+			const live = host.getSim?.()
+			const onTable = JSON.stringify(host.getScene() ?? null) === t.sceneJSON
+			const sim = onTable && live?.doc && live?.track && (!t.simKey || live.key === t.simKey) ? live : await api("/api/simulate", { scene: JSON.parse(t.sceneJSON) })
+			const [pic] = await getShot().render(sim, { times: [{ label: "start", t: 0 }] })
+			const url = await shrinkJpeg(pic.dataUrl, 768, 432)
+			if (t.report) t.report.startFrame = url
+			persist()
+			return url
+		})()
+		frames.set(t.id, p)
+		p.catch(() => frames.delete(t.id))
+		return p
+	}
+	/** A data URL drawn again at w × h as a JPEG (a start frame for keeping: ~40 KB). */
+	function shrinkJpeg(src, w, hgt, q = 0.8) {
+		return new Promise((resolve, reject) => {
+			const im = new Image()
+			im.onload = () => {
+				const c = document.createElement("canvas")
+				c.width = w
+				c.height = hgt
+				const g = c.getContext("2d")
+				g.imageSmoothingQuality = "high"
+				g.drawImage(im, 0, 0, w, hgt)
+				resolve(c.toDataURL("image/jpeg", q))
+			}
+			im.onerror = () => reject(new Error("The picture couldn’t be read"))
+			im.src = src
+		})
+	}
+	let cmp = null
+	function compareDialog() {
+		if (cmp) return cmp
+		const left = h("img", { alt: "Concept sketch of your idea, drawn by AI from your words" })
+		const right = h("div", { class: "ai-cmp-pic" })
+		const title = h("h2", { id: "ai-cmp-t" }, "")
+		const dlg = h(
+			"dialog",
+			{ class: "ai-cmp", "aria-labelledby": "ai-cmp-t" },
+			h("div", { class: "ai-cmp-head" }, title, h("button", { type: "button", class: "ai-icon-btn", "aria-label": "Close", title: "Close (Esc)", onclick: () => dlg.close() }, icon("close"))),
+			h(
+				"div",
+				{ class: "ai-cmp-body" },
+				h("figure", {}, h("div", { class: "ai-cmp-pic" }, left), h("figcaption", {}, h("b", {}, CONCEPT_TAG), "Drawn from your words before planning, to plan from. It is not the result.")),
+				h("figure", {}, right, h("figcaption", {}, h("b", {}, "Your scene · at the start"), "What was built from your words, as the physics engine starts it. Press play to watch it run."))
+			)
+		)
+		dlg.addEventListener("click", (e) => e.target === dlg && dlg.close())
+		// (the page under the dialog must not see its keys: Space would play, ⌫ delete the selected part)
+		dlg.addEventListener("keydown", (e) => e.stopPropagation())
+		document.body.append(dlg)
+		return (cmp = { dlg, left, right, title, for: null })
+	}
+	function openCompare(t) {
+		const c = t.report?.concept
+		const img = typeof c === "string" ? c : c?.image
+		if (!img) return
+		const d = compareDialog()
+		d.for = t.id
+		d.left.src = img
+		d.title.textContent = t.report?.title ? `“${t.report.title}”: the sketch and the scene` : "The sketch and the scene"
+		d.right.classList.add("wait")
+		d.right.replaceChildren(h("span", { class: "ai-spin", role: "status", "aria-label": "Drawing the scene’s start" }))
+		if (!d.dlg.open) d.dlg.showModal()
+		startFrame(t).then(
+			(url) => d.for === t.id && (d.right.classList.remove("wait"), d.right.replaceChildren(h("img", { src: url, alt: `${t.report?.title ?? "Your scene"} at the start` }))),
+			(e) => d.for === t.id && d.right.replaceChildren(h("p", {}, e?.message ?? "The scene’s start couldn’t be drawn."))
+		)
+	}
+	/** 0.04 m -> "4 cm right" (null when it did not move that way). */
+	const moveWords = (m, pos, neg) => (Number.isFinite(m) && Math.abs(m) >= 0.0005 ? `${Math.abs(m) >= 1 ? `${(Math.abs(m)).toFixed(2)} m` : `${Math.round(Math.abs(m) * 1000) / 10} cm`} ${m > 0 ? pos : neg}` : null)
 	/** ✓ and ✗ in a reply, coloured. */
 	const marks = (text) => String(text).split(/(✓|✗)/).map((p) => (p === "✓" ? h("span", { class: "ai-ok-mark", "aria-label": "works" }, "✓") : p === "✗" ? h("span", { class: "ai-bad-mark", "aria-label": "doesn't work yet" }, "✗") : p))
 	/** A reply for a turn saved before replies were written. */
 	const fallbackLead = (r) => `${r.mode === "edit" ? "Changed" : r.mode === "check" ? "Checked" : "Built"} “${r.title ?? "the scene"}”.${(r.goals ?? []).length ? ` ${(r.goals ?? []).filter((g) => g.ok).length} of ${r.goals.length} goals happen ${(r.goals ?? []).every((g) => g.ok) ? "✓" : "✗"}` : ""}`
 	/** One line when something is off that the person should know at once (a check that couldn't run, a thing not in the library, the picture's
 	 *  differences); the rest is in Details. */
-	function headsUp(r) {
+	function headsUp(r, { editCard = false } = {}) {
 		const types = new Map((host.getCatalog()?.types ?? []).map((ty) => [ty.key, ty]))
-		const warn = (r.issues ?? []).find((i) => i.level === "warn" || i.level === "error")
+		const warn = (r.issues ?? []).find((i) => (i.level === "warn" || i.level === "error") && !(editCard && i.code === "patch_skipped"))
 		const miss = (r.missing ?? [])[0]
 		const more = (n) => (n > 1 ? ` (and ${n - 1} more: see Details)` : "")
 		if (warn) return `Heads-up: ${warn.text}`
@@ -931,12 +1440,23 @@ export function mountAiPanel(host) {
 		const r = t.report ?? {}
 		const list = []
 		const failed = (r.goals ?? []).filter((g) => g.ok === false)
-		if (failed.length && !r.replyOnly) {
+		const fx = r.fix
+		if (fx?.state === "found" && fx.sceneJSON) list.push({ label: fx.label, prompt: `${capFirst(fx.say)} (checked: ${fx.checked} ✓)`, fix: true, go: true, apply: "fix" })
+		else if (fx && ["none", "stopped", "error"].includes(fx.state)) {
+			if (fx.near?.sceneJSON) list.push({ label: `Try: ${fx.near.label}`, prompt: `${capFirst(fx.near.say)}: the closest I found (${fx.near.happened ?? "it still misses"})`, apply: "near" })
+			list.push({ label: "Ask the AI to rework it", prompt: reworkPrompt(t), fix: true, keep: r.edit?.touched ?? null })
+			if (fx.near?.sceneJSON && fx.near.happened) list[list.length - 2].prompt = `${capFirst(fx.near.say)}: the closest I found, but ${lcFirst(fx.near.happened)}`
+		} else if (fx?.state === "searching") {
+			// (the checked fix is on its way: no other fix is offered meanwhile)
+		} else if (r.fixNeeded && !fx) list.push({ label: "Ask the AI to rework it", prompt: reworkPrompt(t), fix: true, keep: r.edit?.touched ?? null })
+		else if (failed.length && !r.replyOnly && r.mode !== "fix") {
 			const g = String(failed[0].label).replace(/[.!]+$/, "")
 			const lab = /^(The|A|An|All|Every|Each|Both)\b/.test(g) ? g[0].toLowerCase() + g.slice(1) : g
 			list.push({ label: `Fix it so ${lab}`, prompt: `Fix it so this happens in the run: ${g}. Change only what is needed for that (say what you moved), and keep everything else as it is.`, fix: true })
 		}
-		for (const s of r.suggestions ?? []) if (!list.some((x) => x.label.toLowerCase() === s.label.toLowerCase())) list.push(s)
+		// (the AI's own "make it land" ideas say the same as a checked fix, less surely: left out beside one, and once one is applied)
+		const fixed = fx?.state === "found" || r.mode === "fix"
+		for (const s of r.suggestions ?? []) if (!list.some((x) => x.label.toLowerCase() === s.label.toLowerCase()) && !(fixed && statesOutcome(`${s.label} ${s.prompt ?? ""}`))) list.push(s)
 		if (list.length < 2 && t.id === S.turns.filter((x) => x.role === "ai" && x.state === "done").at(-1)?.id) {
 			const asked = String(t.request?.text ?? "").toLowerCase()
 			for (const ex of editExamples()) if (list.length < 3 && !asked.includes(ex.text.toLowerCase().slice(0, 12)) && !list.some((x) => x.prompt === ex.text)) list.push({ label: ex.text, prompt: ex.text })
@@ -945,12 +1465,224 @@ export function mountAiPanel(host) {
 		return h(
 			"div",
 			{ class: "ai-chips", role: "group", "aria-label": "Try next" },
-			list.slice(0, 3).map((s) => h("button", { type: "button", class: `ai-sugg${s.fix ? " fix" : ""}`, title: s.prompt, onclick: () => suggest(s) }, s.fix ? icon("retry") : icon("sparkle"), h("span", {}, s.label)))
+			// (a fix chip's request is long and written for the AI: the bubble shows the chip's own words, and the request goes as sent)
+			list.slice(0, 3).map((s) => h("button", { type: "button", class: `ai-sugg${s.fix ? " fix" : ""}${s.go ? " go" : ""}`, title: s.prompt, onclick: () => (s.apply ? applyFix(t, s.apply) : suggest(s, s.fix ? s.label : null)) }, s.go ? icon("check") : s.fix ? icon("retry") : icon("sparkle"), h("span", {}, s.label)))
 		)
 	}
-	/** A suggestion clicked: asked as an edit of the scene on screen, as if typed. */
-	function suggest(s) {
+	/** The offer after an edit's reply, from the fix search: "Want me to lower the box 4 cm? (checked: Ball 2 lands in the box ✓)". */
+	function fixOffer(r) {
+		const fx = r?.fix
+		if (!fx || fx.state === "searching") return []
+		const ok = h("span", { class: "ai-ok-mark", "aria-label": "works" }, "✓")
+		// (a fix that works only at its exact value says so: "only just")
+		if (fx.state === "found") return [" Want me to ", h("b", {}, fx.say), "? ", h("span", { class: "ai-checked", title: `I ran it in the physics engine: ${fx.checked} happens${fx.fragile ? " (but a few millimetres either way and it misses)" : ""}` }, "(checked: ", fx.checked, " ", ok, fx.fragile ? ", only just" : "", ")")]
+		if (fx.state === "none") return [" I couldn’t find a small fix that I could check works — want the AI to rework it?"]
+		if (fx.state === "stopped") return [" I stopped looking for a fix. Want the AI to rework it?"]
+		return [" I couldn’t look for a fix just now. Want the AI to rework it?"]
+	}
+	/** What "Ask the AI to rework it" asks: the goal to win back, keeping the change that was just made. */
+	function reworkPrompt(t) {
+		const r = t.report ?? {}
+		const g = r.fix?.goal ?? (r.targets ?? []).find((x) => x.ok === false && !x.implicit)?.label ?? (r.targets ?? []).find((x) => x.ok === false)?.label ?? (r.goals ?? []).find((x) => x.ok === false)?.label ?? "it works again"
+		const what = (r.human ?? []).slice(0, 2).map((x) => String(x).replace(/ \([^)]*\)/g, "")).join(" and ")
+		return `Make it work again so that ${lcFirst(String(g).replace(/[.!]+$/, ""))}${what ? `, keeping what I just changed (${what})` : ""}. Change whatever else is needed and say what you changed.`
+	}
+	/**
+	 * A fix chip clicked (or "yes"): the scene the search ran is put on the table at once, as its own undo step, and the reply says so ("Done — I
+	 * lowered the box 4 cm. Ball 2 lands in the box ✓"). which: "fix" (the checked fix) or "near" (the closest miss, said as such).
+	 */
+	function applyFix(t, which = "fix", said = null, { bubble = true } = {}) {
 		if (S.job) return note("Wait for this build to finish (or press Stop) first")
+		const fx = t.report?.fix
+		const data = which === "near" ? fx?.near : fx
+		if (!data?.sceneJSON) return
+		if (t.sceneJSON !== JSON.stringify(host.getScene() ?? null)) return (note("The scene has changed since I found that: ask me again (for example “make it work”)"), false)
+		let scene
+		try {
+			scene = JSON.parse(data.sceneJSON)
+		} catch {
+			return false
+		}
+		stopFixSearch()
+		if (bubble) userBubble(said ?? data.label, "fix")
+		const before = host.getScene()
+		const committed = host.applyScene(scene, { label: capFirst(data.label.replace(/^Try: /, "")), play: true, verb: "Fixed" })
+		const sceneNow = JSON.stringify(host.getScene() ?? scene)
+		const okAll = which === "fix"
+		const results = data.results ?? []
+		const rest = (t.report?.suggestions ?? []).slice(0, 3)
+		const report = {
+			mode: "fix",
+			title: t.report?.title,
+			sceneBefore: t.report?.title,
+			lead: okAll ? `Done — I ${data.did}. ${capFirst(fx.checked ?? "it works")} ✓` : `Done — I ${data.did}, but ${lcFirst(data.happened ?? "it still doesn’t work")} ✗.`,
+			human: [data.did],
+			goals: (t.report?.goals ?? []).map((g) => ({ ...g, ok: okAll ? true : results.find((x) => x.label === g.label)?.ok ?? g.ok, was: g.ok })),
+			targets: okAll ? (t.report?.targets ?? []).map((x) => ({ label: x.label, ok: true, implicit: x.implicit })) : results,
+			fix: okAll ? null : { state: "none", goal: fx.goal, checked: fx.checked },
+			suggestions: rest,
+			used: t.report?.used,
+			edit: { unchanged: unchangedOf(before, scene), ...(t.report?.edit?.touched ? { touched: t.report.edit.touched } : {}) },
+			items: scene.items?.length ?? 0,
+			totalMs: fx.ms ?? null
+		}
+		fx.used = which
+		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text: said ?? data.label, mode: "fix", images: [] }, report }
+		turn.sceneJSON = sceneNow
+		turn.plan = planAfterFix(t.plan ?? S.lastBuild?.plan ?? null, scene)
+		const changed = committed !== false
+		turn.hi = changed ? host.historyIndex?.() ?? null : null
+		if (changed) S.lastAppliedId = turn.id
+		S.lastBuild = { plan: turn.plan, sceneJSON: sceneNow, title: report.title, turnId: turn.id }
+		S.turns.push(turn)
+		thread.append(renderTurn(turn))
+		syncMode()
+		syncUndoButtons()
+		persist()
+		announce(report.lead)
+		scrollToEnd()
+		return true
+	}
+	/** The items of a scene that are byte for byte the same in another (not the table or the safety walls). */
+	function unchangedOf(a, b) {
+		const B = new Map((b?.items ?? []).map((i) => [i.id, JSON.stringify(i)]))
+		const real = (a?.items ?? []).filter((i) => i.type !== "table" && !(i.type === "wall" && i.props?.invisible_in_3d))
+		const same = real.filter((i) => B.get(i.id) === JSON.stringify(i))
+		return { same: same.length, of: real.length }
+	}
+	/** After an edit stopped a goal: the fix search (./fixer.js through the orchestrator) runs while the change plays; the reply shows "Looking for
+	 *  a fix…", then offers the checked fix (or says plainly that none was found). A new request stops it. */
+	function startFixSearch(turn, ctx) {
+		stopFixSearch()
+		const ctl = new AbortController()
+		const job = { ctl, turnId: turn.id }
+		S.fixJob = job
+		const goal = (turn.report?.targets ?? []).find((x) => x.ok === false && !x.implicit)?.label ?? (turn.report?.targets ?? []).find((x) => x.ok === false)?.label ?? null
+		ai.findFix(ctx, {
+			signal: ctl.signal,
+			onProgress: (p) => {
+				const el = thread.querySelector(`[data-id="${turn.id}"] .ai-fixline-n`)
+				if (el) el.textContent = ` · ${p.runs} physics runs`
+			}
+		}).then(
+			(fr) => {
+				if (S.fixJob !== job) return
+				S.fixJob = null
+				turn.report.fix = fr.status === "ok" ? null : fixInfo(fr, ctx.scene, fr.targets)
+				rerenderTurn(turn)
+				persist()
+				const fx = turn.report.fix
+				// a "yes" typed while it looked: the fix goes on the table now (or the reply says plainly that there is none)
+				if (job.applyOnFound) {
+					if (fx?.state === "found") {
+						if (applyFix(turn, "fix", job.applyOnFound, { bubble: false }) !== true) replyTurn("The scene changed while I looked, so I didn’t apply it — ask me again (for example “make it work”).")
+					} else noFixReply(turn, "I couldn’t find a small fix that I could check works — want the AI to rework it?")
+					return
+				}
+				announce(fx?.state === "found" ? `Found a fix: ${fx.say}` : "No small fix found")
+				// (a phone: the sheet got out of the way while the change played; it comes back with the question, which is the point of the reply)
+				if (!S.open && !wide() && !S.job) {
+					open()
+					setMini(false)
+					scrollToEnd()
+				} else if (!S.open) {
+					S.unseen = true
+					host.button?.classList.add("unseen")
+					host.toast?.(fx?.state === "found" ? `Fix found: ${lcFirst(fx.label)}. Open Edit with AI to apply it` : "No small fix found: open Edit with AI to see")
+				} else if (S.mini) {
+					miniTitle.textContent = fx?.state === "found" ? "Found a fix" : "No small fix found"
+					miniSub.textContent = fx?.state === "found" ? fx.label : "open to see"
+				}
+			},
+			(e) => {
+				const mine = S.fixJob === job
+				if (mine) S.fixJob = null
+				if (turn.report?.fix?.state === "searching") turn.report.fix = e?.name === "AbortError" ? { state: "stopped", goal } : { state: "error", goal, error: String(e?.message ?? e) }
+				rerenderTurn(turn)
+				persist()
+				if (mine && job.applyOnFound && e?.name !== "AbortError") noFixReply(turn, "I couldn’t look for a fix just now — want the AI to rework it?")
+			}
+		)
+	}
+	function stopFixSearch() {
+		S.fixJob?.ctl.abort()
+	}
+	/** The person's words in the thread (mode: the bubble's tag). */
+	function userBubble(text, mode = "edit", extra = {}) {
+		const user = { id: `u${nextId++}`, at: Date.now(), role: "user", text, images: [], mode, ...extra }
+		S.turns.push(user)
+		thread.append(renderTurn(user))
+		return user
+	}
+	/** A reply that changes nothing (its chips from `report`). */
+	function replyTurn(reply, report = {}) {
+		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text: "", mode: "edit", images: [] }, report: { replyOnly: true, reply, ...report } }
+		S.turns.push(turn)
+		thread.append(renderTurn(turn))
+		persist()
+		announce(reply)
+		scrollToEnd()
+		return turn
+	}
+	/** After a "yes" that waited for the search: there was no checked fix. The reply offers the AI's rework (keeping what the person changed). */
+	function noFixReply(t, words) {
+		const r = t.report ?? {}
+		replyTurn(words, { fixNeeded: true, edit: r.edit?.touched ? { touched: r.edit.touched } : undefined, human: r.human, targets: r.targets, goals: r.goals, fix: undefined, suggestions: [] })
+	}
+	/**
+	 * A "yes" typed to the latest reply does what it offered: its checked fix goes on the table (while the search still runs, the moment it is
+	 * found); "want the AI to rework it?" asks the AI; "Want me to fix it?" asks for the fix. With nothing offered it says so: a bare yes never goes
+	 * to the AI as a change. -> false when the words are a request after all ("fix it" with nothing offered: the AI makes it work)
+	 */
+	function answerYes(text) {
+		const t = S.turns.filter((x) => x.role === "ai" && x.state === "done").at(-1)
+		const r = t?.report ?? {}
+		const fx = r.fix
+		const clear = () => {
+			input.value = ""
+			autosize()
+			syncCount()
+		}
+		if (S.fixJob && t && S.fixJob.turnId === t.id) {
+			clear()
+			userBubble(text, "fix")
+			S.fixJob.applyOnFound = text
+			announce("I’ll put the fix on the table as soon as I’ve checked it")
+			scrollToEnd()
+			return true
+		}
+		if (fx?.state === "found" && fx.sceneJSON) {
+			clear()
+			applyFix(t, "fix", text)
+			return true
+		}
+		if ((fx && ["none", "stopped", "error"].includes(fx.state)) || (r.fixNeeded && !fx)) {
+			clear()
+			suggest({ prompt: reworkPrompt(t), keep: r.edit?.touched ?? null }, text)
+			return true
+		}
+		const failed = (r.goals ?? []).filter((g) => g.ok === false)
+		if (failed.length && !r.replyOnly && r.mode !== "fix" && /\?\s*$/.test(r.lead ?? "")) {
+			clear()
+			const g = String(failed[0].label).replace(/[.!]+$/, "")
+			suggest({ prompt: `Fix it so this happens in the run: ${g}. Change only what is needed for that (say what you moved), and keep everything else as it is.` }, text)
+			return true
+		}
+		if (statesOutcome(text)) return false
+		clear()
+		userBubble(text)
+		replyTurn("There’s nothing to say yes to yet — what would you like to change?")
+		return true
+	}
+	function rerenderTurn(turn) {
+		const li = thread.querySelector(`li.ai-bot[data-id="${turn.id}"]`)
+		if (li && turn.state === "done") li.replaceChildren(renderReport(turn))
+	}
+	/** A suggestion clicked: asked as an edit of the scene on screen, as if typed. */
+	function suggest(s, shown = null) {
+		if (S.job) return note("Wait for this build to finish (or press Stop) first")
+		S.pendingKeep = s.keep ?? null
+		S.pendingShown = shown
 		input.value = s.prompt
 		autosize()
 		submit()
@@ -959,7 +1691,7 @@ export function mountAiPanel(host) {
 	function undoTurn(t, btn) {
 		if (!canUndo(t)) {
 			btn.hidden = true
-			return note("The scene has changed since this build: use the top bar’s undo (⌘Z) to step back")
+			return note(`The scene has changed since this build: use the top bar’s Undo${touchScreen() ? "" : " (⌘Z)"} to step back`)
 		}
 		host.undo?.()
 		btn.hidden = true
@@ -1009,19 +1741,60 @@ export function mountAiPanel(host) {
 	// ---- the error card
 	function renderError(t) {
 		const kind = t.error?.kind ?? "gateway"
+		// a refusal to act on (sign in, the day's allowance, a deployment without the AI): said as such, with what to do, and never "Try again"
+		if (ACTION_KINDS.has(kind)) return renderRefusal(t, kind)
 		const card = h("div", { class: `ai-card ai-error ai-k-${kind}`, role: kind === "cancelled" ? null : "alert" })
 		card.append(h("div", { class: "ai-err-head" }, icon(kind === "cancelled" ? "stop" : "cross", "ai-ic ai-err-ic"), h("b", {}, ERROR_TITLES[kind] ?? "Something went wrong")))
-		if (t.error?.message && kind !== "cancelled") card.append(h("p", { class: "ai-err-msg" }, t.error.message))
+		const words = kind === "cancelled" ? null : errorWords(t.error)
+		if (words) card.append(h("p", { class: "ai-err-msg" }, words))
 		if (t.error?.missing?.length) card.append(h("ul", { class: "ai-missing" }, t.error.missing.map((m) => h("li", {}, h("span", { class: "ai-miss-asked" }, m.asked), h("span", { class: "ai-miss-none" }, "not in the library")))))
-		if (t.request)
-			card.append(
-				h(
-					"div",
-					{ class: "ai-res-actions" },
-					h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => retry(t) }, icon("retry"), kind === "cancelled" ? "Run again" : "Try again"),
-					t.error?.step ? h("span", { class: "ai-res-meta" }, `at: ${t.error.step}`) : null
-				)
-			)
+		// (what the service said and at which step: for whoever looks into it, under Details)
+		const facts = [t.error?.step ? `Step: ${t.error.step}` : null, t.error?.message && t.error.message !== words ? t.error.message : null].filter(Boolean)
+		const more = facts.length && kind !== "cancelled" ? h("details", { class: "ai-err-more" }, h("summary", {}, "Details"), facts.map((f) => h("p", {}, f))) : null
+		if (t.request) card.append(h("div", { class: "ai-res-actions" }, h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => retry(t) }, icon("retry"), kind === "cancelled" ? "Run again" : "Try again")))
+		if (more) card.append(more)
+		return card
+	}
+	/** What went wrong in plain words, and that nothing was changed: "The AI service didn’t answer (502). Nothing was changed — try again." The
+	 *  service's own wording and the step stay under Details. */
+	function errorWords(err = {}) {
+		const m = String(err.message ?? "")
+		const same = "Nothing was changed"
+		const code = err.status ?? /\b([45]\d\d)\b/.exec(m)?.[1] ?? null
+		switch (err.kind) {
+			case "gateway":
+				if (/\(network\)/.test(m)) return `Couldn’t reach the AI service (no connection). ${same} — try again.`
+				if (/rate limited|busy/i.test(m)) return `The AI service is busy right now. ${same} — try again in a minute.`
+				if (/its key or access/.test(m)) return `The AI service refused the request. ${same}.`
+				return `The AI service didn’t answer${code ? ` (${code})` : ""}. ${same} — try again.`
+			case "busy":
+				return `Every AI slot stayed taken. ${same} — try again in a minute.`
+			case "timeout":
+			case "invalid":
+			case "apply":
+				return `${same} — try again.`
+			case "engine":
+				return `${same} — try again, or ask for it another way.`
+			default:
+				return m || null
+		}
+	}
+
+	function renderRefusal(t, kind) {
+		const isNew = t.request?.mode === "new"
+		const card = h("div", { class: `ai-card ai-error ai-refusal ai-k-${kind}`, role: "alert" })
+		const title = kind === "quota" ? t.error?.message ?? ERROR_TITLES.quota : ERROR_TITLES[kind]
+		card.append(h("div", { class: "ai-err-head" }, icon(kind === "sign_in" ? "lock" : kind === "quota" ? "clock" : "off", "ai-ic ai-err-ic"), h("b", {}, title)))
+		const words =
+			kind === "sign_in"
+				? `What you asked is kept: once you’re signed in, ${isNew ? "press Build new scene again" : "send it again"}.`
+				: kind === "quota"
+					? "Nothing was changed. Everything else works as usual; the AI is back then."
+					: kind === "off"
+						? "This copy of the sandbox runs without the AI service. Everything else works: add real objects from the catalog (/), or start from an example (New)."
+						: t.error?.message ?? ""
+		card.append(h("p", { class: "ai-err-msg" }, words))
+		if (kind === "sign_in" && t.request) card.append(h("div", { class: "ai-res-actions" }, h("button", { type: "button", class: "ai-google", onclick: () => access.signIn(isNew ? { kind: "new", text: t.request.text ?? "" } : (saveDraft(), { kind: "edit" })) || note("Sign-in isn’t available on this page") }, h("span", { class: "ai-g", html: ICONS.google, "aria-hidden": "true" }), "Continue with Google")))
 		return card
 	}
 
@@ -1038,18 +1811,36 @@ export function mountAiPanel(host) {
 			input.focus()
 			return
 		}
+		// (the AI can't be used here now: why is shown in place of the box; what was typed stays)
+		if (blocked()) {
+			saveDraft()
+			renderAccess()
+			if (access.state.kind === "sign_in" && !access.state.unavailable) access.signIn({ kind: "edit" })
+			else note(access.state.title)
+			return
+		}
 		// the scene on screen is changed (never replaced); on an empty table what is described is built there
 		syncMode()
 		const mode = S.mode
 		// "undo that", "put it back": the app's own undo, at once, when the AI's latest build is still the scene's current step
 		if (!S.images.length && isUndoAsk(text) && S.lastAppliedId && canUndo(S.turns.find((t) => t.id === S.lastAppliedId) ?? {})) return undoByAsking(text)
+		// "yes" / "do it" to the latest reply's offer: what it offered (a checked fix at once; while it is still being looked for, when it is found)
+		if (!S.images.length && YES_RE.test(text) && !S.pendingShown && answerYes(text) !== false) return
 		// (a plain question is answered by the edit step with no change: the bubble says it is a question)
 		const asked = mode === "edit" && !S.images.length && isQuestion(text)
-		const request = { text: text || (mode === "edit" ? "Change the scene to match this picture." : "Recreate this picture as a working machine."), images: S.images.slice(), mode, ...(asked ? { asked: true } : {}) }
-		const user = { id: `u${nextId++}`, at: Date.now(), role: "user", text, images: request.images.map((im) => ({ name: im.name, thumb: im.thumb })), mode, ...(asked ? { asked: true } : {}) }
+		// (every edit that follows the AI's last change on the table keeps what the person changed there, and before: a fix offered for this one
+		// never moves that back. "move the box 10 cm left" then "make the box 2 cm wider" never offers the box back where it was)
+		const lastT = S.turns.find((x) => x.id === S.lastBuild?.turnId)
+		const keep = S.pendingKeep ?? (lastT?.report?.edit?.touched && lastT.sceneJSON === JSON.stringify(host.getScene() ?? null) ? lastT.report.edit.touched : null)
+		const shown = S.pendingShown
+		S.pendingKeep = null
+		S.pendingShown = null
+		const request = { text: text || (mode === "edit" ? "Change the scene to match this picture." : "Recreate this picture as a working machine."), images: S.images.slice(), mode, ...(asked ? { asked: true } : {}), ...(keep ? { keep } : {}), ...(mode === "new" ? { imagine: S.images.length ? "off" : conceptSetting() } : {}) }
+		const user = { id: `u${nextId++}`, at: Date.now(), role: "user", text: shown ?? text, ...(shown ? { sent: text } : {}), images: request.images.map((im) => ({ name: im.name, thumb: im.thumb })), mode, ...(asked ? { asked: true } : {}) }
 		S.turns.push(user)
 		thread.append(renderTurn(user))
 		input.value = ""
+		saveDraft()
 		S.images = []
 		renderAttachments()
 		syncMode() // (the box's hint follows: no picture is attached any more)
@@ -1058,14 +1849,20 @@ export function mountAiPanel(host) {
 		start(request)
 	}
 	/** A brand-new scene, asked for in New → Build with AI: the thread shows it as such ("New scene"), and it lands as one undo step. */
-	function buildNew(text, images = []) {
+	function buildNew(text, images = [], opts = {}) {
 		if (S.job) {
 			note("Wait for this build to finish (or press Stop) before starting a new scene")
 			return false
 		}
+		if (blocked()) {
+			if (access.state.kind === "sign_in" && !access.state.unavailable) access.signIn({ kind: "new", text: String(text ?? "") })
+			throw new Error(access.state.title)
+		}
 		open()
 		setMini(false, true)
-		const request = { text: String(text ?? "").trim() || "Recreate this picture as a working machine.", images: images.slice(0, MAX_IMAGES), mode: "new" }
+		// (New → Build with AI's "Concept sketch" setting: passed in, else read where New keeps it; a photo is the reference, so no sketch)
+		const imagine = images.length ? "off" : opts.imagine ?? conceptSetting()
+		const request = { text: String(text ?? "").trim() || "Recreate this picture as a working machine.", images: images.slice(0, MAX_IMAGES), mode: "new", imagine }
 		const user = { id: `u${nextId++}`, at: Date.now(), role: "user", text: String(text ?? "").trim(), images: request.images.map((im) => ({ name: im.name, thumb: im.thumb })), mode: "new" }
 		S.turns.push(user)
 		thread.append(renderTurn(user))
@@ -1082,7 +1879,8 @@ export function mountAiPanel(host) {
 		autosize()
 		host.undo?.()
 		S.lastAppliedId = null
-		const reply = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text, mode: "edit", images: [] }, report: { replyOnly: true, reply: `Undone: the scene is back to how it was before “${t?.report?.title ?? "the last build"}”. (⌘⇧Z brings it back.)` } }
+		const w = turnWords(t)
+		const reply = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text, mode: "edit", images: [] }, report: { replyOnly: true, reply: `Undone: the scene is back to how it was before “${w.words}”${w.more ? ` (and ${plural(w.more, "more change")})` : ""}. (${touchScreen() ? "Redo" : "⌘⇧Z"} brings it back.)` } }
 		S.turns.push(reply)
 		thread.append(renderTurn(reply))
 		syncUndoButtons()
@@ -1122,6 +1920,7 @@ export function mountAiPanel(host) {
 		start({ text, images: [], mode: "check" })
 	}
 	function start(request, replacing = null) {
+		stopFixSearch()
 		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "running", request }
 		if (replacing) {
 			const i = S.turns.indexOf(replacing)
@@ -1134,22 +1933,28 @@ export function mountAiPanel(host) {
 		const li = renderTurn(turn)
 		thread.append(li)
 		hero.hidden = true
+		syncAccessBox()
 		scrollToEnd()
 		const scene = host.getScene()
 		const lb = S.lastBuild
 		const history = S.turns
 			.filter((x) => x !== turn && (x.role === "user" || x.state === "done"))
-			.slice(-8)
-			.map((x) => (x.role === "user" ? { role: "user", text: x.text || "(pictures)" } : { role: "assistant", text: x.report?.replyOnly ? x.report.reply : `${x.report?.mode === "check" ? "Checked" : "Built"} “${x.report?.title}”${x.report?.edit?.reply ? `: ${x.report.edit.reply}` : ""}` }))
+			.slice(-HISTORY_TURNS)
+			.map((x) => (x.role === "user" ? { role: "user", text: x.sent || x.text || "(pictures)" } : { role: "assistant", text: x.report?.replyOnly ? x.report.reply : x.report?.lead ? `${x.report.lead}${x.report.human?.length ? ` Changes: ${x.report.human.join("; ")}.` : ""}${x.report.fix?.state === "found" ? ` I offered to ${x.report.fix.say} (checked in the physics).` : ""}` : `${x.report?.mode === "check" ? "Checked" : "Built"} “${x.report?.title}”${x.report?.edit?.reply ? `: ${x.report.edit.reply}` : ""}` }))
 		const job = ai.build(
 			{ ...request, scene, sim: request.mode === "edit" ? host.getSim?.() ?? null : null, plan: lb?.plan ?? null, planScene: lb?.sceneJSON ? JSON.parse(lb.sceneJSON) : null, history },
-			{ onEvent: (e) => onEvent(turn, e), ...(request.mode === "check" ? { refineRounds: 1 } : {}) }
+			// (a concept sketch only for a new scene from words, as the setting says; never for an edit or a check, never with a photo)
+			{ onEvent: (e) => onEvent(turn, e), imagine: request.mode === "new" && !(request.images ?? []).length ? request.imagine ?? conceptSetting() : "off", ...(request.mode === "check" ? { refineRounds: 1 } : {}) }
 		)
 		S.job = job
 		S.jobStarted = performance.now()
 		S.running = turn
+		syncMode() // (a new scene being built: the composer says "New scene", not "Editing" the scene still on the table)
 		// the critic's camera (a hidden second view) is made while the AI plans, so its first picture doesn't stall the page later
-		if (request.mode !== "edit") (window.requestIdleCallback ?? ((f) => setTimeout(f, 1500)))(() => S.job === job && getShot().prewarm?.(), { timeout: 4000 })
+		// (and a new scene's stage tuner runs its candidates on the fix workers: they load while the AI plans)
+		if (request.mode !== "edit") (window.requestIdleCallback ?? ((f) => setTimeout(f, 1500)))(() => S.job === job && (getShot().prewarm?.(), request.mode === "new" && getFixPool().prewarm?.()), { timeout: 4000 })
+		// (and an edit's fix workers load while the AI works out the change: a search after it starts at once)
+		else (window.requestIdleCallback ?? ((f) => setTimeout(f, 500)))(() => S.job === job && getFixPool().prewarm?.(), { timeout: 3000 })
 		S.keepOpen = false
 		syncSend()
 		job.result.then(
@@ -1177,6 +1982,7 @@ export function mountAiPanel(host) {
 			li.replaceChildren(renderReport(turn))
 			S.job = null
 			S.running = null
+			syncMode()
 			syncSend()
 			persist()
 			announce(report.reply)
@@ -1213,10 +2019,25 @@ export function mountAiPanel(host) {
 		S.lastBuild = { plan: report.plan, sceneJSON: sceneNow, title: report.title, turnId: turn.id }
 		turn.sceneJSON = S.lastBuild.sceneJSON
 		turn.plan = report.plan
+		turn.simKey = report.sim?.key ?? null // (the run of this version: the side-by-side view draws its start from the app's run when it is this one)
 		turn.state = "done"
 		turn.hi = changed ? host.historyIndex?.() ?? null : null // (not saved: after a reload the app's history is new, so no Undo is offered)
 		if (changed) S.lastAppliedId = turn.id
 		turn.report = slimTurn({ ...turn, report: changed ? report : { ...report, noChange: true } }).report
+		// an edit that stopped a goal: the search for a checked fix starts now, while the change plays (the reply says so)
+		const searching = changed && report.fixNeeded && !!report.fixCtx
+		if (searching) turn.report.fix = { state: "searching" }
+		const asking = searching || !!turn.report.fix
+		// a new scene planned from a concept sketch: the result card's thumbnail (the sketch next to the scene's start) stays in view
+		const conceptImg = report.mode === "new" ? (typeof report.concept === "string" ? report.concept : report.concept?.image) : null
+		// (a picture too big to keep is kept as its smaller copy: if that wasn't drawn yet, the card gets it the moment it is)
+		if (conceptImg && !turn.report.concept)
+			shrinkConcept(conceptImg).then((small) => {
+				if (!small || turn.report?.concept || turn.state !== "done") return
+				turn.report.concept = slimConcept(typeof report.concept === "string" ? { image: small } : { ...report.concept, image: small })
+				rerenderTurn(turn)
+				persist()
+			})
 		// the timeline folds into a one-line summary, under the reply's Details
 		turn.sumEl = h("details", { class: "ai-timeline-sum" }, h("summary", {}, `How it was built · ${secs(report.totalMs)}`), v?.root.querySelector(".ai-steps") ?? "")
 		const card = renderReport(turn)
@@ -1228,6 +2049,7 @@ export function mountAiPanel(host) {
 		syncSend()
 		syncUndoButtons()
 		persist()
+		if (searching) startFixSearch(turn, report.fixCtx)
 		const goalWords = report.goals.length ? `${report.goals.filter((g) => g.ok).length} of ${report.goals.length} goals met` : ""
 		announce(turn.report.lead ?? `${!changed ? "No change" : report.mode === "check" ? "Checked" : "Built"}: ${report.title}. ${goalWords}`)
 		miniTitle.textContent = report.title
@@ -1235,7 +2057,10 @@ export function mountAiPanel(host) {
 		if (!S.open) {
 			S.unseen = true
 			host.button?.classList.add("unseen")
-			if (typeof committed !== "boolean") host.toast?.(changed ? `Built “${report.title}” — ⌘Z undoes it` : `No change: “${report.title}” is as it was`) // (the app's applyScene says it itself)
+			if (typeof committed !== "boolean") host.toast?.(changed ? `Built “${report.title}” — ${touchScreen() ? "Undo takes it back" : "⌘Z undoes it"}` : `No change: “${report.title}” is as it was`) // (the app's applyScene says it itself)
+		} else if (asking || conceptImg) {
+			// (the reply asks something: "Want me to …?"; or it has the concept sketch to compare with the scene. It stays in view)
+			setMini(false)
 		} else if (matchMedia("(max-width: 900px)").matches) {
 			// on a phone the sheet covers the picture: fold it away so the new scene is seen playing (the button reopens the report)
 			setTimeout(() => {
@@ -1254,15 +2079,25 @@ export function mountAiPanel(host) {
 		endDraft(true)
 		const cancelled = err?.name === "AbortError"
 		turn.state = cancelled ? "cancelled" : "error"
-		turn.error = { kind: cancelled ? "cancelled" : err instanceof AiError ? err.kind : "gateway", message: cancelled ? "" : err?.message ?? String(err), step: err?.step ?? null, retryable: !!err?.retryable }
+		turn.error = { kind: cancelled ? "cancelled" : err instanceof AiError ? err.kind : "gateway", message: cancelled ? "" : err?.message ?? String(err), step: err?.step ?? null, retryable: !!err?.retryable, ...(err?.resetsAt ? { resetsAt: err.resetsAt } : {}), ...(Number.isInteger(err?.cause?.status) && err.cause.status >= 400 ? { status: err.cause.status } : {}) }
 		if (err?.kind === "nothing") turn.error.missing = []
+		if (err instanceof AiError && ACTION_KINDS.has(err.kind)) {
+			access.note(err)
+			// (an edit's words go back in the box, for after signing in or when the allowance is back)
+			if (turn.request?.mode === "edit" && turn.request?.text && !input.value.trim()) {
+				input.value = turn.request.text
+				saveDraft()
+				autosize()
+			}
+		}
 		li.className = `ai-turn ai-bot ai-s-${turn.state}`
 		li.replaceChildren(renderError(turn))
 		S.job = null
 		S.running = null
+		syncMode()
 		syncSend()
 		persist()
-		announce(cancelled ? "Stopped" : `${ERROR_TITLES[turn.error.kind] ?? "Error"}: ${turn.error.message}`)
+		announce(cancelled ? "Stopped" : `${ERROR_TITLES[turn.error.kind] ?? "Error"}: ${ACTION_KINDS.has(turn.error.kind) ? turn.error.message : errorWords(turn.error) ?? turn.error.message}`)
 		setMini(false) // (what went wrong is shown in full)
 		scrollToEnd()
 		if (!cancelled) console.warn("AI build failed:", err)
@@ -1319,7 +2154,7 @@ export function mountAiPanel(host) {
 		}
 		if (!on) {
 			if (byUser) input.focus({ preventScroll: true })
-			scrollToEnd(false)
+			scrollToNow(false)
 		}
 	}
 	addEventListener("resize", () => S.mini && placeMini())
@@ -1331,6 +2166,9 @@ export function mountAiPanel(host) {
 			return
 		}
 		S.open = true
+		// (the toast that said "open Edit with AI to apply it" has done its job; on a phone any toast would sit over the box and its send button)
+		const toastEl = document.getElementById("toast")
+		if (toastEl && !toastEl.hidden && (/Edit with AI/.test(toastEl.textContent ?? "") || matchMedia("(max-width: 900px)").matches)) toastEl.hidden = true
 		const top = document.querySelector("header.top")?.getBoundingClientRect().bottom
 		if (top > 0) drawer.style.setProperty("--ai-top", `${Math.round(top + 10)}px`)
 		drawer.hidden = false
@@ -1339,10 +2177,12 @@ export function mountAiPanel(host) {
 		host.button?.classList.remove("unseen")
 		S.unseen = false
 		syncMode()
+		access.check()
+		renderAccess()
 		void drawer.offsetWidth // (the start of the transition is laid out first, so this works in a background tab too, where animation frames wait)
 		drawer.classList.add("in")
 		if (!matchMedia("(max-width: 900px)").matches) input.focus({ preventScroll: true })
-		if (S.turns.length) scrollToEnd(false)
+		if (S.turns.length) scrollToNow(false)
 		else scroll.scrollTop = 0
 		if (S.job) S.keepOpen = true // (opened during a build: it stays open)
 		syncUndoButtons()
@@ -1366,6 +2206,7 @@ export function mountAiPanel(host) {
 	btnClose.onclick = close
 	btnNew.onclick = () => {
 		if (S.job) return note("Stop the current build first")
+		stopFixSearch()
 		S.turns = []
 		S.lastBuild = null
 		S.since = Date.now() // (turns from before this, in any tab of this profile, stay out)
@@ -1405,6 +2246,8 @@ export function mountAiPanel(host) {
 	renderThread()
 	renderAttachments()
 	syncMode()
+	renderAccess()
+	access.check()
 	syncSend()
 	return {
 		open,
@@ -1418,8 +2261,8 @@ export function mountAiPanel(host) {
 		/** A brand-new scene (New → Build with AI): built in this drawer's thread, applied as one undo step. -> false when a build is running */
 		buildNew,
 		/** for tests: this text now, as typed in the drawer (an edit of the scene on screen), or with mode "new" as New → Build with AI */
-		run(text, { mode = "edit", images = null } = {}) {
-			if (mode === "new") buildNew(text, images ?? [])
+		run(text, { mode = "edit", images = null, imagine } = {}) {
+			if (mode === "new") buildNew(text, images ?? [], imagine ? { imagine } : {})
 			else {
 				open()
 				if (images) S.images = images

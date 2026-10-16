@@ -1,0 +1,83 @@
+{
+ "version": 2,
+ "id": "gallery-catapult-bucket",
+ "name": "Catapult into a bucket",
+ "seconds": 4,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "catapult",
+   "type": "spring-catapult",
+   "name": "Catapult",
+   "x": 0.35,
+   "y": 0,
+   "props": {
+    "cocked_angle": 30,
+    "stiffness": 217
+   }
+  },
+  {
+   "id": "ball",
+   "type": "tennis-ball",
+   "name": "Tennis ball",
+   "x": 0.11972,
+   "y": 0.07052
+  },
+  {
+   "id": "cone",
+   "type": "traffic-cone",
+   "name": "Traffic cone",
+   "x": 1.05,
+   "y": 0.2285
+  },
+  {
+   "id": "bucket",
+   "type": "bucket",
+   "name": "Bucket",
+   "x": 1.92,
+   "y": 0
+  }
+ ],
+ "goals": [
+  {
+   "kind": "in",
+   "item": "ball",
+   "container": "bucket",
+   "label": "The tennis ball sails over the cone into the bucket"
+  }
+ ]
+}

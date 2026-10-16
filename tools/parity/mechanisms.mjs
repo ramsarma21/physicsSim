@@ -828,7 +828,7 @@ const groups = {
 	},
 
 	async live() {
-		const base = "http://localhost:8790"
+		const base = process.env.PARITY_SERVER ?? "http://localhost:8790"
 		let cat
 		try {
 			cat = await (await fetch(`${base}/api/catalog`)).json()

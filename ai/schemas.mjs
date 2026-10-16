@@ -270,18 +270,26 @@ export const rateSchema = {
 	}
 }
 
+/** What an edit answer is (ai/DESIGN.md §14): a change, a question back when the request is truly ambiguous, an answer to a question, a fix
+ *  ("make it work"), an undo, or a new scene. ask, answer and undo change nothing. */
+export const EDIT_KINDS = ["change", "ask", "answer", "fix", "undo", "new"]
+export const EDIT_NO_CHANGE = ["ask", "answer", "undo"]
+const MAX_TARGETS = 20
 export const editSchema = {
 	type: "object",
 	required: ["mode", "reply"],
 	additionalProperties: false,
 	properties: {
+		kind: { type: "string" }, // one of EDIT_KINDS (checked in validateEdit, with the measured error words)
+		targets: { type: "array", maxItems: MAX_TARGETS, items: { type: "object" } }, // [{says, ids, because}]: what each thing the request names is
 		mode: { enum: ["patch", "plan", "new"] }, // new: the user wants a different scene (the server then plans it: ai/DESIGN.md §13.8)
 		reply: str(1200, 1),
 		why: str(300), // one sentence: why this is a change of the scene on screen, or a new scene
 		suggestions: suggestionsSchema, // 2-3 next edits of THIS scene (§13.9)
 		patches: { type: "array", maxItems: LIMITS.patches, items: { type: "object" } },
 		plan: { type: "object" },
-		missing: { type: "array", maxItems: LIMITS.missing, items: missingSchema },
+		missing: { type: "array", maxItems: LIMITS.missing, items: missingSchema }, // what THIS request asked for that the library does not have
+		plan_missing: { type: "array", maxItems: LIMITS.missing, items: missingSchema }, // (set by validateEdit, never by the model: the scene's own list after the change)
 		notes: str(3000), // mode patch: the plan's notes, rewritten when the change made them untrue
 		assumptions: strings(20, 300), // mode patch: the same for the assumptions
 		undo: { type: "boolean" } // the user asked to undo or go back: no patches; the reply points at Undo (the app may undo by itself)
@@ -432,14 +440,28 @@ function cutStr(o, k, max, path, warnings) {
 		warnings.push(`${path}.${k} was cut to ${max} characters`)
 	}
 }
-/** The chat reply as the user reads it (§13.9): whitespace collapsed, at most 2 sentences (more are cut, with a warning). Never a repair. */
-function tidyReply(o, path, warnings, max = 400) {
+/** An edit's reply is under 40 words (edit.md); one over this many is tidied (tidyReply). */
+export const EDIT_REPLY_WORDS = 45
+const wordCount = (t) => String(t).split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length
+/**
+ * The chat reply as the user reads it (§13.9): whitespace collapsed, at most 2 sentences (more are cut, with a warning). With `words` (the
+ * edit's reply): a two-sentence reply over that many words keeps its first sentence when that one says enough on its own (≥ 8 words: the
+ * prompt puts what changed, or the answer, first); one that cannot be cut so is kept, with a warning. Never a repair.
+ */
+function tidyReply(o, path, warnings, max = 400, words = null) {
 	if (!isObj(o) || typeof o.reply !== "string") return
 	let t = o.reply.replace(/\s+/g, " ").trim()
 	const sentences = t.split(/(?<=[.!?])\s+(?=["“(]?[A-ZÀ-Þ¿¡])/).map((x) => x.trim()).filter(Boolean)
 	if (sentences.length > 2) {
 		t = sentences.slice(0, 2).join(" ")
 		warnings.push(`${path}.reply cut to its first 2 sentences`)
+	}
+	if (words && wordCount(t) > words) {
+		const n = wordCount(t)
+		if (sentences.length >= 2 && wordCount(sentences[0]) >= 8 && wordCount(sentences[0]) <= words) {
+			t = sentences[0]
+			warnings.push(`${path}.reply had ${n} words: cut to its first sentence`)
+		} else warnings.push(`${path}.reply has ${n} words (keep it under ${words})`)
 	}
 	o.reply = t
 	cutStr(o, "reply", max, path, warnings)
@@ -1205,7 +1227,23 @@ export function checkPatches(patches, basePlan, ctx, path = "patches") {
 					const hint = suggest(p.type, Object.keys(catalog.types))
 					errors.push(`${at}: type "${p.type}" is not in the catalog${hint ? ` (did you mean "${hint}"?)` : ""}`)
 				} else if (p.type === "table") errors.push(`${at}: the table cannot be added`)
-				else p.props = checkProps(p.props, p.type, catalog, `${at}.props`, errors)
+				else {
+					p.props = checkProps(p.props, p.type, catalog, `${at}.props`, errors)
+					// a prop the old kind had and the new one shares, at a value outside the new kind's range (a 10 cm toy car's length for a
+					// truck), would make the swap invalid and cost a repair turn: the patch sets it to the new kind's default instead, so every
+					// client's applyPatches (which keeps shared props) gets a value the new kind takes
+					const T = catalog.types[p.type]
+					for (const [k, v] of Object.entries(isObj(target.props) ? target.props : {})) {
+						const spec = T.props[k]
+						if (!spec || p.props[k] !== undefined || v === null || !checkProp(spec, v, k)[1]) continue
+						// (its default; without one, a number is clamped into the range)
+						const clamp = (n) => Math.min(spec.max ?? Infinity, Math.max(spec.min ?? -Infinity, spec.kind === "int" ? Math.round(n) : n))
+						const x = spec.default !== undefined && !checkProp(spec, spec.default, k)[1] ? spec.default : typeof v === "number" && Number.isFinite(v) ? clamp(v) : undefined
+						if (x === undefined || checkProp(spec, x, k)[1]) continue
+						p.props[k] = x
+						warnings.push(`${at}: the ${target.type}'s ${k} ${short(v)} is outside a ${p.type}'s range, so it is set to ${short(x)}`)
+					}
+				}
 				break
 			case "add":
 				if (ids.has(p.item.id)) errors.push(`${at}: an item "${p.item.id}" already exists; give the new one another id`)
@@ -1290,15 +1328,25 @@ export function applyPatch(plan, p, catalog) {
 		case "replace_type": {
 			it.type = p.type
 			const T = catalog?.types[p.type]
-			const kept = Object.fromEntries(Object.entries(it.props ?? {}).filter(([k]) => T?.props[k]))
+			// (props the new kind shares, at values it takes: one outside its range is left at its default)
+			const kept = Object.fromEntries(Object.entries(it.props ?? {}).filter(([k, v]) => T?.props[k] && (v === null || !checkProp(T.props[k], v, k)[1])))
 			it.props = { ...kept, ...(p.props ?? {}) }
 			if (T && !T.dynamic) {
 				delete it.held
 				delete it.fixed
 			}
+			// (its knobs on a prop the new kind shares are cut to the new kind's range; one with nothing left of its range goes)
+			const fit = (k) => {
+				const spec = k.id === p.id ? T?.props[k.param] : null
+				if (!spec || !isObj(k) || typeof k.min !== "number" || typeof k.max !== "number") return k
+				const lo = Math.max(k.min, spec.min ?? -Infinity)
+				const hi = Math.min(k.max, spec.max ?? Infinity)
+				return lo === k.min && hi === k.max ? k : lo < hi ? { ...k, min: lo, max: hi } : null
+			}
 			const keeps = (k) => k.id !== p.id || ["x", "y", "angle"].includes(k.param) || T?.props[k.param]
-			P.tune = (P.tune ?? []).filter(keeps)
-			if (Array.isArray(P.stages)) P.stages = P.stages.map((st) => (isObj(st) && Array.isArray(st.tune) ? { ...st, tune: st.tune.filter(keeps) } : st))
+			const knobs = (ks) => ks.filter(keeps).map(fit).filter(Boolean)
+			P.tune = knobs(P.tune ?? [])
+			if (Array.isArray(P.stages)) P.stages = P.stages.map((st) => (isObj(st) && Array.isArray(st.tune) ? { ...st, tune: knobs(st.tune) } : st))
 			break
 		}
 		case "set_place":
@@ -1410,6 +1458,34 @@ function tidyObservation(v, warnings) {
 			warnings.push(`observation.${k} was cut to ${maxItems} entries`)
 		}
 		v[k].forEach((_, i) => cut(v[k], i, maxLen, `observation.${k}`))
+	}
+	// an object with no box (bbox null) is one the request names but the picture does not show (2 of 120 observations of AI concept
+	// pictures: a cat and water the picture left out, ai/research/round3-plan.md §3): it is not an observed object but a doubt, so it moves
+	// to `uncertain` with a warning, and the relations and supports that name it go too (a missing box stays an error for the repair)
+	if (Array.isArray(v.objects) && v.objects.some((o) => isObj(o) && o.bbox === null)) {
+		const gone = []
+		v.objects = v.objects.filter((o, i) => {
+			if (!isObj(o) || o.bbox !== null) return true
+			const label = typeof o.label === "string" && o.label.trim() ? o.label.trim() : `object ${i + 1}`
+			gone.push(label)
+			warnings.push(`observation.objects[${i}] (${label}) has no box (bbox null): moved to "uncertain" as not seen in the picture`)
+			return false
+		})
+		if (Array.isArray(v.uncertain)) for (const l of gone) v.uncertain.push(`"${l}" is not seen in the picture`)
+		const kept = new Set(v.objects.filter(isObj).map((o) => String(o.label ?? "").toLowerCase()))
+		const lost = new Set(gone.map((l) => l.toLowerCase()).filter((l) => !kept.has(l)))
+		const named = (s) => typeof s === "string" && lost.has(s.trim().toLowerCase())
+		if (Array.isArray(v.relations))
+			v.relations = v.relations.filter((r, i) => {
+				if (!isObj(r) || !(named(r.a) || named(r.b))) return true
+				warnings.push(`observation.relations[${i}] names an object that is not seen: dropped`)
+				return false
+			})
+		for (const o of v.objects)
+			if (isObj(o) && named(o.supports)) {
+				warnings.push(`observation.objects (${o.label}).supports named an object that is not seen: read as null`)
+				o.supports = null
+			}
 	}
 	cut(v, "summary", 1500, "observation")
 	cutList("motion_story", 20, 400)
@@ -1710,12 +1786,63 @@ export function validateRate(value, ctx = {}) {
 
 /** ctx.intent "edit" (the user pressed "Edit with AI": the scene on screen is changed, never replaced): an answer that is not mode "patch"
  *  gets the one repair turn (soft: kept, with a warning, when it stays; the client then offers to build it as a new scene). */
+/** A request to throw the scene away and build another ("start over: …", "clear it and build …", "from scratch"): kind "new" even under Edit. */
+export const START_OVER = /\b(start(ing)? (over|again|afresh|fresh|from scratch)|from scratch|scrap (it|this|that|everything|the (scene|machine|whole thing))|(clear|wipe|empty) (it|this|everything|the (table|scene|stage)|it all)( out)?( and| then|,|:)|throw (it|this|everything) (away|out)|a (whole )?(different|new) (scene|setup|machine) (instead|altogether))\b/i
 function editIntentSoft(v, ctx) {
 	if (ctx?.intent !== "edit" || v?.mode === "patch") return []
-	return [`mode is "${v?.mode}", but the user pressed Edit: change the scene on screen with mode "patch" (remove, add and change items with patches, even when the words say "new" or "start over"); keep every item the request does not name`]
+	// (§14.2 (2): a real start-over is kind "new"; the app offers to build it as a new scene, with the planner and the tuner)
+	if (START_OVER.test(String(ctx.text ?? ""))) return []
+	return [`mode is "${v?.mode}", but the user pressed Edit: change the scene on screen with mode "patch" (remove, add and change items with patches, even when the words say "new" or "build"); keep every item the request does not name. Only a request to start over with a different scene is kind "new"`]
 }
 
 // ---------------------------------------------------------------- edit
+/**
+ * The answer's `kind` and `targets` (ai/DESIGN.md §14, measured in ai/experiments/edit as arm n7): a kind outside EDIT_KINDS, targets that are
+ * not a list, and a kind that changes nothing (ask, answer, undo) with patches get the repair turn, with the words the experiment used; the
+ * rest is tidied with a warning, never repaired: each target kept as {says, ids, because} (ids from a string or `id`), at most 20; mode "new"
+ * (or a legacy whole plan) is kind "new"; kind "new" with patches is a change, without them mode "new"; undo and kind "undo" go together.
+ */
+function checkEditKind(v, errors, warnings) {
+	if (!Array.isArray(v.targets)) errors.push("targets must be a list ([] when the request names nothing)")
+	else {
+		const kept = []
+		for (const [i, t] of v.targets.entries()) {
+			if (!isObj(t)) {
+				warnings.push(`edit.targets[${i}] dropped: a target is {says, ids, because}`)
+				continue
+			}
+			const raw = Array.isArray(t.ids) ? t.ids : typeof t.ids === "string" ? [t.ids] : typeof t.id === "string" ? [t.id] : []
+			const ids = [...new Set(raw.filter((x) => typeof x === "string" && x.trim()).map((x) => x.trim().slice(0, LIMITS.idLength)))].slice(0, LIMITS.items)
+			kept.push({ says: String(t.says ?? "").slice(0, 200), ids, ...(t.because !== undefined && t.because !== null ? { because: String(t.because).slice(0, 300) } : {}) })
+		}
+		if (kept.length > MAX_TARGETS) warnings.push(`edit.targets cut to the first ${MAX_TARGETS}`)
+		v.targets = kept.slice(0, MAX_TARGETS)
+	}
+	if (!EDIT_KINDS.includes(v.kind)) {
+		errors.push(`kind must be one of ${EDIT_KINDS.join(", ")}`)
+		return
+	}
+	const patches = Array.isArray(v.patches) ? v.patches : []
+	if ((v.mode === "new" || v.mode === "plan") && v.kind !== "new") {
+		warnings.push(`edit.kind "${v.kind}" read as "new": mode "${v.mode}" is a different scene`)
+		v.kind = "new"
+	} else if (v.kind === "new" && v.mode === "patch") {
+		if (patches.length) {
+			warnings.push('edit.kind "new" read as "change": the answer patches the scene on screen')
+			v.kind = "change"
+		} else {
+			warnings.push('edit.mode "patch" read as "new": kind "new" is a different scene')
+			v.mode = "new"
+		}
+	}
+	if (v.undo === true && v.kind !== "undo" && !patches.length) {
+		warnings.push(`edit.kind "${v.kind}" read as "undo": undo is true`)
+		v.kind = "undo"
+	}
+	if (v.kind === "undo" && v.undo !== true && !patches.length) v.undo = true
+	if (EDIT_NO_CHANGE.includes(v.kind) && patches.length) errors.push(`kind "${v.kind}" changes nothing: "patches": []`)
+}
+
 /** ctx: {catalog, plan? (the scene's plan), scene? (the current scene; used as an exact plan when no plan is given), stage?} */
 export function validateEdit(value, ctx = {}) {
 	const errors = []
@@ -1723,7 +1850,9 @@ export function validateEdit(value, ctx = {}) {
 	if (!isObj(value)) return { ok: false, errors: ["the answer must be a JSON object"], warnings, value }
 	const v = clone(value)
 	if (v.missing === undefined) v.missing = []
-	tidyReply(v, "edit", warnings, 1200)
+	delete v.plan_missing // (the validator's, below)
+	checkEditKind(v, errors, warnings)
+	tidyReply(v, "edit", warnings, 1200, EDIT_REPLY_WORDS)
 	tidySuggestions(v, "edit", warnings)
 	cutStr(v, "notes", 3000, "edit", warnings)
 	if (Array.isArray(v.assumptions)) v.assumptions.forEach((_, i) => cutStr(v.assumptions, i, 300, "edit.assumptions", warnings))
@@ -1756,14 +1885,27 @@ export function validateEdit(value, ctx = {}) {
 			warnings.push(...r.warnings)
 			if (!r.errors.length) {
 				v.patches = [...r.patches, ...renamesFor(base, r.plan, r.patches, ctx.catalog, warnings)]
-				// the scene's own "not in the library" list stays with it (the app replaces the plan's list with this answer's): what the
-				// plan reported before, unless its stand-in was removed, then what this change adds
+				// `missing` is what THIS request asked for that the library does not have (the card tells the user); the scene's own list
+				// stays with the scene as `plan_missing`: what the plan reported before, unless its stand-in was removed, then this change's
 				if (Array.isArray(base?.missing) && base.missing.length && Array.isArray(v.missing)) {
 					const left = new Set(r.plan.items.map((it) => it.id))
 					const seen = new Set(v.missing.filter(isObj).map((m) => normLabel(m.asked)))
 					const kept = base.missing.filter((m) => isObj(m) && !seen.has(normLabel(m.asked)) && (m.substitute_id == null || left.has(m.substitute_id)))
-					if (kept.length) v.missing = [...clone(kept), ...v.missing].slice(0, LIMITS.missing)
+					v.plan_missing = [...clone(kept), ...clone(v.missing)].slice(0, LIMITS.missing)
 				}
+			}
+		}
+		// (an entry the plan already had is the scene's, not this request's: the model copied it from the plan)
+		if (Array.isArray(ctx.plan?.missing) && ctx.plan.missing.length && Array.isArray(v.missing) && v.missing.length) {
+			const had = new Set(ctx.plan.missing.filter(isObj).map((m) => normLabel(m.asked)))
+			// (unless the request itself asks for it again: "make the cup crumple" may report "a crumpled paper cup" once more)
+			const req = ` ${normLabel(ctx.text ?? "")} `
+			const stop = new Set(["the", "and", "with", "for", "its", "not", "off", "out", "one", "all", "being", "along", "from", "into", "onto"])
+			const asksAgain = (m) => normLabel(m.asked).split(" ").some((w) => w.length >= 3 && !stop.has(w) && req.includes(` ${w.replace(/(ed|s)$/, "")}`))
+			const own = v.missing.filter((m) => !(isObj(m) && had.has(normLabel(m.asked)) && !asksAgain(m)))
+			if (own.length < v.missing.length) {
+				warnings.push(`edit.missing: ${v.missing.length - own.length} entr${v.missing.length - own.length > 1 ? "ies" : "y"} the plan already had dropped (missing is this request's)`)
+				v.missing = own
 			}
 		}
 	} else {

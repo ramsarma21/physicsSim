@@ -338,19 +338,26 @@ const tests: Record<string, () => void> = {
 		proto.setTangentSpeed = original
 	},
 	stiff: () => {
+		// Since the engine batch 2 (2026-10-15) a stiff spring's group is solved in sub-steps (physics.ts `subSteps`, up to 16 a step): 1e5 N/m on a
+		// 33 g ball (ω·dt 3.6) is followed, and nothing is said; a spring too stiff even for 16 sub-steps (1e9 N/m: ω·dt 361) is said once.
 		const said: string[] = []
 		const warn = console.warn
 		console.warn = (...m: unknown[]) => void said.push(m.join(" "))
-		run(
-			doc({
-				solids: [s({ kind: "dynamic", id: "bob", words: "bob", body: { kind: "ball", radius: 0.01 }, material: "steel", at: { x: 0, y: 0.9 } })],
-				joints: [{ kind: "spring", id: "stiff", a: null, b: "bob", anchorA: { x: 0, y: 1 }, anchorB: { x: 0, y: 0 }, rest: 0.1, stiffness: 1e5, damping: 0 }],
-				seconds: 0.05
-			})
-		)
+		const hang = (k: number) =>
+			run(
+				doc({
+					solids: [s({ kind: "dynamic", id: "bob", words: "bob", body: { kind: "ball", radius: 0.01 }, material: "steel", at: { x: 0, y: 0.9 } })],
+					joints: [{ kind: "spring", id: "stiff", a: null, b: "bob", anchorA: { x: 0, y: 1 }, anchorB: { x: 0, y: 0 }, rest: 0.1, stiffness: k, damping: 0 }],
+					seconds: 0.05
+				})
+			)
+		hang(1e5)
+		const quiet = said.length
+		hang(1e9)
 		console.warn = warn
-		console.log(`STIFF SPRING 1e5 N/m on a 33 g ball`)
-		claim(`warns: ${said[0] ?? "(nothing said)"}`, said.length === 1)
+		console.log(`STIFF SPRING 1e5 N/m on a 33 g ball (ω·dt 3.6), then 1e9 N/m (ω·dt 361)`)
+		claim(`1e5 N/m: followed in sub-steps, nothing said (${quiet} warnings)`, quiet === 0)
+		claim(`1e9 N/m: warns: ${said[quiet] ?? "(nothing said)"}`, said.length - quiet === 1)
 	}
 }
 

@@ -31,6 +31,8 @@
 !/tools/vendor-clerk.mjs
 !/tools/gen-scenarios.mjs
 !/tools/*.ts
+# (never the Apple-libm-derived pow constants an old checkout may still hold: the bundle's pow is tools/crpow.ts)
+/tools/apple-pow-tables.ts
 
 # tooling/: the engine's sources (npm run build:engine bundles tooling/src/sim; tooling/package.json maps its #imports)
 /tooling/*

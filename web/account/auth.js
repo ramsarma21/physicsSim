@@ -6,8 +6,10 @@
 //   auth.user       {id, name, email, initials} | null
 //   auth.signIn()   (Google: the page goes to Google and comes back)   auth.signOut()   auth.getToken({skipCache}) -> session token | null
 //   auth.onChange(fn) -> unsubscribe
-// Where accounts are looked for: only off this machine (a deploy). There, GET /api/scenes/me answers {accounts: {provider, publishableKey} | null}
-// (docs/ACCOUNTS.md 4.2); no answer, 404 or 503 means "local". On localhost (the Python server, the static preview) nothing is asked, so the
+//   auth.aiSignInRequired   this deployment's Build with AI needs a signed-in person (/api/scenes/me's ai.signInRequired)
+// Where accounts are looked for: only off this machine (a deploy). There, GET /api/scenes/me answers {accounts: {provider, publishableKey} | null,
+// storage, ai: {signInRequired}} (docs/ACCOUNTS.md 4.2); no answer, 404 or 503 means "local", and so does storage: false (sign-in with nowhere
+// to keep the scenes would only break My scenes: the server says accounts: null then too). On localhost (the Python server, the static preview) nothing is asked, so the
 // local server never sees a request it doesn't have. ?accounts=1 asks anyway (testing a local stand-in of the function).
 // A provider: {name, user, signIn(), signOut(), getToken(opts), onChange(fn)}; createXProvider(config) resolves to one, or to null when it
 // cannot run here (the page then stays local).
@@ -27,6 +29,7 @@ export function createAuth() {
 	let state = "loading"
 	let provider = null
 	let reason = ""
+	let config = null // what /api/scenes/me said (or the mock's stand-in)
 	const listeners = new Set()
 	const emit = () => {
 		for (const f of listeners) {
@@ -52,18 +55,24 @@ export function createAuth() {
 			if (PARAMS.has("accountmock")) {
 				const m = await import("./dev-mock.js") // (development only: not in the build; on a deploy this import fails and the page stays local)
 				provider = await m.createMockProvider({ signedIn: PARAMS.get("accountmock") === "signedin" })
+				config = provider.config ?? { storage: true, ai: { signInRequired: true } }
 			} else {
 				if (LOCAL_HOST && !PARAMS.has("accounts")) return set("local")
 				const r = await fetch("/api/scenes/me", { cache: "no-store", headers: { Accept: "application/json" }, credentials: "same-origin" }).catch(() => null)
 				const j = r?.ok ? await r.json().catch(() => null) : null
-				const config = j?.accounts
-				if (!config) return set("local")
-				if (config.provider !== "clerk") {
-					reason = `unknown sign-in provider ${config.provider}`
+				const accounts = j?.accounts
+				if (!accounts) return set("local")
+				if (j.storage === false) {
+					reason = "accounts need the database (storage: false)"
 					return set("local")
 				}
+				if (accounts.provider !== "clerk") {
+					reason = `unknown sign-in provider ${accounts.provider}`
+					return set("local")
+				}
+				config = j
 				const m = await import("./clerk.js")
-				provider = await withTimeout(m.createClerkProvider(config), PROVIDER_TIMEOUT_MS, "Sign-in")
+				provider = await withTimeout(m.createClerkProvider(accounts), PROVIDER_TIMEOUT_MS, "Sign-in")
 				if (!provider) return set("local") // (the provider isn't built into this version yet)
 			}
 			provider.onChange?.(sync)
@@ -92,6 +101,10 @@ export function createAuth() {
 		},
 		get providerName() {
 			return provider?.name ?? null
+		},
+		/** Build with AI needs a signed-in person here (a deploy with accounts whose AI function requires sign-in) */
+		get aiSignInRequired() {
+			return !!config?.ai?.signInRequired && (state === "signed-out" || state === "signed-in" || state === "unavailable")
 		},
 		ready: null,
 		async signIn() {

@@ -1,0 +1,165 @@
+{
+ "about": "The 40 new-scene prompts of ai/experiments/imagine (bench text25 + cases-new new15), for the chain classifier test (round3-plan §4.1).",
+ "cases": [
+  {
+   "id": "s1-ball-ramp",
+   "prompt": "A ball rolls down a ramp."
+  },
+  {
+   "id": "s2-five-dominoes",
+   "prompt": "Five dominoes in a row; tip the first one over so it knocks down the rest."
+  },
+  {
+   "id": "s3-car-ramp",
+   "prompt": "A toy car rolls down a ramp and onto the table."
+  },
+  {
+   "id": "c1-rube-cup",
+   "prompt": "Build a Rube Goldberg machine with at least four stages that ends with a ball dropping into a cup."
+  },
+  {
+   "id": "c2-marble-zigzag",
+   "prompt": "A marble rolls down two zig-zag ramps, knocks over a row of dominoes, and the last domino pushes a ball off a ledge into a bucket."
+  },
+  {
+   "id": "k1-book-stack",
+   "prompt": "Stack four books on top of each other on the table."
+  },
+  {
+   "id": "k2-tower-wrecking",
+   "prompt": "Build a tower of six wooden blocks and knock it down with a swinging wrecking ball."
+  },
+  {
+   "id": "e1-phone-board-pillow",
+   "prompt": "A phone slides down a cutting board propped up on two books and stops on a pillow."
+  },
+  {
+   "id": "e2-tallest-to-shortest",
+   "prompt": "Line up a soda can, a coffee mug, a candle and a water bottle on the table from tallest to shortest, left to right."
+  },
+  {
+   "id": "e3-balance-can-book",
+   "prompt": "Balance a tennis ball on top of a standing soda can, which stands on a hardcover book."
+  },
+  {
+   "id": "v1-motor-car-cereal",
+   "prompt": "A motorized toy car drives into three cereal boxes standing in a row and knocks them over."
+  },
+  {
+   "id": "v2-skateboard-cone",
+   "prompt": "A skateboard rolls down a long ramp and crashes into a traffic cone."
+  },
+  {
+   "id": "m1-pendulum-golf",
+   "prompt": "A pendulum with a 40 cm string swings down and knocks a golf ball off a wooden block."
+  },
+  {
+   "id": "m2-seesaw-catapult",
+   "prompt": "Drop a heavy steel weight onto one end of a seesaw to launch a ping-pong ball from the other end into a basket."
+  },
+  {
+   "id": "m3-pulley-lift",
+   "prompt": "Use a pulley with a heavier counterweight to lift a cup up off the table."
+  },
+  {
+   "id": "m4-conveyor-oranges",
+   "prompt": "A conveyor belt carries three oranges and drops them into a basket at the end."
+  },
+  {
+   "id": "m5-trampoline-bucket",
+   "prompt": "Drop a basketball onto a trampoline so it bounces up and lands in a bucket."
+  },
+  {
+   "id": "m6-spring-launcher-cup",
+   "prompt": "A spring launcher shoots a golf ball over a wall of three stacked bricks into a cup."
+  },
+  {
+   "id": "z1-steel-rubber-drop",
+   "prompt": "Drop a steel ball and a rubber ball together from 1 meter above the table."
+  },
+  {
+   "id": "z2-materials-ice-ramp",
+   "prompt": "Send a glass marble, a wooden ball and a rubber ball down the same ice ramp, one after another."
+  },
+  {
+   "id": "g1-fun-balls",
+   "prompt": "Something fun with balls."
+  },
+  {
+   "id": "g2-chain-reaction",
+   "prompt": "Make a cool chain reaction."
+  },
+  {
+   "id": "i1-cat-water",
+   "prompt": "A live cat knocks a glass of water off the table."
+  },
+  {
+   "id": "i2-waterfall-wheel",
+   "prompt": "A waterfall pours into a bucket and turns a water wheel."
+  },
+  {
+   "id": "i3-747",
+   "prompt": "A 747 jumbo jet lands on a runway and taxis into a hangar."
+  },
+  {
+   "id": "n01-bowling-strike",
+   "prompt": "roll a bowling ball into 10 pins, i want a strike"
+  },
+  {
+   "id": "n02-superball-stairs",
+   "prompt": "superball bouncing down a flight of stairs"
+  },
+  {
+   "id": "n03-newtons-cradle",
+   "prompt": "newtons cradle with 5 balls - pull one back and let it go"
+  },
+  {
+   "id": "n04-egg-pillow",
+   "prompt": "Drop an egg onto a pillow from about half a meter up."
+  },
+  {
+   "id": "n05-car-jump",
+   "prompt": "A toy car races down a steep ramp, flies over a gap and lands on a second ramp."
+  },
+  {
+   "id": "n06-lever-coin-cup",
+   "prompt": "Use a lever to flip a coin into a cup."
+  },
+  {
+   "id": "n07-fan-ball-books",
+   "prompt": "a desk fan blows a ping pong ball off the top of a stack of books"
+  },
+  {
+   "id": "n08-marble-run-bucket",
+   "prompt": "Build a marble run: the marble zigzags down three ramps and drops into a bucket at the bottom."
+  },
+  {
+   "id": "n09-pendulum-dominoes-car",
+   "prompt": "A pendulum knocks over a line of dominoes, and the last domino bumps a toy car so it rolls away down a ramp."
+  },
+  {
+   "id": "n10-desk-four-stage",
+   "prompt": "desk chain reaction: a tennis ball rolls down a ruler propped on a book, knocks over a row of 6 dominoes, the last domino pushes a toy car, and the car crashes into a stack of plastic cups"
+  },
+  {
+   "id": "n11-duck-ice-bucket",
+   "prompt": "rubber duck slides down an icy ramp into a bucket"
+  },
+  {
+   "id": "n12-five-stage-seesaw",
+   "prompt": "Make a 5-step chain reaction: a steel ball rolls down a ramp, knocks over some dominoes, the last domino pushes a golf ball off a ledge onto a seesaw, and the seesaw flings a ping pong ball into a cup."
+  },
+  {
+   "id": "n13-six-stage-class",
+   "prompt": "For my physics class I need a 6-stage Rube Goldberg machine: a pendulum swings into a ball, the ball rolls down a ramp, it knocks over a row of dominoes, the last domino pushes a toy car down a second ramp, and the car smashes into a tower of 3 wooden blocks."
+  },
+  {
+   "id": "n14-six-stage-kitchen",
+   "prompt": "kitchen table contraption with six steps: an orange rolls down a cutting board, hits a row of 5 dominoes, the last domino knocks a marble off a book, the marble rolls down a ruler, bumps a toy car, and the car rolls into a cereal box and knocks it over"
+  },
+  {
+   "id": "n15-mini-golf",
+   "prompt": "make a mini golf hole where the ball goes down a ramp, over a little hill and into the cup"
+  }
+ ]
+}

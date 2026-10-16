@@ -24,8 +24,13 @@
 //   --force · --concurrency n (≤ 6 model calls in flight) · --jobs n (cases in progress at once, default 12) · --prompts <dir> (a prompt
 //   variant: AI_PROMPTS_DIR) · --no-render · --render-pages n · --images (plan: also image cases) · --core (image cases: only the core gt
 //   renders + photos + sketches) · --obs-run <run> (downstream: whose observations) · pipeline: --routing <file> --tag <name> --images
-//   --edits --no-text · --client <dir> (web/ai from <dir>/web/ai: a frozen client for an A/B of server-side changes)
-// Renders are written to $BENCH_RENDER_DIR/<run>/ (default ai/bench/results/<run>/renders/).
+//   --edits --no-text · --client <dir> (web/ai from <dir>/web/ai: a frozen client for an A/B of server-side changes) · --set chains (the
+//   chain prompts of cases/chains.json instead of the text cases: round-3 plan §6) · --imagine off|auto|always|observe|direct (the build
+//   option `imagine` for new scenes from words: whether a concept picture is made first and how it is used; recorded per case with the route,
+//   the concept (saved as a JPEG next to the renders) and its ms; the phase is pipeline-<tag>-imagine-<mode> unless --tag is given). Pipeline
+//   records also keep the case's key outcome (expect.key) and the build's own goals and stage checks (report.goals, report.stages)
+// Renders are written to $BENCH_RENDER_DIR/<run>/ (default ai/bench/results/<run>/renders/). $BENCH_RESULTS_DIR puts the results (and so the
+// renders) under <dir>/<run>/ instead of ai/bench/results/<run>/ (a scratch run). $BENCH_APP_ORIGIN: the app server the renderer loads from.
 // The key is read from the environment by ai/core.mjs only; nothing here prints or stores it.
 import fs from "node:fs"
 import path from "node:path"
@@ -53,7 +58,9 @@ for (let i = 1; i < argv.length; i++) {
 const list = (v) => (v === undefined || v === true ? null : String(v).split(",").map((s) => s.trim()).filter(Boolean))
 if (opt.prompts) process.env.AI_PROMPTS_DIR = path.resolve(String(opt.prompts))
 const RUN = String(opt.run ?? "main")
-const RESULTS = path.join(HERE, "results", RUN)
+// (results under ai/bench/results/<run>/, or $BENCH_RESULTS_DIR/<run>/ for a scratch run)
+const RESULTS_ROOT = process.env.BENCH_RESULTS_DIR ? path.resolve(process.env.BENCH_RESULTS_DIR) : path.join(HERE, "results")
+const RESULTS = path.join(RESULTS_ROOT, RUN)
 const RENDERS = process.env.BENCH_RENDER_DIR ? path.join(process.env.BENCH_RENDER_DIR, RUN) : path.join(RESULTS, "renders")
 const FORCE = !!opt.force
 
@@ -64,17 +71,44 @@ const { createSimPool } = await import("./lib/sim-pool.mjs")
 const score = await import("./score.mjs")
 // --client <dir>: the browser-side pipeline (web/ai/solver.js, orchestrator.js) from <dir>/web/ai instead of this tree's (a frozen copy, so a
 // server-side change is measured against the same client as its baseline while web/ai is being edited; <dir>/web/sim may link to web/sim)
+// (a copy laid out as <dir>/ai + <dir>/sim, without the web/ level, works too)
 const CLIENT = opt.client ? path.resolve(String(opt.client)) : ROOT
-const { solve, planFromScene } = await import(pathToFileURL(path.join(CLIENT, "web/ai/solver.js")).href)
-const ORCH = await import(pathToFileURL(path.join(CLIENT, "web/ai/orchestrator.js")).href)
+const CLIENT_WEB = fs.existsSync(path.join(CLIENT, "web/ai/orchestrator.js")) ? path.join(CLIENT, "web") : fs.existsSync(path.join(CLIENT, "ai/orchestrator.js")) ? CLIENT : path.join(CLIENT, "web")
+const { solve, planFromScene } = await import(pathToFileURL(path.join(CLIENT_WEB, "ai/solver.js")).href)
+const ORCH = await import(pathToFileURL(path.join(CLIENT_WEB, "ai/orchestrator.js")).href)
 const { getCatalog } = await import(pathToFileURL(path.join(ROOT, "ai/catalog-digest.mjs")).href)
 const { runStep } = await import(pathToFileURL(path.join(ROOT, "ai/steps.mjs")).href)
 const { fetchH1 } = await import(pathToFileURL(path.join(ROOT, "ai/research/fetch-h1.mjs")).href)
 if (opt.concurrency) setConcurrency(Number(opt.concurrency))
 
 const bench = score.loadBench()
+// the chain prompts (cases/chains.json, same format and groups as text.json): known to judge / rescore / report by id; text.json's own copy of
+// a shared case (c1, c2, g2, m5) stays the one those use (chains.json adds only expect.key to it)
+const CHAINS = (() => {
+	try {
+		return JSON.parse(fs.readFileSync(path.join(HERE, "cases/chains.json"), "utf8")).cases.map((c) => ({ ...c, source: "text" }))
+	} catch {
+		return []
+	}
+})()
+for (const c of CHAINS) if (!bench.cases.has(c.id)) bench.cases.set(c.id, c)
 const SPLIT = JSON.parse(fs.readFileSync(path.join(HERE, "cases/split.json"), "utf8"))
-const splitOf = (id) => (SPLIT.train.includes(id) ? "train" : SPLIT.test.includes(id) ? "test" : "edit")
+const splitOf = (id) => (SPLIT.train.includes(id) ? "train" : SPLIT.test.includes(id) ? "test" : CHAINS.some((c) => c.id === id) ? "chains" : "edit")
+const IMAGINE_MODES = ["off", "auto", "always", "observe", "direct"]
+const IMAGINE = opt.imagine === undefined ? null : String(opt.imagine)
+if (IMAGINE !== null && !IMAGINE_MODES.includes(IMAGINE)) {
+	console.error(`--imagine must be one of ${IMAGINE_MODES.join(", ")}`)
+	process.exit(2)
+}
+// --fault imagine|observe|plan (pipeline): fault injection at the 3 failure points of imagine-first (round-3 plan §8 D). The imagine call
+// fails; or the observe / plan call that carries the concept (its text has the orchestrator's CONCEPT_NOTE) fails. Nothing else is touched.
+const FAULTS = ["imagine", "observe", "plan"]
+const FAULT = opt.fault === undefined ? null : String(opt.fault)
+if (FAULT !== null && !FAULTS.includes(FAULT)) {
+	console.error(`--fault must be one of ${FAULTS.join(", ")}`)
+	process.exit(2)
+}
+const CONCEPT_MARK = "concept image the app generated"
 
 // ---------------------------------------------------------------- small helpers
 const clone = (o) => (o === undefined ? undefined : JSON.parse(JSON.stringify(o)))
@@ -85,7 +119,7 @@ const writeJson = (f, v) => {
 	fs.renameSync(tmp, f)
 }
 const readJson = (f) => JSON.parse(fs.readFileSync(f, "utf8"))
-const resultFile = (phase, cfgId, caseId, run = RUN) => path.join(HERE, "results", run, phase, cfgId, `${caseId}.json`)
+const resultFile = (phase, cfgId, caseId, run = RUN) => path.join(RESULTS_ROOT, run, phase, cfgId, `${caseId}.json`)
 const t = () => new Date().toISOString().slice(11, 19)
 const log = (...a) => console.log(`[${t()}]`, ...a)
 const pct = (a, p) => {
@@ -107,6 +141,7 @@ function selectCases(kind) {
 	if (kind === "text") cs = bench.text.filter((c) => c.mode === "new").map((c) => ({ ...c, source: "text" }))
 	else if (kind === "edit") cs = bench.text.filter((c) => c.mode === "edit").map((c) => ({ ...c, source: "text" }))
 	else if (kind === "image") cs = bench.images.map((e) => ({ ...e, mode: "new", source: "image" }))
+	else if (kind === "chains") cs = CHAINS.map((c) => ({ ...c }))
 	const ids = list(opt.cases)
 	if (ids) cs = cs.filter((c) => ids.includes(c.id))
 	if (opt.split) cs = cs.filter((c) => splitOf(c.id) === opt.split)
@@ -349,7 +384,7 @@ async function cmdRefine() {
 	const tag = round === 1 ? `r1-${fphase}-${fcfg}` : `r${round}-after-${after}`
 	const jobs = []
 	for (const c of all) {
-		const src = round === 1 ? path.join(HERE, "results", frun, fphase, fcfg, `${c.id}.json`) : resultFile(`refine-r1-${fphase}-${fcfg}`, after, c.id)
+		const src = round === 1 ? path.join(RESULTS_ROOT, frun, fphase, fcfg, `${c.id}.json`) : resultFile(`refine-r1-${fphase}-${fcfg}`, after, c.id)
 		if (!fs.existsSync(src)) continue
 		jobs.push(...configs.map((cfg) => ({ cfg, c, src, label: `${cfg.id}/${c.id}` })))
 	}
@@ -475,14 +510,15 @@ async function cmdEdit() {
 async function cmdPipeline() {
 	const routingPath = path.resolve(String(opt.routing ?? path.join(ROOT, "ai/models.json")))
 	const routing = readJson(routingPath)
-	const tag = String(opt.tag ?? path.basename(routingPath, ".json"))
-	const cases = [...(opt["no-text"] ? [] : selectCases("text")), ...(opt.images ? selectCases("image") : []), ...(opt.edits ? selectCases("edit") : [])]
+	const tag = String(opt.tag ?? `${path.basename(routingPath, ".json")}${IMAGINE !== null ? `-imagine-${IMAGINE}` : ""}`)
+	const cases = [...(opt["no-text"] || opt.set === "chains" ? [] : selectCases("text")), ...(opt.set === "chains" ? selectCases("chains") : []), ...(opt.images ? selectCases("image") : []), ...(opt.edits ? selectCases("edit") : [])]
 	// the app's api(): /api/ai/<step> through runStep with the routing file (one call in flight per slot of the cap)
 	const sem = await import("./lib/gateway.mjs")
 	// the chat reply and chips of each edit's own step answer (§13.9), by the request's text (edit prompts are unique per case)
 	const chatOf = new Map()
 	const api = async (p, body, signal) => {
 		const step = p.replace("/api/ai/", "")
+		if (FAULT !== null && step === FAULT && (FAULT === "imagine" || String(body.payload?.text ?? "").includes(CONCEPT_MARK))) return { ok: false, error: `injected fault (bench --fault ${FAULT})`, code: "bench_fault", retryable: false }
 		const r = await sem.runConfigWithRouting(step, body.payload, routing, { signal })
 		if (r.ok && step === "edit" && typeof body.payload?.text === "string") chatOf.set(body.payload.text, { reply: r.result?.reply ?? null, suggestions: r.result?.suggestions ?? r.result?.plan?.suggestions ?? null })
 		if (!r.ok) return { ok: false, error: r.error?.message, code: r.error?.code, retryable: false }
@@ -512,11 +548,49 @@ async function cmdPipeline() {
 				Object.assign(req, { mode: "edit", scene: base.scene, plan: base.plan ?? undefined, planScene: base.plan ? base.scene : undefined, history: c.history ?? [] })
 			}
 			const rec = { case: c.id, split: splitOf(c.id), phase: `pipeline-${tag}`, routing: routingPath.replace(ROOT + "/", ""), client: CLIENT === ROOT ? "web/ai" : CLIENT, at: new Date().toISOString() }
+			// (the build option `imagine`, as the panel passes its "Concept sketch" setting; also on the request, for a client that reads it there)
+			if (IMAGINE !== null) req.imagine = IMAGINE
+			let conceptAt = null
+			let conceptDropped = null
+			const onEvent = (e) => {
+				if (e?.type === "concept" && conceptAt === null) conceptAt = Date.now() - t0
+				if (e?.type === "concept-dropped") conceptDropped = { atMs: Date.now() - t0, text: e.text ?? null }
+			}
+			if (FAULT !== null) rec.fault = FAULT
 			try {
-				const job = orch.build(req, { onEvent: () => {} })
+				const job = orch.build(req, { onEvent, ...(IMAGINE !== null ? { imagine: IMAGINE } : {}) })
 				const rep = await job.result
 				rec.totalMs = Date.now() - t0
-				rec.report = { title: rep.title, calls: rep.calls, timings: rep.timings, refine: rep.refine, tune: rep.tune, issues: rep.issues, replyOnly: rep.replyOnly ?? false, reply: rep.reply ?? rep.edit?.reply ?? null, score: rep.score ?? null, missing: rep.missing, goals: rep.goals ?? null }
+				rec.report = { title: rep.title, calls: rep.calls, timings: rep.timings, refine: rep.refine, tune: rep.tune, issues: rep.issues, replyOnly: rep.replyOnly ?? false, reply: rep.reply ?? rep.edit?.reply ?? null, score: rep.score ?? null, missing: rep.missing, goals: rep.goals ?? null, stages: rep.stages ?? null, unsure: rep.unsure ?? null, differences: rep.differences ?? null }
+				// imagine-first: the mode asked, the route the build took, the concept (saved beside the renders, not inline) and its time
+				if (IMAGINE !== null || rep.concept) {
+					const k = rep.concept && typeof rep.concept === "object" ? rep.concept : null
+					const img = k?.image ?? (typeof rep.concept === "string" ? rep.concept : null)
+					let file = null
+					let bytes = null
+					const m = typeof img === "string" ? /^data:(image\/[\w+.-]+);base64,(.*)$/s.exec(img) : null
+					if (m) {
+						const buf = Buffer.from(m[2], "base64")
+						bytes = buf.length
+						const dir = path.join(RENDERS, `pipeline-${tag}`)
+						fs.mkdirSync(dir, { recursive: true })
+						file = path.join(dir, `${c.id}-concept.${m[1].includes("png") ? "png" : "jpg"}`)
+						fs.writeFileSync(file, buf)
+						if (file.startsWith(HERE)) file = path.relative(HERE, file)
+					}
+					const imagineCalls = (rep.calls ?? []).filter((x) => x.step === "imagine")
+					rec.imagine = {
+						mode: IMAGINE,
+						route: k?.how ?? null,
+						concept: img ? { file, bytes, mime: m?.[1] ?? null, cast: k?.cast ?? null, story: k?.story ?? null } : null,
+						ms: rep.timings?.imagine ?? null,
+						conceptAtMs: conceptAt,
+						dropped: conceptDropped,
+						calls: imagineCalls.length,
+						usd: imagineCalls.reduce((s, x) => s + (x.usage?.costInUSD ?? 0), 0),
+						fallback: (rep.issues ?? []).filter((i) => i.code === "imagine_failed").map((i) => i.text)
+					}
+				}
 				// the ground truth before the critic and the tuner (the first plan, solved): what refine did to the true sizes, counts and scale
 				const gt0 = gtSceneOf(c)
 				if (gt0 && rep.initialPlan) {
@@ -534,6 +608,13 @@ async function cmdPipeline() {
 				rec.chat = { reply: reply ?? null, suggestions: suggestions ?? null }
 				const { ev } = await evaluatePlan(c, plan ?? { items: [], missing: rep.missing ?? [] }, { renderDir: path.join(RENDERS, `pipeline-${tag}`), name: c.id, scene, reply, suggestions })
 				Object.assign(rec, { plan, scene: ev.scene, sim: ev.sim, score: compactScore(ev.score), gt: ev.gt, shots: ev.shots, call: { ok: true, ms: rec.totalMs } })
+				// the request's point (expect.key: that outcome holds in the final run), and the build's own goals and stage checks on it
+				const outs = Array.isArray(ev.score?.checks?.outcomes) ? ev.score.checks.outcomes : []
+				const key = c.expect?.key
+				if (Number.isInteger(key)) rec.key = { index: key, kind: outs[key]?.kind ?? null, ok: outs[key] ? !!outs[key].ok : false, detail: outs[key]?.detail ?? null }
+				const gs = rep.goals ?? []
+				const ss = rep.stages ?? []
+				rec.own = { goals: gs.length, goalsOk: gs.filter((g) => g.ok === true).length, stages: ss.length, stagesOk: ss.filter((s) => s.ok === true).length }
 				if (base) rec.base_shots = await baseRender(c, base.scene)
 			} catch (e) {
 				rec.totalMs = Date.now() - t0
@@ -551,7 +632,7 @@ async function cmdPipeline() {
 async function cmdJudge() {
 	const phase = String(opt.phase ?? "plan")
 	const judges = (list(opt.judges) ?? ["opus-high"]).map((id) => configOf("judge", id))
-	const dir = path.join(HERE, "results", RUN, phase)
+	const dir = path.join(RESULTS_ROOT, RUN, phase)
 	if (!fs.existsSync(dir)) throw new Error(`no results in ${dir}`)
 	const cfgIds = list(opt.configs) ?? fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isDirectory())
 	const ids = list(opt.cases)
@@ -598,7 +679,7 @@ async function cmdJudge() {
 
 // ---------------------------------------------------------------- report
 function loadPhase(phase, run = RUN) {
-	const dir = path.join(HERE, "results", run, phase)
+	const dir = path.join(RESULTS_ROOT, run, phase)
 	if (!fs.existsSync(dir)) return new Map()
 	const out = new Map()
 	for (const cid of fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isDirectory() && f !== "renders")) {
@@ -608,6 +689,10 @@ function loadPhase(phase, run = RUN) {
 	return out
 }
 const tok = (u, k) => (u ? u[k] ?? null : null)
+const secsP50 = (ms) => {
+	const v = pct(ms.filter(Number.isFinite), 0.5)
+	return v === null ? null : v / 1000
+}
 function summarize(recs, { phase }) {
 	const n = recs.length
 	const ok = recs.filter((r) => r.call?.ok)
@@ -671,12 +756,34 @@ function summarize(recs, { phase }) {
 			broke: d.filter((r) => r.before?.score?.pass && !r.after?.score?.pass).length
 		})
 	}
-	if (phase.startsWith("pipeline")) Object.assign(out, { p50_s: pct(recs.map((r) => r.totalMs), 0.5) / 1000, p90_s: pct(recs.map((r) => r.totalMs), 0.9) / 1000 })
+	if (phase.startsWith("pipeline")) {
+		Object.assign(out, { p50_s: pct(recs.map((r) => r.totalMs), 0.5) / 1000, p90_s: pct(recs.map((r) => r.totalMs), 0.9) / 1000 })
+		// (the build's whole cost: every step's calls)
+		const usd = ok.map((r) => (r.report?.calls ?? []).reduce((s, c) => s + (c.usage?.costInUSD ?? 0), 0))
+		if (usd.some((v) => v > 0)) out.cost_usd = mean(usd)
+		const keyed = recs.filter((r) => r.key)
+		if (keyed.length) out.key_ok = mean(keyed.map((r) => (r.key.ok ? 1 : 0)))
+		const own = recs.filter((r) => r.own?.goals)
+		if (own.length) out.goals_met = own.reduce((s, r) => s + r.own.goalsOk, 0) / own.reduce((s, r) => s + r.own.goals, 0)
+		const st = recs.filter((r) => r.own?.stages)
+		if (st.length) out.stages_ok = st.reduce((s, r) => s + r.own.stagesOk, 0) / st.reduce((s, r) => s + r.own.stages, 0)
+		const im = recs.filter((r) => r.imagine)
+		if (im.length)
+			Object.assign(out, {
+				imagine_mode: [...new Set(im.map((r) => r.imagine.mode))].join(","),
+				concepts: im.filter((r) => r.imagine.concept).length,
+				routes: Object.entries(im.reduce((m, r) => ((m[r.imagine.route ?? "none"] = (m[r.imagine.route ?? "none"] ?? 0) + 1), m), {})).map(([k, v]) => `${k} ${v}`).join(" · "),
+				imagine_calls: im.reduce((s, r) => s + (r.imagine.calls ?? 0), 0),
+				fallbacks: im.filter((r) => r.imagine.fallback?.length).length,
+				imagine_p50_s: secsP50(im.map((r) => r.imagine.ms)),
+				concept_at_p50_s: secsP50(im.map((r) => r.imagine.conceptAtMs))
+			})
+	}
 	return out
 }
 const f = (v, d = 2) => (v === null || v === undefined || !Number.isFinite(v) ? "–" : Number(v).toFixed(d))
 async function cmdReport() {
-	const dir = path.join(HERE, "results", RUN)
+	const dir = path.join(RESULTS_ROOT, RUN)
 	const phases = list(opt.phase) ?? fs.readdirSync(dir).filter((p) => fs.statSync(path.join(dir, p)).isDirectory() && p !== "renders")
 	const report = {}
 	const md = []
@@ -695,7 +802,8 @@ async function cmdReport() {
 				const s = summarize(rs, { phase })
 				report[phase][cid][g] = s
 				const gtDelta = s.gt_n_before ? ` · GT before→after (${s.gt_n_before}): size ${f(s.gt_size_err_before)}→${f(s.gt_size_err_after)} (worse ${s.gt_worse_size}, better ${s.gt_better_size}) · scale dev ${f(s.gt_scale_dev_before)}→${f(s.gt_scale_dev_after)} · GT hard ${f(s.gt_hard_pass_before)}→${f(s.gt_hard_pass_after)}` : ""
-				const extra = (phase === "observe" ? `recall ${f(s.recall)} · R@.5 ${f(s.recall_iou50)} · mIoU ${f(s.miou)} · prec ${f(s.precision)} · units err ${f(s.units_rel_err)} · groups exact ${f(s.groups_exact)}` : phase.startsWith("refine") ? `Δ ${f(s.delta, 3)} · +${s.improved}/−${s.worse} · fixed ${s.fixed} broke ${s.broke} · done ${f(s.done_rate)}` : s.gt_type_f1 !== undefined ? `typeF1 ${f(s.gt_type_f1)} · famF1 ${f(s.gt_family_f1)} · τ ${f(s.gt_tau)} · pos ${f(s.gt_pos_rel)} · size ${f(s.gt_size_err)} · scale dev ${f(s.gt_scale_dev)} · GT hard ${f(s.gt_hard_pass)}` : "") + gtDelta
+				const pipeExtra = phase.startsWith("pipeline") ? [s.key_ok !== undefined ? `key outcome ${f(s.key_ok)}` : null, s.goals_met !== undefined ? `own goals met ${f(s.goals_met)}` : null, s.stages_ok !== undefined ? `stage checks ${f(s.stages_ok)}` : null, s.imagine_mode !== undefined ? `imagine ${s.imagine_mode}: concepts ${s.concepts}/${s.n} (${s.routes}; ${s.imagine_calls} calls, fallback ${s.fallbacks}, imagine p50 ${f(s.imagine_p50_s, 1)} s, concept shown at p50 ${f(s.concept_at_p50_s, 1)} s)` : null].filter(Boolean).join(" · ") : ""
+				const extra = pipeExtra + (phase === "observe" ? `recall ${f(s.recall)} · R@.5 ${f(s.recall_iou50)} · mIoU ${f(s.miou)} · prec ${f(s.precision)} · units err ${f(s.units_rel_err)} · groups exact ${f(s.groups_exact)}` : phase.startsWith("refine") ? `Δ ${f(s.delta, 3)} · +${s.improved}/−${s.worse} · fixed ${s.fixed} broke ${s.broke} · done ${f(s.done_rate)}` : s.gt_type_f1 !== undefined ? `typeF1 ${f(s.gt_type_f1)} · famF1 ${f(s.gt_family_f1)} · τ ${f(s.gt_tau)} · pos ${f(s.gt_pos_rel)} · size ${f(s.gt_size_err)} · scale dev ${f(s.gt_scale_dev)} · GT hard ${f(s.gt_hard_pass)}` : "") + gtDelta
 				md.push(`| ${cid}${g === "all" ? "" : ` (${g})`} | ${s.n} | ${s.ok} | ${s.repaired} | ${f(s.score, 3)} | ${f(s.pass)} | ${judgeIds.map((j) => (s.judge[j] ? `${f(s.judge[j].mean)} (${f(s.judge[j].rubric)})` : "–")).join(" | ")}${judgeIds.length ? " |" : ""} ${f(s.p50_s, 1)} | ${f(s.p90_s, 1)} | ${f(s.in_tok, 0)} | ${f(s.out_tok, 0)} | ${f(s.cost_usd, 3)} | ${extra} |`)
 			}
 		}
@@ -777,7 +885,7 @@ async function cmdReport() {
 
 /** Recompute the direct observation metrics of stored observe results (after a change to lib/observe-metrics.mjs); no model calls. */
 async function cmdRemetric() {
-	const dir = path.join(HERE, "results", RUN, String(opt.phase ?? "observe"))
+	const dir = path.join(RESULTS_ROOT, RUN, String(opt.phase ?? "observe"))
 	let n = 0
 	for (const cid of fs.readdirSync(dir).filter((f) => fs.statSync(path.join(dir, f)).isDirectory()))
 		for (const f of fs.readdirSync(path.join(dir, cid)).filter((x) => x.endsWith(".json"))) {
@@ -795,7 +903,7 @@ async function cmdRemetric() {
 /** Re-score stored results with the current case file and scorer (after a case or scorer fix): re-runs the engine on the stored scenes, no
  *  model calls. --phase p (default: every phase of the run). */
 async function cmdRescore() {
-	const dir = path.join(HERE, "results", RUN)
+	const dir = path.join(RESULTS_ROOT, RUN)
 	const phases = list(opt.phase) ?? fs.readdirSync(dir).filter((p) => fs.statSync(path.join(dir, p)).isDirectory() && p !== "renders")
 	let n = 0
 	for (const phase of phases)

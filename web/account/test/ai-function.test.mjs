@@ -23,7 +23,7 @@ const ENV = {
 	AI_SESSION_SECRET: "s".repeat(40),
 }
 const EDIT = { payload: { text: "hi", scene: { items: [{ id: "table", type: "table", x: 1.3, y: 0 }] } }, client: { requestId: "r1" } }
-const NOTHING = { content: JSON.stringify({ mode: "patch", reply: "Nothing to change.", patches: [] }), usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, costInUSD: 0.25 } }
+const NOTHING = { content: JSON.stringify({ mode: "patch", kind: "answer", targets: [], reply: "Nothing to change.", patches: [] }), usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, costInUSD: 0.25 } }
 
 let gw, handler, twin, dir, db
 const realFetch = globalThis.fetch

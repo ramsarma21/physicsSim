@@ -6,7 +6,7 @@
 import { clone, isObj, log, now } from "./infra.mjs"
 import { evaluate, stagesOf } from "./physics.mjs"
 import { repairAccepted, repairStage } from "./repair.mjs"
-import { stageTune } from "./stagetune.mjs"
+import { shippedTune, stageTune } from "./stagetune.mjs"
 
 /** Ids an item's place refers to (what it rests on, is placed against or inside, its lean ends). */
 function placeRefs(it) {
@@ -114,6 +114,12 @@ export async function incrementalBuild(L, request, plan, { name = "", repairs = 
 	const t = ev.ok ? await stageTune(full, { from: ev }) : { ev, runs: 0 }
 	runs += t.runs
 	ev = t.ev
+	if (process.env.SEARCH_JOINT === "1" && ev.ok && (ev.f.goalsOk < ev.f.goals || ev.f.stagesOk < ev.f.stages)) {
+		const j = await shippedTune(ev.plan, { from: ev })
+		runs += j.runs
+		const b = j.ev
+		if (b.ok && b.f.goalsOk + b.f.stagesOk > ev.f.goalsOk + ev.f.stagesOk && ev.stages.every((s, i) => !(s.res?.ok === true) || b.stages[i]?.res?.ok === true)) ev = b
+	}
 	log(`${name} inc: ${ev.ok ? `${ev.f.stagesOk}/${ev.f.stages} checks, goals ${ev.f.goalsOk}/${ev.f.goals}` : ev.error}, ${logs.repairs.length} repairs (${logs.repairs.filter((r) => r.accepted).length} kept), ${runs} runs`)
 	return { ev, log: logs, runs, ms: now() - t0 }
 }

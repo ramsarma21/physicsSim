@@ -14,7 +14,8 @@ API
   POST /api/dev/snapshot {name, png}     development aid: saves a view's canvas as web/dev/shots/<name>.png
 A scene the builder can't use (a number that isn't one, a choice that isn't offered, too many items...) answers 400 {error: why};
 numbers outside their catalog range are clamped. The engine runs in two long-lived node workers (research/poc/worker.ts) that restart
-when anything under tooling/src/sim/ changes; a client that hangs up while its run waits or runs frees the worker for the next request.
+when anything under tooling/src/sim/ or the engine's math in tools/ (ENGINE_MATH) changes; a client that hangs up while its run waits or
+runs frees the worker for the next request.
 """
 import base64
 import copy
@@ -44,6 +45,9 @@ import items  # noqa: E402
 SCENES = os.path.join(PG, "scenes")
 WORKER = os.path.join(PG, "research", "poc", "worker.ts")
 SIM = os.path.join(PG, "tooling", "src", "sim")
+# the engine's math in node: the worker loads tools/engine-math-node.mjs, which gives the engine these files' functions (the bundle's)
+ENGINE_MATH = [os.path.join(PG, "tools", f) for f in ("fdlibm.ts", "fdlibm-inject.ts", "crpow.ts", "crpow-big.ts", "crpow-tables.ts",
+                                                       "engine-math-transform.ts", "engine-math-node.mjs")]
 OUT = os.path.join(HERE, "out")
 BUILTIN = os.path.join(HERE, "scenarios")
 SAVED = os.path.join(HERE, "saved")
@@ -209,7 +213,7 @@ class Abandoned(Exception):
 
 
 def engine_stamp():
-    """The newest mtime of the engine's sources and of the worker itself: a worker started under an older one runs stale code."""
+    """The newest mtime of the engine's sources, its math (ENGINE_MATH) and the worker itself: a worker started under an older one runs stale code."""
     m = 0.0
     for folder, _, files in os.walk(SIM):
         for f in files:
@@ -218,6 +222,11 @@ def engine_stamp():
                     m = max(m, os.stat(os.path.join(folder, f)).st_mtime)
                 except OSError:
                     pass                             # an editor swapped the file just now
+    for f in ENGINE_MATH:
+        try:
+            m = max(m, os.stat(f).st_mtime)
+        except OSError:
+            pass
     return max(m, os.stat(WORKER).st_mtime)
 
 
@@ -530,7 +539,7 @@ def save_scenario(scene):
     return {"id": sid, "name": name}
 
 
-# ---------------------------------------------------------------- AI steps: POST /api/ai/<observe|plan|refine|edit>
+# ---------------------------------------------------------------- AI steps: POST /api/ai/<observe|plan|refine|edit|imagine>
 # Body {payload, client?: {requestId}} (at most 12 MB) -> the answer of `node ai/cli.mjs` for that step: {ok: true, result, model, ms, usage, ...}
 # or {ok: false, error, code, retryable} with the status it names (400 bad input, 403 not this app, 413 too large, 415 not JSON, 429 busy,
 # 502 the models failed, 504 out of time). Each request runs in its own process, which loads the key itself (`source ~/.config/truefoundry/env`):
@@ -544,20 +553,20 @@ def save_scenario(scene):
 # CLI's progress lines), done; GET /api/ai/progress alone says how many run and wait, in all and per step. Numbers and model names only.
 # Only this app may call these routes: a JSON body (so another site's page needs a CORS preflight, which this server never grants), a Host of
 # this server (no DNS rebinding) and, when the browser sends one, an Origin of this server.
-AI_STEPS = ("observe", "plan", "refine", "edit")
+AI_STEPS = ("observe", "plan", "refine", "edit", "imagine")   # imagine: a concept picture from words (ai/DESIGN.md §15)
 AI_MAX_BODY = 12 << 20
 AI_MARGIN = 15            # s on top of the step's budgetMs in ai/models.json
 AI_CMD = ["zsh", "-c", "source ~/.config/truefoundry/env && exec node ai/cli.mjs"]
 # Sized to the gateway: the benchmark ran up to 24 Opus calls at once through it without a 429 (ai/research/benchmark.md §13); one build has at
 # most one step in flight, so 12 slots serve 12 builds at once. Size them to the expected audience before a demo (env AI_SLOTS, AI_STEP_SLOTS).
 AI_SLOT_COUNT = max(1, int(os.environ.get("AI_SLOTS") or 12))   # AI steps running at once, in all
-AI_STEP_SLOTS = {"observe": 4, "plan": 6, "refine": 8, "edit": 8}   # ... and of each step (a step's cap never exceeds the total)
+AI_STEP_SLOTS = {"observe": 4, "plan": 6, "refine": 8, "edit": 8, "imagine": 4}   # ... and of each step (a step's cap never exceeds the total)
 for _k, _v in (kv.split("=", 1) for kv in (os.environ.get("AI_STEP_SLOTS") or "").split(",") if "=" in kv):
     if _k.strip() in AI_STEP_SLOTS and _v.strip().isdigit():
         AI_STEP_SLOTS[_k.strip()] = max(1, int(_v))
 AI_QUEUE_WAIT = float(os.environ.get("AI_QUEUE_WAIT") or 90)   # s a step may wait for a free slot
 AI_QUEUE_MAX = max(1, int(os.environ.get("AI_QUEUE_MAX") or 48))   # steps that may wait at once; one more is told "busy" at once
-AI_TYPICAL_S = {"observe": 30.0, "plan": 30.0, "refine": 15.0, "edit": 6.0}   # a step's usual duration until some have been measured
+AI_TYPICAL_S = {"observe": 30.0, "plan": 30.0, "refine": 15.0, "edit": 6.0, "imagine": 25.0}   # a step's usual duration until some have been measured
 AI_RID = re.compile(r"^[\w.:-]{1,80}$")
 
 

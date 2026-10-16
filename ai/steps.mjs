@@ -15,22 +15,30 @@
 //            rate_only: true -> the final check: the same look at the scene, answered as {score_0_10, issues, notes?} only (no patches), at
 //            the lower effort of models.json "rate" (ai/DESIGN.md §13).
 //   edit    {text*, scene* (the current scene), plan (its plan, when it has one), history ([{role: "user"|"assistant", text}], ≤ 20), images,
-//            sim ({summary, warnings, final?}: the run of the scene on screen; its goals and where things ended help "make it work again"),
+//            feedback (text ≤ 8000: the client's repair turn or "make it work" round, placed just before the request: ai/DESIGN.md §14),
+//            sim ({summary, warnings, final?}: the client's run of the scene on screen; only used when the step cannot run it itself),
 //            intent ("auto" default: an answer of mode "new" goes on to plan the new scene | "edit": it comes back as {mode: "new", reply, why})}
+//   imagine {text*} (words only: pictures are a 400) -> a concept picture of a NEW scene and its catalog cast (ai/imagine.mjs, ai/DESIGN.md §15)
+//            The step runs the scene itself (the same run as /api/simulate) and gives the model the rich digest (ai/rich-digest.mjs: looks,
+//            sizes, places in words, supports, the last run's hits and goals, look-alikes); the answer carries kind (change | ask | answer |
+//            fix | undo | new) and targets ([{says, ids, because}]): §14.
 //   img = "data:image/jpeg;base64,..." or {data: "data:image/...", name?, label?}
 import { createHash } from "node:crypto"
-import { readFileSync } from "node:fs"
+import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { AIError, callModel, loadRouting } from "./core.mjs"
 import { DEFAULT_STAGE, detailFor, getCatalog, SURFACE_NOTE } from "./catalog-digest.mjs"
 import { checkGoals, goalKind } from "./goals.mjs"
 import { applyPatches, planFromScene, unitsOfItem, validateObservation, VALIDATORS } from "./schemas.mjs"
+import { richDigestFrom } from "./rich-digest.mjs"
+import { roomUnder, withRoom } from "./room.mjs"
 import { sceneDigest, simText } from "./scene-digest.mjs"
+import { imagine } from "./imagine.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PROMPTS = process.env.AI_PROMPTS_DIR || join(HERE, "prompts")
-export const STEPS = ["observe", "plan", "refine", "edit"]
+export const STEPS = ["observe", "plan", "refine", "edit", "imagine"]
 export const MAX_IMAGES = 4
 const MAX_IMAGE_CHARS = 8 << 20
 const MAX_TEXT = 8000
@@ -93,7 +101,7 @@ export async function runScene(scene, rate = 120) {
 	const msg = e.handle({ id: 1, doc, rate })
 	if (msg.error !== undefined) throw new Error(String(msg.error).split("\n").at(-1))
 	const meta = m.finish(s, doc, resolved, msg.track)
-	return { doc: meta.doc, track: msg.track, summary: meta.summary, warnings: meta.warnings }
+	return { doc: meta.doc, track: msg.track, summary: meta.summary, warnings: meta.warnings, resolved: meta.resolved ?? resolved }
 }
 
 /** A scene the builder accepts (web/sim clean(): the server's own checks), or a 400. */
@@ -139,6 +147,9 @@ function stageText(s) {
 }
 /** A plan without its chat fields (the last turn's reply and chips are not part of the scene). */
 const withoutChat = (pl) => (isObj(pl) ? Object.fromEntries(Object.entries(pl).filter(([k]) => k !== "reply" && k !== "suggestions")) : pl)
+/** The plan as the edit step shows it: without the build's chat and its "not in the library" list (the build's, not this request's: an
+ *  edit that copied it told the user again about things they did not ask for now; the scene keeps it, see validateEdit's plan_missing). */
+const forEdit = (pl) => (isObj(pl) ? Object.fromEntries(Object.entries(withoutChat(pl)).filter(([k]) => k !== "missing")) : pl)
 const fenced = (label, s) => `${label}:\n"""\n${s}\n"""`
 const pictureList = (list, what) => list.map((im, i) => `picture ${i}${im.label ? ` (${im.label})` : ""}: ${what}`)
 
@@ -211,7 +222,7 @@ async function plan(p, o) {
 		if (ans.mode === "new") {
 			const f = await freshP
 			if (!f.result.reply && ans.reply) f.result.reply = ans.reply
-			return { ...f, ms: Math.max(f.ms, e.ms), usage: sumUsage(f.usage, e.usage), attempts: [...e.attempts, ...f.attempts], intent: "new", why: ans.why ?? null, edit: { mode: "new", reply: ans.reply, why: ans.why ?? null } }
+			return { ...f, ms: Math.max(f.ms, e.ms), usage: sumUsage(f.usage, e.usage), attempts: [...e.attempts, ...f.attempts], intent: "new", why: ans.why ?? null, edit: { mode: "new", kind: "new", reply: ans.reply, why: ans.why ?? null } }
 		}
 		pPart.abort()
 		const cat = await getCatalog()
@@ -221,12 +232,16 @@ async function plan(p, o) {
 		else {
 			result = applyPatches(base, Array.isArray(ans.patches) ? ans.patches : [], cat.index)
 			for (const k of ["missing", "notes", "assumptions"]) if (ans[k] !== undefined) result[k] = ans[k]
+			// (the scene's own "not in the library" list stays with its plan; edit.missing is this request's)
+			if (Array.isArray(ans.plan_missing)) result.missing = ans.plan_missing
 		}
 		// (the chat reply and the next-edit chips of this change, where the client reads a plan's: §13.9)
 		result.reply = ans.reply
 		if (Array.isArray(ans.suggestions)) result.suggestions = ans.suggestions
 		else delete result.suggestions
-		const editInfo = { mode: ans.mode, reply: ans.reply, why: ans.why ?? null, patches: ans.patches ?? [], missing: ans.missing ?? [], suggestions: ans.suggestions ?? [], ...(ans.notes !== undefined ? { notes: ans.notes } : {}), ...(ans.assumptions !== undefined ? { assumptions: ans.assumptions } : {}), ...(ans.undo ? { undo: true } : {}) }
+		// (kind: change | ask | answer | fix | undo; targets: what each thing the request names is: §14. ask / answer / undo carry no patches,
+		// so the result is the scene's plan as it is and the reply is the question or the answer)
+		const editInfo = { mode: ans.mode, kind: ans.kind, targets: ans.targets ?? [], reply: ans.reply, why: ans.why ?? null, patches: ans.patches ?? [], missing: ans.missing ?? [], suggestions: ans.suggestions ?? [], ...(ans.notes !== undefined ? { notes: ans.notes } : {}), ...(ans.assumptions !== undefined ? { assumptions: ans.assumptions } : {}), ...(ans.undo ? { undo: true } : {}) }
 		return { ...e, result, intent: "edit", why: ans.why ?? null, edit: editInfo }
 	} finally {
 		ePart.done()
@@ -469,6 +484,95 @@ async function refine(p, o) {
 	return out
 }
 
+// ---------------------------------------------------------------- the edit step's run, kept per scene
+// What the edit digest takes from a run depends only on the scene run (with the plan's "in" goals), the plan's other goals and the engine
+// (web/sim: the catalog's fingerprint), so a repeated or undone scene (the client's repair turn and "make it work" rounds send the same scene
+// again; Undo then a new request) is not run twice. Kept in this process (Vercel's warm instances, the bench) and on disk under
+// AI_CACHE_DIR/edit-runs (the local server runs every step in a process of its own), when that is writable; only what the digest reads is
+// kept: each item's resolved size and mass, the run's summary, its first and last frames, and the other goals' results.
+const RUN_CACHE_V = 1
+const RUN_MEM = new Map() // key -> Promise<{sim, goalResults}> (LRU)
+const RUN_MEM_MAX = 64
+const RUN_DISK_MAX = 400
+const runDir = () => join(process.env.AI_CACHE_DIR || join(HERE, ".cache"), "edit-runs")
+/** The parts of a run the edit digest reads (ai/rich-digest.mjs: resolved, summary, the first and last frames' placements). */
+function digestPart(run) {
+	const f = Array.isArray(run?.track?.frames) ? run.track.frames : []
+	return { resolved: run?.resolved ?? {}, summary: run?.summary ?? null, track: { frames: f.length ? [f[0], f.at(-1)] : [] } }
+}
+function diskGet(key) {
+	try {
+		const v = JSON.parse(readFileSync(join(runDir(), `${key}.json`), "utf8"))
+		return v?.v === RUN_CACHE_V && isObj(v.sim) ? { sim: v.sim, goalResults: v.goalResults ?? null } : null
+	} catch {
+		return null
+	}
+}
+function diskPut(key, val) {
+	try {
+		const dir = runDir()
+		mkdirSync(dir, { recursive: true })
+		const f = join(dir, `${key}.json`)
+		writeFileSync(`${f}.${process.pid}.tmp`, JSON.stringify({ v: RUN_CACHE_V, ...val }))
+		renameSync(`${f}.${process.pid}.tmp`, f)
+		const names = readdirSync(dir).filter((n) => n.endsWith(".json"))
+		if (names.length > RUN_DISK_MAX)
+			for (const { n } of names.map((n) => ({ n, t: statSync(join(dir, n)).mtimeMs })).sort((a, b) => a.t - b.t).slice(0, names.length - RUN_DISK_MAX + 50))
+				unlinkSync(join(dir, n))
+	} catch {} // (a read-only disk, as on Vercel: the process's own cache still serves)
+}
+
+/**
+ * The run the edit step's digest describes (ai/DESIGN.md §14): the scene on screen run here (the same run as /api/simulate, ~0.2-0.4 s), with
+ * the plan's "in" goals added to its goals so the engine checks them, each item's resolved size and mass, and the plan's goals of the other
+ * kinds checked on it (ai/goals.mjs); from the cache above when this scene was run before. A scene this process cannot run falls back to the
+ * client's `sim` (its summary), else to none. -> {sim, goalResults, ms (this lookup or run), cached}
+ */
+async function editRun(cur, pl, given, cat) {
+	const t0 = Date.now()
+	const others = (Array.isArray(pl?.goals) ? pl.goals : []).filter((g) => isObj(g) && goalKind(g) !== "in")
+	try {
+		const ids = new Set(cur.items.map((i) => i.id))
+		const goals = Array.isArray(cur.goals) ? [...cur.goals] : []
+		for (const g of Array.isArray(pl?.goals) ? pl.goals : [])
+			if (isObj(g) && goalKind(g) === "in" && ids.has(g.item) && ids.has(g.container) && !goals.some((x) => x?.item === g.item && x?.container === g.container))
+				goals.push({ item: g.item, container: g.container, label: String(g.label ?? "").slice(0, 200) })
+		const toRun = goals.length !== (cur.goals?.length ?? 0) ? { ...cur, goals } : cur
+		const key = createHash("sha1").update(JSON.stringify([RUN_CACHE_V, cat?.fingerprint ?? "", toRun, others])).digest("hex")
+		let cached = true
+		let p = RUN_MEM.get(key)
+		if (p) RUN_MEM.delete(key) // (moved to the newest end)
+		else {
+			const onDisk = diskGet(key)
+			if (onDisk) p = Promise.resolve(onDisk)
+			else {
+				cached = false
+				p = (async () => {
+					const run = await runScene(toRun)
+					const val = { sim: digestPart(run), goalResults: others.length ? checkGoals(others, { doc: run.doc, track: run.track, summary: run.summary }) : null }
+					diskPut(key, val)
+					return val
+				})()
+			}
+		}
+		RUN_MEM.set(key, p)
+		while (RUN_MEM.size > RUN_MEM_MAX) RUN_MEM.delete(RUN_MEM.keys().next().value)
+		let val
+		try {
+			val = await p
+		} catch (e) {
+			RUN_MEM.delete(key)
+			throw e
+		}
+		return { ...val, ms: Date.now() - t0, cached }
+	} catch {
+		return { sim: isObj(given) && isObj(given.summary) ? given : null, goalResults: null, ms: Date.now() - t0, cached: false }
+	}
+}
+
+/** What the edit request tells the model when the user pressed "Edit with AI" (intent "edit": the scene on screen is changed, never replaced). */
+const PRESSED_EDIT = '# The user pressed "Edit"\nThey change the scene on screen: answer mode "patch" (every kind but "new"), even when the words say "new" or "build" about what is on screen (remove, add and change items with patches). Keep every item the request does not name exactly as it is. Only a request to throw this scene away and build a different one ("start over: …", "clear it and build …", "from scratch") is kind "new" (mode "new", no patches): the app then offers to build it as a new scene.'
+
 async function edit(p, o) {
 	// intent "edit" (the client's "Edit with AI", which never builds a new scene from there): an answer of mode "new" comes back as it is,
 	// {mode: "new", reply, why}, without planning the new scene (the client offers to build it with plan {intent: "new"})
@@ -478,32 +582,41 @@ async function edit(p, o) {
 	const cur = await scene(p, "scene", { required: true })
 	const pl = planArg(p, "plan")
 	const imgs = images(p, "images")
+	const fb = text(p, "feedback")
 	const hist = p.history ?? []
 	if (!Array.isArray(hist) || hist.length > 20) throw bad("history must be a list of at most 20 turns")
 	const turns = hist.map((h, i) => {
 		if (!isObj(h) || !["user", "assistant"].includes(h.role) || typeof h.text !== "string") throw bad(`history[${i}] must be {role: "user"|"assistant", text}`)
 		return `${h.role === "user" ? "User" : "You"}: ${h.text.slice(0, 2000)}`
 	})
+	if (p.sim !== undefined && p.sim !== null && !isObj(p.sim)) throw bad("sim must be an object ({summary, warnings, final?}) of the scene on screen's run")
+	// the scene as the user sees it (ai/rich-digest.mjs), from a run of it made here: what each thing looks like, where it is in words, what
+	// it did in the last run and which goals happen now; the exact numbers stay for the patches (§14, measured as arm n7)
+	const tDigest = Date.now()
 	const d = await sceneDigest(cur, cat.index)
-	const parts = [`# The current scene\n${d.text}`, `# The stage\n${stageText(cur)}`]
+	const run = await editRun(cur, pl, p.sim, cat)
+	const rich = richDigestFrom(cur, d, { sim: run.sim, plan: pl, cat, goalResults: run.goalResults })
+	// the real gap under a hung thing where the outline boxes show less (ai/room.mjs: the box over the starter's sloped seesaw plank;
+	// AI_EDIT_ROOM=0 leaves the boxes' gap, for an A/B)
+	const room = process.env.AI_EDIT_ROOM === "0" ? null : await roomUnder(cur, d).catch(() => null)
+	const digestMs = Date.now() - tDigest
+	const parts = [`# The current scene\n${withRoom(rich.text, room)}`, `# The stage\n${stageText(cur)}`]
 	parts.push(
 		pl
-			? `# Its plan (patches change this plan; the scene above is what it builds)\n${JSON.stringify(withoutChat(pl))}`
+			? `# Its plan (patches change this plan; the scene above is what it builds)\n${JSON.stringify(forEdit(pl))}`
 			: "# Its plan\nThis scene was made by hand and has no plan: patches refer to its items by id, and each item's place is where it is now (on \"air\" at its anchor's x and y_m, so give x / y_m / dx / dy, or set_place to rest it on something)."
 	)
 	if (turns.length) parts.push(`# The conversation so far\n${turns.join("\n")}`)
-	// the run of the scene on screen (optional, §13.8): which goals happen now and where things ended, so "make it work again" can be fixed
-	// with numbers instead of guesses
-	if (p.sim !== undefined && p.sim !== null) {
-		if (!isObj(p.sim)) throw bad("sim must be an object ({summary, warnings, final?}) of the scene on screen's run")
-		const planGoals = Array.isArray(pl?.goals) && pl.goals.some((g) => isObj(g) && goalKind(g) !== "in") ? await goalResults(pl, cur, p.sim) : null
-		parts.push(`# The run of the scene on screen (before this change)\n${simText(p.sim, planGoals?.results?.length ? { goals: planGoals.results } : {})}`)
-	}
 	if (imgs.length) parts.push(`# Pictures\n${pictureList(imgs, "attached by the user").join("; ")}.`)
-	if (p.intent === "edit") parts.push('# The user pressed "Edit"\nChange the scene on screen: answer mode "patch" with the patches that make the change they ask for, even when the words say "new", "build" or "start over" (remove, add and change items with patches). Keep every item the request does not name exactly as it is.')
+	if (p.intent === "edit") parts.push(PRESSED_EDIT)
+	// the client's repair turn ("Ball 1 starts inside Ramp 1 ...") or "make it work" round ("In its run: FAILED: ..."), as measured
+	if (fb) parts.push(fb)
 	parts.push(fenced("# The user's request now", t), "Answer as one JSON object.")
 	const system = loadPrompt("edit.md").replace("{{CATALOG}}", cat.text)
-	const out = await call("edit", { system, user: parts.join("\n\n"), imgs, ctx: { catalog: cat.index, plan: pl ?? undefined, scene: cur, stage: cur.stage, intent: p.intent === "edit" ? "edit" : undefined } }, o, cat)
+	const out = await call("edit", { system, user: parts.join("\n\n"), imgs, ctx: { catalog: cat.index, plan: pl ?? undefined, scene: cur, stage: cur.stage, intent: p.intent === "edit" ? "edit" : undefined, text: t } }, o, cat)
+	// (how long the scene's digest took here, its run of the scene included, and whether that run came from the cache: the step's own CPU
+	// work, which grows on a busy machine; `ms` stays the model's time, as for every step)
+	out.prompt.digest = { ms: digestMs, runMs: run.ms, cached: run.cached }
 	const ans = out.result
 	out.intent = ans.mode === "patch" ? "edit" : "new"
 	if (ans.mode !== "new" || o.noEscalate || p.intent === "edit") return out
@@ -519,7 +632,7 @@ async function edit(p, o) {
 		warnings: [...out.warnings, ...f.warnings],
 		intent: "new",
 		why: ans.why ?? null,
-		result: { mode: "plan", reply: f.result.reply || ans.reply, why: ans.why ?? null, plan: f.result, missing: f.result.missing ?? [], suggestions: f.result.suggestions ?? ans.suggestions ?? [] }
+		result: { mode: "plan", kind: "new", targets: ans.targets ?? [], reply: f.result.reply || ans.reply, why: ans.why ?? null, plan: f.result, missing: f.result.missing ?? [], suggestions: f.result.suggestions ?? ans.suggestions ?? [] }
 	}
 }
 
@@ -544,7 +657,7 @@ async function call(step, { system, user, imgs, ctx, route }, o = {}, cat = null
 	return out
 }
 
-const RUNNERS = { observe, plan, refine, edit }
+const RUNNERS = { observe, plan, refine, edit, imagine }
 
 /** Run one step: {result, model, servedModel, ms, usage, attempts, warnings, prompt, catalog?}; throws AIError. */
 export async function runStep(step, payload, o = {}) {

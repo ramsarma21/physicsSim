@@ -21,6 +21,8 @@ Depends on these materials of other modules, by exact name: varnished hardwood (
 """
 import math
 
+from crmath import cos, cube, sin, sq  # powers correctly rounded, sin/cos at multiples of 30 degrees from web/sim's table (crmath.py): the same bits as web/sim on any machine
+
 NEEDED = ("register", "ItemType", "Prop", "ball_type", "MATERIALS", "add_look", "LOOK_FILL", "LOOK_SHADE", "CATEGORIES", "TYPES", "polygon_problem")
 CAT = "Everyday objects"
 KEYS = []       # the types this module registered
@@ -100,7 +102,7 @@ SIZE = [{"kind": "size", "w": "width", "h": "height"}, {"kind": "rotate"}]
 def _cylinder(c, part, diameter, length, mass, k, words, look=None, color=None):
     """A round body seen end-on that is really a cylinder `length` long (the engine weighs round bodies as spheres)."""
     r = diameter / 2
-    c.ball(part, r, material=c.mat(density=round(mass / ((4 / 3) * math.pi * r ** 3), 4)), inertia=round(k, 4), shape="cylinder", length=length,
+    c.ball(part, r, material=c.mat(density=round(mass / ((4 / 3) * math.pi * cube(r)), 4)), inertia=round(k, 4), shape="cylinder", length=length,
            words=words, look=look, **_paint(color))
 
 
@@ -201,8 +203,8 @@ def _apart(parts, gap):
                     d2 = abs((bj[0] - aj[0]) * (bi[1] - aj[1]) - (bj[1] - aj[1]) * (bi[0] - aj[0])) / lj
                     dot = (bj[0] - aj[0]) * (bi[0] - ai[0]) + (bj[1] - aj[1]) * (bi[1] - ai[1])
                     if d1 < 2e-5 and d2 < 2e-5 and dot < 0:
-                        t1 = ((ai[0] - aj[0]) * (bj[0] - aj[0]) + (ai[1] - aj[1]) * (bj[1] - aj[1])) / lj ** 2
-                        t2 = ((bi[0] - aj[0]) * (bj[0] - aj[0]) + (bi[1] - aj[1]) * (bj[1] - aj[1])) / lj ** 2
+                        t1 = ((ai[0] - aj[0]) * (bj[0] - aj[0]) + (ai[1] - aj[1]) * (bj[1] - aj[1])) / sq(lj)
+                        t2 = ((bi[0] - aj[0]) * (bj[0] - aj[0]) + (bi[1] - aj[1]) * (bj[1] - aj[1])) / sq(lj)
                         if min(max(t1, t2), 1.0) - max(min(t1, t2), 0.0) > 0.2e-3 / lj:
                             found = (ei, ej)
                             break
@@ -354,7 +356,7 @@ def _drinks():
         wall_t, floor_t = 4.3, 7.9
         yf = -47.5 + floor_t
         wall = lambda sgn: [(41 - wall_t, yf), (41, yf), (41, 47.5), (41 - wall_t, 47.5)] if sgn > 0 else [(-41, yf), (-(41 - wall_t), yf), (-(41 - wall_t), 47.5), (-41, 47.5)]
-        arc = lambda cx, cy, r, a0, a1, n=3: [(round(cx + r * math.cos(math.radians(a0 + (a1 - a0) * k / n)), 2), round(cy + r * math.sin(math.radians(a0 + (a1 - a0) * k / n)), 2)) for k in range(n + 1)]
+        arc = lambda cx, cy, r, a0, a1, n=3: [(round(cx + r * cos(math.radians(a0 + (a1 - a0) * k / n)), 2), round(cy + r * sin(math.radians(a0 + (a1 - a0) * k / n)), 2)) for k in range(n + 1)]
         lower = arc(61, -14, 16, -90, 0)      # the outer bar's lower corner: (61, -30) ... (77, -14)
         upper = arc(61, 21, 16, 0, 90)        # its upper corner: (77, 21) ... (61, 37)
         bar = [lower[1], lower[2], lower[3], upper[0], upper[1], upper[2], (67, round(21 + math.sqrt(16 ** 2 - 6 ** 2), 2)), (67, round(-14 - math.sqrt(16 ** 2 - 6 ** 2), 2))]
@@ -590,7 +592,7 @@ def _boxes():
 def _roller(key, name, D, L, hole, mass, material, words, tags, description, source, look=None, color=None, facts=None):
     def build(c, P):
         d = P["diameter"]
-        k = 0.5 if hole is None else 0.5 * (1 + (min(P["hole"], 0.98 * d) / d) ** 2)
+        k = 0.5 if hole is None else 0.5 * (1 + sq(min(P["hole"], 0.98 * d) / d))
         _cylinder(c, "body", d, P["length"], P["mass"], k, words, look, color)
     props = [_len("diameter", "Diameter", D), _len("length", "Length (front to back)", L, "Only for the 3D look; the weight is set by Weight")]
     if hole is not None:
@@ -1015,7 +1017,7 @@ def _egg_build_balls(c, P, sx, sy, fit):
     carrier = c.poly("egg", [(x / 1000, y / 1000) for x, y in sq], d, material=c.mat(density=round(m * sh_[-1] / (area * 1e-6 * d), 4)), look="eggshell", words="an egg",
                      **_raw(c))
     for name, w_, b, r in zip(names, sh_, B, Rr):
-        _weld_ball(c, name, carrier, r / 1000, (b[0] / 1000, b[1] / 1000), c.mat(density=round(m * w_ / (4 / 3 * math.pi * (r / 1000) ** 3), 4)), "eggshell", "an egg",
+        _weld_ball(c, name, carrier, r / 1000, (b[0] / 1000, b[1] / 1000), c.mat(density=round(m * w_ / (4 / 3 * math.pi * cube(r / 1000)), 4)), "eggshell", "an egg",
                    round(k, 4))
     n = 0
     for i in range(len(B)):
@@ -1158,7 +1160,7 @@ def _fruit():
         # as well, which adds nothing to the welds but keeps the two from colliding (the cap lies inside the ball, and a round egg's ball reaches the tip piece's skin)
         (name, words, pts), sh, (a, _, _) = pieces[0], shares[0], plane[0]
         root = c.poly(name, pts, d, material=c.mat(density=round(m * sh / (a * d), 4)), look="eggshell", words=words, **_raw(c))
-        _weld_ball(c, "egg-end", root, Rr, (cb, off), c.mat(density=round(m * sB / (4 / 3 * math.pi * Rr ** 3), 4)), "eggshell", "the round blunt end of an egg", round(k, 4))
+        _weld_ball(c, "egg-end", root, Rr, (cb, off), c.mat(density=round(m * sB / (4 / 3 * math.pi * cube(Rr)), 4)), "eggshell", "the round blunt end of an egg", round(k, 4))
         for n, ((name, words, pts), sh, (a, _, _)) in enumerate(list(zip(pieces, shares, plane))[1:]):
             _weld_poly(c, name, root, pts, d, c.mat(density=round(m * sh / (a * d), 4)), "eggshell", words)
             c.joint("pin", f"egg-hold{n + 1}", a="egg-end", b=name, anchorA=(0.0, 0.0), anchorB=(round(cb, 5), off), render={"hinge": "none"})

@@ -3,11 +3,16 @@
 //   <id>\t<ms>\t<track JSON>     or     <id>\terror\t<message as a JSON string>
 // The track is dense_track.ts's, already slimmed for the browser: x, y, angle, squash rounded to 5 decimals, t to 6, and a
 // static solid that never moves is listed only in frames[0] (readers fall back to frames[0].placements[id]).
-// server.py restarts this process when anything under tooling/src/sim/ (or this file) changes, so edits reach the engine.
+// server.py restarts this process when anything under tooling/src/sim/, the engine's math in tools/ (server.py ENGINE_MATH) or this file
+// changes, so edits reach the engine.
+// The engine runs with the browser bundle's math (tools/engine-math-node.mjs: Math.sin ... pow and ** are tools/fdlibm.ts's, pow correctly
+// rounded), so the server's tracks are the bundle's on any machine; the engine is loaded after that, by dynamic import.
 // node --no-warnings worker.ts
 import { createInterface } from "node:readline"
-import { admitDocument } from "../../tooling/src/sim/document.ts"
-import { simulate } from "../../tooling/src/sim/physics.ts"
+import "../../tools/engine-math-node.mjs"
+
+const { admitDocument } = await import("../../tooling/src/sim/document.ts")
+const { simulate } = await import("../../tooling/src/sim/physics.ts")
 
 // Same result as Python's round(v, d) except on exact binary ties (a few multiples of 1/64): toFixed is exact decimal rounding.
 const round = (v: number, d: number): number => Number(v.toFixed(d))
