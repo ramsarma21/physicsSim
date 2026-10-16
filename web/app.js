@@ -464,13 +464,14 @@ async function startView(moduleP) {
 
 // ---------- selection, adding, removing ----------
 let panelAfterDrag = false
+let panelHiddenByUser = false // hidden with its tab, \ or ☰: picking up or adding a part does not open it again until they do
 const narrow = () => matchMedia("(max-width: 900px)").matches // phones: the panel is a sheet over the picture, so it opens only from the ☰ button
 function select(id) {
 	S.selected = id
 	renderInspector()
 	S.editor?.draw()
 	S.editor?.refresh()
-	if (id && document.body.classList.contains("panel-collapsed") && !narrow()) panelAfterDrag = true
+	if (id && document.body.classList.contains("panel-collapsed") && !narrow() && !panelHiddenByUser) panelAfterDrag = true
 }
 
 // ---- where a new item goes: on the tabletop, not mid-air and never under it ----
@@ -568,7 +569,7 @@ function addItem(type, world) {
 	S.selected = it.id
 	setScene(sc, { commit: true })
 	toast(`Added ${typeName(it).toLowerCase()} — drag it where you want it`)
-	if (document.body.classList.contains("panel-collapsed") && !narrow()) setPanel(true)
+	if (document.body.classList.contains("panel-collapsed") && !narrow() && !panelHiddenByUser) setPanel(true)
 }
 
 function viewCenterWorld() {
@@ -645,7 +646,20 @@ function setPanel(open) {
 	if (open) document.body.classList.toggle("panel-right", dockSide() === "right")
 	document.body.classList.toggle("panel-collapsed", !open)
 	$("#toggle-panel").setAttribute("aria-expanded", String(open))
+	const tab = $("#panel-tab")
+	if (tab) {
+		const say = open ? "Hide the settings panel" : "Show the settings panel"
+		tab.title = `${say} (\\)`
+		tab.setAttribute("aria-label", say)
+		tab.setAttribute("aria-expanded", String(open))
+	}
 	store.set("sandbox:panel", open)
+}
+/** The person shows or hides the panel (its tab, \, ☰): a hide sticks until they show it again. */
+function togglePanel() {
+	const open = document.body.classList.contains("panel-collapsed")
+	panelHiddenByUser = !open
+	setPanel(open)
 }
 
 function renderInspector() {
@@ -946,7 +960,8 @@ function wire() {
 	}
 	$("#undo").onclick = () => undo(-1)
 	$("#redo").onclick = () => undo(1)
-	$("#toggle-panel").onclick = () => setPanel(document.body.classList.contains("panel-collapsed"))
+	$("#toggle-panel").onclick = togglePanel
+	$("#panel-tab").onclick = togglePanel
 	$("#add").onclick = () => S.catalogUI?.toggle()
 	$("#ai").onclick = () => withAI((p) => p.toggle())
 	$("#new").onclick = () => openNew()
@@ -1006,6 +1021,7 @@ function wire() {
 			return
 		}
 		if (e.key === "/") { e.preventDefault(); S.catalogUI?.open(); return }
+		if (e.key === "\\" && !mod && !e.altKey) { e.preventDefault(); togglePanel(); return }
 		if (key === "a" && !mod && !e.altKey && !$("#ai").disabled) { e.preventDefault(); withAI((p) => p.open()); return }
 		if (key === "n" && !mod && !e.altKey && !$("#new").disabled) { e.preventDefault(); openNew(); return }
 		if ((e.key === "Backspace" || e.key === "Delete") && S.selected) { e.preventDefault(); deleteItem(S.selected); return }
