@@ -165,6 +165,11 @@ export async function setup({ client = null, scoreEnv = null, out = OUT_ROOT } =
 	const imp = (p) => import(pathToFileURL(p).href)
 	const [{ CASES }, check, pool, steps, h1, ORCH] = await Promise.all([imp(path.join(EXP, "cases.mjs")), imp(path.join(EXP, "lib", "check.mjs")), imp(path.join(EXP, "lib", "pool.mjs")), imp(path.join(REPO, "ai", "steps.mjs")), imp(path.join(REPO, "ai", "research", "fetch-h1.mjs")), imp(path.join(web, "ai", "orchestrator.js"))])
 	await (await imp(path.join(REPO, "ai", "catalog-digest.mjs"))).getCatalog()
+	try {
+		clientOffer = (await imp(path.join(web, "ai", "edit-turns.js"))).offerWords ?? null
+	} catch {
+		clientOffer = null
+	}
 	const engine = enginePool(path.join(web, "sim"))
 	// the run of the scene on screen (what host.getSim() hands the panel): the scene as it is, on the client's engine; once per starting scene
 	const onScreen = new Map()
@@ -206,8 +211,14 @@ export function makeApi(S, rec, { stored = null } = {}) {
 
 // ---------------------------------------------------------------- what the person reads on the card (web/ai/panel.js renderReport / fixOffer / headsUp)
 const capFirst = (s) => (s ? String(s)[0].toUpperCase() + String(s).slice(1) : "")
+let clientOffer = null // (the client's own words for the offer, web/ai/edit-turns.js offerWords, when it has them: ai/DESIGN.md §16)
 export function offerWords(fx) {
 	if (!fx || fx.state === "searching") return ""
+	if (clientOffer) {
+		const w = clientOffer(fx)
+		if (!w) return ""
+		return fx.state === "found" ? ` ${w.before}${w.say}? (checked: ${w.checked} ✓${fx.fragile ? ", only just" : ""})` : w.text ? ` ${w.text}` : ""
+	}
 	if (fx.state === "found") return ` Want me to ${fx.say}? (checked: ${fx.checked} ✓${fx.fragile ? ", only just" : ""})`
 	if (fx.state === "none") return " I couldn’t find a small fix that I could check works — want the AI to rework it?"
 	if (fx.state === "stopped") return " I stopped looking for a fix. Want the AI to rework it?"
@@ -252,8 +263,16 @@ export async function runCase(S, c, run, { fixSearch = true, stored = null } = {
 		if (fixSearch && rep.fixNeeded && rep.fixCtx) {
 			const t1 = Date.now()
 			try {
-				const fr = await orch.findFix(rep.fixCtx, {})
-				fx = fr.status === "ok" ? null : S.ORCH.fixInfo(fr, rep.fixCtx.scene, fr.targets)
+				// (the panel's search after the change: the fix search, and side by side the AI's rework in the background, when the client has it
+				// (makeItWork, §16); an older client's fix search alone)
+				if (typeof orch.makeItWork === "function") {
+					const history = [...req.history, { role: "user", text: c.text }, { role: "assistant", text: `${rep.lead ?? ""}${rep.human?.length ? ` Changes: ${rep.human.join("; ")}.` : ""}` }].slice(-20)
+					const mw = await orch.makeItWork(rep.fixCtx, { job: { text: c.text, history, plan: rep.plan ?? null, keep: rep.edit?.touched ?? null } })
+					fx = mw.status === "ok" ? null : mw.info
+				} else {
+					const fr = await orch.findFix(rep.fixCtx, {})
+					fx = fr.status === "ok" ? null : S.ORCH.fixInfo(fr, rep.fixCtx.scene, fr.targets)
+				}
 			} catch (e) {
 				fx = { state: "error", error: String(e?.message ?? e).slice(0, 200) }
 			}
@@ -279,7 +298,7 @@ export async function runCase(S, c, run, { fixSearch = true, stored = null } = {
 			targetsRun: rep.targets ?? null,
 			fixNeeded: !!rep.fixNeeded,
 			fixApplied: rep.fixApplied ?? null,
-			fix: fx ? { state: fx.state, say: fx.say ?? null, checked: fx.checked ?? null, label: fx.label ?? null } : rep.fix ? { state: rep.fix.state, say: rep.fix.say ?? null } : null,
+			fix: fx ? { state: fx.state, how: fx.how ?? null, say: fx.say ?? null, checked: fx.checked ?? null, label: fx.label ?? null, reworked: fx.reworked ?? null } : rep.fix ? { state: rep.fix.state, say: rep.fix.say ?? null } : null,
 			issues: rep.issues ?? [],
 			suggestions: rep.suggestions ?? [],
 			timings: rep.timings ?? null,

@@ -19,10 +19,12 @@ const PG = dirname(HERE)
 const SIM = join(PG, "web", "sim")
 const CACHE_DIR = process.env.AI_CACHE_DIR || join(HERE, ".cache")
 const CACHE_FILE = join(CACHE_DIR, "catalog-digest.json")
-const DIGEST_VERSION = 6 // bump when the digest's format or notes change (invalidates the cache)
+const DIGEST_VERSION = 7 // bump when the digest's format or notes change (invalidates the cache)
 
 /** Container types whose "in" goal the engine's summary can check (machines/items.py inside()). */
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
+/** Containers whose "in" goal is judged by their own walls in the run (ai/goals.mjs wallsInside), not by the engine's summary. */
+export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug"]
 /** Prop keys every type has: the surface material and its tunable contact numbers. */
 export const MATERIAL_KEYS = ["material", "bounce", "friction", "rolling", "side"]
 /** The default stage and table (web/scenarios/empty.json). */
@@ -255,7 +257,7 @@ function indexType(t, materials) {
 		massNote,
 		joints: describeJoints(t),
 		container,
-		goalContainer: GOAL_CONTAINERS.includes(t.key),
+		goalContainer: GOAL_CONTAINERS.includes(t.key) || WALL_CONTAINERS.includes(t.key),
 		usesRelease: RELEASE_RE.test(t.description) || ["spring-launcher", "spring-catapult", "pinball-flipper"].includes(t.key),
 		parts: solids.length,
 		movingParts: dyn.length,
@@ -353,7 +355,7 @@ const LOOK_NOTES = {
 export const SURFACE_NOTE = `Every type also has the surface props material, bounce 0…1, friction 0…2, rolling 0…0.5, side 0…1, even where its list below leaves them out. Where two things touch, the engine uses the measured value for their two materials when it has one, scaled by how far each item's own friction is from its material's: pair friction = measured × √(fa/fa₀ × fb/fb₀) (no measured pair: √(fa × fb)); so halving ONE item's friction lowers the pair's by only about 30 %: quarter it, or halve both, to halve the pair. Bounce: measured × (ba/ba₀)(bb/bb₀), else ba × bb. A thing on a slope slides when tan(angle) > the pair's friction; the run's events, not the props, say what really happened.`
 
 const CATEGORY_NOTES = {
-	Containers: "Open-topped and fixed in place (static): put things in them with place.inside. Only box, cup, bucket and basket can be goal containers. One above the table stands ON a support item (a fixed wooden-block post, bricks, books, a box, a plank shelf on legs), never on \"air\"; only a box may hang (hung).",
+	Containers: "Open-topped and fixed in place (static): put things in them with place.inside. Only box, cup, bucket, basket, plastic cup, glass jar and coffee mug can be goal containers. One above the table stands ON a support item (a fixed wooden-block post, bricks, books, a box, a plank shelf on legs), never on \"air\"; only a box may hang (hung).",
 	"Surfaces & ramps": "Static: fixed in place, they never move. Put them anywhere, at any height and angle (place.on \"air\" with y_m, or place.lean); wooden legs are drawn down to the floor while `legs` is on (keep them on for anything in the air: without them it floats).",
 	Scenery: "The table is already in every scene (id \"table\"): never add another. Walls are fixed; `invisible_in_3d` makes a safety wall that keeps things on the table without being seen.",
 	Balls: "Dynamic. A ball's mass follows its diameter (and hollow/wall) unless you set mass.",
@@ -406,7 +408,8 @@ function typeDetail(T) {
 	}
 	const notes = []
 	if (T.joints.length) notes.push(`has ${T.joints.join(", ")}`)
-	if (T.goalContainer) notes.push("goal container (\"in\" goals work)")
+	if (T.goalContainer && WALL_CONTAINERS.includes(T.key)) notes.push("goal container (\"in\" goals work: judged by its own walls at the run's end)")
+	else if (T.goalContainer) notes.push("goal container (\"in\" goals work)")
 	else if (T.container) notes.push("container, but NOT usable as a goal container")
 	if (T.usesRelease) notes.push("acts at the scene's release time")
 	if (T.tags.length) notes.push(`also called: ${T.tags.slice(0, 10).join(", ")}`)

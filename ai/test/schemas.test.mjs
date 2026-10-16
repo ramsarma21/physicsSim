@@ -367,6 +367,21 @@ test("goals: in, falls (item or items), hits and moves are checked by kind; a go
 	hasError(e, /a "in" goal has no target/)
 })
 
+test("goals: 'off' (it ends off the table) takes an item that can move, read from its spellings; a coffee mug, a plastic cup or a glass jar is a container an 'in' goal can name (judged by its walls)", () => {
+	const p = dominoPlan()
+	p.items.push({ id: "pp", type: "ping-pong-ball", name: "Ping-pong ball", place: { on: "table", x: 2.6 } }, { id: "jar", type: "glass-jar", name: "Jar", place: { on: "table", x: 2.9 } })
+	p.goals = [{ kind: "off", label: "The ping-pong ball is blown off the edge", item: "pp" }, { kind: "falls_off", label: "It falls off the table", item: "ball" }, { kind: "in", label: "The ball lands in the jar", item: "ball", container: "jar" }]
+	const r = validate("plan", p, { catalog })
+	assert.deepEqual(r.errors, [])
+	assert.deepEqual(r.value.goals.map((g) => g.kind), ["off", "off", "in"])
+	const q = dominoPlan()
+	q.goals = [{ kind: "off", label: "x" }, { kind: "off", item: "ramp", label: "y" }, { kind: "off", item: "ball", container: "mug", label: "z" }]
+	const e = errorsOf("plan", q)
+	hasError(e, /an "off" goal needs item/)
+	hasError(e, /"ramp" is a plank, which never moves/)
+	hasError(e, /a "off" goal has no container/)
+})
+
 test("patches: up to 150, and `ids` sends one move or set_props to many items (expanded to one patch each)", () => {
 	const p = validate("plan", dominoPlan(), { catalog }).value
 	const r = validate("refine", { done: false, score_0_10: 6, issues: [], patches: [{ op: "set_props", ids: ["b1", "b2"], props: { friction: 0.3 } }, { op: "move", ids: ["b1"], dx: 0.05 }] }, { catalog, plan: p })
@@ -657,4 +672,22 @@ test("edit (repair 2026-10-15 night): an edit reply over 45 words keeps its firs
 	const nu = { ...K("new"), mode: "new", reply: "I'll build that as a new scene.", why: "A different scene." }
 	assert.deepEqual(validate("edit", nu, { catalog, scene, intent: "edit", text: "start over: just a tennis ball rolling down a ramp into a cup" }).soft, [])
 	assert.equal(validate("edit", nu, { catalog, scene, intent: "edit", text: "build the same machine but with a tennis ball" }).soft.length, 1, "a change worded as a build still gets the one repair")
+})
+
+test("edit: words that send a new thing off the table make its goal an 'off' goal, never 'moves' (V8817 c01: a ping-pong ball blown 40 cm along the table 'moved')", () => {
+	const scene = scenario("rube-goldberg")
+	const text = "Add a fan at the end of the table that blows a ping-pong ball off the edge once Ball 2 lands in the box."
+	const patches = [
+		{ op: "add", item: { id: "pp", type: "ping-pong-ball", place: { on: "table", x: 3 } } },
+		{ op: "set_goals", goals: [{ kind: "in", item: "ball2", container: "box", label: "Ball 2 lands in the box" }, { kind: "moves", item: "pp", min_m: 0.1, label: "The fan blows the ping-pong ball off its post" }] }
+	]
+	const r = validate("edit", { ...K(), mode: "patch", reply: "Added a ping-pong ball.", patches }, { catalog, scene, text })
+	assert.deepEqual(r.errors, [])
+	const goals = r.value.patches.find((p) => p.op === "set_goals").goals
+	assert.deepEqual(goals[1], { kind: "off", item: "pp", label: "The fan blows the ping-pong ball off the edge" })
+	assert.deepEqual(goals[0], { kind: "in", item: "ball2", container: "box", label: "Ball 2 lands in the box" }, "the scene's own goals as they were")
+	assert.ok(r.warnings.some((w) => /made an "off" goal/.test(w)))
+	// (without such words, a "moves" goal stays one)
+	const r2 = validate("edit", { ...K(), mode: "patch", reply: "Added a ping-pong ball.", patches }, { catalog, scene, text: "Add a ping-pong ball that the fan blows along the table." })
+	assert.equal(r2.value.patches.find((p) => p.op === "set_goals").goals[1].kind, "moves")
 })

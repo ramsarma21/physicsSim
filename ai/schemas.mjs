@@ -14,7 +14,7 @@
 // a repair turn: a check or knob that does not fit the plan is dropped with a warning. Steps also: "rate" (refine's rate-only final check:
 // {score_0_10, issues}, no patches).
 // applyPatches(plan, patches, catalog) applies them to a plan (a new object); planFromScene(scene) turns a scene into an exact plan.
-// Goals (ai/goals.mjs): "in" {item, container}, "falls" {item | items}, "hits" {item, target, before_s?}, "moves" {item, min_m}.
+// Goals (ai/goals.mjs): "in" {item, container}, "falls" {item | items}, "hits" {item, target, before_s?}, "moves" {item, min_m}, "off" {item}.
 // ctx extras (all optional): observation (plan: every observed object must be accounted for in plan.covers), text (the request: "make it
 // work" pictures need their depicted outcome as a goal; refine may not change the material of a requested thing), goalResults (refine: the
 // goals' results in the run being judged, from ai/goals.mjs checkGoals: a failing goal caps the score and keeps done false).
@@ -22,6 +22,8 @@ import { GOAL_KINDS, goalItems, goalKind, goalLabel } from "./goals.mjs"
 
 export const RESERVED_IDS = ["table", "air"]
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
+/** Containers an "in" goal is judged by their own walls in the run (ai/goals.mjs wallsInside): the engine's summary does not check them. */
+export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug"]
 export const LIMITS = { items: 150, idLength: 40, goals: 10, tune: 12, patches: 150, missing: 30, observedObjects: 60, relations: 120, covers: 60, differences: 20, stages: 12, stageKnobs: 6 }
 /** Types that count as several things (a domino row's dominoes): the prop that says how many. */
 export const MULTI_UNIT = { "domino-row": "count", "newtons-cradle": "count" }
@@ -513,7 +515,7 @@ function tidyGoals(goals, path, warnings) {
 		if (!isObj(g)) continue
 		const at = `${path}[${i}]`
 		if (typeof g.kind === "string" && !GOAL_KINDS.includes(g.kind)) {
-			const k = { inside: "in", into: "in", lands_in: "in", fall: "falls", topple: "falls", topples: "falls", tips: "falls", knock_over: "falls", hit: "hits", touches: "hits", reaches: "hits", move: "moves", travels: "moves" }[g.kind.toLowerCase().replace(/[\s-]+/g, "_")]
+			const k = { inside: "in", into: "in", lands_in: "in", fall: "falls", topple: "falls", topples: "falls", tips: "falls", knock_over: "falls", hit: "hits", touches: "hits", reaches: "hits", move: "moves", travels: "moves", off_table: "off", off_the_table: "off", off_edge: "off", off_the_edge: "off", falls_off: "off", leaves: "off", leaves_table: "off", leaves_the_table: "off", onto_floor: "off" }[g.kind.toLowerCase().replace(/[\s-]+/g, "_")]
 			if (k) {
 				warnings.push(`${at}.kind "${g.kind}" read as "${k}"`)
 				g.kind = k
@@ -1043,7 +1045,8 @@ function checkPlace(p, path, it, ids, known, catalog, stage, errors) {
 
 /**
  * Goals, by kind (ai/goals.mjs): "in" {item, container: a box, cup, bucket or basket}, "falls" {item | items: things that can tip over},
- * "hits" {item, target, before_s?}, "moves" {item, min_m}. The kind is read from the fields when it is left out (a container: "in").
+ * "hits" {item, target, before_s?}, "moves" {item, min_m}, "off" {item: it ends off the table, past an end or below the top}. The kind is
+ * read from the fields when it is left out (a container: "in").
  */
 function checkGoals(goals, path, ids, catalog, errors) {
 	const ref = (at, id, what) => {
@@ -1062,12 +1065,12 @@ function checkGoals(goals, path, ids, catalog, errors) {
 		const at = `${path}[${i}] (${g.label})`
 		const named = g.kind !== undefined || g.container !== undefined || g.target !== undefined || g.min_m !== undefined || g.items !== undefined
 		if (!named) {
-			errors.push(`${at}: say what kind of goal it is: "in" (with a container), "falls", "hits" (with a target) or "moves" (with min_m)`)
+			errors.push(`${at}: say what kind of goal it is: "in" (with a container), "falls", "hits" (with a target), "moves" (with min_m) or "off" (it ends off the table)`)
 			continue
 		}
 		const kind = goalKind(g)
 		g.kind = kind
-		const fieldsOf = { in: ["item", "container"], falls: ["item", "items"], hits: ["item", "target", "before_s"], moves: ["item", "min_m"] }[kind]
+		const fieldsOf = { in: ["item", "container"], falls: ["item", "items"], hits: ["item", "target", "before_s"], moves: ["item", "min_m"], off: ["item"] }[kind]
 		for (const f of ["item", "items", "container", "target", "before_s", "min_m"]) if (g[f] !== undefined && !fieldsOf.includes(f)) errors.push(`${at}: a "${kind}" goal has no ${f} (its fields: ${fieldsOf.join(", ")})`)
 		if (kind === "in") {
 			if (g.item === undefined || g.container === undefined) {
@@ -1077,8 +1080,8 @@ function checkGoals(goals, path, ids, catalog, errors) {
 			const item = ref(at, g.item, "item")
 			const cont = ref(at, g.container, "container")
 			if (g.item === g.container) errors.push(`${at}: an item cannot land in itself`)
-			if (cont && !GOAL_CONTAINERS.includes(cont.type))
-				errors.push(`${at}: "${g.container}" is a ${cont.type}; an "in" goal can only be checked for a ${GOAL_CONTAINERS.join(", ")} (use one of those types as the target)`)
+			if (cont && !GOAL_CONTAINERS.includes(cont.type) && !WALL_CONTAINERS.includes(cont.type))
+				errors.push(`${at}: "${g.container}" is a ${cont.type}; an "in" goal can only be checked for a ${[...GOAL_CONTAINERS, ...WALL_CONTAINERS].join(", ")} (use one of those types as the target)`)
 			mover(at, item, g.item)
 		} else if (kind === "falls") {
 			const list = goalItems(g)
@@ -1103,6 +1106,12 @@ function checkGoals(goals, path, ids, catalog, errors) {
 		} else if (kind === "moves") {
 			if (g.item === undefined || g.min_m === undefined) {
 				errors.push(`${at}: a "moves" goal needs item and min_m (how far it must end from where it starts, m)`)
+				continue
+			}
+			mover(at, ref(at, g.item, "item"), g.item)
+		} else if (kind === "off") {
+			if (g.item === undefined) {
+				errors.push(`${at}: an "off" goal needs item (what must end off the table)`)
 				continue
 			}
 			mover(at, ref(at, g.item, "item"), g.item)
@@ -1844,6 +1853,27 @@ function checkEditKind(v, errors, warnings) {
 }
 
 /** ctx: {catalog, plan? (the scene's plan), scene? (the current scene; used as an exact plan when no plan is given), stage?} */
+/** Words that send a thing off the table: "off the edge", "off the table", "off the end", "falls off", "onto the floor". */
+export const OFF_WORDS_RE = /\b(off (the |its |that |this )?(edge|table|end)|over the edge|onto the floor|to the floor|fall(s|ing)? off|fell off)\b/i
+/**
+ * A goal about a thing this edit adds, for words that send it off the table, is an "off" goal (it ends past the table's end or below its
+ * top), never "moves": a ping-pong ball blown 40 cm along the table "moves" and stays on it (V8817 c01: 3 of 5 cards said "all 7 goals
+ * happen ✓" with the ball on the table). Its label says off the edge, never off a post or a shelf the edit made up. Changes the patches in place.
+ */
+export function offGoals(patches, base, text, warnings = []) {
+	if (!Array.isArray(patches) || !OFF_WORDS_RE.test(String(text ?? ""))) return
+	const had = new Set((base?.items ?? []).filter(isObj).map((i) => i.id))
+	for (const p of patches) {
+		if (!isObj(p) || p.op !== "set_goals" || !Array.isArray(p.goals)) continue
+		for (const [i, g] of p.goals.entries()) {
+			if (!isObj(g) || goalKind(g) !== "moves" || typeof g.item !== "string" || had.has(g.item)) continue
+			const label = typeof g.label === "string" && g.label.trim() ? g.label.trim() : null
+			const said = label ? (/\boff\b/i.test(label) ? label.replace(/\boff (?:of )?(?:its|the|a|an|that|this) [\p{L}-]+(?: [\p{L}-]+)?(?= |$|[.!,;])/iu, "off the edge") : `${label.replace(/[.!]+$/, "")}, off the edge`) : null
+			p.goals[i] = { kind: "off", item: g.item, ...(said ? { label: /\b(edge|table|end|floor)\b/i.test(said) ? said : `${said.replace(/[.!]+$/, "")} off the edge` } : {}) }
+			warnings.push(`edit.set_goals: "${label ?? g.item}" is about ${g.item} going off the table: made an "off" goal (it was "moves")`)
+		}
+	}
+}
 export function validateEdit(value, ctx = {}) {
 	const errors = []
 	const warnings = []
@@ -1885,6 +1915,7 @@ export function validateEdit(value, ctx = {}) {
 			warnings.push(...r.warnings)
 			if (!r.errors.length) {
 				v.patches = [...r.patches, ...renamesFor(base, r.plan, r.patches, ctx.catalog, warnings)]
+				offGoals(v.patches, base, ctx.text, warnings)
 				// `missing` is what THIS request asked for that the library does not have (the card tells the user); the scene's own list
 				// stays with the scene as `plan_missing`: what the plan reported before, unless its stand-in was removed, then this change's
 				if (Array.isArray(base?.missing) && base.missing.length && Array.isArray(v.missing)) {

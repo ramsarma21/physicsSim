@@ -19,17 +19,18 @@
     {"asked": "a dog", "reason": "there are no animals in the library", "substitute_type": null, "substitute_id": null}
   ],
   "goals": [                         // every outcome the request states or the picture shows that can be checked; [] otherwise
-    {"kind": "in", "label": "The ball lands in the bucket", "item": "ball", "container": "bucket"},  // container: a box, cup, bucket or basket item
+    {"kind": "in", "label": "The ball lands in the bucket", "item": "ball", "container": "bucket"},  // container: a box, cup, bucket, basket, plastic cup, glass jar or coffee mug item
     {"kind": "falls", "label": "All the dominoes fall", "item": "dominoes"},       // or "items": ["d1", "d2", ...]: every one must end tipped over or knocked down
     {"kind": "hits", "label": "The pendulum hits the brick", "item": "pendulum", "target": "brick", "before_s": 4},  // they touch during the run (before_s optional; resting contact from the start does not count)
-    {"kind": "moves", "label": "The cart rolls off", "item": "cart", "min_m": 0.3}  // it ends at least min_m from where it started
+    {"kind": "moves", "label": "The cart rolls off", "item": "cart", "min_m": 0.3},  // it ends at least min_m from where it started
+    {"kind": "off", "label": "The ping-pong ball is blown off the edge", "item": "pingpong"}  // it ends off the table (past an end, or fallen below its top)
   ],
   "tune": [                          // knobs a tuner may turn to make the goals happen (1-4 is typical; [] without goals)
     {"id": "bucket", "param": "x", "min": 1.4, "max": 2.4}                             // param: "x", "y", "angle" or a number prop of that item
   ],
   "stages": [                        // ONLY for a chain of 4 or more stages: each stage in order, what it must do, a check the run can test, its knobs
     {"label": "Pendulum hits the ball", "does": "swings down from 60° and hits the wooden ball at about 0.5 s", "items": ["pendulum", "ball"],
-     "check": {"kind": "hits", "item": "pendulum", "target": "ball", "before_s": 1.5},     // a goal (in, falls, hits, moves) on this stage's own items
+     "check": {"kind": "hits", "item": "pendulum", "target": "ball", "before_s": 1.5},     // a goal (in, falls, hits, moves, off) on this stage's own items
      "tune": [{"id": "pendulum", "param": "start_angle", "min": 40, "max": 80}]}          // this stage's knobs (0-3), not repeated in another stage
   ],
   "notes": "one or two sentences: how the scene works and anything the user should know",

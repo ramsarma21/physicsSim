@@ -1,0 +1,378 @@
+{
+ "source": "V8820 (live, real models, 16 Oct) n2-domino-office-r1.json",
+ "base": "gallery/domino-run",
+ "text": "Office version: replace the first domino run with a row of standing smartphones, swap the 8-ball for a golf ball, and swap the bucket for a coffee mug.",
+ "answers": [
+  {
+   "kind": "change",
+   "reply": "I replaced the first domino run with 8 standing smartphones, 9 cm apart, swapped the 8-ball for a golf ball and the bucket for a coffee mug.",
+   "patches": [
+    {
+     "op": "remove",
+     "id": "row1",
+     "why": "replaced by a row of standing smartphones"
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph1",
+      "type": "smartphone",
+      "name": "Phone 1",
+      "place": {
+       "on": "table",
+       "x": -0.06,
+       "angle_deg": 90
+      },
+      "why": "standing phone, first in the row; the pendulum hits it"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph2",
+      "type": "smartphone",
+      "name": "Phone 2",
+      "place": {
+       "on": "table",
+       "x": 0.03,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph3",
+      "type": "smartphone",
+      "name": "Phone 3",
+      "place": {
+       "on": "table",
+       "x": 0.12,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph4",
+      "type": "smartphone",
+      "name": "Phone 4",
+      "place": {
+       "on": "table",
+       "x": 0.21,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph5",
+      "type": "smartphone",
+      "name": "Phone 5",
+      "place": {
+       "on": "table",
+       "x": 0.3,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph6",
+      "type": "smartphone",
+      "name": "Phone 6",
+      "place": {
+       "on": "table",
+       "x": 0.39,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph7",
+      "type": "smartphone",
+      "name": "Phone 7",
+      "place": {
+       "on": "table",
+       "x": 0.48,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph8",
+      "type": "smartphone",
+      "name": "Phone 8",
+      "place": {
+       "on": "table",
+       "x": 0.57,
+       "angle_deg": 90
+      },
+      "why": "last phone, falls onto the growing dominoes"
+     }
+    },
+    {
+     "op": "replace_type",
+     "id": "ball",
+     "type": "golf-ball",
+     "props": {}
+    },
+    {
+     "op": "set_item",
+     "id": "ball",
+     "name": "Golf ball"
+    },
+    {
+     "op": "replace_type",
+     "id": "bucket",
+     "type": "coffee-mug",
+     "props": {}
+    },
+    {
+     "op": "set_item",
+     "id": "bucket",
+     "name": "Coffee mug"
+    },
+    {
+     "op": "set_goals",
+     "goals": [
+      {
+       "kind": "hits",
+       "label": "The pendulum starts the run",
+       "item": "pendulum",
+       "target": "ph1"
+      },
+      {
+       "kind": "falls",
+       "label": "All 8 smartphones fall",
+       "items": [
+        "ph1",
+        "ph2",
+        "ph3",
+        "ph4",
+        "ph5",
+        "ph6",
+        "ph7",
+        "ph8"
+       ]
+      },
+      {
+       "kind": "falls",
+       "label": "The growing dominoes fall, up to the giant",
+       "item": "row2"
+      },
+      {
+       "kind": "in",
+       "label": "The giant knocks the golf ball into the coffee mug",
+       "item": "ball",
+       "container": "bucket"
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "kind": "change",
+   "reply": "I replaced the first domino run with 8 standing smartphones, swapped the 8-ball for a golf ball and the bucket for a coffee mug standing on the table.",
+   "patches": [
+    {
+     "op": "remove",
+     "id": "row1",
+     "why": "replaced by a row of standing smartphones"
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph1",
+      "type": "smartphone",
+      "name": "Phone 1",
+      "place": {
+       "on": "table",
+       "x": -0.06,
+       "angle_deg": 90
+      },
+      "why": "standing phone, first in the row; the pendulum hits it"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph2",
+      "type": "smartphone",
+      "name": "Phone 2",
+      "place": {
+       "on": "table",
+       "x": 0.03,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph3",
+      "type": "smartphone",
+      "name": "Phone 3",
+      "place": {
+       "on": "table",
+       "x": 0.12,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph4",
+      "type": "smartphone",
+      "name": "Phone 4",
+      "place": {
+       "on": "table",
+       "x": 0.21,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph5",
+      "type": "smartphone",
+      "name": "Phone 5",
+      "place": {
+       "on": "table",
+       "x": 0.3,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph6",
+      "type": "smartphone",
+      "name": "Phone 6",
+      "place": {
+       "on": "table",
+       "x": 0.39,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph7",
+      "type": "smartphone",
+      "name": "Phone 7",
+      "place": {
+       "on": "table",
+       "x": 0.48,
+       "angle_deg": 90
+      },
+      "why": "standing phone in the row"
+     }
+    },
+    {
+     "op": "add",
+     "item": {
+      "id": "ph8",
+      "type": "smartphone",
+      "name": "Phone 8",
+      "place": {
+       "on": "table",
+       "x": 0.57,
+       "angle_deg": 90
+      },
+      "why": "last phone, falls onto the growing dominoes"
+     }
+    },
+    {
+     "op": "replace_type",
+     "id": "ball",
+     "type": "golf-ball",
+     "props": {}
+    },
+    {
+     "op": "set_item",
+     "id": "ball",
+     "name": "Golf ball"
+    },
+    {
+     "op": "replace_type",
+     "id": "bucket",
+     "type": "coffee-mug",
+     "props": {}
+    },
+    {
+     "op": "set_place",
+     "id": "bucket",
+     "place": {
+      "on": "table",
+      "x": 2.227
+     },
+     "why": "the mug's anchor is its centre: rest it on the table top, not inside it"
+    },
+    {
+     "op": "set_item",
+     "id": "bucket",
+     "name": "Coffee mug"
+    },
+    {
+     "op": "set_goals",
+     "goals": [
+      {
+       "kind": "hits",
+       "label": "The pendulum starts the run",
+       "item": "pendulum",
+       "target": "ph1"
+      },
+      {
+       "kind": "falls",
+       "label": "All 8 smartphones fall",
+       "items": [
+        "ph1",
+        "ph2",
+        "ph3",
+        "ph4",
+        "ph5",
+        "ph6",
+        "ph7",
+        "ph8"
+       ]
+      },
+      {
+       "kind": "falls",
+       "label": "The growing dominoes fall, up to the giant",
+       "item": "row2"
+      },
+      {
+       "kind": "in",
+       "label": "The giant knocks the golf ball into the coffee mug",
+       "item": "ball",
+       "container": "bucket"
+      }
+     ]
+    }
+   ]
+  }
+ ]
+}

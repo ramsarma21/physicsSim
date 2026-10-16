@@ -1178,7 +1178,7 @@ test("swap lines: the person's own words with the name on screen, and before →
 	Object.assign(b.items.find((i) => i.id === "ball2"), { type: "tennis-ball", name: "Tennis ball" })
 	Object.assign(b.items.find((i) => i.id === "ball1"), { type: "basketball", name: "Basketball" })
 	const says = [{ says: "the yellow ball", ids: ["ball2"] }, { says: "the red ball", ids: ["ball1"] }]
-	assert.deepEqual(humanChangeList(a, b, { says }).map((c) => c.text).sort(), ["swapped the red ball (Ball 1) for a basketball (102 g → 620 g)", "swapped the yellow ball (Ball 2) for a tennis ball (6.3 g → 58 g)"])
+	assert.deepEqual(humanChangeList(a, b, { says }).map((c) => c.text).sort(), ["swapped the red ball for a basketball (102 g → 620 g)", "swapped the yellow ball for a tennis ball (6.3 g → 58 g)"])
 	// (without words of their own, the name on screen and what it was)
 	assert.deepEqual(humanChangeList(a, b).map((c) => c.text).sort(), ["swapped Ball 1 (the superball) for a basketball (102 g → 620 g)", "swapped Ball 2 (the hollow plastic ball) for a tennis ball (6.3 g → 58 g)"])
 })

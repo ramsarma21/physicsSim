@@ -20,7 +20,10 @@
 // thumbnail that opens it next to the scene's start. An edit is answered with one card per kind (./edit-turns.js): a question with a chip per
 // reading, an answer, an undo, "Build it as a new scene…", or the edit card: exactly what changed in real units, "Everything else is exactly as
 // it was (N items untouched)", a heads-up and the pre-checked fix chip (Details: what it understood, why, time, model). Never a concept there.
-import { createOrchestrator, prepareImages, STEP_LABELS, MAX_IMAGES, AiError, ACTION_KINDS, statesOutcome, planAfterFix, fixInfo } from "./orchestrator.js"
+import { createOrchestrator, prepareImages, STEP_LABELS, MAX_IMAGES, AiError, ACTION_KINDS, statesOutcome, planAfterFix, fixInfo, humanChangeList } from "./orchestrator.js"
+// (the fix search's own progress words, "· 42 physics runs": named apart from this file's progressWords, a model step's progress, which
+// shadowed it, so "Looking for a fix…" never said what it was doing: V8814, 16 Oct)
+import { editChips, offerWords, progressWords as fixProgressWords, reworkWords, nameAsShown } from "./edit-turns.js"
 import { createShot } from "./shot.js"
 import { createFixPool } from "./fix-pool.js"
 import { aiAccess, atWhen } from "./access.js"
@@ -121,6 +124,9 @@ export function aboutScene(text, scene, typeNames = new Map()) {
 }
 /** A yes to the reply's offer: "yes", "yes please", "do it", "sure", "go ahead". */
 export const YES_RE = /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|please( do)?|do it|go ahead|yes,? (please|do it)|sounds good|let'?s do (it|that)|do that|apply it|fix it)[\s.!]*$/i
+/** A bare "make it work (again)" / "fix it" / "get it working": what the live card offers, checked, answers it before any AI call (V8832 y8:
+ *  typed beside the checked laptop chip, two model calls and 22 s found the same laptop). */
+export const MAKE_WORK_RE = /^\s*(please\s+)?(can you\s+|could you\s+)?(make (it|this|that|everything) (work|go)( again| now)?|fix (it|this|that)( again| now)?|get (it|this) (to )?work(ing)?( again)?|make it work again please)(,?\s*please)?[\s.!?]*$/i
 const capFirst = (s) => String(s ?? "").replace(/^./, (c) => c.toUpperCase())
 const lcFirstWord = (s) => String(s ?? "").replace(/^(AI\b)?./, (c, ai) => (ai ? c : c.toLowerCase()))
 /** A phone or a tablet has no ⌘Z: the words say Undo / Redo there. */
@@ -207,7 +213,69 @@ export function mountAiPanel(host) {
 	}
 	S.mode = "edit" // (what the drawer does: syncMode() says, from the scene on screen)
 	S.fixJob = null // the fix search running after an edit ({ctl, turnId})
+	S.reworkOfNext = null // (the card whose "Ask the AI to rework it" sent the next request)
+	const fixCtxs = new Map() // turn id -> the fix search's context (this page's life only: "Look again" after its Stop)
 	for (const t of S.turns) if (t.report?.fix?.state === "searching") t.report.fix = { ...t.report.fix, state: "stopped" } // (it stopped with the page)
+	/** The scene on the table, as JSON (what a turn's sceneJSON is compared with). */
+	const tableJSON = () => {
+		try {
+			return JSON.stringify(host.getScene() ?? null)
+		} catch {
+			return null
+		}
+	}
+	/** The same scene on the table, but for its name (V8820 x10: renaming the scene by hand took the checked offer away, and "yes" said there
+	 *  was nothing to say yes to): what a turn's scene is compared with. The name-free form of each JSON is kept for the few last ones seen. */
+	const keyCache = new Map()
+	const sceneKey = (json) => {
+		if (typeof json !== "string") return json ?? null
+		let k = keyCache.get(json)
+		if (k !== undefined) return k
+		try {
+			const o = JSON.parse(json)
+			if (o && typeof o === "object" && !Array.isArray(o)) delete o.name
+			k = JSON.stringify(o)
+		} catch {
+			k = json
+		}
+		if (keyCache.size >= 48) keyCache.delete(keyCache.keys().next().value)
+		keyCache.set(json, k)
+		return k
+	}
+	const sameTable = (a, b) => a === b || (typeof a === "string" && typeof b === "string" && sceneKey(a) === sceneKey(b))
+	/** The last done card that put this scene (JSON) on the table, never a reply said after it: its goals, its fix and its kept scenes. */
+	function sceneCard(json = tableJSON()) {
+		return [...S.turns].reverse().find((x) => x.role === "ai" && x.state === "done" && !x.report?.replyOnly && x.sceneJSON && sameTable(x.sceneJSON, json)) ?? null
+	}
+	/** The card that is about the scene on the table: the last done turn that put this very scene there (after an Undo of a fix, the edit card it
+	 *  came from), else the last done turn. Its chips, its offer and a "yes" are the live ones (V8814 s1, 16 Oct). */
+	function activeTurn() {
+		const done = S.turns.filter((x) => x.role === "ai" && x.state === "done")
+		const now = tableJSON()
+		const on = [...done].reverse().find((x) => !x.report?.replyOnly && x.sceneJSON && sameTable(x.sceneJSON, now))
+		// (no card put this scene there, an Undo back past them all, a change by hand, another scene: no card is live, so no chip, offer or
+		// "yes" acts on a scene that is gone (V8817 s3e / s7a: the undone edit's checked offer and ideas stayed, and an idea chip sent "…the
+		// egg's flight…" for a scene with no egg). A reply asked about the scene on the table, after that, is still live)
+		if (!on) {
+			const last = done.at(-1)
+			return last?.report?.replyOnly && last.baseJSON && sameTable(last.baseJSON, now) ? last : null
+		}
+		// (a reply that changed nothing, said after it, is still about this scene: it is the one to answer; never one that said the AI stopped
+		// because the scene was undone or changed: that was about another scene, and after a Redo the card whose scene is back is the live one,
+		// its button and "Look again" with it: V8832 y9)
+		const after = done.slice(done.indexOf(on) + 1).filter((x) => !x.report?.movedOn)
+		return after.length && after.every((x) => x.report?.replyOnly) ? after.at(-1) : on
+	}
+	// the app's history moved (⌘Z, the top bar's Undo, another scene, a change by hand): the cards follow it (Undo / Restore, which card is live,
+	// the folded chip's words). The app gives the panel no event for it: its history index is read a few times a second (a number compare)
+	let seenHi = host.historyIndex?.() ?? null
+	setInterval(() => {
+		const hi = host.historyIndex?.() ?? null
+		// (an edit or a check the AI works on is for the scene it started from: when that is gone, by an Undo or a change by hand, it stops)
+		if (hi === seenHi) return void (S.job && S.running && watchJob())
+		seenHi = hi
+		onHistory()
+	}, 400)
 
 	// ---- DOM
 	const drawer = h("aside", { class: "ai-drawer", id: "ai-drawer", role: "dialog", "aria-modal": "false", "aria-labelledby": "ai-title", hidden: true })
@@ -226,6 +294,46 @@ export function mountAiPanel(host) {
 	const scroll = h("div", { class: "ai-scroll" })
 	const hero = h("section", { class: "ai-hero" })
 	const thread = h("ol", { class: "ai-thread", "aria-label": "Conversation" })
+	// (next edits and the rework button are the latest reply's only: the older cards are marked by turn (.ai-stale), never by being followed by
+	// something (a bubble, another tab's turn merged in), which hid the latest card's buttons too: D1, 16 Oct)
+	// (and the latest is the card whose scene is on the table: after the fix card's Undo, the edit card it came from is the live one again, its
+	// checked chip with it; a card whose scene was undone is stale, never "Done" with buttons for a scene that is gone: V8814 s1, 16 Oct)
+	const markLatest = () => {
+		const bots = [...thread.querySelectorAll(":scope > li.ai-bot")]
+		const act = activeTurn()
+		const at = act ? bots.findIndex((li) => li.dataset.id === act.id) : -1
+		const stateOf = (li) => S.turns.find((x) => x.id === li.dataset.id)?.state
+		bots.forEach((li, i) => {
+			const t = S.turns.find((x) => x.id === li.dataset.id)
+			// (a reply that changed nothing after the live card stays live: its chips are about the scene on the table; a card still being built
+			// is never stale; with no live card at all, every card is stale)
+			// (a card that was stopped or failed is live only until a later card is done: its "Run again" never sends another rework after one
+			// has already answered: V8832 y15, a cancelled rework's "Run again" pressed after the button's second rework failed, $0.13 more and a
+			// result with the person's boxes made 1.5 m deep)
+			const busy = !t || t.state === "running"
+			const ended = !!t && t.state !== "done" && t.state !== "running"
+			const live = busy || (ended ? !bots.slice(i + 1).some((x) => stateOf(x) === "done") : at >= 0 && (i === at || (i > at && !!t?.report?.replyOnly && i === bots.length - 1)))
+			li.classList.toggle("ai-stale", !live)
+		})
+	}
+	if (typeof MutationObserver === "function") new MutationObserver(markLatest).observe(thread, { childList: true })
+	// a card's buttons act once per click: the second click of a double click, or any click a moment after one that changed the table, is
+	// dropped (V8817 s5b: a double click on the fix chip put the fix on the table, its card's chips folded away, and the second click landed on
+	// the Restore that slid under the pointer, undoing it)
+	let shieldUntil = 0
+	const shield = (ms = 450) => (shieldUntil = performance.now() + ms)
+	thread.addEventListener(
+		"click",
+		(e) => {
+			if (!e.target?.closest?.("button")) return
+			if (e.detail > 1 || performance.now() < shieldUntil) {
+				e.stopImmediatePropagation()
+				e.preventDefault()
+			}
+		},
+		true
+	)
+	thread.addEventListener("dblclick", (e) => e.target?.closest?.("button") && (e.stopImmediatePropagation(), e.preventDefault()), true)
 	scroll.append(hero, thread)
 	const live = h("div", { class: "ai-sr", "aria-live": "polite", "aria-atomic": "true" })
 
@@ -250,7 +358,8 @@ export function mountAiPanel(host) {
 	const miniTitle = h("b", {}, "")
 	const miniSub = h("span", {}, "")
 	const miniOrb = h("span", { class: "ai-orb", "aria-hidden": "true" })
-	const btnMiniStop = h("button", { type: "button", class: "ai-chip-btn", onclick: () => cancel() }, icon("stop"), "Stop")
+	// (Stop: the build running, else the search for a fix after an edit: V8814 s4, the mini bar's Stop did nothing while it looked)
+	const btnMiniStop = h("button", { type: "button", class: "ai-chip-btn", onclick: () => (S.job ? cancel() : stopFixSearch("user")) }, icon("stop"), "Stop")
 	const btnMiniShow = h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => setMini(false, true) }, "Show")
 	const miniBar = h("div", { class: "ai-mini", role: "status", "aria-live": "polite" }, miniOrb, h("div", { class: "ai-mini-t", onclick: () => setMini(false, true), title: "Open the AI panel" }, miniTitle, miniSub), btnMiniStop, btnMiniShow)
 	drawer.append(grip, head, scroll, composer, live, dropZone, miniBar)
@@ -273,15 +382,24 @@ export function mountAiPanel(host) {
 		const types = new Map((host.getCatalog()?.types ?? []).map((ty) => [ty.key, ty]))
 		const nm = (it) => it.name || types.get(it.type)?.name || it.type
 		const lcFirst = (s) => (/^[A-Z][a-z]/.test(s) && !/\d/.test(s) ? s[0].toLowerCase() + s.slice(1) : s)
+		// (a name with a number of its own is said as it is, "Ball 2"; one of several of a kind by its kind's name, "the tissue box", never "the
+		// Tissue box 1": V8817 b3)
+		const callIt = (it) => {
+			const n = nm(it)
+			if (!/\d/.test(n)) return `the ${lcFirst(n)}`
+			const kind = String(types.get(it.type)?.name ?? it.type).replace(/,.*$/, "")
+			return /^[A-Z][a-z]+ \d+$/.test(n) && !kind.toLowerCase().includes(n.split(" ")[0].toLowerCase()) ? n : its.filter((i) => i.type === it.type).length > 1 ? `the first ${lcFirst(kind)}` : `the ${lcFirst(kind)}`
+		}
 		const out = []
 		const ball = its.find((i) => /ball|marble/.test(i.type) && i.type !== "basketball")
-		if (ball) out.push({ icon: "pins", text: `Swap ${/^ball \d/i.test(nm(ball)) ? nm(ball) : `the ${lcFirst(nm(ball))}`} for a basketball` })
+		if (ball) out.push({ icon: "pins", text: `Swap ${callIt(ball)} for a basketball` })
 		if (its.some((i) => i.type === "domino-row")) out.push({ icon: "chain", text: "Make the dominoes taller" })
-		const box = its.find((i) => /box|cup|bucket|basket/.test(i.type))
-		if (box) out.push({ icon: "car", text: `Move the ${lcFirst(nm(box))} 10 cm left` })
+		// (a container: a box, a cup, a bucket or a basket, never a tissue box or a cereal box)
+		const box = its.find((i) => ["box", "cup", "bucket", "basket", "plastic-cup", "glass-jar"].includes(i.type))
+		if (box) out.push({ icon: "car", text: `Move ${callIt(box)} 10 cm left` })
 		if (its.some((i) => i.type === "domino-row")) out.push({ icon: "chain", text: "Add 5 more dominoes" })
 		const plank = its.find((i) => i.type === "plank")
-		if (plank && out.length < 4) out.push({ icon: "car", text: `Make ${/^ramp \d/i.test(nm(plank)) ? nm(plank) : `the ${lcFirst(nm(plank))}`} steeper` })
+		if (plank && out.length < 4) out.push({ icon: "car", text: `Make ${callIt(plank)} steeper` })
 		if (out.length < 3) out.push({ icon: "pins", text: "Add a tennis ball that rolls into it" }, { icon: "chain", text: "Make it work" })
 		return out.slice(0, 4)
 	}
@@ -606,14 +724,16 @@ export function mountAiPanel(host) {
 			role: "ai",
 			state: t.state,
 			error: t.error,
-			request: t.request ? { text: t.request.text, mode: t.request.mode, images: [], hadImages: (t.request.images ?? []).length || t.request.hadImages || 0, ...(t.request.asked ? { asked: true } : {}), ...(t.request.imagine ? { imagine: t.request.imagine } : {}) } : null,
+			...(t.reworkAsked ? { reworkAsked: true } : {}),
+			...(t.reworkOf ? { reworkOf: t.reworkOf } : {}),
+			request: t.request ? { text: t.request.text, mode: t.request.mode, images: [], hadImages: (t.request.images ?? []).length || t.request.hadImages || 0, ...(t.request.asked ? { asked: true } : {}), ...(t.request.imagine ? { imagine: t.request.imagine } : {}), ...(t.request.rework ? { rework: true } : {}) } : null,
 			report: r
 				? {
 						replyOnly: r.replyOnly, reply: r.reply, howItWorks: r.howItWorks, happened: r.happened, problems: r.problems, unsure: r.unsure, title: r.title, mode: r.mode, used: r.used, missing: r.missing,
-						assumptions: r.assumptions, goals: r.goals, refine: r.refine, tune: r.tune, edit: r.edit, timings: r.timings, totalMs: r.totalMs, models: r.models,
+						assumptions: r.assumptions, goals: r.goals, refine: r.refine, tune: r.tune, edit: r.edit, timings: r.timings, totalMs: r.totalMs, models: r.models, reworkFailed: r.reworkFailed,
 						score: r.score, scoreState: r.scoreState, staleScore: r.staleScore, scoreNote: r.scoreNote, steps: r.steps,
 						differences: r.differences, coverage: r.coverage, quick: r.quick, quickNote: r.quickNote, undo: r.undo, noChange: r.noChange, version: r.version, ratedBy: r.ratedBy, sceneBefore: r.sceneBefore, suggestNew: r.suggestNew,
-						lead: r.lead, human: r.human, planned: r.planned, suggestions: r.suggestions,
+						lead: r.lead, human: r.human, planned: r.planned, suggestions: r.suggestions, mineKinds: r.mineKinds, movedOn: r.movedOn,
 						// the concept sketch of a new scene (never an edit's): kept with the turn while its picture is under the 400 KB guard; the scene's
 						// start frame, once rendered for the side-by-side view
 						concept: r.mode === "new" ? slimConcept(r.concept) : undefined,
@@ -1044,7 +1164,16 @@ export function mountAiPanel(host) {
 	const canUndo = (t) => t.id === S.lastAppliedId && t.hi != null && host.historyIndex?.() === t.hi
 	/** A result that was not (fully) checked by the AI offers one more check, on the latest card only. */
 	const wantsCheck = (t) =>
-		t.id === S.lastBuild?.turnId && t.state === "done" && !t.report?.replyOnly && ((t.report?.issues ?? []).some((i) => i.code === "refine_failed" || i.code === "final_check_failed") || ["stale", "unchecked", "quick"].includes(t.report?.scoreState))
+		t.id === S.lastBuild?.turnId &&
+		t.state === "done" &&
+		!t.report?.replyOnly &&
+		// (never beside a checked fix or while one is looked for, nor while a goal fails: the offer or the rework button is the way on, and a
+		// critic's round there threw the checked fix away for a change that still failed: V8817 s6)
+		!["found", "searching"].includes(t.report?.fix?.state) &&
+		!t.report?.fixNeeded &&
+		!(t.report?.goals ?? []).some((g) => g.ok === false) &&
+		!(t.report?.targets ?? []).some((g) => g.ok === false) &&
+		((t.report?.issues ?? []).some((i) => i.code === "refine_failed" || i.code === "final_check_failed") || ["stale", "unchecked", "quick"].includes(t.report?.scoreState))
 	function renderReport(t) {
 		const r = t.report
 		if (r.replyOnly) {
@@ -1076,7 +1205,8 @@ export function mountAiPanel(host) {
 		// when something is off, a few next edits to try, and everything else under "Details"
 		const card = h("div", { class: "ai-more-body", hidden: !t.detailsOpen })
 		// (an edit's card says what changed itself; its Details start with what the AI understood, why, how long and which model)
-		const editCard = r.mode === "edit" && !r.replyOnly
+		// (a fix put on the table is a change like an edit's: its card lists each change too, never "and 1 more change" with nothing under it)
+		const editCard = (r.mode === "edit" || r.mode === "fix") && !r.replyOnly
 		if (editCard) card.append(editFacts(r))
 		if (t.sumEl) card.append(t.sumEl)
 		const okGoals = (r.goals ?? []).filter((g) => g.ok).length
@@ -1177,7 +1307,7 @@ export function mountAiPanel(host) {
 								{ title: m.reason || "" },
 								h("span", { class: "ai-miss-asked" }, m.asked),
 								m.substitute_type ? h("span", { class: "ai-miss-arrow", "aria-label": "replaced by" }, "→") : null,
-								m.substitute_type ? h("span", { class: "ai-miss-sub" }, types.get(m.substitute_type)?.name ?? m.substitute_type) : h("span", { class: "ai-miss-none" }, "left out")
+								m.substitute_type ? h("span", { class: "ai-miss-sub" }, types.get(m.substitute_type)?.name ?? m.substitute_type) : h("span", { class: "ai-miss-none" }, m.noSub ? "not in the library" : "left out")
 							)
 						)
 					)
@@ -1265,7 +1395,7 @@ export function mountAiPanel(host) {
 		const heads = headsUp(r, { editCard })
 		// (an edit: what stopped happening in the new run that the reply does not already say: lost stages, firm hits that are gone)
 		const runHeads = editCard && r.edit?.headsUp?.length ? `Heads-up, in the new run: ${andJoin(r.edit.headsUp.slice(0, 3).map((x) => lcFirst(String(x).replace(/[.!]+$/, ""))))}.` : null
-		const lead = h("p", { class: "ai-lead" }, ...marks(r.lead ?? fallbackLead(r)), ...fixOffer(r))
+		const lead = h("p", { class: "ai-lead" }, ...marks(r.lead ?? fallbackLead(r)), ...fixOffer(r, t))
 		// (a new scene planned from a concept sketch: the sketch as a small thumbnail beside the reply; a click shows it next to the scene's start)
 		const cimg = r.mode === "new" ? (typeof r.concept === "string" ? r.concept : r.concept?.image) : null
 		const leadRow = cimg
@@ -1279,10 +1409,11 @@ export function mountAiPanel(host) {
 		return h(
 			"div",
 			{ class: `ai-card ai-result ai-chat${editCard ? " ai-editcard" : ""}` },
-			editCard ? h("p", { class: "ai-res-kind edit" }, `Edited: ${r.sceneBefore ?? r.title ?? "the scene"}`) : null,
+			editCard ? h("p", { class: "ai-res-kind edit" }, `${r.mode === "fix" ? "Fixed" : "Edited"}: ${r.sceneBefore ?? r.title ?? "the scene"}`) : null,
 			leadRow,
 			editCard ? editDelta(r) : null,
-			r.fix?.state === "searching" ? h("p", { class: "ai-fixline", role: "status" }, h("span", { class: "ai-spin", "aria-hidden": "true" }), "Looking for a fix…", h("span", { class: "ai-fixline-n" }, "")) : null,
+			// (what it is doing while it looks, and a Stop: up to a minute and a half of runs and the AI's reworks is never a wait without one)
+			r.fix?.state === "searching" ? h("p", { class: "ai-fixline", role: "status" }, h("span", { class: "ai-spin", "aria-hidden": "true" }), h("span", { class: "ai-fixline-t" }, "Looking for a fix…", h("span", { class: "ai-fixline-n" }, "")), h("button", { type: "button", class: "ai-link-btn ai-fixstop", title: "Stop looking for a fix (nothing on the table changes)", onclick: () => stopFixSearch("user") }, icon("stop"), "Stop")) : null,
 			heads ? h("p", { class: "ai-heads" }, heads) : null,
 			runHeads ? h("p", { class: "ai-heads" }, runHeads) : null,
 			chipsFor(t),
@@ -1292,7 +1423,7 @@ export function mountAiPanel(host) {
 				detailsBtn,
 				undoBtn,
 				restoreBtn,
-				wantsCheck(t) ? h("button", { type: "button", class: "ai-link-btn", onclick: () => checkAgain(t), title: "Have the AI look at this scene again (one round of checking and fixing)" }, icon("retry"), t.report?.scoreState === "quick" ? "Check it" : "Check again") : null,
+				wantsCheck(t) ? h("button", { type: "button", class: "ai-link-btn ai-check", onclick: () => checkAgain(t), title: "Have the AI look at this scene again (one round of checking and fixing)" }, icon("retry"), t.report?.scoreState === "quick" ? "Check it" : "Check again") : null,
 				r.score != null ? h("span", { class: `ai-foot-score ${r.score >= 8 ? "good" : r.score >= 5 ? "mid" : "low"}`, title: "How well the AI judged this scene matches what you asked" }, `${r.score}/10`) : null
 			),
 			card
@@ -1320,6 +1451,7 @@ export function mountAiPanel(host) {
 			...lines.slice(0, 8).map((c) => h("li", {}, c)),
 			lines.length > 8 ? h("li", { title: lines.slice(8).join("\n") }, `and ${lines.length - 8} more`) : null,
 			...skipped.slice(0, 3).map((x) => h("li", { class: "skip" }, `Not done: ${x}`)),
+			...(r.edit?.goalsDropped ?? []).slice(0, 3).map((x) => h("li", { class: "skip" }, `No longer checked: ${x}`)),
 			noChange ? h("li", { class: "same" }, "Nothing in the scene changed") : un && un.of > 0 ? h("li", { class: "same" }, un.same ? `Everything else is exactly as it was (${plural(un.same, "item")} untouched)` : "Every item was changed") : null
 		].filter(Boolean)
 		return items.length ? h("ul", { class: "ai-delta", "aria-label": "What changed" }, items) : null
@@ -1431,61 +1563,137 @@ export function mountAiPanel(host) {
 		const miss = (r.missing ?? [])[0]
 		const more = (n) => (n > 1 ? ` (and ${n - 1} more: see Details)` : "")
 		if (warn) return `Heads-up: ${warn.text}`
-		if (miss) return `Heads-up: there’s no ${String(miss.asked).replace(/^(a|an|the) /i, "")} in the library, so ${miss.substitute_type ? `I used ${/^[aeiou]/i.test(types.get(miss.substitute_type)?.name ?? miss.substitute_type) ? "an" : "a"} ${String(types.get(miss.substitute_type)?.name ?? miss.substitute_type).toLowerCase()}` : "I left it out"}${more(r.missing.length)}.`
+		// (a stand-in that isn't on the table is never said: V8820 c04)
+		if (miss) return `Heads-up: there’s no ${String(miss.asked).replace(/^(a|an|the) /i, "")} in the library${miss.noSub ? "" : `, so ${miss.substitute_type ? `I used ${/^[aeiou]/i.test(types.get(miss.substitute_type)?.name ?? miss.substitute_type) ? "an" : "a"} ${String(types.get(miss.substitute_type)?.name ?? miss.substitute_type).toLowerCase()}` : "I left it out"}`}${more(r.missing.length)}.`
 		if (r.differences?.length) return `Heads-up: ${String(r.differences[0]).replace(/\.$/, "")}${more(r.differences.length)}.`
 		return null
 	}
-	/** Next edits to try, for this scene: a fix first when a goal fails, then the AI's own ideas, then ones read off the scene. A click asks for it. */
+	/** Next edits to try, for this scene: a fix first when a goal fails, then the AI's own ideas, then ones read off the scene. A click asks for it.
+	 *  (./edit-turns.js editChips: never a second "make it work" beside the offer or the rework button, never one when it already works, never
+	 *  one that moves back what a fix just moved.) */
+	/** Does a chip's request name a kind of thing that isn't on the table ("Move the bucket 10 cm left" with no bucket: V8817 b1)? */
+	function namesAbsent(text) {
+		const its = realItems()
+		const types = host.getCatalog()?.types ?? []
+		const typeName = new Map(types.map((ty) => [ty.key, String(ty.name ?? "").toLowerCase()]))
+		for (const ty of types) {
+			const head = String(ty.name ?? "").toLowerCase().replace(/,.*$/, "").replace(/\(.*\)/g, "").trim().split(/\s+/).at(-1)
+			if (!head || head.length < 3 || !new RegExp(`\\bthe ${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i").test(text)) continue
+			if (!its.some((i) => String(i.name ?? "").toLowerCase().includes(head) || (typeName.get(i.type) ?? i.type).includes(head))) return true
+		}
+		return false
+	}
+	/** The kinds a change put on the table (each thing it added or swapped in, by its kind's name and its own): an idea chip never swaps,
+	 *  replaces or takes one away (V8820: "Swap orange for apple" after the person's orange). A fix's card keeps its edit's. */
+	function personKinds(t) {
+		const r = t?.report
+		if (!r) return []
+		if (Array.isArray(r.mineKinds)) return r.mineKinds
+		// (a reply about the scene on the table, a rework that didn't work among them: the kinds of the change it is about, the card before it)
+		if (r.replyOnly) {
+			const i = S.turns.indexOf(t)
+			const prev = [...S.turns.slice(0, i < 0 ? S.turns.length : i)].reverse().find((x) => x.role === "ai" && x.state === "done" && !x.report?.replyOnly)
+			return prev ? personKinds(prev) : []
+		}
+		// (and what the person put in with the changes before it, on this scene's line: the orange of an earlier edit is still theirs)
+		const prev = t.baseJSON ? S.turns.find((x) => x !== t && x.role === "ai" && x.state === "done" && !x.report?.replyOnly && x.sceneJSON && sameTable(x.sceneJSON, t.baseJSON) && S.turns.indexOf(x) < S.turns.indexOf(t)) : null
+		const own = kindsPut(t.baseJSON, t.sceneJSON)
+		const earlier = prev && Array.isArray(prev.report?.mineKinds) ? prev.report.mineKinds : []
+		return (r.mineKinds = [...new Set([...own, ...earlier])].slice(0, 16))
+	}
+	function kindsPut(beforeJSON, afterJSON) {
+		try {
+			const a = beforeJSON ? JSON.parse(beforeJSON) : null
+			const b = afterJSON ? JSON.parse(afterJSON) : null
+			if (!a?.items || !b?.items) return []
+			const was = new Map(a.items.map((i) => [i.id, i.type]))
+			const types = new Map((host.getCatalog()?.types ?? []).map((ty) => [ty.key, ty]))
+			const out = new Set()
+			for (const it of b.items) {
+				if (it.type === "table" || it.type === "wall" || was.get(it.id) === it.type) continue
+				const kind = String(types.get(it.type)?.name ?? it.type.replace(/-/g, " ")).replace(/,.*$/, "").replace(/\s*\(.*\)$/, "").trim().toLowerCase()
+				if (kind) out.add(kind)
+				const own = String(it.name ?? "").replace(/\s+\d+$/, "").trim().toLowerCase()
+				if (own && own.length >= 3 && !/^(ball|item|thing)$/.test(own)) out.add(own)
+			}
+			return [...out].slice(0, 12)
+		} catch {
+			return []
+		}
+	}
+	/** An idea of the AI's names a thing by its kind ("the hollow plastic ball") while the card calls it by its name on screen ("Ball 2"): said
+	 *  as the screen says it, or dropped when it can't be told which (./edit-turns.js nameAsShown: V8820). */
+	function nameShown(s) {
+		const types = new Map((host.getCatalog()?.types ?? []).map((ty) => [ty.key, ty]))
+		return nameAsShown(s, realItems(), (type) => types.get(type)?.name ?? "")
+	}
 	function chipsFor(t) {
 		const r = t.report ?? {}
-		const list = []
-		const failed = (r.goals ?? []).filter((g) => g.ok === false)
-		const fx = r.fix
-		if (fx?.state === "found" && fx.sceneJSON) list.push({ label: fx.label, prompt: `${capFirst(fx.say)} (checked: ${fx.checked} ✓)`, fix: true, go: true, apply: "fix" })
-		else if (fx && ["none", "stopped", "error"].includes(fx.state)) {
-			if (fx.near?.sceneJSON) list.push({ label: `Try: ${fx.near.label}`, prompt: `${capFirst(fx.near.say)}: the closest I found (${fx.near.happened ?? "it still misses"})`, apply: "near" })
-			list.push({ label: "Ask the AI to rework it", prompt: reworkPrompt(t), fix: true, keep: r.edit?.touched ?? null })
-			if (fx.near?.sceneJSON && fx.near.happened) list[list.length - 2].prompt = `${capFirst(fx.near.say)}: the closest I found, but ${lcFirst(fx.near.happened)}`
-		} else if (fx?.state === "searching") {
-			// (the checked fix is on its way: no other fix is offered meanwhile)
-		} else if (r.fixNeeded && !fx) list.push({ label: "Ask the AI to rework it", prompt: reworkPrompt(t), fix: true, keep: r.edit?.touched ?? null })
-		else if (failed.length && !r.replyOnly && r.mode !== "fix") {
-			const g = String(failed[0].label).replace(/[.!]+$/, "")
-			const lab = /^(The|A|An|All|Every|Each|Both)\b/.test(g) ? g[0].toLowerCase() + g.slice(1) : g
-			list.push({ label: `Fix it so ${lab}`, prompt: `Fix it so this happens in the run: ${g}. Change only what is needed for that (say what you moved), and keep everything else as it is.`, fix: true })
-		}
-		// (the AI's own "make it land" ideas say the same as a checked fix, less surely: left out beside one, and once one is applied)
-		const fixed = fx?.state === "found" || r.mode === "fix"
-		for (const s of r.suggestions ?? []) if (!list.some((x) => x.label.toLowerCase() === s.label.toLowerCase()) && !(fixed && statesOutcome(`${s.label} ${s.prompt ?? ""}`))) list.push(s)
-		if (list.length < 2 && t.id === S.turns.filter((x) => x.role === "ai" && x.state === "done").at(-1)?.id) {
-			const asked = String(t.request?.text ?? "").toLowerCase()
-			for (const ex of editExamples()) if (list.length < 3 && !asked.includes(ex.text.toLowerCase().slice(0, 12)) && !list.some((x) => x.prompt === ex.text)) list.push({ label: ex.text, prompt: ex.text })
-		}
+		const latest = t.id === activeTurn()?.id
+		// (a reply that changed nothing: its chips follow the card whose scene is on the table, its goals and its fix: V8832 y2 / y19)
+		const sc = r.replyOnly ? sceneCard(t.baseJSON && sameTable(t.baseJSON, tableJSON()) ? t.baseJSON : tableJSON()) : null
+		const list = editChips(r, { rework: !!t.request?.rework || !!r.reworkFailed, examples: latest ? editExamples().map((ex) => ex.text) : [], asked: t.request?.text ?? "", isOutcome: statesOutcome, mine: personKinds(t), ...(r.replyOnly ? { scene: sc?.report ?? null } : {}) })
+			.filter((s) => !(s.rework && t.reworkAsked))
+			.map((s) => (s.fix || s.apply || s.rework ? s : nameShown(s)))
+			.filter((s) => s && (s.fix || s.apply || s.rework || !latest || !namesAbsent(`${s.label} ${s.prompt ?? ""}`)))
 		if (!list.length) return null
 		return h(
 			"div",
 			{ class: "ai-chips", role: "group", "aria-label": "Try next" },
 			// (a fix chip's request is long and written for the AI: the bubble shows the chip's own words, and the request goes as sent)
-			list.slice(0, 3).map((s) => h("button", { type: "button", class: `ai-sugg${s.fix ? " fix" : ""}${s.go ? " go" : ""}`, title: s.prompt, onclick: () => (s.apply ? applyFix(t, s.apply) : suggest(s, s.fix ? s.label : null)) }, s.go ? icon("check") : s.fix ? icon("retry") : icon("sparkle"), h("span", {}, s.label)))
+			list.slice(0, 3).map((s) => h("button", { type: "button", class: `ai-sugg${s.fix ? " fix" : ""}${s.go ? " go" : ""}`, title: s.prompt, onclick: () => (s.apply ? applyFix(t, s.apply) : s.rework ? askRework(t) : suggest(s, s.fix ? s.label : null)) }, s.go ? icon("check") : s.fix ? icon("retry") : icon("sparkle"), h("span", {}, s.label)))
 		)
 	}
-	/** The offer after an edit's reply, from the fix search: "Want me to lower the box 4 cm? (checked: Ball 2 lands in the box ✓)". */
-	function fixOffer(r) {
+	/** The offer after an edit's reply, from the search for a fix: "Want me to lower the box 4 cm? (checked: Ball 2 lands in the box ✓)"; when
+	 *  nothing works, said so, with the button that asks the AI to rework it right there (never a question without a button). */
+	function fixOffer(r, t = null) {
 		const fx = r?.fix
-		if (!fx || fx.state === "searching") return []
-		const ok = h("span", { class: "ai-ok-mark", "aria-label": "works" }, "✓")
-		// (a fix that works only at its exact value says so: "only just")
-		if (fx.state === "found") return [" Want me to ", h("b", {}, fx.say), "? ", h("span", { class: "ai-checked", title: `I ran it in the physics engine: ${fx.checked} happens${fx.fragile ? " (but a few millimetres either way and it misses)" : ""}` }, "(checked: ", fx.checked, " ", ok, fx.fragile ? ", only just" : "", ")")]
-		if (fx.state === "none") return [" I couldn’t find a small fix that I could check works — want the AI to rework it?"]
-		if (fx.state === "stopped") return [" I stopped looking for a fix. Want the AI to rework it?"]
-		return [" I couldn’t look for a fix just now. Want the AI to rework it?"]
+		const words = offerWords(fx, { rework: !!t?.request?.rework })
+		if (!words) return []
+		if (fx.state === "found") {
+			const ok = h("span", { class: "ai-ok-mark", "aria-label": "works" }, "✓")
+			// (a fix that works only at its exact value says so: "only just")
+			return [` ${words.before}`, h("b", {}, words.say), "? ", h("span", { class: "ai-checked", title: `I ran it in the physics engine: ${words.checked} happens${fx.fragile ? " (but a few millimetres either way and it misses)" : ""}` }, "(checked: ", words.checked, " ", ok, fx.fragile ? ", only just" : "", ")")]
+		}
+		// (once asked from this card, never again: the paid rework is one press, and its own reply says how it went)
+		const btn = t && words.button && !t.reworkAsked ? h("button", { type: "button", class: "ai-offer-btn", onclick: () => askRework(t) }, icon("retry"), words.button) : null
+		// (stopped by its Stop: the physics search may go on from the start, which costs nothing: "Look again")
+		const again = t && fx.state === "stopped" && !fx.movedOn && fixCtxs.has(t.id) && !t.reworkAsked ? h("button", { type: "button", class: "ai-again-btn", title: "Run the physics search for a fix again (no AI call)", onclick: () => lookAgain(t) }, icon("replay"), "Look again") : null
+		return [` ${words.text}`, ...(again ? [" ", again] : []), ...(btn ? [" ", btn] : [])]
+	}
+	/** "Ask the AI to rework it": the same rework the background tried (its words, what it keeps, what never comes back, the reasons the run
+	 *  showed), now in the open, made to work as a "make it work" request is. Never offered again after it, when it still doesn't work. */
+	function askRework(t) {
+		if (S.job) return note("Wait for this build to finish (or press Stop) first")
+		const rw = t.report?.fix?.rework
+		t.reworkAsked = true
+		S.reworkOfNext = t.id
+		suggest({ prompt: rw?.text ?? reworkPrompt(t), keep: rw?.keep ?? t.report?.edit?.touched ?? null, hard: t.report?.edit?.hard ?? null, rework: { removedTypes: rw?.removedTypes ?? [], feedback: rw?.feedback ?? null } }, "Ask the AI to rework it")
+		// (it didn't start, signing in first, say: the button stays the card's)
+		if (S.running?.reworkOf !== t.id) {
+			t.reworkAsked = false
+			S.reworkOfNext = null
+		}
+		rerenderTurn(t)
+	}
+	/** The background search stopped by its Stop, asked again from the card ("Look again"): the physics first, as it was (V8820 s3: the laptop
+	 *  is found in about 5 s, but after Stop only the paid rework was offered). */
+	function lookAgain(t) {
+		if (S.job) return note("Wait for this build to finish (or press Stop) first")
+		const ctx = fixCtxs.get(t.id)
+		if (!ctx || !sameTable(t.sceneJSON, tableJSON())) return note("The scene has changed since: ask me again (for example “make it work”)")
+		shield()
+		t.report.fix = { state: "searching" }
+		rerenderTurn(t)
+		persist()
+		// (the physics only: "Look again" asks nothing of the AI, whatever it found or didn't)
+		startFixSearch(t, ctx, { ai: false })
 	}
 	/** What "Ask the AI to rework it" asks: the goal to win back, keeping the change that was just made. */
 	function reworkPrompt(t) {
 		const r = t.report ?? {}
 		const g = r.fix?.goal ?? (r.targets ?? []).find((x) => x.ok === false && !x.implicit)?.label ?? (r.targets ?? []).find((x) => x.ok === false)?.label ?? (r.goals ?? []).find((x) => x.ok === false)?.label ?? "it works again"
-		const what = (r.human ?? []).slice(0, 2).map((x) => String(x).replace(/ \([^)]*\)/g, "")).join(" and ")
-		return `Make it work again so that ${lcFirst(String(g).replace(/[.!]+$/, ""))}${what ? `, keeping what I just changed (${what})` : ""}. Change whatever else is needed and say what you changed.`
+		return reworkWords(g, r.human ?? [])
 	}
 	/**
 	 * A fix chip clicked (or "yes"): the scene the search ran is put on the table at once, as its own undo step, and the reply says so ("Done — I
@@ -1493,16 +1701,20 @@ export function mountAiPanel(host) {
 	 */
 	function applyFix(t, which = "fix", said = null, { bubble = true } = {}) {
 		if (S.job) return note("Wait for this build to finish (or press Stop) first")
+		shield()
 		const fx = t.report?.fix
 		const data = which === "near" ? fx?.near : fx
 		if (!data?.sceneJSON) return
-		if (t.sceneJSON !== JSON.stringify(host.getScene() ?? null)) return (note("The scene has changed since I found that: ask me again (for example “make it work”)"), false)
+		if (!sameTable(t.sceneJSON, tableJSON())) return (note("The scene has changed since I found that: ask me again (for example “make it work”)"), false)
 		let scene
 		try {
 			scene = JSON.parse(data.sceneJSON)
 		} catch {
 			return false
 		}
+		// (a name given by hand since stays: the fix changes the machine, not what the scene is called)
+		const nameNow = host.getScene()?.name
+		if (typeof nameNow === "string" && nameNow) scene.name = nameNow
 		stopFixSearch()
 		if (bubble) userBubble(said ?? data.label, "fix")
 		const before = host.getScene()
@@ -1510,26 +1722,36 @@ export function mountAiPanel(host) {
 		const sceneNow = JSON.stringify(host.getScene() ?? scene)
 		const okAll = which === "fix"
 		const results = data.results ?? []
-		const rest = (t.report?.suggestions ?? []).slice(0, 3)
+		// (a fix that works gets no ideas: each would change the machine again; a closest miss keeps the edit's, filtered as a fix card's are)
+		const rest = okAll ? [] : (t.report?.suggestions ?? []).slice(0, 3)
 		const report = {
 			mode: "fix",
 			title: t.report?.title,
 			sceneBefore: t.report?.title,
 			lead: okAll ? `Done — I ${data.did}. ${capFirst(fx.checked ?? "it works")} ✓` : `Done — I ${data.did}, but ${lcFirst(data.happened ?? "it still doesn’t work")} ✗.`,
-			human: [data.did],
+			// (each change on its own line, grouped, in real units, read off the two scenes: what was added (a closed laptop), every move, the table
+			// made wider; never "and 1 more change" with nothing under it: V8814 c11 / s3)
+			human: changeLinesOf(before, scene) ?? (Array.isArray(data.changes) && typeof data.changes[0] === "string" ? data.changes : [data.did]),
 			goals: (t.report?.goals ?? []).map((g) => ({ ...g, ok: okAll ? true : results.find((x) => x.label === g.label)?.ok ?? g.ok, was: g.ok })),
 			targets: okAll ? (t.report?.targets ?? []).map((x) => ({ label: x.label, ok: true, implicit: x.implicit })) : results,
 			fix: okAll ? null : { state: "none", goal: fx.goal, checked: fx.checked },
 			suggestions: rest,
+			mineKinds: personKinds(t),
 			used: t.report?.used,
 			edit: { unchanged: unchangedOf(before, scene), ...(t.report?.edit?.touched ? { touched: t.report.edit.touched } : {}) },
 			items: scene.items?.length ?? 0,
 			totalMs: fx.ms ?? null
 		}
 		fx.used = which
-		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text: said ?? data.label, mode: "fix", images: [] }, report }
+		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text: said ?? data.label, mode: "fix", images: [] }, report, baseJSON: JSON.stringify(before ?? null) }
 		turn.sceneJSON = sceneNow
-		turn.plan = planAfterFix(t.plan ?? S.lastBuild?.plan ?? null, scene)
+		if (okAll) turn.goodJSON = sceneNow
+		// (the AI's rework comes with its own plan: what it added has its place in it)
+		let own = null
+		try {
+			own = data.planJSON ? JSON.parse(data.planJSON) : null
+		} catch {}
+		turn.plan = own ?? planAfterFix(t.plan ?? S.lastBuild?.plan ?? null, scene)
 		const changed = committed !== false
 		turn.hi = changed ? host.historyIndex?.() ?? null : null
 		if (changed) S.lastAppliedId = turn.id
@@ -1543,6 +1765,20 @@ export function mountAiPanel(host) {
 		scrollToEnd()
 		return true
 	}
+	/** A change's lines from one scene to another, grouped, in a person's words (null when they can't be said). */
+	function changeLinesOf(a, b) {
+		try {
+			// (what it added first, the table made wider last)
+			const rank = (t) => (/^(added|stood|replaced)\b/.test(t) ? 0 : /\b(widened|narrowed) the table\b/.test(t) ? 2 : 1)
+			const lines = humanChangeList(a, b)
+				.map((c, i) => ({ t: c.text, i }))
+				.sort((p, q) => rank(p.t) - rank(q.t) || p.i - q.i)
+				.map((x) => x.t)
+			return lines.length ? lines : null
+		} catch {
+			return null
+		}
+	}
 	/** The items of a scene that are byte for byte the same in another (not the table or the safety walls). */
 	function unchangedOf(a, b) {
 		const B = new Map((b?.items ?? []).map((i) => [i.id, JSON.stringify(i)]))
@@ -1550,25 +1786,49 @@ export function mountAiPanel(host) {
 		const same = real.filter((i) => B.get(i.id) === JSON.stringify(i))
 		return { same: same.length, of: real.length }
 	}
-	/** After an edit stopped a goal: the fix search (./fixer.js through the orchestrator) runs while the change plays; the reply shows "Looking for
-	 *  a fix…", then offers the checked fix (or says plainly that none was found). A new request stops it. */
-	function startFixSearch(turn, ctx) {
+	/** After an edit stopped a goal: the search for a fix runs while the change plays (./orchestrator.js makeItWork: the fix search, and side by
+	 *  side the AI's rework in the background, each checked in the physics; ≈ 60 s at most). The reply shows "Looking for a fix…" with what it
+	 *  is doing, then offers the checked fix, or says plainly that nothing works, with the button that asks the AI in the open. A new request
+	 *  stops it. */
+	function startFixSearch(turn, ctx, { ai: aiOk = true } = {}) {
 		stopFixSearch()
 		const ctl = new AbortController()
-		const job = { ctl, turnId: turn.id }
+		const job = { ctl, turnId: turn.id, stopped: null }
 		S.fixJob = job
 		const goal = (turn.report?.targets ?? []).find((x) => x.ok === false && !x.implicit)?.label ?? (turn.report?.targets ?? []).find((x) => x.ok === false)?.label ?? null
-		ai.findFix(ctx, {
+		const line = (words) => {
+			const el = thread.querySelector(`[data-id="${turn.id}"] .ai-fixline-n`)
+			if (el) el.textContent = words
+			// (one line in the drawer, cut short with "…" when narrow: the whole of it on hover)
+			if (el?.parentElement) el.parentElement.title = `Looking for a fix…${words}`
+		}
+		// (the person moved on: an undo, another scene, a change by hand. The search and the AI's reworks are for the scene this turn put on the
+		// table, so they stop at once: nothing more is spent on a scene that is gone, and nothing is offered for it: V8814 / VERIFY, 16 Oct)
+		const watch = setInterval(() => {
+			if (S.fixJob !== job) return clearInterval(watch)
+			if (turn.sceneJSON && !sameTable(tableJSON(), turn.sceneJSON)) stopFixSearch(movedOnWhy(turn))
+		}, 300)
+		ai.makeItWork(ctx, {
 			signal: ctl.signal,
-			onProgress: (p) => {
-				const el = thread.querySelector(`[data-id="${turn.id}"] .ai-fixline-n`)
-				if (el) el.textContent = ` · ${p.runs} physics runs`
-			}
+			ai: aiOk && !turn.aiSpent && !turn.aiTried,
+			job: { text: turn.request?.text ?? "", history: historyFor(turn), plan: turn.plan ?? null, keep: turn.report?.edit?.touched ?? null, hard: turn.report?.edit?.hard ?? null },
+			// (once the AI's reworks have started for this scene, a follow-up change on it never starts another set: turn.aiSpent)
+			onProgress: (p) => (/^ai/.test(String(p?.phase ?? "")) && (turn.aiTried = true), line(fixProgressWords(p)))
 		}).then(
-			(fr) => {
+			(r) => {
+				clearInterval(watch)
 				if (S.fixJob !== job) return
 				S.fixJob = null
-				turn.report.fix = fr.status === "ok" ? null : fixInfo(fr, ctx.scene, fr.targets)
+				// (the scene changed while the last runs finished: what was found is for a scene that is gone)
+				if (turn.sceneJSON && !sameTable(tableJSON(), turn.sceneJSON)) {
+					turn.report.fix = { state: "stopped", goal, movedOn: movedOnWhy(turn) }
+					rerenderTurn(turn)
+					persist()
+					refreshMini()
+					return
+				}
+				// (with how many model calls the AI's reworks started for it, a stopped one too: Details and the measurements read it)
+				turn.report.fix = r.status === "ok" ? null : { ...r.info, ...(r.aiCalls ? { aiCalls: r.aiCalls } : {}) }
 				rerenderTurn(turn)
 				persist()
 				const fx = turn.report.fix
@@ -1576,10 +1836,10 @@ export function mountAiPanel(host) {
 				if (job.applyOnFound) {
 					if (fx?.state === "found") {
 						if (applyFix(turn, "fix", job.applyOnFound, { bubble: false }) !== true) replyTurn("The scene changed while I looked, so I didn’t apply it — ask me again (for example “make it work”).")
-					} else noFixReply(turn, "I couldn’t find a small fix that I could check works — want the AI to rework it?")
+					} else noFixReply(turn, `${offerWords(fx)?.text ?? "I couldn’t find a change that works."}`)
 					return
 				}
-				announce(fx?.state === "found" ? `Found a fix: ${fx.say}` : "No small fix found")
+				announce(fx?.state === "found" ? `Found a fix: ${fx.say}` : "No fix found that works")
 				// (a phone: the sheet got out of the way while the change played; it comes back with the question, which is the point of the reply)
 				if (!S.open && !wide() && !S.job) {
 					open()
@@ -1588,24 +1848,87 @@ export function mountAiPanel(host) {
 				} else if (!S.open) {
 					S.unseen = true
 					host.button?.classList.add("unseen")
-					host.toast?.(fx?.state === "found" ? `Fix found: ${lcFirst(fx.label)}. Open Edit with AI to apply it` : "No small fix found: open Edit with AI to see")
+					host.toast?.(fx?.state === "found" ? `Fix found: ${lcFirst(fx.label)}. Open Edit with AI to apply it` : "No fix found that works: open Edit with AI to see")
 				} else if (S.mini) {
-					miniTitle.textContent = fx?.state === "found" ? "Found a fix" : "No small fix found"
+					miniTitle.textContent = fx?.state === "found" ? "Found a fix" : "No fix found"
 					miniSub.textContent = fx?.state === "found" ? fx.label : "open to see"
+					btnMiniStop.hidden = true
 				}
 			},
 			(e) => {
+				clearInterval(watch)
 				const mine = S.fixJob === job
 				if (mine) S.fixJob = null
-				if (turn.report?.fix?.state === "searching") turn.report.fix = e?.name === "AbortError" ? { state: "stopped", goal } : { state: "error", goal, error: String(e?.message ?? e) }
+				const why = job.stopped ?? (turn.sceneJSON && !sameTable(tableJSON(), turn.sceneJSON) ? movedOnWhy(turn) : null)
+				if (turn.report?.fix?.state === "searching") turn.report.fix = e?.name === "AbortError" ? { state: "stopped", goal, ...(why && why !== "user" ? { movedOn: why } : {}) } : { state: "error", goal, error: String(e?.message ?? e) }
 				rerenderTurn(turn)
 				persist()
-				if (mine && job.applyOnFound && e?.name !== "AbortError") noFixReply(turn, "I couldn’t look for a fix just now — want the AI to rework it?")
+				refreshMini()
+				if (mine && job.applyOnFound && e?.name !== "AbortError") noFixReply(turn, "I couldn’t look for a fix just now.")
 			}
 		)
 	}
-	function stopFixSearch() {
-		S.fixJob?.ctl.abort()
+	/** What a reply says when the AI stopped (or kept nothing) because the scene it worked on went off the table while it worked. */
+	const movedOnWords = (turn) => (turn.undone === "undo" ? "You undid the change while I worked, so I stopped. Nothing else changed." : "The scene changed while I worked, so I stopped and left it as it is. Nothing else changed.")
+	/** Stop the background search (and the AI's reworks with it). why: "user" (its Stop), "undo" (the change was undone), "changed" (another
+	 *  scene, a change by hand), or nothing (a new request: its own card follows). */
+	function stopFixSearch(why = null) {
+		if (!S.fixJob) return
+		S.fixJob.stopped ??= why
+		S.fixJob.ctl.abort()
+	}
+	/** Why the scene a search was for is not on the table: undone (the table shows the scene from before that change), or changed otherwise. */
+	const movedOnWhy = (turn) => {
+		if (turn.baseJSON && sameTable(tableJSON(), turn.baseJSON)) return "undo"
+		// (an edit the AI is still working on: its own scene isn't on the table yet, so the table being one the person had before it is an Undo)
+		if (turn.state === "running" && S.turns.some((x) => x !== turn && x.role === "ai" && x.state === "done" && (sameTable(x.baseJSON, tableJSON()) || sameTable(x.sceneJSON, tableJSON())))) return "undo"
+		return "changed"
+	}
+	/** The history moved: Undo / Restore buttons, the live card and the folded chip follow; a search for a scene that is gone stops, and so does
+	 *  an edit (or a check, or "Ask the AI to rework it") the AI is working on for it. */
+	function onHistory() {
+		const ft = S.fixJob ? S.turns.find((x) => x.id === S.fixJob.turnId) : null
+		if (ft?.sceneJSON && !sameTable(tableJSON(), ft.sceneJSON)) stopFixSearch(movedOnWhy(ft))
+		// (a search stopped because the scene went off the table, and that scene is back (an Undo or a Redo back to it): its card says it stopped
+		// and offers the free "Look again" and the rework button again, never a dead end with nothing offered (V8832 y7))
+		const now = tableJSON()
+		for (const t of S.turns) {
+			const fx = t.report?.fix
+			if (t.role !== "ai" || t.state !== "done" || fx?.state !== "stopped" || !fx.movedOn || !t.sceneJSON || !sameTable(t.sceneJSON, now)) continue
+			t.report.fix = { ...fx, movedOn: null, back: true }
+			rerenderTurn(t)
+			persist()
+		}
+		watchJob()
+		syncUndoButtons()
+		markLatest()
+		refreshMini()
+	}
+	/** An edit, a check or a rework the AI is working on started from the scene then on the table: an Undo (the card's or the top bar's), another
+	 *  scene or a change by hand while it works stops it at once, its calls aborted, and nothing it made goes on the table (V8820 x13: "make the
+	 *  box 2 cm wider" landed on the undone scene and put the undone 5 cm move back; x12: an undone rework made a second call 57 s later). */
+	function watchJob() {
+		const t = S.running
+		if (!S.job || !t || t.undone || !["edit", "check"].includes(t.request?.mode) || !t.baseJSON) return
+		if (sameTable(tableJSON(), t.baseJSON)) return
+		t.undone = movedOnWhy(t)
+		S.job.cancel()
+	}
+	/** The folded chip says what is on the table now (never "0 of 1 goals met" for a build that was undone). */
+	function refreshMini() {
+		if (S.job) return
+		btnMiniStop.hidden = !S.fixJob
+		const t = activeTurn()
+		const r = t?.report
+		if (!t || !r || r.replyOnly || !sameTable(t.sceneJSON, tableJSON())) {
+			miniTitle.textContent = host.getScene()?.name ?? "Your scene"
+			miniSub.textContent = S.fixJob ? "looking for a fix…" : "open to ask for a change"
+			return
+		}
+		const goals = r.targets?.length ? r.targets.filter((g) => !g.implicit) : r.goals ?? []
+		const ok = goals.filter((g) => g.ok === true).length
+		miniTitle.textContent = r.title ?? host.getScene()?.name ?? "Your scene"
+		miniSub.textContent = S.fixJob && S.fixJob.turnId === t.id ? "looking for a fix…" : r.fix?.state === "found" ? `fix found: ${r.fix.label}` : goals.length ? `${ok} of ${goals.length} goal${goals.length === 1 ? "" : "s"} met` : "done"
 	}
 	/** The person's words in the thread (mode: the bubble's tag). */
 	function userBubble(text, mode = "edit", extra = {}) {
@@ -1627,7 +1950,9 @@ export function mountAiPanel(host) {
 	/** After a "yes" that waited for the search: there was no checked fix. The reply offers the AI's rework (keeping what the person changed). */
 	function noFixReply(t, words) {
 		const r = t.report ?? {}
-		replyTurn(words, { fixNeeded: true, edit: r.edit?.touched ? { touched: r.edit.touched } : undefined, human: r.human, targets: r.targets, goals: r.goals, fix: undefined, suggestions: [] })
+		// (nothing can fix it, the person's own change puts it out of reach: said, and nothing offered)
+		if (r.fix?.outOfReach) return replyTurn(words, { suggestions: [] })
+		replyTurn(words, { fixNeeded: true, edit: r.edit?.touched ? { touched: r.edit.touched } : undefined, human: r.human, targets: r.targets, goals: r.goals, fix: r.fix?.rework ? { state: "none", goal: r.fix.goal, rework: r.fix.rework, quiet: true } : undefined, suggestions: [] })
 	}
 	/**
 	 * A "yes" typed to the latest reply does what it offered: its checked fix goes on the table (while the search still runs, the moment it is
@@ -1635,7 +1960,8 @@ export function mountAiPanel(host) {
 	 * to the AI as a change. -> false when the words are a request after all ("fix it" with nothing offered: the AI makes it work)
 	 */
 	function answerYes(text) {
-		const t = S.turns.filter((x) => x.role === "ai" && x.state === "done").at(-1)
+		// (the card about the scene on the table: after an Undo of a fix, the edit card it came from, whose checked fix a "yes" puts back)
+		const t = (S.fixJob && S.turns.find((x) => x.id === S.fixJob.turnId && sameTable(x.sceneJSON, tableJSON()))) || activeTurn()
 		const r = t?.report ?? {}
 		const fx = r.fix
 		const clear = () => {
@@ -1656,9 +1982,26 @@ export function mountAiPanel(host) {
 			applyFix(t, "fix", text)
 			return true
 		}
-		if ((fx && ["none", "stopped", "error"].includes(fx.state)) || (r.fixNeeded && !fx)) {
+		// (out of reach: nothing but undoing the change would do, so a "yes" asks nothing of the AI)
+		if (fx?.outOfReach) {
 			clear()
-			suggest({ prompt: reworkPrompt(t), keep: r.edit?.touched ?? null }, text)
+			userBubble(text)
+			replyTurn(`Nothing else can fix that: ${String(fx.why ?? "your change puts it out of reach").replace(/[.!]+$/, "")}. Undo the change to get it back.`)
+			return true
+		}
+		// (a search stopped by its Stop, or because the scene went and came back: nothing was offered, so a "yes" spends nothing. The free
+		// physics search runs again, its checked fix offered when found; with no search to run again, it asks before any AI call (V8832 y7))
+		if (fx?.state === "stopped" && !t?.request?.rework) {
+			clear()
+			userBubble(text)
+			if (fixCtxs.has(t.id) && sameTable(t.sceneJSON, tableJSON())) lookAgain(t)
+			else noFixReply(t, "I stopped looking for a fix, so there’s nothing checked to say yes to yet. Want the AI to rework it? That asks the AI (a paid call), so press the button if you do.")
+			return true
+		}
+		if (!t?.request?.rework && !t?.reworkAsked && ((fx && ["none", "error"].includes(fx.state)) || (r.fixNeeded && !fx))) {
+			clear()
+			const rw = fx?.rework
+			suggest({ prompt: rw?.text ?? reworkPrompt(t), keep: rw?.keep ?? r.edit?.touched ?? null, hard: r.edit?.hard ?? null, rework: { removedTypes: rw?.removedTypes ?? [], feedback: rw?.feedback ?? null } }, text)
 			return true
 		}
 		const failed = (r.goals ?? []).filter((g) => g.ok === false)
@@ -1671,24 +2014,91 @@ export function mountAiPanel(host) {
 		if (statesOutcome(text)) return false
 		clear()
 		userBubble(text)
+		// (a fix was offered, but the scene has changed since (by hand, or another scene), not back to before that change: said, never "nothing
+		// to say yes to" (V8820 x10))
+		const lastCard = !t ? [...S.turns].reverse().find((x) => x.role === "ai" && x.state === "done" && !x.report?.replyOnly) : null
+		if (lastCard?.report?.fix?.state === "found" && !lastCard.report.fix.used && !sameTable(tableJSON(), lastCard.baseJSON)) {
+			replyTurn("The scene changed since I offered that, so I didn’t apply it — say “make it work” to look again.")
+			return true
+		}
 		replyTurn("There’s nothing to say yes to yet — what would you like to change?")
 		return true
+	}
+	/** "make it work" typed: the live card's checked fix goes on the table at once (while it is still being looked for, when it is found);
+	 *  stopped, the free search runs again and its fix goes on when found; with no fix found yet and the rework button on the card, that rework
+	 *  (it is what the button offers). Else (false) it goes to the AI as a "make it work" request. */
+	function answerMakeItWork(text) {
+		const t = (S.fixJob && S.turns.find((x) => x.id === S.fixJob.turnId && sameTable(x.sceneJSON, tableJSON()))) || activeTurn()
+		const fx = t?.report?.fix
+		if (!t) return false
+		const clear = () => {
+			input.value = ""
+			autosize()
+			syncCount()
+		}
+		if (S.fixJob && S.fixJob.turnId === t.id) {
+			clear()
+			userBubble(text, "fix")
+			S.fixJob.applyOnFound = text
+			announce("I’ll put the fix on the table as soon as I’ve checked it")
+			scrollToEnd()
+			return true
+		}
+		if (fx?.state === "found" && fx.sceneJSON && sameTable(t.sceneJSON, tableJSON())) {
+			clear()
+			applyFix(t, "fix", text)
+			return true
+		}
+		if (fx?.outOfReach) {
+			clear()
+			userBubble(text)
+			replyTurn(`Nothing else can fix that: ${String(fx.why ?? "your change puts it out of reach").replace(/[.!]+$/, "")}. Undo the change to get it back.`)
+			return true
+		}
+		if (fx?.state === "stopped" && !t.request?.rework && fixCtxs.has(t.id) && sameTable(t.sceneJSON, tableJSON())) {
+			clear()
+			userBubble(text, "fix")
+			lookAgain(t)
+			if (S.fixJob?.turnId === t.id) S.fixJob.applyOnFound = text
+			return true
+		}
+		if (!t.request?.rework && !t.reworkAsked && !t.report?.replyOnly && fx && ["none", "stopped", "error"].includes(fx.state) && sameTable(t.sceneJSON, tableJSON())) {
+			clear()
+			const rw = fx.rework
+			t.reworkAsked = true
+			S.reworkOfNext = t.id
+			suggest({ prompt: rw?.text ?? reworkPrompt(t), keep: rw?.keep ?? t.report?.edit?.touched ?? null, hard: t.report?.edit?.hard ?? null, rework: { removedTypes: rw?.removedTypes ?? [], feedback: rw?.feedback ?? null } }, text)
+			if (S.running?.reworkOf !== t.id) {
+				t.reworkAsked = false
+				S.reworkOfNext = null
+			}
+			rerenderTurn(t)
+			return true
+		}
+		return false
 	}
 	function rerenderTurn(turn) {
 		const li = thread.querySelector(`li.ai-bot[data-id="${turn.id}"]`)
 		if (li && turn.state === "done") li.replaceChildren(renderReport(turn))
+		// (a card drawn anew inside its own <li> is no change the thread's observer sees: which card is live is marked again here, or an older
+		// card keeps its rework button and chips beside a reply that changed nothing: VERIFY regress-r2, a second paid rework)
+		markLatest()
 	}
 	/** A suggestion clicked: asked as an edit of the scene on screen, as if typed. */
 	function suggest(s, shown = null) {
 		if (S.job) return note("Wait for this build to finish (or press Stop) first")
+		shield()
 		S.pendingKeep = s.keep ?? null
+		S.pendingHard = s.hard ?? null
 		S.pendingShown = shown
+		S.pendingRework = s.rework ?? null
 		input.value = s.prompt
 		autosize()
 		submit()
 	}
 	/** Undo the latest build (the app's own undo: one step), if it is still the scene's current history entry; otherwise say why not. */
 	function undoTurn(t, btn) {
+		shield()
 		if (!canUndo(t)) {
 			btn.hidden = true
 			return note(`The scene has changed since this build: use the top bar’s Undo${touchScreen() ? "" : " (⌘Z)"} to step back`)
@@ -1696,6 +2106,8 @@ export function mountAiPanel(host) {
 		host.undo?.()
 		btn.hidden = true
 		S.lastAppliedId = null
+		// (the cards follow at once: the undone card's search stops, the card now on the table is the live one, Restore shows where it applies)
+		onHistory()
 	}
 	/** The Undo buttons follow the history: only the latest build's, only while it is the current entry. Every other kept version offers
 	 *  "Restore this version" while the table shows something else. */
@@ -1709,18 +2121,19 @@ export function mountAiPanel(host) {
 		}
 	}
 	/** A kept version can be put back when it is not what the table shows now (and its own Undo isn't the way back). */
-	const canRestore = (t) => !!t.sceneJSON && !canUndo(t) && t.state === "done" && !t.report?.replyOnly && JSON.stringify(host.getScene() ?? null) !== t.sceneJSON
+	const canRestore = (t) => !!t.sceneJSON && !canUndo(t) && t.state === "done" && !t.report?.replyOnly && !sameTable(tableJSON(), t.sceneJSON)
 	/** Put a kept version back on the table: one undo step; follow-up changes start from its plan. */
 	function restoreTurn(t) {
 		if (S.job) return note("Stop the current build first")
 		if (!t.sceneJSON) return
+		shield()
 		let scene
 		try {
 			scene = JSON.parse(t.sceneJSON)
 		} catch {
 			return
 		}
-		if (JSON.stringify(host.getScene() ?? null) === t.sceneJSON) return note("That version is already on the table")
+		if (sameTable(tableJSON(), t.sceneJSON)) return note("That version is already on the table")
 		host.applyScene(scene, { label: `${t.report?.title ?? "AI scene"} (restored)`, play: true })
 		t.hi = host.historyIndex?.() ?? null
 		S.lastAppliedId = t.id
@@ -1751,7 +2164,10 @@ export function mountAiPanel(host) {
 		// (what the service said and at which step: for whoever looks into it, under Details)
 		const facts = [t.error?.step ? `Step: ${t.error.step}` : null, t.error?.message && t.error.message !== words ? t.error.message : null].filter(Boolean)
 		const more = facts.length && kind !== "cancelled" ? h("details", { class: "ai-err-more" }, h("summary", {}, "Details"), facts.map((f) => h("p", {}, f))) : null
-		if (t.request) card.append(h("div", { class: "ai-res-actions" }, h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => retry(t) }, icon("retry"), kind === "cancelled" ? "Run again" : "Try again")))
+		// (a rework asked from a card's button, stopped or failed, is asked again from that card's own button, which comes back with it: never a
+		// second button here that sends it without the card's scene and what it keeps (V8832 y14 / y15))
+		if (t.request && !t.request.rework) card.append(h("div", { class: "ai-res-actions ai-retry" }, h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => retry(t) }, icon("retry"), kind === "cancelled" ? "Run again" : "Try again")))
+		else if (t.request?.rework && kind === "cancelled") card.append(h("p", { class: "ai-err-msg" }, "Nothing was changed."))
 		if (more) card.append(more)
 		return card
 	}
@@ -1824,18 +2240,39 @@ export function mountAiPanel(host) {
 		const mode = S.mode
 		// "undo that", "put it back": the app's own undo, at once, when the AI's latest build is still the scene's current step
 		if (!S.images.length && isUndoAsk(text) && S.lastAppliedId && canUndo(S.turns.find((t) => t.id === S.lastAppliedId) ?? {})) return undoByAsking(text)
+		// "stop" while it looks for a fix: the search stops, as its Stop does (never a model call, and nothing changes: V8814 s4)
+		if (!S.images.length && S.fixJob && /^\s*(stop|cancel|never ?mind|forget it|don['’]?t bother)\b[\s.!]*$/i.test(text)) {
+			input.value = ""
+			autosize()
+			syncCount()
+			userBubble(text)
+			stopFixSearch("user")
+			return
+		}
 		// "yes" / "do it" to the latest reply's offer: what it offered (a checked fix at once; while it is still being looked for, when it is found)
 		if (!S.images.length && YES_RE.test(text) && !S.pendingShown && answerYes(text) !== false) return
+		// ("make it work" beside a checked fix is that fix, as a "yes" is; with nothing checked yet it goes to the AI as before)
+		if (!S.images.length && MAKE_WORK_RE.test(text) && !S.pendingShown && answerMakeItWork(text) !== false) return
 		// (a plain question is answered by the edit step with no change: the bubble says it is a question)
 		const asked = mode === "edit" && !S.images.length && isQuestion(text)
 		// (every edit that follows the AI's last change on the table keeps what the person changed there, and before: a fix offered for this one
 		// never moves that back. "move the box 10 cm left" then "make the box 2 cm wider" never offers the box back where it was)
 		const lastT = S.turns.find((x) => x.id === S.lastBuild?.turnId)
-		const keep = S.pendingKeep ?? (lastT?.report?.edit?.touched && lastT.sceneJSON === JSON.stringify(host.getScene() ?? null) ? lastT.report.edit.touched : null)
+		const lastOn = !!lastT && sameTable(lastT.sceneJSON, tableJSON())
+		const keep = S.pendingKeep ?? (lastT?.report?.edit?.touched && lastOn ? lastT.report.edit.touched : null)
+		// (and what of it was the person's own choice, said with an amount: a later fix never changes that: §16)
+		const hard = S.pendingHard ?? (lastOn && Array.isArray(lastT?.report?.edit?.hard) && lastT.report.edit.hard.length ? lastT.report.edit.hard : null)
 		const shown = S.pendingShown
+		// (the app's own "make it work", from the rework button: a pure "make it work" whatever its words, with the reasons the run showed,
+		// never bringing back what the person took away: ai/DESIGN.md §16)
+		// (one round of the AI's: the background tried three ways already, and the button is asked once: V8814, 16 Oct, 6–8 model calls for an edit
+		// nothing could fix)
+		const rework = mode === "edit" && S.pendingRework ? { rework: true, maxRounds: 1, ...(Array.isArray(S.pendingRework.removedTypes) && S.pendingRework.removedTypes.length ? { removedTypes: S.pendingRework.removedTypes } : {}), ...(typeof S.pendingRework.feedback === "string" && S.pendingRework.feedback ? { feedback: S.pendingRework.feedback } : {}) } : {}
 		S.pendingKeep = null
+		S.pendingHard = null
 		S.pendingShown = null
-		const request = { text: text || (mode === "edit" ? "Change the scene to match this picture." : "Recreate this picture as a working machine."), images: S.images.slice(), mode, ...(asked ? { asked: true } : {}), ...(keep ? { keep } : {}), ...(mode === "new" ? { imagine: S.images.length ? "off" : conceptSetting() } : {}) }
+		S.pendingRework = null
+		const request = { text: text || (mode === "edit" ? "Change the scene to match this picture." : "Recreate this picture as a working machine."), images: S.images.slice(), mode, ...(asked ? { asked: true } : {}), ...(keep ? { keep } : {}), ...(hard ? { hard } : {}), ...rework, ...(mode === "new" ? { imagine: S.images.length ? "off" : conceptSetting() } : {}) }
 		const user = { id: `u${nextId++}`, at: Date.now(), role: "user", text: shown ?? text, ...(shown ? { sent: text } : {}), images: request.images.map((im) => ({ name: im.name, thumb: im.thumb })), mode, ...(asked ? { asked: true } : {}) }
 		S.turns.push(user)
 		thread.append(renderTurn(user))
@@ -1883,13 +2320,24 @@ export function mountAiPanel(host) {
 		const reply = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "done", request: { text, mode: "edit", images: [] }, report: { replyOnly: true, reply: `Undone: the scene is back to how it was before “${w.words}”${w.more ? ` (and ${plural(w.more, "more change")})` : ""}. (${touchScreen() ? "Redo" : "⌘⇧Z"} brings it back.)` } }
 		S.turns.push(reply)
 		thread.append(renderTurn(reply))
-		syncUndoButtons()
+		onHistory()
 		persist()
 		announce(reply.report.reply)
 		scrollToEnd()
 	}
 	function retry(t) {
 		if (S.job) return
+		// (a card the thread has moved past since: never sent again, whatever its button showed)
+		const at = S.turns.indexOf(t)
+		if (at >= 0 && S.turns.slice(at + 1).some((x) => x.role === "ai" && x.state === "done")) return note("That was before the latest reply: ask again from the latest card")
+		// (a rework is asked again through the card it was for, so it keeps what that card keeps, is judged against the same scene, and is
+		// asked once: V8832 y15)
+		if (t.request?.rework) {
+			const from = t.reworkOf ? S.turns.find((x) => x.id === t.reworkOf) : null
+			if (!from || from.state !== "done" || !sameTable(from.sceneJSON, tableJSON())) return note("The scene has changed since: ask me again (for example “make it work”)")
+			if (from.reworkAsked) return note("The AI already reworked it once for that card")
+			return askRework(from)
+		}
 		const req = { ...t.request, images: t.request.images ?? [] }
 		if (req.hadImages && !req.images.length) {
 			// the pictures of a turn are not kept after a reload: the request goes back where it was typed, waiting for them
@@ -1919,9 +2367,21 @@ export function mountAiPanel(host) {
 		thread.append(renderTurn(user))
 		start({ text, images: [], mode: "check" })
 	}
+	/** The conversation as the edit step reads it: the last ≤ 20 turns, the replies as shown. upTo: the turn whose own reply counts (a background
+	 *  rework of it); else (false) up to before `turn`. */
+	function historyFor(turn, upTo = true) {
+		const at = S.turns.indexOf(turn)
+		return S.turns
+			.filter((x, i) => (upTo ? at < 0 || i <= at : x !== turn) && (x.role === "user" || x.state === "done"))
+			.slice(-HISTORY_TURNS)
+			.map((x) => (x.role === "user" ? { role: "user", text: x.sent || x.text || "(pictures)" } : { role: "assistant", text: x.report?.replyOnly ? x.report.reply : x.report?.lead ? `${x.report.lead}${x.report.human?.length ? ` Changes: ${x.report.human.join("; ")}.` : ""}${x.report.fix?.state === "found" ? ` I offered to ${x.report.fix.say} (checked in the physics).` : ""}` : `${x.report?.mode === "check" ? "Checked" : "Built"} “${x.report?.title}”${x.report?.edit?.reply ? `: ${x.report.edit.reply}` : ""}` }))
+	}
 	function start(request, replacing = null) {
 		stopFixSearch()
-		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "running", request }
+		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "running", request, baseJSON: tableJSON() }
+		// (a rework asked from a card's button: that card's own, so an answer that never came lets it be asked again)
+		if (request.rework && S.reworkOfNext) turn.reworkOf = S.reworkOfNext
+		S.reworkOfNext = null
 		if (replacing) {
 			const i = S.turns.indexOf(replacing)
 			if (i >= 0) S.turns.splice(i, 1)
@@ -1937,12 +2397,22 @@ export function mountAiPanel(host) {
 		scrollToEnd()
 		const scene = host.getScene()
 		const lb = S.lastBuild
-		const history = S.turns
-			.filter((x) => x !== turn && (x.role === "user" || x.state === "done"))
-			.slice(-HISTORY_TURNS)
-			.map((x) => (x.role === "user" ? { role: "user", text: x.sent || x.text || "(pictures)" } : { role: "assistant", text: x.report?.replyOnly ? x.report.reply : x.report?.lead ? `${x.report.lead}${x.report.human?.length ? ` Changes: ${x.report.human.join("; ")}.` : ""}${x.report.fix?.state === "found" ? ` I offered to ${x.report.fix.say} (checked in the physics).` : ""}` : `${x.report?.mode === "check" ? "Checked" : "Built"} “${x.report?.title}”${x.report?.edit?.reply ? `: ${x.report.edit.reply}` : ""}` }))
+		const history = historyFor(turn, false)
+		// (an edit of a scene whose goals an earlier change broke: the scene where they last worked goes with it, for the fix it may need)
+		// (it is the card that put this scene on the table, never a reply said after it, which has no scene of its own; a rework, the card its
+		// button is on: a rework asked again is judged exactly as the first one was: V8832 y15)
+		const from = turn.reworkOf ? S.turns.find((x) => x.id === turn.reworkOf) : null
+		const act = request.mode === "edit" ? (from && from.sceneJSON && sameTable(from.sceneJSON, turn.baseJSON) ? from : sceneCard(turn.baseJSON)) : null
+		let reference = null
+		if (act && act !== turn && sameTable(act.sceneJSON, turn.baseJSON) && act.goodJSON && !sameTable(act.goodJSON, turn.baseJSON))
+			try {
+				reference = JSON.parse(act.goodJSON)
+				// (the AI's reworks already tried to win those goals back from that scene and failed: a follow-up change gets the physics' search
+				// and the rework button, never another set of background reworks: V8818, about $0.19 more per follow-up)
+				turn.aiSpent = !!(act.aiSpent || (act.report?.fix?.state !== "found" && (act.aiTried || act.report?.fix?.reworked)))
+			} catch {}
 		const job = ai.build(
-			{ ...request, scene, sim: request.mode === "edit" ? host.getSim?.() ?? null : null, plan: lb?.plan ?? null, planScene: lb?.sceneJSON ? JSON.parse(lb.sceneJSON) : null, history },
+			{ ...request, scene, sim: request.mode === "edit" || request.mode === "check" ? host.getSim?.() ?? null : null, plan: lb?.plan ?? null, planScene: lb?.sceneJSON ? JSON.parse(lb.sceneJSON) : null, history, ...(reference ? { reference } : {}) },
 			// (a concept sketch only for a new scene from words, as the setting says; never for an edit or a check, never with a photo)
 			{ onEvent: (e) => onEvent(turn, e), imagine: request.mode === "new" && !(request.images ?? []).length ? request.imagine ?? conceptSetting() : "off", ...(request.mode === "check" ? { refineRounds: 1 } : {}) }
 		)
@@ -1972,16 +2442,42 @@ export function mountAiPanel(host) {
 	}
 	function done(turn, li, report) {
 		const v = turn.view
+		// (the scene it worked on is no longer on the table, an Undo or a change by hand while it worked: nothing it made goes on the table, and a
+		// "Try:" would put it back on whatever is there now: V8820 x12 / x13)
+		if (["edit", "check"].includes(turn.request?.mode) && turn.baseJSON && !sameTable(tableJSON(), turn.baseJSON)) {
+			turn.undone ??= movedOnWhy(turn)
+			report = { replyOnly: true, movedOn: true, mode: report.mode, reply: movedOnWords(turn), suggestions: [], edit: { kind: "answer" }, totalMs: report.totalMs }
+			// (a rework asked from a card that never got its answer: that card may ask it again once its scene is back (V8832 y9))
+			const from = turn.reworkOf ? S.turns.find((x) => x.id === turn.reworkOf) : null
+			if (from?.reworkAsked) (from.reworkAsked = false), rerenderTurn(from)
+		}
+		// a check ("Check it") keeps its changes only when every goal still happens: one that stops a goal that worked (or, on an edit's card,
+		// leaves one failing) is said and not put on the table (V8817 s6: two refine calls emptied the cans and moved one 4 cm, and that went on
+		// the table with the goal still failing, the checked fix gone)
+		if (report.mode === "check" && !report.replyOnly && report.scene && JSON.stringify(report.scene) !== turn.baseJSON) {
+			const lost = (report.goals ?? []).filter((g) => g.was === true && g.ok !== true)
+			const from = S.turns.find((x) => x.role === "ai" && x.state === "done" && !x.report?.replyOnly && sameTable(x.sceneJSON, turn.baseJSON))
+			const failsNow = (report.goals ?? []).filter((g) => g.ok === false)
+			if (lost.length || (failsNow.length && ["edit", "fix"].includes(from?.report?.mode))) {
+				const g = lost[0] ?? failsNow[0]
+				const tried = (report.human ?? []).slice(0, 3)
+				report = { replyOnly: true, mode: "check", reply: `I checked it${tried.length ? ` and tried this: ${andJoin(tried)}` : ""}, but then “${String(g.label).replace(/[.!]+$/, "")}” didn’t happen, so I left the scene as it was.`, suggestions: [], edit: { kind: "answer" }, totalMs: report.totalMs }
+			}
+		}
 		if (report.replyOnly) {
 			// an answer, not a change: nothing is applied
 			if (v) clearInterval(v.timer)
 			endDraft(true)
 			turn.state = "done"
 			turn.report = slimTurn({ ...turn, report }).report
+			// (a rework that didn't work offers the closest it got as "Try: …": it applies against the scene on the table now, which is the scene it
+			// started from (else it was answered above))
+			if (report.fix?.near?.sceneJSON) turn.sceneJSON = tableJSON()
 			li.className = "ai-turn ai-bot ai-s-done"
 			li.replaceChildren(renderReport(turn))
 			S.job = null
 			S.running = null
+			markLatest()
 			syncMode()
 			syncSend()
 			persist()
@@ -2021,6 +2517,13 @@ export function mountAiPanel(host) {
 		turn.plan = report.plan
 		turn.simKey = report.sim?.key ?? null // (the run of this version: the side-by-side view draws its start from the app's run when it is this one)
 		turn.state = "done"
+		// (the last scene in which its goals worked: this one, or the one before the change that broke them, or the one that turn kept: a later
+		// change's fix compares with it: V8814 s2)
+		{
+			const tg = report.targets ?? []
+			const prev = S.turns.find((x) => x !== turn && x.sceneJSON && sameTable(x.sceneJSON, turn.baseJSON) && !x.report?.replyOnly)
+			turn.goodJSON = !tg.some((x) => x.ok === false) ? turn.sceneJSON : tg.some((x) => x.ok === false && x.was === true) ? turn.baseJSON ?? null : prev?.goodJSON ?? null
+		}
 		turn.hi = changed ? host.historyIndex?.() ?? null : null // (not saved: after a reload the app's history is new, so no Undo is offered)
 		if (changed) S.lastAppliedId = turn.id
 		turn.report = slimTurn({ ...turn, report: changed ? report : { ...report, noChange: true } }).report
@@ -2040,16 +2543,24 @@ export function mountAiPanel(host) {
 			})
 		// the timeline folds into a one-line summary, under the reply's Details
 		turn.sumEl = h("details", { class: "ai-timeline-sum" }, h("summary", {}, `How it was built · ${secs(report.totalMs)}`), v?.root.querySelector(".ai-steps") ?? "")
+		// (the person's kinds, kept with the card: its ideas never swap one away, and a fix's card carries them on)
+		if (report.mode === "edit") personKinds(turn)
 		const card = renderReport(turn)
 		li.className = "ai-turn ai-bot ai-s-done"
 		li.replaceChildren(card)
 		S.job = null
 		S.running = null
+		markLatest()
 		syncMode()
 		syncSend()
 		syncUndoButtons()
 		persist()
-		if (searching) startFixSearch(turn, report.fixCtx)
+		// (the search's context is kept for this page's life: after its Stop, "Look again" runs it once more)
+		if (searching) {
+			fixCtxs.set(turn.id, report.fixCtx)
+			if (fixCtxs.size > 6) fixCtxs.delete(fixCtxs.keys().next().value)
+			startFixSearch(turn, report.fixCtx)
+		}
 		const goalWords = report.goals.length ? `${report.goals.filter((g) => g.ok).length} of ${report.goals.length} goals met` : ""
 		announce(turn.report.lead ?? `${!changed ? "No change" : report.mode === "check" ? "Checked" : "Built"}: ${report.title}. ${goalWords}`)
 		miniTitle.textContent = report.title
@@ -2078,6 +2589,30 @@ export function mountAiPanel(host) {
 		if (v) clearInterval(v.timer)
 		endDraft(true)
 		const cancelled = err?.name === "AbortError"
+		// (a rework asked from a card that didn't get to answer: the card may ask it again)
+		// (and one stopped by an Undo too: its card is stale while its scene is gone, and asks again once a Redo brings it back: V8832 y9)
+		const from = turn.reworkOf ? S.turns.find((x) => x.id === turn.reworkOf) : null
+		if (from && from.reworkAsked) {
+			from.reworkAsked = false
+			rerenderTurn(from)
+		}
+		// (stopped because the person undid the change, or changed the scene, while it worked: said so, as a reply; nothing changed)
+		if (cancelled && turn.undone) {
+			turn.state = "done"
+			turn.report = { replyOnly: true, movedOn: true, mode: turn.request?.mode, reply: movedOnWords(turn), suggestions: [], edit: { kind: "answer" } }
+			li.className = "ai-turn ai-bot ai-s-done"
+			li.replaceChildren(renderReport(turn))
+			S.job = null
+			S.running = null
+			markLatest()
+			syncMode()
+			syncSend()
+			persist()
+			announce(turn.report.reply)
+			setMini(false)
+			scrollToEnd()
+			return
+		}
 		turn.state = cancelled ? "cancelled" : "error"
 		turn.error = { kind: cancelled ? "cancelled" : err instanceof AiError ? err.kind : "gateway", message: cancelled ? "" : err?.message ?? String(err), step: err?.step ?? null, retryable: !!err?.retryable, ...(err?.resetsAt ? { resetsAt: err.resetsAt } : {}), ...(Number.isInteger(err?.cause?.status) && err.cause.status >= 400 ? { status: err.cause.status } : {}) }
 		if (err?.kind === "nothing") turn.error.missing = []
@@ -2094,6 +2629,7 @@ export function mountAiPanel(host) {
 		li.replaceChildren(renderError(turn))
 		S.job = null
 		S.running = null
+		markLatest()
 		syncMode()
 		syncSend()
 		persist()
@@ -2131,8 +2667,8 @@ export function mountAiPanel(host) {
 	function setMini(on, byUser = false) {
 		on = on && S.open && wide()
 		if (byUser && !on && S.job) S.keepOpen = true
-		btnMiniStop.hidden = !S.job
-		miniOrb.classList.toggle("still", !S.job)
+		btnMiniStop.hidden = !S.job && !S.fixJob
+		miniOrb.classList.toggle("still", !S.job && !S.fixJob)
 		if (S.mini === on) return
 		S.mini = on
 		if (on) {

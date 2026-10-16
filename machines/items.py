@@ -779,9 +779,10 @@ class _Fall:
 def summarize(scene, doc, track):
     """Plain-language results: the goals, each moving item's story, and the first hits between items in order. A goal is
     {kind: "in", item, container} (it ends between the container's walls), {kind: "falls", item | items: [id]} (every rigid body of them ends
-    fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given) or
-    {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), as ai/goals.mjs
-    checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others)."""
+    fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given),
+    {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), {kind: "off", item}
+    (it ends off the table) or {kind: "walls", item, container} (it ends between a cup's, a jar's or a mug's own walls: walls_inside), as
+    ai/goals.mjs checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others)."""
     items = {i["id"]: i for i in scene.get("items", [])}
     name = lambda iid: items[iid].get("name") or TYPES[items[iid]["type"]].name if iid in items else iid
     item_of = {s["id"]: s["item"] for s in doc["solids"]}
@@ -888,7 +889,61 @@ def summarize(scene, doc, track):
                 d = math.hypot(c1[0] - c0[0], c1[1] - c0[1])
             goals.append({"label": g.get("label") or f"{name(g['item'])} moves at least {_short_m(least)}", "ok": bool(sids) and d >= least,
                           "kind": "moves", "item": g["item"], "moved_m": round(d, 4)})
+        elif kind == "off" and known(g.get("item")):
+            # (ai/goals.mjs "off": the mean of its moving parts ends past the table top's ends, or below its top: it left the table)
+            sids = [s["id"] for s in doc["solids"] if s["item"] == g["item"] and s["kind"] == "dynamic"]
+            top = next((s for s in doc["solids"] if s.get("itemType") == "table" and s.get("part") == "top" and s["body"].get("kind") == "slab"), None)
+            ok = False
+            if sids and top is not None:
+                p = fr[0]["placements"].get(top["id"]) or top["at"]
+                ty = p["y"] + top["body"]["height"] / 2
+                x0 = p["x"] - top["body"]["width"] / 2
+                x1 = p["x"] + top["body"]["width"] / 2
+                cx = sum(fr[-1]["placements"][i]["x"] for i in sids) / len(sids)
+                cy = sum(fr[-1]["placements"][i]["y"] for i in sids) / len(sids)
+                ok = cx < x0 or cx > x1 or cy < ty - 0.01
+            goals.append({"label": g.get("label") or f"{name(g['item'])} ends off the table", "ok": ok, "kind": "off", "item": g["item"]})
+        elif kind == "walls" and known(g.get("item")) and known(g.get("container")):
+            # (an "in" goal for a container the "in" check doesn't know, a plastic cup, a glass jar or a coffee mug: judged by its own walls at the
+            # run's end, as web/ai/goals.js does, so the results show it too)
+            ok = walls_inside(doc, fr[-1]["placements"], g["item"], g["container"])
+            goals.append({"label": g.get("label") or f"{name(g['item'])} ends in the {name(g['container']).lower()}", "ok": ok, "kind": "walls",
+                          "item": g["item"], "container": g["container"]})
     return {"goals": goals, "stories": stories, "events": first[:16]}
+
+
+def walls_inside(doc, last, iid, cid):
+    """Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right")
+    parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top, each part where the run's last frame has it.
+    False when the container has no such parts or the item no moving solid."""
+    def part(names):
+        return next((s for s in doc["solids"] if s["item"] == cid and s.get("part") in names), None)
+    L, R, F = part(("left", "wall-left")), part(("right", "wall-right")), part(("floor", "body", "base", "bottom"))
+    if L is None or R is None or F is None:
+        return False
+
+    def pose(s):
+        if s["id"] in last:
+            p = last[s["id"]]
+            return (p["x"], p["y"], p.get("angle", 0))
+        return (s["at"]["x"], s["at"]["y"], s.get("angle", 0))
+    l, r, f = _corners(L, pose(L)), _corners(R, pose(R)), _corners(F, pose(F))
+    in_l = max(q[0] for q in l)
+    in_r = min(q[0] for q in r)
+    top = min(max(q[1] for q in l), max(q[1] for q in r))
+    floor = max(q[1] for q in f)
+    n = 0
+    for s in doc["solids"]:
+        if s["item"] != iid or s["kind"] != "dynamic":
+            continue
+        n += 1
+        if s["id"] not in last:
+            return False
+        p = last[s["id"]]
+        rad = s["body"].get("radius", 0)
+        if not (floor - 0.01 <= p["y"] - rad <= top and in_l <= p["x"] <= in_r):
+            return False
+    return n > 0
 
 
 def _corners(s, pose):

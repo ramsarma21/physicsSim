@@ -85,3 +85,21 @@ test("falls counts rigid bodies on real runs: ten bowling pins (six welded parts
 	assert.equal(moves.ok, true, moves.detail)
 	assert.deepEqual([falls.ok, falls.of], [false, 1], falls.detail)
 })
+
+test("off: a thing past the table's end, or fallen below its top, has left the table; one still over it has not, said where; from the summary alone only the engine's own check of it or 'never moves'", async () => {
+	const s = JSON.parse(JSON.stringify(scene))
+	s.items = s.items.filter((i) => i.id !== "wall-right")
+	s.items.push({ id: "pp", type: "ping-pong-ball", name: "Ping-pong ball", x: 3.3, y: 0.5 }, { id: "pp2", type: "ping-pong-ball", name: "Ping-pong ball 2", x: 2.0, y: 0.03 })
+	const goals = [{ kind: "off", item: "pp", label: "blown off" }, { kind: "off", item: "pp2", label: "stays" }]
+	const r = await runScene({ ...s, goals: [...(s.goals ?? []), ...goals] })
+	const [a, b] = checkGoals(goals, r)
+	assert.equal(a.ok, true, a.detail)
+	assert.match(a.detail, /^it ends (past the table's right end|below the table top)$/)
+	assert.equal(b.ok, false)
+	assert.match(b.detail, /^it stays over the table, [\d.]+ (cm|m) in from its (left|right) end$/)
+	assert.equal(goalLabel({ kind: "off", item: "pp" }, { pp: "the ping-pong ball" }), "the ping-pong ball ends off the table")
+	// (the engine's own summary checks it too, machines/items.py = web/sim/items.js: the results strip shows it)
+	const own = (r.summary?.goals ?? []).filter((g) => g.kind === "off").map((g) => [g.label, g.ok])
+	assert.deepEqual(own, [["blown off", true], ["stays", false]])
+	assert.deepEqual(checkGoals(goals, { summary: r.summary }).map((g) => g.ok), [true, false])
+})

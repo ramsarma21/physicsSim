@@ -30,7 +30,8 @@ test("the digest lists every catalog type with its props, ranges, anchor and out
 	}
 	// the facts a planner needs are there
 	assert.match(d.text, /### box — Open box · static[\s\S]*?goal container/)
-	assert.match(d.text, /### plastic-cup[\s\S]*?NOT usable as a goal container/)
+	// (a plastic cup, a glass jar, a coffee mug: their "in" goals are judged by their own walls: ai/goals.mjs wallsInside, 16 Oct)
+	assert.match(d.text, /### plastic-cup[\s\S]*?goal container \("in" goals work: judged by its own walls/)
 	assert.match(d.text, /### superball[\s\S]*?Outline at defaults: 0\.06 × 0\.06 m, centred on the anchor/)
 	assert.match(d.text, /### seesaw[\s\S]*?does not fall/)
 	assert.match(d.text, /### spring-launcher[\s\S]*?acts at the scene's release time/)

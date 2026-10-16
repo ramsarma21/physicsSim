@@ -1,0 +1,562 @@
+[
+{
+"id": "c05-cradle-double",
+"base": "gallery/newtons-cradle",
+"text": "Make the domino row twice as long and swap the 8-ball for a golf ball.",
+"answer": {
+"kind": "change",
+"reply": "I lengthened the domino row from about 1 m to 1.9 m (10 \u2192 14 growing dominoes) and swapped the 8-ball for a golf ball. To make room I slid the ledge and cup 89 cm right.",
+"patches": [
+{
+"op": "move",
+"id": "cup",
+"dx": 0.89,
+"why": "make room for the longer row"
+},
+{
+"op": "move",
+"id": "ledge",
+"dx": 0.89,
+"why": "make room for the longer row"
+},
+{
+"op": "set_props",
+"id": "dominoes",
+"props": {
+"count": 14
+}
+},
+{
+"op": "replace_type",
+"id": "ball",
+"type": "golf-ball",
+"props": {}
+},
+{
+"op": "set_item",
+"id": "ball",
+"name": "Golf ball"
+},
+{
+"op": "set_goals",
+"goals": [
+{
+"kind": "hits",
+"label": "The cradle's last ball strikes the first domino",
+"item": "cradle",
+"target": "dominoes"
+},
+{
+"kind": "falls",
+"label": "All the dominoes fall",
+"item": "dominoes"
+},
+{
+"kind": "in",
+"label": "The golf ball drops into the cup",
+"item": "ball",
+"container": "cup"
+}
+]
+}
+]
+}
+},
+{
+"id": "c12-paperbacks-cup",
+"base": "gallery/domino-run",
+"text": "Replace the first domino run with a row of standing paperback books and swap the bucket for a plastic cup.",
+"answer": {
+"kind": "change",
+"reply": "I replaced the 24-domino run with 7 paperback books standing on end, 10 cm apart, and swapped the bucket for a red plastic cup.",
+"patches": [
+{
+"op": "remove",
+"id": "row1",
+"why": "replaced by standing paperbacks"
+},
+{
+"op": "add",
+"item": {
+"id": "book1",
+"type": "paperback-book",
+"name": "Paperback 1",
+"place": {
+"on": "table",
+"x": -0.06,
+"angle_deg": 90
+},
+"why": "first standing book, hit by the pendulum"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "book2",
+"type": "paperback-book",
+"name": "Paperback 2",
+"place": {
+"on": "table",
+"x": 0.04,
+"angle_deg": 90
+},
+"why": "standing book in the row"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "book3",
+"type": "paperback-book",
+"name": "Paperback 3",
+"place": {
+"on": "table",
+"x": 0.14,
+"angle_deg": 90
+},
+"why": "standing book in the row"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "book4",
+"type": "paperback-book",
+"name": "Paperback 4",
+"place": {
+"on": "table",
+"x": 0.24,
+"angle_deg": 90
+},
+"why": "standing book in the row"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "book5",
+"type": "paperback-book",
+"name": "Paperback 5",
+"place": {
+"on": "table",
+"x": 0.34,
+"angle_deg": 90
+},
+"why": "standing book in the row"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "book6",
+"type": "paperback-book",
+"name": "Paperback 6",
+"place": {
+"on": "table",
+"x": 0.44,
+"angle_deg": 90
+},
+"why": "standing book in the row"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "book7",
+"type": "paperback-book",
+"name": "Paperback 7",
+"place": {
+"on": "table",
+"x": 0.54,
+"angle_deg": 90
+},
+"why": "last book, falls onto the growing dominoes"
+}
+},
+{
+"op": "replace_type",
+"id": "bucket",
+"type": "plastic-cup",
+"props": {}
+},
+{
+"op": "set_item",
+"id": "bucket",
+"name": "Plastic cup"
+},
+{
+"op": "set_goals",
+"goals": [
+{
+"kind": "hits",
+"label": "The pendulum starts the run",
+"item": "pendulum",
+"target": "book1"
+},
+{
+"kind": "falls",
+"label": "All the paperback books fall",
+"items": [
+"book1",
+"book2",
+"book3",
+"book4",
+"book5",
+"book6",
+"book7"
+]
+},
+{
+"kind": "falls",
+"label": "The growing dominoes fall, up to the giant",
+"item": "row2"
+},
+{
+"kind": "in",
+"label": "The giant knocks the 8-ball into the plastic cup",
+"item": "ball",
+"container": "bucket"
+}
+]
+}
+]
+}
+},
+{
+"id": "c01-fan-pingpong",
+"base": "gallery/rube-goldberg",
+"text": "Add a fan at the end of the table that blows a ping-pong ball off the edge once the plastic ball lands in the box.",
+"answer": {
+"kind": "change",
+"reply": "I added a fan at the left end of the table and a ping-pong ball on a small shelf in front of it.",
+"patches": [
+{
+"op": "add",
+"item": {
+"id": "shelf",
+"type": "plank",
+"name": "Ping-pong shelf",
+"props": {
+"length": 0.3
+},
+"place": {
+"on": "air",
+"x": -0.1,
+"y_m": 0.189
+},
+"why": "a raised ledge the ping-pong ball can be blown off"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "pingpong",
+"type": "ping-pong-ball",
+"name": "Ping-pong ball",
+"place": {
+"on": "shelf",
+"x": -0.2
+},
+"why": "blown off the shelf by the fan"
+}
+},
+{
+"op": "add",
+"item": {
+"id": "fan",
+"type": "fan",
+"name": "Fan",
+"props": {
+"on_at": 5.4
+},
+"place": {
+"on": "table",
+"x": -0.3
+},
+"why": "blows the ping-pong ball off the shelf after the plastic ball lands in the box"
+}
+},
+{
+"op": "set_scene",
+"seconds": 8
+},
+{
+"op": "set_goals",
+"goals": [
+{
+"kind": "hits",
+"label": "The cue ball lands on the conveyor belt",
+"item": "ball1",
+"target": "belt"
+},
+{
+"kind": "hits",
+"label": "It pushes through the swing gate",
+"item": "ball1",
+"target": "gate"
+},
+{
+"kind": "hits",
+"label": "The cue ball knocks the first domino",
+"item": "ball1",
+"target": "dominoes"
+},
+{
+"kind": "falls",
+"label": "All the dominoes fall",
+"item": "dominoes"
+},
+{
+"kind": "hits",
+"label": "The big domino slams the seesaw",
+"item": "dominoes",
+"target": "seesaw"
+},
+{
+"kind": "in",
+"label": "The plastic ball flies into the box",
+"item": "ball2",
+"container": "box"
+},
+{
+"kind": "moves",
+"label": "The fan blows the ping-pong ball off the shelf",
+"item": "pingpong",
+"min_m": 0.3
+}
+]
+}
+]
+}
+},
+{
+"id": "m6-wrecking-kitchen",
+"base": "gallery/wrecking-chain",
+"text": "Kitchen version: swap the wrecking ball for a bowling ball on a rope, turn the brick tower into a stack of tissue boxes, and swap the tennis ball for an apple.",
+"answer": {
+"kind": "change",
+"reply": "I swapped in a 7.26 kg bowling-ball-sized bob on an 80 cm rope, nine tissue boxes for the bricks and an apple for the tennis ball. The tissue boxes are 2.5 cm wider, so I moved the bucket 2 cm right.",
+"patches": [
+{
+"op": "replace_type",
+"id": "wrecker",
+"type": "rope-pendulum",
+"props": {
+"length": 0.8,
+"bob_diameter": 0.218,
+"bob_mass": 7.26,
+"start_angle": -40.556
+}
+},
+{
+"op": "set_item",
+"id": "wrecker",
+"name": "Bowling ball on a rope"
+},
+{
+"op": "move",
+"id": "bucket",
+"dx": 0.02,
+"why": "the wider tissue boxes would start inside the bucket"
+},
+{
+"op": "replace_type",
+"id": "b1",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b2",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b3",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b4",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b5",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b6",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b7",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b8",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "replace_type",
+"id": "b9",
+"type": "tissue-box",
+"props": {}
+},
+{
+"op": "set_item",
+"id": "b1",
+"name": "Tissue box 1"
+},
+{
+"op": "set_item",
+"id": "b2",
+"name": "Tissue box 2"
+},
+{
+"op": "set_item",
+"id": "b3",
+"name": "Tissue box 3"
+},
+{
+"op": "set_item",
+"id": "b4",
+"name": "Tissue box 4"
+},
+{
+"op": "set_item",
+"id": "b5",
+"name": "Tissue box 5"
+},
+{
+"op": "set_item",
+"id": "b6",
+"name": "Tissue box 6"
+},
+{
+"op": "set_item",
+"id": "b7",
+"name": "Tissue box 7"
+},
+{
+"op": "set_item",
+"id": "b8",
+"name": "Tissue box 8"
+},
+{
+"op": "set_item",
+"id": "b9",
+"name": "Top tissue box"
+},
+{
+"op": "replace_type",
+"id": "ball",
+"type": "apple",
+"props": {}
+},
+{
+"op": "set_item",
+"id": "ball",
+"name": "Apple"
+},
+{
+"op": "set_goals",
+"goals": [
+{
+"kind": "hits",
+"label": "The bowling ball hits the top tissue box",
+"item": "wrecker",
+"target": "b9"
+},
+{
+"kind": "hits",
+"label": "The falling tissue box lands on the seesaw",
+"item": "b9",
+"target": "seesaw"
+},
+{
+"kind": "moves",
+"label": "The seesaw flings the apple",
+"item": "ball",
+"min_m": 0.3
+},
+{
+"kind": "in",
+"label": "The apple drops into the bucket",
+"item": "ball",
+"container": "bucket"
+}
+]
+}
+]
+}
+},
+{
+"id": "c04-pirate-wooden",
+"base": "gallery/marble-run",
+"text": "Make it a pirate-ship version using only wooden things.",
+"answer": {
+"kind": "change",
+"reply": "I swapped the glass marble for a 1.6 cm wooden ball and made the cup wooden, so everything is wood now. The library has no pirate ship parts (hull, mast, sails), so those couldn't be added.",
+"patches": [
+{
+"op": "replace_type",
+"id": "marble",
+"type": "wooden-ball",
+"props": {
+"diameter": 0.016
+},
+"why": "Wooden ball at the marble's size so it still fits between the ramps"
+},
+{
+"op": "set_item",
+"id": "marble",
+"name": "Wooden cannonball"
+},
+{
+"op": "set_props",
+"id": "cup",
+"props": {
+"material": "varnished hardwood"
+}
+},
+{
+"op": "set_item",
+"id": "cup",
+"name": "Wooden barrel cup"
+},
+{
+"op": "set_scene",
+"title": "Pirate ship cannonball run"
+},
+{
+"op": "set_goals",
+"goals": [
+{
+"kind": "hits",
+"label": "The cannonball reaches the bottom ramp",
+"item": "marble",
+"target": "ramp5"
+},
+{
+"kind": "in",
+"label": "The cannonball ends in the barrel cup",
+"item": "marble",
+"container": "cup"
+}
+]
+}
+]
+}
+}
+]
