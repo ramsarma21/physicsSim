@@ -129,3 +129,23 @@ test("the edit step's rich digest says what the user sees: a pool ball's colour 
 	assert.match(text, /- deep · “Sunk box” · [^\n]*\n  where: [^\n]*in the air; its bottom 5\.2 cm below the top of the table;/)
 	assert.doesNotMatch(text, /-\d[.\d]* cm above/)
 })
+
+test("the edit step's digest gives each goal's moving thing as the whole run measured it: how high its centre rises, how fast it leaves, the container's rim (V8842: 'it rises barely 2 cm' for a ball that rose 27 cm)", async () => {
+	const { richDigestFrom, goalFacts } = await import("../rich-digest.mjs")
+	const { runScene } = await import("../steps.mjs")
+	const { readFileSync } = await import("node:fs")
+	const cat = await getCatalog()
+	const scene = JSON.parse(readFileSync(new URL("../../web/scenarios/rube-goldberg.json", import.meta.url), "utf8"))
+	// (the tennis ball swapped in and seated on the seesaw as the app seats it: V8842's swap scene)
+	const sw = { ...scene, items: scene.items.map((i) => (i.id === "ball2" ? { ...i, type: "tennis-ball", name: "Tennis ball", x: 3.020394, y: 0.055448, props: {} } : i)) }
+	const run = await runScene(sw)
+	const facts = goalFacts(run, sw.goals)
+	assert.equal(facts.length, 1)
+	assert.equal(facts[0].item, "ball2")
+	assert.ok(facts[0].peak_y > facts[0].y0 + 0.2, JSON.stringify(facts[0]))
+	assert.ok(facts[0].launch > 1.2 && facts[0].launch < 2.5, JSON.stringify(facts[0]))
+	const d = await sceneDigest(sw, cat.index)
+	const text = richDigestFrom(sw, d, { sim: { summary: run.summary, resolved: run.resolved, track: { frames: [run.track.frames[0], run.track.frames.at(-1)] } }, plan: null, cat, facts }).text
+	assert.match(text, /## The goals' moving things in the last run \(measured; quote heights and speeds of these things only from here\)/)
+	assert.match(text, /- ball2 \(“Tennis ball”\) \(goal: [^)]*\): its centre starts at y 0\.0\d m; starts moving at \d\.\d\d s and leaves at 1\.\d\d m\/s \(its own top speed in the next 0\.3 s\); its centre rises highest to y 0\.3\d m at \d\.\d\d s; box \(“Box”\)'s rim \(the top of its walls\) is at y 0\.3\d m/)
+})

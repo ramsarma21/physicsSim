@@ -15,8 +15,9 @@
 // run it with the real engine.
 import { inspect, typeName, propSpec, isStaticItem, itemGeometry, shapesAt } from "./solver.js"
 import { checkGoals, goalItems, goalKind } from "./goals.js"
-import { kindNoun, aKindOf, weightOf, fmtMass, clipLabel, solidMass } from "./words.js"
+import { kindNoun, aKindOf, weightOf, fmtMass, clipLabel, solidMass, tidyBrackets } from "./words.js"
 import { catalog as simCatalog } from "../sim/index.js"
+import { KEYS as EVERYDAY_KEYS } from "../sim/catalog-everyday.js"
 
 export const FIX_MS = 12000 // the search's time budget
 export const FIX_RUNS = 320 // and its most engine runs (the page runs about 30 a second on four workers)
@@ -59,6 +60,8 @@ export const theName = (it) => {
 	// (a number of its own, "Ball 2", or two capitalised words make a proper name; a number that is part of a word, "the 8-ball", does not)
 	// ("Newton's cradle" keeps its capital: "the Newton's cradle")
 	if (/^[A-Z][a-z]+['’]s\b/.test(n)) return `the ${n}`
+	// (a name that starts with a number is a description, "5 kg steel weight": "the 5 kg steel weight" (V8842 n4))
+	if (/^\d/.test(n)) return `the ${n}`
 	return /(^|\s)\d+(\s|$)/.test(n) || /^[A-Z][a-z]+ [A-Z]/.test(n) ? n : `the ${lc(n)}`
 }
 const propValue = (it, k) => (it?.props?.[k] !== undefined ? it.props[k] : propSpec(it?.type, k)?.default)
@@ -403,6 +406,32 @@ export function chainStop(sim, scene, before, goalIds = []) {
 	}
 	return null
 }
+/** The new things of one kind that took a thing's place (it was taken away, and they stand over most of where it stood), or null. */
+export function replacedBy(sceneA, sceneB, id) {
+	try {
+		const A = new Set(sceneA.items.map((i) => i.id))
+		const insA = inspect(sceneA)
+		const insB = inspect(sceneB)
+		const ba = insA.box(id)
+		if (!ba) return null
+		const byType = new Map()
+		for (const it of sceneB.items) if (!A.has(it.id) && !["table", "wall"].includes(it.type)) byType.set(it.type, [...(byType.get(it.type) ?? []), it])
+		let best = null
+		for (const list of byType.values()) {
+			let x0 = Infinity
+			let x1 = -Infinity
+			for (const it of list) {
+				const b = insB.box(it.id)
+				if (b) ((x0 = Math.min(x0, b.x0)), (x1 = Math.max(x1, b.x1)))
+			}
+			const ov = Math.min(x1, ba.x1) - Math.max(x0, ba.x0)
+			if (ov > 0.4 * Math.min(x1 - x0, ba.x1 - ba.x0) && (!best || ov > best.ov)) best = { list, ov }
+		}
+		return best?.list ?? null
+	} catch {
+		return null
+	}
+}
 function inWords(g, sim, scene, before = null) {
 	const theName = (it) => placeName(it, scene) // (one of a row by its place: "the 6th soda can", never "Soda can 6")
 	const it = scene.items.find((i) => i.id === g.item)
@@ -424,7 +453,34 @@ function inWords(g, sim, scene, before = null) {
 			const L1 = L ? scene.items.find((i) => i.id === L) : null
 			if (L0 && (!L1 || L1.type !== L0.type) && chainOf(sim, scene).get(g.item)?.by !== L) {
 				const was = placeName(L0, before.scene)
-				return `${who} ${moved ? "is never launched" : "never moves"}: nothing launches ${/s$/i.test(who) && !/\d/.test(who) ? "them" : "it"} now that ${was} ${L1 ? `is ${aKindOf(L1.type)}` : "is gone"}`
+				// (taken away and replaced by new things of one kind where it stood: what they do instead, "the 10 LEGO bricks (2.3 g each) fall but
+				// don't move the orange", never "nothing launches it now that the dominoes is gone" beside "All the LEGO bricks fall ✓" (V8837 k3))
+				// (or made one of a new kind with more of that kind put in beside it: the row's id kept for its first brick (V8841 k3))
+				const kin = L1 ? scene.items.filter((i) => i.type === L1.type && (i.id === L1.id || !before.scene.items.some((o) => o.id === i.id))) : []
+				const rep = !L1 ? replacedBy(before.scene, scene, L) : kin.length >= 2 ? kin : null
+				if (rep) {
+					const n = rep.length
+					const noun = n === 1 ? theName(rep[0]) : `the ${n} ${kindNoun(rep[0].type, n, { short: true })}`
+					const w = weightOf(rep[0].type, rep[0].props ?? {})
+					const each = w && rep.every((i) => Math.abs((weightOf(i.type, i.props ?? {}) ?? 0) - w) < 1e-4) ? ` (${fmtMass(w)}${n > 1 ? " each" : ""})` : ""
+					let fell = null
+					try {
+						;[fell] = checkGoals([{ kind: "falls", items: rep.map((i) => i.id), label: "x" }], sim)
+					} catch {}
+					const all = !!fell && fell.of > 0 && fell.fallen >= fell.of
+					const none = !!fell && fell.of > 0 && !fell.fallen
+					const many = n > 1
+					// (what it set off first before, when that is not the goal's thing: "don't move the ledge")
+					const C0 = chainOf(before.sim, before.scene)
+					const t0 = C0.get(g.item)?.t ?? Infinity
+					const first = [...C0].filter(([id, c]) => c.by === L && id !== g.item && c.t < t0 && scene.items.some((i) => i.id === id)).sort((p, q) => p[1].t - q[1].t)[0]?.[0]
+					const H = first ? scene.items.find((i) => i.id === first) : null
+					const target = H ? theName(H) : who
+					const doW = all ? (many ? "fall but don't move" : "falls but doesn't move") : none ? (many ? "don't fall and don't move" : "doesn't fall and doesn't move") : `only ${fell?.fallen ?? 0} of ${n} fall, and they don't move`
+					return H ? `${noun}${each} ${doW} ${target}, so ${who} ${moved ? "is never launched" : "never moves"}` : `${noun}${each} ${doW} ${who}`
+				}
+				const are = /s$/i.test(was) && !/\d/.test(was) && !/ss$/i.test(was)
+				return `${who} ${moved ? "is never launched" : "never moves"}: nothing launches ${/s$/i.test(who) && !/\d/.test(who) ? "them" : "it"} now that ${was} ${L1 ? `${are ? "are" : "is"} ${aKindOf(L1.type)}` : are ? "are gone" : "is gone"}`
 			}
 		} catch {}
 		// the chain stopped before it: a hit the run before didn't have says why ("the dominoes now hit the box"), else the first row that
@@ -513,7 +569,11 @@ export function outcomeWords(result, goal, sim, scene, before = null) {
 			if (stop && stop.ids.length === n && stop.ids.every((id) => items.some((i) => i.id === id)) && /\b(shoves?|touch(es)?)\b/.test(stop.words)) return `${stop.words}, and none of the ${n} fall`
 			return result.fallen === 0 ? `none of the ${n} ${kindNoun(one, n, { short: true })} fall` : `only ${result.fallen} of the ${n} ${kindNoun(one, n, { short: true })} ${result.fallen === 1 ? "falls" : "fall"}`
 		}
-		return result.fallen === 0 ? `none of ${items.length === 1 && items[0].type === "domino-row" ? "the dominoes" : "them"} fall` : `only ${result.fallen} of ${result.of} ${items.length === 1 && items[0].type === "domino-row" ? "dominoes" : "of them"} ${result.fallen === 1 ? "falls" : "fall"}`
+		// (a noun always: "the cereal box doesn't fall", "none of the 3 things fall", never "none of them fall" with nothing before it (V8843 n5t))
+		if (items.length === 1 && items[0].type === "domino-row") return result.fallen === 0 ? "none of the dominoes fall" : `only ${result.fallen} of ${result.of} dominoes ${result.fallen === 1 ? "falls" : "fall"}`
+		if (items.length === 1 && result.of === 1) return `${who} doesn’t fall`
+		if (items.length === 1) return result.fallen === 0 ? `none of ${who}’s ${result.of} parts fall` : `only ${result.fallen} of ${who}’s ${result.of} parts ${result.fallen === 1 ? "falls" : "fall"}`
+		return result.fallen === 0 ? `none of the ${result.of} things fall` : `only ${result.fallen} of the ${result.of} things ${result.fallen === 1 ? "falls" : "fall"}`
 	}
 	if (k === "hits") {
 		const tgt = scene.items.find((i) => i.id === goal.target)
@@ -526,7 +586,7 @@ export function outcomeWords(result, goal, sim, scene, before = null) {
 }
 
 // ================================================================ how far a run is from the goals (lower is better; 0 = all met)
-function farness(targets, results, sim, scene) {
+export function farness(targets, results, sim, scene) {
 	let f = 0
 	results.forEach((r, i) => {
 		if (r.ok === true) return
@@ -828,7 +888,38 @@ const catType = (type) => {
 /** Kinds with a real everyday size (a ball, an orange, an egg, a soda can, a book): a fix keeps them within STD_SIZE of the catalog's own. */
 export function standardSized(type) {
 	const c = catType(type)?.category
-	return (c === "Balls" && type !== "clay-ball") || c === "Everyday objects"
+	// (and the everyday catalog's containers: a plastic cup is 9.5 cm across, a glass jar 8.7 cm, never a basket's 35 cm (V8837 k5))
+	return (c === "Balls" && type !== "clay-ball") || c === "Everyday objects" || EVERYDAY_KEYS.includes(type)
+}
+/** A container kind (a box, a cup, a bucket, a basket, a plastic cup, a glass jar): its catalog size is the usual one, and a swap into it takes
+ *  that size unless the AI gives one (V8842 k3: a basket 12 cm wide, the cup's; n1: a bucket with the box's 13 cm walls). */
+export const containerKind = (type) => catType(type)?.category === "Containers"
+/** A thing's lengths far from its kind's real size (a kind with one: standardSized; or its usual one, a container's), in words, or null: "35 cm
+ *  wide (a real one is 9.5 cm)", "12 cm wide (a usual one is 45 cm)". -> {key, v, d, ref, words} of the first such length, or null. */
+export function offRealSize(type, props = {}, tol = STD_SIZE) {
+	const usual = !standardSized(type) && containerKind(type)
+	if (!standardSized(type) && !usual) return null
+	for (const k of [...new Set([...sizeKeys(type).all, ...dimKeys(type).len])]) {
+		const v = num(props?.[k])
+		const d = num(propSpec(type, k)?.default)
+		if (v === null || !d || (v >= (1 - tol) * d - 1e-9 && v <= (1 + tol) * d + 1e-9)) continue
+		const what = dimWord(type, k)
+		const word = what === "across" ? "across" : d < 0.03 ? "thick" : /height|tall|wall/.test(what) ? "tall" : /depth|deep/.test(what) ? "deep" : /thick/.test(what) ? "thick" : /length|long/.test(what) ? "long" : "wide"
+		const ref = usual ? "a usual one" : "a real one"
+		return { key: k, v, d, ref, words: `${fmtLen(v)} ${word} (${ref} is ${fmtLen(d)})` }
+	}
+	return null
+}
+/** The first thing a version adds (not in a) of a kind with a real size that it makes far from that size, in words, or null: the AI's helpers
+ *  keep their everyday size as the person's things do ("Try: Add a cutting board 80 cm wide" was offered: V8837 x5). */
+export function helperSizeBreak(a, b) {
+	const A = new Set((a?.items ?? []).map((i) => i.id))
+	for (const it of b?.items ?? []) {
+		if (A.has(it.id) || it.type === "table" || it.type === "wall") continue
+		const off = offRealSize(it.type, it.props ?? {})
+		if (off) return `it added ${aKindOf(it.type)} ${off.words.replace(/ \(a (real|usual) one is (.+)\)$/, ", far from a $1 one’s $2")}`
+	}
+	return null
 }
 const sameNum = (x, y) => (typeof x === "number" && typeof y === "number" ? Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(y)) : x === y)
 export const STD_SIZE = 0.2 // (±20 % of the catalog's size: a ping-pong ball is 4 cm, never 10)
@@ -907,6 +998,15 @@ export function keepsCharacter(a, b, { mine = true, ways = null } = {}) {
 		const sized = [...new Set([...sizeKeys(b.type).all, ...dims.len])].some((k) => !sameNum(propValue(a, k), propValue(b, k)))
 		const weighed = [...new Set(["mass", ...dims.kg])].some((k) => !sameNum(a.props?.[k], b.props?.[k]))
 		if (mine && (sized || weighed) && (m1 < CHAR_MIN * m0 * (1 - 1e-6) || m1 > (m0 / CHAR_MIN) * (1 + 1e-6))) return `it made ${nm} far ${m1 < m0 ? "lighter" : "heavier"} (${fmtMass(m0)} → ${fmtMass(m1)})`
+		// (and a kind with a real everyday size keeps a real one's weight too, within STD_SIZE: a ping-pong ball made 3.9 g against a real one's
+		// 2.7 g was offered as a "Try:" (V8842 k5))
+		// (only when its weight itself was set: a can emptied or filled is its own state, the AI's way of doing it (§16), and one a little bigger
+		// weighs what its size makes it, its size held to STD_SIZE above)
+		if (mine && weighed && standardSized(b.type)) {
+			const d = weightOf(b.type, {})
+			const off = (m) => !!d && (m < (1 - STD_SIZE) * d * (1 - 1e-6) || m > (1 + STD_SIZE) * d * (1 + 1e-6))
+			if (off(m1) && !off(m0)) return `it made ${nm} ${fmtMass(m1)}, far from a real one’s ${fmtMass(d)}`
+		}
 	}
 	return null
 }
@@ -1773,6 +1873,22 @@ export function judgeRun(targets, sim, scene) {
 	const warn = sim?.warnings?.length ?? 0
 	return { results, ok: results.every((r) => r.ok === true), f: farness(targets, results, sim, scene), warn }
 }
+/** Does `b` change any of `ids` from how it is in `a` (its kind, place, turn or settings)? */
+export function frozenChanged(a, b, ids) {
+	const at = new Map((b?.items ?? []).map((i) => [i.id, i]))
+	for (const id of ids ?? []) {
+		const p = (a?.items ?? []).find((i) => i.id === id)
+		const q = at.get(id)
+		if (!p) continue
+		if (!q || q.type !== p.type || Math.abs((Number(p.x) || 0) - (Number(q.x) || 0)) > 1e-4 || Math.abs((Number(p.y) || 0) - (Number(q.y) || 0)) > 1e-4 || Math.abs((Number(p.angle) || 0) - (Number(q.angle) || 0)) > 0.01) return true
+		for (const k of new Set([...Object.keys(p.props ?? {}), ...Object.keys(q.props ?? {})])) {
+			const u = propValue(p, k)
+			const v = propValue(q, k)
+			if (typeof u === "number" && typeof v === "number" ? Math.abs(u - v) > 1e-6 * Math.max(1, Math.abs(u)) : JSON.stringify(u ?? null) !== JSON.stringify(v ?? null)) return true
+		}
+	}
+	return false
+}
 /**
  * ctx: {scene (after the edit, as it is on the table), sim (its run, as the app ran it), goals (the plan's goals as solved, or null: the
  *       scene's), before: {scene, sim} (the scene and run before the edit, or null), touched: Map id -> Set|"all" (what the edit set; never
@@ -2003,6 +2119,13 @@ export async function findFix(ctx, opts = {}) {
 			)
 				queue.splice(i, 1)
 	}
+	// (what the person said to leave as it is, "make it work without touching the box" (ctx.frozen): no change to it at all, whatever else the
+	// search may do (V8842 ql / qn: the box lowered 5 cm in 4 of 4))
+	const frozen = ctx.frozen instanceof Set && ctx.frozen.size ? ctx.frozen : null
+	if (frozen) {
+		const idsOf = (x) => [...(Array.isArray(x.ids) ? x.ids : x.id !== undefined ? [x.id] : []), ...(Array.isArray(x.follow) ? x.follow : [])]
+		for (let i = queue.length - 1; i >= 0; i--) if (queue[i].changes.some((x) => idsOf(x).some((id) => frozen.has(id)))) queue.splice(i, 1)
+	}
 	// (what the person chose stays what they chose: a size or a weight of theirs never made absurd, nothing the other way from a word they gave
 	// it, "heavy", "big": V8820 x5 / c01 / n6, VERIFY plainswap2)
 	{
@@ -2100,6 +2223,8 @@ export async function findFix(ctx, opts = {}) {
 			return
 		}
 		if (!fits(cand, scene, baseOver)) return opts.debug?.(c, "unfit")
+		// (nor one that carries it along: what rides on a thing that moved)
+		if (frozen && frozenChanged(scene, cand, frozen)) return opts.debug?.(c, "frozen")
 		out.tried++
 		let e
 		try {
@@ -2182,6 +2307,13 @@ export async function findFix(ctx, opts = {}) {
 				out.near.happened = firstMiss(live, out.near.results, vs, nearest.scene, ctx.before)
 				// (a closest miss that skips the machine is no idea to try either)
 				if (chainBreak(ctx, nearest.scene, vs, live)) delete out.near
+				// (nor one that misses the same goal the same way the scene does now: "Try: make the ping-pong ball heavier … but it never touches the
+				// 2nd bounce pad", as now (V8842 k5))
+				else {
+					const i0 = liveRes.findIndex((r) => r.ok !== true)
+					const i1 = (out.near.results ?? []).findIndex((r) => r.ok !== true)
+					if (i0 >= 0 && i0 === i1 && out.near.happened && out.near.happened === firstMiss(live, liveRes, sim, scene, ctx.before)) delete out.near
+				}
 			} catch (err) {
 				if (err?.name === "AbortError" || signal?.aborted) throw aborted()
 			}
@@ -2308,7 +2440,8 @@ export async function restageFix(ctx, opts = {}) {
 		if (now() - t0 > budgetMs || out.runs >= maxRuns) break
 		const lk = lockOf(locks, id)
 		const it = cur.items.find((i) => i.id === id)
-		if (!it || lk.x || it.held) continue
+		// (what the person said to leave as it is never moves: ctx.frozen)
+		if (!it || lk.x || it.held || (ctx.frozen instanceof Set && ctx.frozen.has(id))) continue
 		const last = k === receivers.length - 1
 		const next = last ? null : cur.items.find((i) => i.id === receivers[k + 1])
 		const dir = dirOf(it, next ?? it)
@@ -2321,6 +2454,7 @@ export async function restageFix(ctx, opts = {}) {
 				return null
 			}
 			if (Math.abs(dx) > 1e-9 && (!fits(cand, cur, baseOver) || nested(cand, id))) return null
+			if (Math.abs(dx) > 1e-9 && ctx.frozen instanceof Set && ctx.frozen.size && frozenChanged(scene, cand, ctx.frozen)) return null
 			return { dx, scene: cand, stage: k + 1 }
 		}
 		const prevOk = (pr) => {
@@ -2417,7 +2551,15 @@ export async function restageFix(ctx, opts = {}) {
 	// (each by its place among its kind: "the first trampoline", never "Trampoline 1": V8820 c09)
 	const parts = moves.map((m, i) => `${placeName(movedIts[i], scene)}${(riders.get(m.ids[0]) ?? []).length ? ` (with ${groupNames((riders.get(m.ids[0]) ?? []).map(item))} on it)` : ""} ${dirWords(m.dx, 0)}`)
 	const whereW = `to where ${placeName(item(mover), scene)} now comes down on ${moves.length > 1 ? "each" : "it"}`
-	const words = withTable({ say: `move ${andList(parts)}, ${whereW}`, did: `moved ${andList(parts)}, ${whereW}`, label: clipLabel(`Move ${groupNames(movedIts)} to where it lands`, 46) }, scene, cur)
+	// (the chip names them by group, "Move the 3 trampolines and the basket", never cut after the first names: V8841 c09 "Move Trampoline 1,
+	// Trampoline 2…")
+	let named = groupNames(movedIts)
+	try {
+		const byKind = movedNames(moves.map((m) => m.ids[0]), scene, riders)
+		if (byKind.length < named.length) named = byKind
+	} catch {}
+	const label = `Move ${named} to where it lands`.length <= 46 ? `Move ${named} to where it lands` : clipLabel(`Move ${named}`, 46)
+	const words = withTable({ say: `move ${andList(parts)}, ${whereW}`, did: `moved ${andList(parts)}, ${whereW}`, label }, scene, cur)
 	out.status = "found"
 	out.fix = { scene: cur, sim: vs, changes: moves, cost: moves.reduce((t, m) => t + Math.abs(m.dx) * 100, 0), why: "restage", results: vr, words, ...(out.fragile ? { fragile: true } : {}) }
 	out.targets = live
@@ -2567,6 +2709,34 @@ export function claimLabel(label, scene) {
 	for (const c of pathClaims(out)) if (!namedThings(c.what, scene).length) out = out.replace(c.phrase, "").replace(/\s{2,}/g, " ").replace(/\s+([,.;!])/g, "$1").trim()
 	return out
 }
+/** A thing (not in `skip`) that a version (b) moved so that it now stands in or over a container's opening, where it didn't in a: its id, or null.
+ *  Things that ride in the container, or stood there already, are not counted. */
+export function movedInto(a, b, container, skip = new Set()) {
+	if (!a?.items || !b?.items) return null
+	let insA
+	let insB
+	try {
+		insA = inspect(a)
+		insB = inspect(b)
+	} catch {
+		return null
+	}
+	const cA = insA.box(container)
+	const cB = insB.box(container)
+	if (!cA || !cB) return null
+	const over = (bx, c) => !!bx && Math.min(bx.x1, c.x1) - Math.max(bx.x0, c.x0) > 0.01 && bx.y1 > c.y0 + 0.005
+	const A = new Map(a.items.map((i) => [i.id, i]))
+	for (const it of b.items) {
+		if (skip.has(it.id) || ["table", "wall"].includes(it.type)) continue
+		const o = A.get(it.id)
+		if (!o) continue
+		if (Math.abs((Number(o.x) || 0) - (Number(it.x) || 0)) < 0.002 && Math.abs((Number(o.y) || 0) - (Number(it.y) || 0)) < 0.002 && JSON.stringify(o.props ?? {}) === JSON.stringify(it.props ?? {})) continue
+		if (!over(insB.box(it.id), cB)) continue
+		if (over(insA.box(it.id), cA)) continue
+		return it.id
+	}
+	return null
+}
 /**
  * Does a version that meets the goals get there through the machine? ctx: {scene, sim (the edited version and its run), before: {scene, sim}
  * (the machine as it was meant to go)}; scene, sim: the candidate and its whole run; targets: the goals it meets. -> null, or why not in words:
@@ -2646,6 +2816,12 @@ export function chainBreak(ctx, scene, sim, targets = null) {
 				const s1 = x(b1) - x(l1)
 				if (Math.abs(s0) > 0.03 && Math.abs(s1) > 0.03 && Math.sign(s0) !== Math.sign(s1)) return `${nm(g.container)} would be moved behind ${L ? nm(L) : `where ${nm(id)} starts`}, away from where it is sent`
 			}
+		}
+		// 4b. nothing else is moved into a goal's container, or over it (V8837 k5: the last bounce pad moved 42 cm right, into the plastic cup,
+		// was offered as "all 4 goals ✓"): only the goal's own thing goes there
+		if (["in", "walls"].includes(goalKind(g)) && g.container && K.has(g.container)) {
+			const into = movedInto(ctx.scene, scene, g.container, new Set([...goalIds, g.container]))
+			if (into) return `${nm(into)} would be moved into ${nm(g.container)}`
 		}
 		// 5. a "moves" goal: the same way as before, and on or in what carried it
 		if (goalKind(g) === "moves" && id) {
@@ -2773,6 +2949,10 @@ export function groupNames(items) {
  * (with what rides on it, of another kind, after it). ids: the things moved (what rides on them goes too); R: riderMap.
  */
 export function movedNames(ids, scene, R) {
+	return andList(movedParts(ids, scene, R))
+}
+/** movedNames' parts, one per thing or group: ["Ramp 2", "the 7 dominoes", "the seesaw (with the tennis ball on it)"]. */
+export function movedParts(ids, scene, R) {
 	const theName = (it) => placeName(it, scene) // (one of a row by its place: "the 6th soda can", never "Soda can 6")
 	const item = (id) => scene.items.find((i) => i.id === id)
 	const all = [...new Set(ids.flatMap((id) => [id, ...(R.get(id) ?? [])]))].map(item).filter(Boolean)
@@ -2796,7 +2976,7 @@ export function movedNames(ids, scene, R) {
 		rs.forEach((r) => said.add(r.id))
 		parts.push(`${theName(it)}${rs.length ? ` (with ${groupNames(rs)} ${CONTAINERS.includes(it.type) ? "in" : "on"} it)` : ""}`)
 	}
-	return andList(parts)
+	return parts
 }
 /** A short name for a chip: "the launcher" for "the spring launcher" (a proper name, "Ball 2", stays). */
 const shortName = (it, scene = null) => {
@@ -2976,6 +3156,10 @@ function changeWords(c, scene, before) {
  * label: "Lower the box 4 cm" (the chip: short)}.
  */
 export function fixWords(changes, scene, before = null) {
+	const w = fixWordsOf(changes, scene, before)
+	return { ...w, say: tidyBrackets(w.say), did: tidyBrackets(w.did) }
+}
+function fixWordsOf(changes, scene, before = null) {
 	const theName = (it) => placeName(it, scene) // (one of a row by its place: "the 6th soda can", never "Soda can 6")
 	// a stand-in for a lost hit, with the row laid out up to it (and emptied), or the row grown a little and the rest moved along to make room:
 	// one offer
@@ -3045,15 +3229,30 @@ export function fixWords(changes, scene, before = null) {
 	let label = cap(parts.map(short).join(", "))
 	// (three changes or more: the chip says how many, never one change standing for six: V8820 c01, "Move the box 1 cm down" for a fix that also
 	// took away the end wall and made the fan faster)
-	if (parts.length >= 3) label = clipLabel(`Make ${parts.length} changes: ${lc(short(parts[0]))}`, 46)
-	else if (label.length > 46) {
+	// (each part without what rides on it or its bracket, so the cut never falls at its first comma: "Make 3 changes: move Ramp 1 9 cm up",
+	// never "Make 3 changes: move Ramp 1…" (V8843 k2 r2))
+	const lean = (x) => lc(short(x)).replace(/,? with [^,()]*? (?:on|in) (?:it|them),?/g, "").replace(/ \([^()]*\)/g, "").replace(/\s{2,}/g, " ").trim()
+	if (parts.length >= 3) label = clipLabel(`Make ${parts.length} changes: ${lean(parts[0])}`, 46)
+	// (two that don't fit: how many, led by the bigger one, never the smaller alone: "Move the dominoes 4 cm right" also moved the person's
+	// bowling ball 25 cm (V8837 plainswap2))
+	else if (parts.length === 2 && label.length > 46) {
+		const mag = (c) => (c.kind === "move" ? Math.hypot(num(c.dx) ?? 0, num(c.dy) ?? 0) : 0)
+		const big = mag(changes[1]) > mag(changes[0]) + 1e-9 ? 1 : 0
+		label = clipLabel(`Make 2 changes: ${lean(parts[big])}`, 46)
+	} else if (label.length > 46) {
 		// a long group: "Shift the box, the seesaw and Ball 2 8 cm left" (by group, never "Shift 5 things")
 		const c = changes[0]
 		const R = riderMap(scene)
 		if (c?.kind === "move" && changes.length === 1) {
-			const full = cap(`${c.ids.length > 1 || (R.get(c.ids[0]) ?? []).length ? "shift" : "move"} ${movedNames(c.ids, scene, R)} ${dirWords(c.dx, c.dy)}`)
+			const verb = c.ids.length > 1 || (R.get(c.ids[0]) ?? []).length ? "shift" : "move"
+			const full = cap(`${verb} ${movedNames(c.ids, scene, R)} ${dirWords(c.dx, c.dy)}`)
 			const bare = full.replace(/ \(with [^)]*\)/g, "")
-			label = full.length <= 46 ? full : bare.length <= 46 ? bare : clipLabel(bare, 46)
+			// (a list of names that doesn't fit is never cut at its first comma, "Shift Ramp 2…" with no distance (V8843 s-box-left10): the first
+			// and how many more, with the distance; else how many things)
+			const ps = movedParts(c.ids, scene, R).map((x) => x.replace(/ \(with [^)]*\)/g, ""))
+			const some = ps.length > 1 ? cap(`${verb} ${ps[0]} and ${ps.length - 1} more ${dirWords(c.dx, c.dy)}`) : null
+			const count = cap(`${verb} ${ps.length} things ${dirWords(c.dx, c.dy)}`)
+			label = full.length <= 46 ? full : bare.length <= 46 ? bare : some && some.length <= 46 ? some : ps.length > 1 && count.length <= 46 ? count : clipLabel(bare, 46)
 		} else label = clipLabel(label, 46)
 	}
 	return { say, did, label }

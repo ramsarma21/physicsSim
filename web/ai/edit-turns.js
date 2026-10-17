@@ -145,6 +145,8 @@ export function offerWords(fx, { rework = false } = {}) {
 	const button = rework ? null : "Ask the AI to rework it"
 	// (stopped because the person moved on: nothing is offered for a scene that is gone; stopped by its Stop: the rework is still theirs to ask)
 	if (fx.state === "stopped" && fx.movedOn === "undo") return { text: "You undid this change, so I stopped looking for a fix.", button: null }
+	// (a new request stopped it, never the person's Stop: said so, and the free "Look again" stays (V8842 qj))
+	if (fx.state === "stopped" && fx.movedOn === "new") return { text: "I stopped looking for a fix when you sent a new change.", button }
 	if (fx.state === "stopped" && fx.movedOn) return { text: "I stopped looking for a fix when the scene changed.", button: null }
 	// (stopped because the scene went, and it is back: the same, with what can be asked again: V8832 y7)
 	if (fx.state === "stopped") return { text: fx.back ? "I stopped looking for a fix when the scene changed." : "I stopped looking for a fix.", button }
@@ -152,7 +154,15 @@ export function offerWords(fx, { rework = false } = {}) {
 	// (the person's own change puts it out of reach, a ball wider than the box: nothing else can fix it, so nothing is offered: the lead says
 	// why and that nothing else can change it, so nothing more is said here)
 	if (fx.outOfReach) return { text: "", button: null }
-	const tried = fx.runs ? ` (I tried ${fx.runs} in the physics${fx.reworked ? " and the AI’s reworks" : ""}${fx.timedOut ? ", for a minute" : ""})` : fx.reworked ? " (the AI’s reworks too)" : ""
+	// (the AI's reworks are said when one came back with an answer (fx.aiAnswered; before it was counted, any call that started): never for a
+	// call stopped as it started (V8843 rw-cradle: "and the AI's reworks", and the AI never reworked it). One that started and ran out of time,
+	// or was stopped at the AI budget, is said as such (V8842 k3 / n5 / c02))
+	const answered = fx.aiAnswered === undefined ? null : Number(fx.aiAnswered) || 0
+	const started = Number(fx.aiCalls) || 0
+	const aiTried = !!fx.reworked || (answered === null ? started > 0 : answered > 0)
+	const aiW = aiTried ? ` and the AI’s ${answered === 1 && started <= 1 ? "rework" : "reworks"}` : ""
+	const lateW = !aiTried && started > 0 ? (fx.reworkLate ? "; the AI’s rework ran out of time" : fx.reworkCapped ? "; the AI’s rework was stopped at the AI budget" : "") : ""
+	const tried = fx.runs ? ` (I tried ${fx.runs} in the physics${aiW}${fx.timedOut ? ", for a minute" : ""}${lateW})` : aiTried ? " (the AI’s reworks too)" : lateW ? ` (${lateW.slice(2)})` : ""
 	if (fx.quiet) return { text: "", button }
 	return { text: rework ? `It still doesn’t work, and I couldn’t find a change that does${tried}.` : `I couldn’t find a change that works${tried}.`, button }
 }
@@ -235,7 +245,56 @@ const chipWords = (t) => new Set(String(t ?? "").toLowerCase().split(/[^\p{L}\p{
  * button says that, checked) and never one when it already works; then examples read off the scene (opts.examples, the latest card only),
  * never one about what a fix just moved. opts.isOutcome: words that state an outcome ("make it land in the box").
  */
-export function editChips(r = {}, { rework = false, examples = [], asked = "", isOutcome = (t) => FIX_RE.test(t), mine = null, scene = undefined } = {}) {
+const COUNT_WORDS = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, fourteen: 14, twenty: 20 }
+const countOf = (w) => (/^\d+$/.test(w) ? Number(w) : COUNT_WORDS[String(w).toLowerCase()] ?? null)
+/** The counts a request states for things on the table ("double the dominoes" with 7 of them: 14; "six soda cans": 6). counts: Map of a kind's
+ *  words ("dominoes") -> how many there are now. -> Map word -> the count asked. */
+/** A kind's words, plural and singular, as a regex alternation: "dominoes|domino", "soda cans|soda can", "boxes|box". */
+const kindForms = (w) => {
+	const p = String(w).toLowerCase()
+	const one = p.replace(/(ch|sh|x|ss|o)es$/, "$1").replace(/ies$/, "y").replace(/(?<![su])s$/, "")
+	return [...new Set([p, one])].map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")
+}
+export function statedCounts(text, counts = new Map()) {
+	const out = new Map()
+	const t = String(text ?? "").toLowerCase()
+	for (const [w, n] of counts) {
+		const k = `(?:${kindForms(w)})`
+		const m = new RegExp(`\\b(?:(add|remove|take away)\\s+)?(double|twice as many|triple|half|halve|(\\d+|${Object.keys(COUNT_WORDS).join("|")}))\\s+(more\\s+|fewer\\s+|less\\s+)?(?:(?:of\\s+)?the\\s+)?(?:\\w+\\s+){0,2}?${k}\\b`).exec(t)
+		if (!m) continue
+		const c = countOf(m[2])
+		const v = /^double|^twice/.test(m[2]) ? 2 * n : /^triple/.test(m[2]) ? 3 * n : /^hal/.test(m[2]) ? Math.round(n / 2) : c === null ? null : m[4] && /more/.test(m[4]) ? n + c : m[4] ? n - c : m[1] === "add" ? n + c : m[1] ? n - c : c
+		if (v) out.set(w, v)
+	}
+	return out
+}
+/** Does an idea give a count of a kind other than the one the request states ("Add 3 more dominoes" after "double the dominoes": 10, not 14)? */
+export function contradictsCount(idea, wanted, counts = new Map()) {
+	const t = String(idea ?? "").toLowerCase()
+	for (const [w, v] of wanted) {
+		// (both words for the kind, "1 more domino" too; and "a second row of 7", "another 7", "7 extra": as many again, added (V8843 counts.mjs))
+		const k = `(?:${kindForms(w)})`
+		const m = new RegExp(`\\b(?:(add|remove|take away)\\s+)?(?:(a second row of|a second set of|another row of|another|an extra)\\s+)?(\\d+|${Object.keys(COUNT_WORDS).join("|")})\\s+(more\\s+|fewer\\s+|less\\s+|extra\\s+)?(?:\\w+\\s+){0,2}?${k}\\b`).exec(t)
+		if (!m) continue
+		const n = countOf(m[3])
+		if (n === null) continue
+		const now = counts.get(w) ?? 0
+		const total = m[2] || (m[4] && /more|extra/.test(m[4])) ? now + n : m[4] ? now - n : m[1] === "add" ? now + n : /remove|take/.test(m[1] ?? "") ? now - n : n
+		if (total !== v) return true
+	}
+	return false
+}
+/** A question the AI asked because what was asked doesn't fit on the table: the way that keeps all of it is to make the table longer. */
+const NO_ROOM_RE = /\b(?:(?:past|off|beyond|over) the (?:table(?:['’]s)?(?: (?:end|edge))?|end|edge)|(?:table|table’s|table's) end|end of the table|no room|not enough room|no space|not enough space|(?:doesn|don|won)[’']?t fit|too long for the table|out of room|run(?:s|ning)? into|would (?:hit|crash into|overlap)|can['’]?t (?:move|go|fit|shift) (?:any )?(?:further|farther)|(?:no|any) further (?:right|left))\b/i
+/** A question's own chips (each a reading of the request): never one that gives another count than the request states, and, when it asks for
+ *  want of room, the table made longer first (V8841 c11 r2: "Space out the 7 dominoes" after "double the dominoes"). -> [{label, prompt}] */
+export function askChips(r = {}, { asked = "", counts = null } = {}) {
+	const wanted = counts instanceof Map && asked ? statedCounts(asked, counts) : new Map()
+	const out = (r.suggestions ?? []).filter((s) => s?.label && s?.prompt && !(wanted.size && contradictsCount(`${s.label} ${s.prompt}`, wanted, counts)))
+	if (asked && NO_ROOM_RE.test(String(r.reply ?? "")) && !out.some((s) => /\btable\b/i.test(`${s.label} ${s.prompt}`))) out.unshift({ label: "Make the table longer", prompt: `${String(asked).trim().replace(/[.!?\s]+$/, "")}, and make the table longer so everything fits.` })
+	return out.slice(0, 4)
+}
+export function editChips(r = {}, { rework = false, examples = [], asked = "", isOutcome = (t) => FIX_RE.test(t), mine = null, scene = undefined, sceneLive = false, counts = null } = {}) {
 	const list = []
 	const fx = r.fix
 	const failed = (r.goals ?? []).filter((g) => g.ok === false)
@@ -251,8 +310,12 @@ export function editChips(r = {}, { rework = false, examples = [], asked = "", i
 	// (the kinds the person's change put in: an idea never swaps, replaces or takes one away; opts.mine, else what the report keeps)
 	const kinds = Array.isArray(mine) ? mine : Array.isArray(r.mineKinds) ? r.mineKinds : []
 	if (fx?.state === "found" && fx.sceneJSON) list.push({ label: fx.label, prompt: `${capFirst(fx.say)} (checked: ${inSentence(fx.checked)} ✓)`, fix: true, go: true, apply: "fix" })
+	// (a plain answer said after a card whose checked fix is still on offer for the scene on the table (opts.sceneLive): that fix, applied from
+	// that card, so a question never takes the way back away: V8838 Q, "why does the tennis ball miss the box?" left no chip at all)
+	else if (!fx && !r.fixNeeded && r.replyOnly && sceneLive && sc?.fix?.state === "found" && sc.fix.sceneJSON)
+		list.push({ label: sc.fix.label, prompt: `${capFirst(sc.fix.say)} (checked: ${inSentence(sc.fix.checked)} ✓)`, fix: true, go: true, apply: "fix", sceneFix: true })
 	else if (fx && ["none", "stopped", "error"].includes(fx.state)) {
-		if (fx.near?.sceneJSON) list.push({ label: `Try: ${fx.near.label}`, prompt: `${capFirst(fx.near.say)}: the closest I found${fx.near.happened ? `, but ${inSentence(fx.near.happened)}` : " (it still misses)"}`, apply: "near" })
+		if (fx.near?.sceneJSON) list.push({ label: /^\d+ changes: /.test(fx.near.label ?? "") ? `Try ${fx.near.label}` : `Try: ${fx.near.label}`, prompt: `${capFirst(fx.near.say)}: the closest I found${fx.near.happened ? `, but ${inSentence(fx.near.happened)}` : " (it still misses)"}`, apply: "near" })
 		// (on an edit's card the button sits right after the words that say nothing works: a chip here would say it twice)
 		if (!rework && r.replyOnly) list.push({ label: "Ask the AI to rework it", prompt: fx.rework?.text ?? "", fix: true, rework: true })
 	} else if (fx?.state === "searching") {
@@ -283,8 +346,14 @@ export function editChips(r = {}, { rework = false, examples = [], asked = "", i
 	// (while a goal fails, or a fix is offered, looked for or asked of the AI, or right after a fix: no idea of the AI's at all. Each is a tuning of
 	// the machine nobody checked, and word lists kept letting them through beside the checked fix: "Use more soda cans", "Let dominoes grow
 	// slightly", "Switch the fan on later", "Use real-size boxes" (V8832 P7))
+	// (a question about a request that states a count: no idea that gives another count ("Add 3 more dominoes" after "double the dominoes"), and
+	// when the question is for want of room, the way that keeps all of it, the table made longer, is offered first (V8837 c11 r1))
+	const wanted = counts instanceof Map && asked ? statedCounts(asked, counts) : new Map()
+	if (r.replyOnly && r.edit?.kind === "ask" && asked && NO_ROOM_RE.test(String(r.reply ?? "")) && !list.length)
+		list.push({ label: "Make the table longer", prompt: `${String(asked).trim().replace(/[.!?\s]+$/, "")}, and make the table longer so everything fits.` })
 	const ideas = broken ? [] : r.suggestions ?? []
 	for (const s of ideas) {
+		if (wanted.size && contradictsCount(`${s.label} ${s.prompt ?? ""}`, wanted, counts)) continue
 		if (!s?.label || list.some((x) => x.label.toLowerCase() === String(s.label).toLowerCase())) continue
 		const both = `${s.label} ${s.prompt ?? ""}`
 		if (outcome(both) || aboutFixed(both) || offReach(both)) continue

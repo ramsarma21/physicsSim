@@ -261,7 +261,8 @@ test("make it work (§14.2 (6b)): without an aim, ≤ 2 more edit calls told how
 	scene.items.find((i) => i.id === "box").x = r5(2.735 + 0.12)
 	const miss = { kind: "fix", reply: "I moved the box.", patches: [{ op: "move", id: "box", dx: 0.05 }] }
 	const hit = { kind: "fix", reply: "I moved the box back under the ball.", patches: [{ op: "move", id: "box", dx: -0.1177 }] }
-	const { r, log, steps } = await edit("make it work again", { edit: (p, n) => (n === 1 ? miss : hit) }, { scene, opts: { aimFirst: false } })
+	// (the physics' own search on the scene as it is, which would find this before any round (§16.5), is left out: these are the AI's rounds)
+	const { r, log, steps } = await edit("make it work again", { edit: (p, n) => (n === 1 ? miss : hit) }, { scene, opts: { aimFirst: false, physFirst: false } })
 	assert.deepEqual(steps, ["edit", "edit"])
 	assert.match(log[1].payload.feedback, /^# Your last answer was applied and run\nYou sent: \[\{"op":"move","id":"box","dx":0\.05\}\]\nWhat changed: .*\nIn its run: FAILED: Ball 2 lands in the box[^\n]*\. Hits in order: .*\nIt still does not work\. Answer again with the WHOLE set of patches/)
 	assert.equal(r.edit.fixFlow.rounds, 1)

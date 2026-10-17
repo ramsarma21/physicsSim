@@ -75,6 +75,40 @@ function kindOf(item, T) {
 	return name.split(/\s+/).at(-1)
 }
 
+/**
+ * The goals' moving things in a run, measured on its whole track (V8842: answers said "it rises barely 2 cm" and "flicks it up at 0.56 m/s"
+ * where the run had the ball rise 27 cm and leave at 1.7 m/s): for each goal's own thing, where its centre starts, when it starts moving and
+ * how fast it leaves (its top speed in the 0.3 s after that), and how high its centre rises (and when). -> [{item, goal, container, y0,
+ * moved_t, launch, peak_y, peak_t}]. The digest adds each container's rim from the outlines.
+ */
+export function goalFacts(run, goals) {
+	const frames = Array.isArray(run?.track?.frames) ? run.track.frames : []
+	if (frames.length < 2) return []
+	const keys = Object.keys(frames[0].placements ?? {})
+	const out = []
+	const seen = new Set()
+	for (const g of Array.isArray(goals) ? goals : []) {
+		if (!g || typeof g !== "object") continue
+		const item = typeof g.item === "string" ? g.item : Array.isArray(g.items) && g.items.length === 1 ? g.items[0] : null
+		if (!item || seen.has(item)) continue
+		const sid = keys.find((k) => k.split("/")[0] === item)
+		if (!sid) continue
+		seen.add(item)
+		const P = frames.map((f) => ({ t: f.t, p: f.placements?.[sid] })).filter((q) => Number.isFinite(q.p?.x) && Number.isFinite(q.p?.y))
+		if (P.length < 2) continue
+		const s0 = P[0].p
+		// (it starts moving when it first goes faster than 0.25 m/s: never a settle of a few millimetres at the release)
+		const v = P.map((q, k) => (k && q.t > P[k - 1].t ? Math.hypot(q.p.x - P[k - 1].p.x, q.p.y - P[k - 1].p.y) / (q.t - P[k - 1].t) : 0))
+		const k0 = v.findIndex((x) => x > 0.25)
+		let launch = null
+		if (k0 > 0) for (let k = k0; k < P.length && P[k].t <= P[k0].t + 0.3; k++) launch = Math.max(launch ?? 0, v[k])
+		let peak = P[0]
+		for (const q of P) if (q.p.y > peak.p.y) peak = q
+		out.push({ item, goal: String(g.label ?? "").slice(0, 160), container: typeof g.container === "string" ? g.container : null, y0: s0.y, moved_t: k0 > 0 ? P[k0].t : null, launch, peak_y: peak.p.y, peak_t: peak.t })
+	}
+	return out
+}
+
 /** Where each dynamic item ended (its first solid's pose in the last frame). */
 function finalPoses(sim) {
 	const out = new Map()
@@ -91,7 +125,7 @@ function finalPoses(sim) {
 	return out
 }
 
-export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalResults = null }) {
+export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalResults = null, facts = null }) {
 	const T = cat.index.types
 	const looks = looksOf(cat)
 	const rows = d.items.filter((r) => r.type !== "table" && !safety(scene.items.find((i) => i.id === r.id)))
@@ -184,6 +218,19 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 	}
 	if (goals.length || planGoals.length) lines.push(`Goals: ${[...goals.map((g) => `${g.ok ? "MET" : "FAILED"}: ${g.label}`), ...planGoals.map(other)].join("; ")}`)
 	if (events.length) lines.push(`What happened, in order: ${events.slice(0, 24).map((e) => `${e.t.toFixed(2)} s ${e.text}${e.speed != null ? ` (${e.speed.toFixed(2)} m/s)` : ""}`).join("; ")}`)
+	// (the goals' own things, measured on the whole track: the only heights and speeds an answer quotes about them)
+	if (Array.isArray(facts) && facts.length) {
+		lines.push("## The goals' moving things in the last run (measured; quote heights and speeds of these things only from here)")
+		for (const f of facts.slice(0, 6)) {
+			const c = f.container ? d.items.find((r) => r.id === f.container) : null
+			const bits = [`its centre starts at y ${f2(f.y0)} m`]
+			if (f.moved_t != null) bits.push(`starts moving at ${f.moved_t.toFixed(2)} s${f.launch != null ? ` and leaves at ${f.launch.toFixed(2)} m/s (its own top speed in the next 0.3 s)` : ""}`)
+			else bits.push("never moves")
+			bits.push(`its centre rises highest to y ${f2(f.peak_y)} m${f.peak_y > f.y0 + 0.005 ? ` at ${f.peak_t.toFixed(2)} s` : " (it never rises)"}`)
+			if (c?.box) bits.push(`${nameOf(c.id)}'s rim (the top of its walls) is at y ${f2(c.box.y1)} m, its opening x ${f2(c.box.x0)}…${f2(c.box.x1)}`)
+			lines.push(`- ${nameOf(f.item)}${f.goal ? ` (goal: ${f.goal})` : ""}: ${bits.join("; ")}`)
+		}
+	}
 	else if (sim) lines.push("Nothing hit anything.")
 	else lines.push("(not run yet)")
 	if (plan?.stages?.length) lines.push(`The plan's stages: ${plan.stages.map((s, i) => `${i + 1}. ${s.label}${s.items?.length ? ` (${s.items.join(", ")})` : ""}`).join("; ")}`)

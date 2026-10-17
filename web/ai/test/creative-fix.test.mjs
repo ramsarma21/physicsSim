@@ -38,7 +38,9 @@ async function editThenFix(scene, text, answer) {
 	const r = await orch.build({ text, mode: "edit", scene, sim }).result
 	assert.equal(r.fixNeeded, true, `${text}: the change stops a goal (${r.lead})`)
 	const t0 = Date.now()
-	const res = await orch.makeItWork(r.fixCtx, { ai: false, job: { text } })
+	// (the background's own minute, its search held to SEARCH_MIN_RUNS on a busy machine; twice the minute here, so a loaded test machine
+	// gets the runs a quiet one does (V8843: c11 'none' under load average 30–60))
+	const res = await orch.makeItWork(r.fixCtx, { ai: false, job: { text }, budgetMs: 120000 })
 	return { r, res, ms: Date.now() - t0 }
 }
 /** The offered scene, run: every goal of the edited scene met, nothing starting inside anything, every thing of the edit kept with its kind. */
@@ -160,9 +162,22 @@ test("a rework asked in the open that still fails is never put on the table: sai
 	if (r.replyOnly) {
 		assert.match(r.reply, /^The AI’s rework didn’t work either \(it tried: .+\): .+\. Your scene is as it was\.$/)
 		assert.equal(r.fix?.state, "none")
-		assert.ok(r.fix?.near?.sceneJSON, "the closest it got, as a 'Try:'")
+		// (the seesaw 5 cm right is no closer than the scene as it is: no "Try:" that is worse than what is on the table (V8837 y19 / y4))
+		assert.equal(r.fix?.near, undefined, "no 'Try:' that is no closer")
 		assert.equal(r.scene, undefined, "nothing to put on the table")
 	} else assert.ok((r.targets ?? []).every((t) => t.ok !== false), "or it works (the fix search inside found one)")
+	// (one that is closer, by the fix search's own margin, is offered as the 'Try:', its label naming every change it makes)
+	const closer = { kind: "fix", reply: "I raised the box and moved the seesaw.", patches: [{ op: "move", id: "box", dy: 0.02 }, { op: "move", id: "seesaw", dx: 0.005 }] }
+	const r2 = await createOrchestrator({ api: apiWith(closer), progress: false }).build({ text: "Make it work again so that Ball 2 lands in the box.", mode: "edit", scene: s, sim, rework: true, maxRounds: 0 }, { aimFirst: false }).result
+	if (r2.replyOnly) {
+		assert.ok(r2.fix?.near?.sceneJSON, "the closest it got, as a 'Try:'")
+		assert.ok(r2.fix.near.f < 1.64 - 0.15, `closer: ${r2.fix.near.f}`)
+		assert.match(r2.fix.near.label, /^2 changes: /, r2.fix.near.label)
+		// (and a "Try:" the card already offers that is closer stays the one offered)
+		const earlier = { ...r2.fix.near, label: "Raise the box 2 cm", f: 0.5 }
+		const r3 = await createOrchestrator({ api: apiWith(closer), progress: false }).build({ text: "Make it work again so that Ball 2 lands in the box.", mode: "edit", scene: s, sim, rework: true, maxRounds: 0, near: earlier }, { aimFirst: false }).result
+		assert.equal(r3.fix?.near?.label, "Raise the box 2 cm", "the earlier, closer one stays")
+	}
 })
 
 // ---- goals

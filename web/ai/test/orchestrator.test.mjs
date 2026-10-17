@@ -957,7 +957,8 @@ test("a later edit keeps the person's earlier change, and its fix may still line
 	const s1 = first.scene
 	const second = await createOrchestrator({ api: mockApi({ edit: { mode: "patch", reply: "Wider.", patches: [{ op: "set_props", id: "box", props: { width: 0.28 } }] } }) }).build({ text: "make the box 2 cm wider", mode: "edit", scene: s1, plan: first.plan, planScene: s1, sim: await simulate(s1), keep: first.edit.touched }).result
 	assert.equal(second.fixNeeded, true, second.lead)
-	const fr = await createOrchestrator({ api: mockApi({}) }).findFix(second.fixCtx, { budgetMs: 30000 })
+	// (a number of runs as well as the time: never a result that depends on the load, V8843)
+	const fr = await createOrchestrator({ api: mockApi({}) }).findFix(second.fixCtx, { budgetMs: 30000, minRuns: 400, hardMs: 150000 })
 	assert.equal(fr.status, "found", JSON.stringify(fr.near?.words))
 	near(fr.fix.scene.items.find((i) => i.id === "box").x, s1.items.find((i) => i.id === "box").x, 1e-9, "the box stays where the person moved it")
 	assert.match(fr.fix.words.say, /to line up with the box/, fr.fix.words.say)

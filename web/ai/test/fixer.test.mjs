@@ -30,7 +30,9 @@ async function editThenFix(scene, text, patches) {
 	if (!r.fixNeeded) return { r, editMs, fr: null }
 	const t1 = performance.now()
 	// (one engine on this thread: the page runs four at once, so the same number of runs gets the time it would take here)
-	const fr = await ai.findFix(r.fixCtx, { budgetMs: 30000 })
+	// (held to a number of runs as well as the time: on a busy machine it goes on until it has run them, so a result never depends on the load
+	// (V8843: 'a fix is sturdy' at 30.7 s under load average 30–60))
+	const fr = await ai.findFix(r.fixCtx, { budgetMs: 30000, minRuns: 600, hardMs: 150000 })
 	return { r, editMs, fr, fixMs: Math.round(performance.now() - t1) }
 }
 /** A found fix, checked again: its scene re-run in the engine makes every target happen, and adds no start-up warnings. */

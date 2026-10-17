@@ -497,6 +497,8 @@ dialog.np-dialog { --ui-w: 640px; }
 /* (next edits, and the button that asks the AI to rework it, are offered on the latest reply only: an older card's ideas were for the scene as
    it was then. The panel marks the older cards (.ai-stale) by turn: anything after the latest card never hides its buttons) */
 .ai-thread > li.ai-bot.ai-stale .ai-chips, .ai-thread > li.ai-bot.ai-stale .ai-offer-btn, .ai-thread > li.ai-bot.ai-stale .ai-again-btn, .ai-thread > li.ai-bot.ai-stale .ai-check, .ai-thread > li.ai-bot.ai-stale .ai-retry { display: none; }
+/* the checked chip shows once, on the newest live card: an answer after the card that offers it shows it there (.ai-offer-moved) */
+.ai-thread > li.ai-bot.ai-offer-moved .ai-chips button.go { display: none; }
 .ai-offer-btn { display: inline-flex; align-items: center; gap: 5px; margin: 4px 0 0; padding: 4px 11px 4px 8px; border-radius: var(--r-pill, 999px); font: inherit; font-size: 12.5px; font-weight: 600; line-height: 1.3; cursor: pointer; vertical-align: baseline;
 	color: var(--ai-a); background: var(--ai-soft); border: 1px solid color-mix(in srgb, var(--ai-a) 35%, var(--line)); }
 .ai-offer-btn:hover { border-color: color-mix(in srgb, var(--ai-a) 65%, var(--line)); }

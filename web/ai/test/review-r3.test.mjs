@@ -216,7 +216,9 @@ test("'put a sneaker next to the box': the line says the person's anchor, and th
 	const m1 = await built("m1")
 	assert.ok(m1.human.includes("added a sneaker next to the box"), m1.human.join(" | "))
 	assert.ok(m1.human.some((l) => /Rubik's cubes/.test(l)), m1.human.join(" | "))
-	if (m1.goals.some((g) => g.ok === false)) assert.match(m1.lead, /the sneaker is in the way/, m1.lead)
+	// (round 7, V8842 k1: "in the way" only when the run without it gets further; here the Rubik's cubes reach nothing without the sneaker
+	// either, so the lead says what happens and never blames the sneaker)
+	if (m1.goals.some((g) => g.ok === false)) assert.doesNotMatch(m1.lead, /the sneaker is in the way/, m1.lead)
 	const c13 = await built("c13")
 	assert.ok(c13.human.includes("added a rubber duck on the table next to the box"), c13.human.join(" | "))
 	// (the search may slide it along: only its height is held)

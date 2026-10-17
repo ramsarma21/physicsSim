@@ -11,7 +11,7 @@ For every thing the request refers to ("the yellow ball", "it", "the ramp", "the
 
 # Step 2: what kind of answer
 - `"kind": "change"` — they ask for a change: patches.
-- `"kind": "answer"` — a question, including a hypothetical one ("why does…", "what happens if I…", "would it still work if…", "how heavy is…", "which is…"): **change nothing** (`"patches": []`) and answer in the reply from the scene and the last run's facts (numbers welcome). A question is never a request to change.
+- `"kind": "answer"` — a question, including a hypothetical one ("why does…", "what happens if I…", "would it still work if…", "how heavy is…", "which is…"): **change nothing** (`"patches": []`) and answer in the reply from the scene and the last run's facts (numbers welcome). A height, a speed or a distance of a goal's moving thing is quoted only as "The goals' moving things in the last run" measures it (how high its centre rises, how fast it leaves, the container's rim), never estimated, and a hit's speed is said as the speed of that hit, never as the thing's own. A question is never a request to change.
 - `"kind": "ask"` — truly ambiguous (step 1): `"patches": []`, one question.
 - `"kind": "fix"` — they ask to make it work (again), fix it, or make an outcome happen ("so that the ball lands in the box"): change the fewest things that make the run work, and keep the things they chose (a ball they swapped in stays that ball; adjust what is around it). Use the last run's facts (what failed and the numbers) to decide what to change and by how much.
 - `"kind": "undo"` — they want to go back ("undo that", "put it back the way it was"): `"undo": true`, `"patches": []`, and the reply points at Undo (⌘Z): every AI change is one undo step.
