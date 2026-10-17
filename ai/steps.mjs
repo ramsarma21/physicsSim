@@ -31,7 +31,7 @@ import { AIError, callModel, loadRouting } from "./core.mjs"
 import { DEFAULT_STAGE, detailFor, getCatalog, SURFACE_NOTE } from "./catalog-digest.mjs"
 import { checkGoals, goalKind } from "./goals.mjs"
 import { applyPatches, planFromScene, unitsOfItem, validateObservation, VALIDATORS } from "./schemas.mjs"
-import { richDigestFrom } from "./rich-digest.mjs"
+import { richDigestFrom, goalFacts } from "./rich-digest.mjs"
 import { roomUnder, withRoom } from "./room.mjs"
 import { sceneDigest, simText } from "./scene-digest.mjs"
 import { imagine } from "./imagine.mjs"
@@ -490,7 +490,7 @@ async function refine(p, o) {
 // again; Undo then a new request) is not run twice. Kept in this process (Vercel's warm instances, the bench) and on disk under
 // AI_CACHE_DIR/edit-runs (the local server runs every step in a process of its own), when that is writable; only what the digest reads is
 // kept: each item's resolved size and mass, the run's summary, its first and last frames, and the other goals' results.
-const RUN_CACHE_V = 1
+const RUN_CACHE_V = 2 // (2: the goals' moving things measured on the whole track, `facts`)
 const RUN_MEM = new Map() // key -> Promise<{sim, goalResults}> (LRU)
 const RUN_MEM_MAX = 64
 const RUN_DISK_MAX = 400
@@ -503,7 +503,7 @@ function digestPart(run) {
 function diskGet(key) {
 	try {
 		const v = JSON.parse(readFileSync(join(runDir(), `${key}.json`), "utf8"))
-		return v?.v === RUN_CACHE_V && isObj(v.sim) ? { sim: v.sim, goalResults: v.goalResults ?? null } : null
+		return v?.v === RUN_CACHE_V && isObj(v.sim) ? { sim: v.sim, goalResults: v.goalResults ?? null, facts: Array.isArray(v.facts) ? v.facts : null } : null
 	} catch {
 		return null
 	}
@@ -549,7 +549,7 @@ async function editRun(cur, pl, given, cat) {
 				cached = false
 				p = (async () => {
 					const run = await runScene(toRun)
-					const val = { sim: digestPart(run), goalResults: others.length ? checkGoals(others, { doc: run.doc, track: run.track, summary: run.summary }) : null }
+					const val = { sim: digestPart(run), goalResults: others.length ? checkGoals(others, { doc: run.doc, track: run.track, summary: run.summary }) : null, facts: goalFacts(run, [...goals, ...others]) }
 					diskPut(key, val)
 					return val
 				})()
@@ -566,7 +566,7 @@ async function editRun(cur, pl, given, cat) {
 		}
 		return { ...val, ms: Date.now() - t0, cached }
 	} catch {
-		return { sim: isObj(given) && isObj(given.summary) ? given : null, goalResults: null, ms: Date.now() - t0, cached: false }
+		return { sim: isObj(given) && isObj(given.summary) ? given : null, goalResults: null, facts: null, ms: Date.now() - t0, cached: false }
 	}
 }
 
@@ -595,7 +595,7 @@ async function edit(p, o) {
 	const tDigest = Date.now()
 	const d = await sceneDigest(cur, cat.index)
 	const run = await editRun(cur, pl, p.sim, cat)
-	const rich = richDigestFrom(cur, d, { sim: run.sim, plan: pl, cat, goalResults: run.goalResults })
+	const rich = richDigestFrom(cur, d, { sim: run.sim, plan: pl, cat, goalResults: run.goalResults, facts: run.facts })
 	// the real gap under a hung thing where the outline boxes show less (ai/room.mjs: the box over the starter's sloped seesaw plank;
 	// AI_EDIT_ROOM=0 leaves the boxes' gap, for an A/B)
 	const room = process.env.AI_EDIT_ROOM === "0" ? null : await roomUnder(cur, d).catch(() => null)

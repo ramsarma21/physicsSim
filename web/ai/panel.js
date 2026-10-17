@@ -20,10 +20,11 @@
 // thumbnail that opens it next to the scene's start. An edit is answered with one card per kind (./edit-turns.js): a question with a chip per
 // reading, an answer, an undo, "Build it as a new scene…", or the edit card: exactly what changed in real units, "Everything else is exactly as
 // it was (N items untouched)", a heads-up and the pre-checked fix chip (Details: what it understood, why, time, model). Never a concept there.
-import { createOrchestrator, prepareImages, STEP_LABELS, MAX_IMAGES, AiError, ACTION_KINDS, statesOutcome, planAfterFix, fixInfo, humanChangeList } from "./orchestrator.js"
+import { createOrchestrator, prepareImages, STEP_LABELS, MAX_IMAGES, AiError, ACTION_KINDS, statesOutcome, planAfterFix, fixInfo, humanChangeList, goalResults, keptByWords, keepClauses } from "./orchestrator.js"
 // (the fix search's own progress words, "· 42 physics runs": named apart from this file's progressWords, a model step's progress, which
 // shadowed it, so "Looking for a fix…" never said what it was doing: V8814, 16 Oct)
-import { editChips, offerWords, progressWords as fixProgressWords, reworkWords, nameAsShown } from "./edit-turns.js"
+import { editChips, askChips as askChipsOf, offerWords, progressWords as fixProgressWords, reworkWords, nameAsShown } from "./edit-turns.js"
+import { kindNoun } from "./words.js"
 import { createShot } from "./shot.js"
 import { createFixPool } from "./fix-pool.js"
 import { aiAccess, atWhen } from "./access.js"
@@ -101,10 +102,15 @@ const BUILD_WORDS = /\b(build|make|create|add|put|place|set up|setup|recreate|co
 /** A request worded as a question or a wish ("can you show a pendulum…?", "how about a bowling ball…?", "what if…", "I want…", "let's…"): build it. */
 const BUILD_ASK = /^\s*(please\s+)?(can|could|would|will) you\b|\b(how|what) about\b|\bwhat if\b|\bi['’]?d (like|love)\b|\bi (want|would like|need)\b|\blet['’]?s\b/i
 export const isQuestion = (t) => {
-	const s = String(t ?? "").trim()
+	// ("and what does the seesaw do?", "so why does it miss?": a question all the same (V8842: tagged CHANGE))
+	const s = String(t ?? "").trim().replace(/^(?:and|but|so|ok(?:ay)?|also|then|hmm+|um+|oh|right|well)\b[\s,]*/i, "")
 	if (!s) return false
 	if (/\b(just tell me|tell me|don['’]t change|do not change|without changing|no changes|don['’]t build|do not build)\b/i.test(s)) return true
-	if (BUILD_ASK.test(s) || BUILD_WORDS.test(s)) return false
+	if (BUILD_ASK.test(s)) return false
+	// ("why doesn't the egg move?", "what happens if the box moves?": a wh-question is a question whatever verb it has (V8842 qj: tagged a change,
+	// and it stopped the search))
+	if (/\?\s*$/.test(s) && /^(why|what|how|where|when|which|who|whose)\b/i.test(s) && !/^how (?:do|can|could|would|should) (?:i|we|you) (?:make|build|add|put|get)\b/i.test(s)) return true
+	if (BUILD_WORDS.test(s)) return false
 	return (/\?/.test(s) && /^(what|which|how|why|where|when|who|whose|is|are|was|were|does|do|did|will|would|could|can|should|has|have)\b/i.test(s)) || /^(explain|describe what)\b/i.test(s)
 }
 const SCENE_WORDS_LOOSE = new Set(["the", "and", "with", "small", "large", "big", "little", "tall", "short", "long", "wide", "thin", "left", "right", "top", "bottom", "first", "second", "third", "last", "row", "wooden", "metal", "steel", "plastic", "glass", "red", "blue", "green", "yellow", "white", "black", "table", "wall"])
@@ -122,6 +128,13 @@ export function aboutScene(text, scene, typeNames = new Map()) {
 	}
 	return false
 }
+/** Words that ask for another way than the one on offer: "…instead?", "besides moving the box", "is there another way", "without moving the box". */
+export const ALT_RE = /\b(instead|besides|other than|another way|other ways?|rather than|without|apart from|except|different way|alternative)\b/i
+/** A reply's last sentence that proposes a change of its own: it asks back, or offers one ("Want me to…?", "I could…", "…would fling it higher",
+ *  "try a steeper tilt"). */
+export const PROPOSES_RE = /\?\s*$|\b(want me to|should I|shall I|I could|I can(?!['’]t|not)|would you like|you could|try (?:a|an|the|making|moving|tilting|raising|lowering|adding|swapping|using)|would (?:fling|send|make|help|work|give|launch|lift|push|throw|carry|let|get))\b/i
+/** A text's last sentence. */
+export const lastSentence = (t) => String(t ?? "").trim().split(/(?<=[.!?])\s+(?=[A-Z“"(])/).filter(Boolean).at(-1) ?? ""
 /** A yes to the reply's offer: "yes", "yes please", "do it", "sure", "go ahead". */
 export const YES_RE = /^\s*(yes|yeah|yep|yup|sure|ok(ay)?|please( do)?|do it|go ahead|yes,? (please|do it)|sounds good|let'?s do (it|that)|do that|apply it|fix it)[\s.!]*$/i
 /** A bare "make it work (again)" / "fix it" / "get it working": what the live card offers, checked, answers it before any AI call (V8832 y8:
@@ -266,6 +279,75 @@ export function mountAiPanel(host) {
 		const after = done.slice(done.indexOf(on) + 1).filter((x) => !x.report?.movedOn)
 		return after.length && after.every((x) => x.report?.replyOnly) ? after.at(-1) : on
 	}
+	/** A reply that changed nothing and offers nothing of its own (an answer to a question) leaves the card whose scene is on the table as the
+	 *  one that offers: its checked fix, its "Try:", its button. -> that card, else null (V8838 Q: after "why does the tennis ball miss the box?"
+	 *  the swap card went stale with its checked chip, the answer had none, and "yes" said there was nothing to say yes to). */
+	const plainReply = (x) => !!x?.report?.replyOnly && !x.report.movedOn && !x.report.fix && !x.report.fixNeeded && !ownsOffer(x)
+	/** The person's words a reply answers: the last thing they typed before it. */
+	const askedBefore = (x) => {
+		const i = S.turns.indexOf(x)
+		return (i > 0 ? [...S.turns.slice(0, i)].reverse().find((y) => y.role === "user") : null)?.text ?? ""
+	}
+	/**
+	 * A reply of the AI's that a "yes" can't mean the card before it for (V8842 qa / qq / qr, V8843 Q3 / Q4: "yes" lowered the box the person
+	 * had just ruled out): a question back with choices of its own (kind ask), an answer to a question that asks for another way ("…instead?",
+	 * "besides moving the box", "without moving the box"), or an answer whose last sentence proposes a change of its own ("…would fling it
+	 * higher", "Want me to…?"). -> "ask" | "proposal" | "other" | null.
+	 */
+	function ownOffer(x) {
+		const r = x?.report
+		if (!r?.replyOnly || !r.edit || r.movedOn) return null
+		if (r.edit.kind === "ask" && (r.suggestions ?? []).length) return "ask"
+		if (r.edit.kind !== "answer") return null
+		if (PROPOSES_RE.test(lastSentence(r.reply))) return "proposal"
+		return ALT_RE.test(askedBefore(x)) ? "other" : null
+	}
+	const ownsOffer = (x) => !!ownOffer(x)
+	/** The card whose checked fix a reply that owns an offer may still show: never one whose fix changes what the question said to keep. */
+	function offerBeside(x) {
+		if (!ownOffer(x) || ownOffer(x) === "ask") return null
+		const sc = sceneCard(x.baseJSON && sameTable(x.baseJSON, tableJSON()) ? x.baseJSON : tableJSON())
+		if (!sc || !sameTable(sc.sceneJSON, tableJSON()) || sc.report?.fix?.state !== "found") return null
+		const done = S.turns.filter((y) => y.role === "ai" && y.state === "done")
+		if (!done.slice(done.indexOf(sc) + 1).every((y) => y.report?.movedOn || plainReply(y) || y === x)) return null
+		return fixKeeps(sc, askedBefore(x)) ? sc : null
+	}
+	/** A local reply that names a card's checked fix as one of the choices ("Which change do you mean? The checked one is …"): that card, while its
+	 *  fix is still on offer for the scene on the table. */
+	function offerFromOf(x) {
+		const id = x?.report?.offerFrom
+		const sc = id ? S.turns.find((y) => y.id === id) : null
+		return sc && sc.report?.fix?.state === "found" && sameTable(sc.sceneJSON, tableJSON()) ? sc : null
+	}
+	/** Does a card's checked fix leave alone what `words` say to keep ("without moving the box")? */
+	function fixKeeps(sc, words) {
+		try {
+			const kept = keptByWords(words, JSON.parse(sc.sceneJSON))
+			if (!kept.size) return true
+			const ch = sc.report?.fix?.changes ?? []
+			const ids = new Set(ch.flatMap((c) => (Array.isArray(c?.ids) ? c.ids : c?.id !== undefined ? [c.id] : [])))
+			if ([...kept].some((id) => ids.has(id))) return false
+			// (and what rides on it: compared on the fix's own scene)
+			const a = JSON.parse(sc.sceneJSON)
+			const b = sc.report?.fix?.sceneJSON ? JSON.parse(sc.report.fix.sceneJSON) : null
+			if (!b) return true
+			return ![...kept].some((id) => {
+				const p = a.items.find((i) => i.id === id)
+				const q = b.items.find((i) => i.id === id)
+				return !p || !q || Math.abs((p.x ?? 0) - (q.x ?? 0)) > 1e-4 || Math.abs((p.y ?? 0) - (q.y ?? 0)) > 1e-4 || JSON.stringify(p.props ?? {}) !== JSON.stringify(q.props ?? {})
+			})
+		} catch {
+			return true
+		}
+	}
+	function offeringCard(act = activeTurn()) {
+		if (!plainReply(act)) return null
+		const sc = sceneCard(act.baseJSON && sameTable(act.baseJSON, tableJSON()) ? act.baseJSON : tableJSON())
+		if (!sc || !sameTable(sc.sceneJSON, tableJSON())) return null
+		const done = S.turns.filter((x) => x.role === "ai" && x.state === "done")
+		// (every card after it is a plain reply: one that offers something of its own, a rework's reply, a "yes" that waited, is the live one)
+		return done.slice(done.indexOf(sc) + 1).every((x) => x.report?.movedOn || plainReply(x)) ? sc : null
+	}
 	// the app's history moved (⌘Z, the top bar's Undo, another scene, a change by hand): the cards follow it (Undo / Restore, which card is live,
 	// the folded chip's words). The app gives the panel no event for it: its history index is read a few times a second (a number compare)
 	let seenHi = host.historyIndex?.() ?? null
@@ -302,6 +384,8 @@ export function mountAiPanel(host) {
 		const bots = [...thread.querySelectorAll(":scope > li.ai-bot")]
 		const act = activeTurn()
 		const at = act ? bots.findIndex((li) => li.dataset.id === act.id) : -1
+		// (a plain answer after the card whose scene is on the table keeps that card live: its checked offer is still the one to take)
+		const offering = offeringCard(act)
 		const stateOf = (li) => S.turns.find((x) => x.id === li.dataset.id)?.state
 		bots.forEach((li, i) => {
 			const t = S.turns.find((x) => x.id === li.dataset.id)
@@ -312,8 +396,11 @@ export function mountAiPanel(host) {
 			// result with the person's boxes made 1.5 m deep)
 			const busy = !t || t.state === "running"
 			const ended = !!t && t.state !== "done" && t.state !== "running"
-			const live = busy || (ended ? !bots.slice(i + 1).some((x) => stateOf(x) === "done") : at >= 0 && (i === at || (i > at && !!t?.report?.replyOnly && i === bots.length - 1)))
+			const live = busy || (ended ? !bots.slice(i + 1).some((x) => stateOf(x) === "done") : (at >= 0 && (i === at || (i > at && !!t?.report?.replyOnly && i === bots.length - 1))) || (!!offering && t?.id === offering.id))
 			li.classList.toggle("ai-stale", !live)
+			// (the checked chip shows once, on the newest live card: the answer after it shows it, so the card it came from doesn't as well (V8842:
+			// the same green chip twice at once))
+			li.classList.toggle("ai-offer-moved", live && !!offering && t?.id === offering.id && !!act && act.id !== offering.id)
 		})
 	}
 	if (typeof MutationObserver === "function") new MutationObserver(markLatest).observe(thread, { childList: true })
@@ -1189,7 +1276,8 @@ export function mountAiPanel(host) {
 			// (the words go without "start over with": "start over with a catapult…" fills the box with "A catapult…")
 			const asNew = r.suggestNew && host.openNew ? h("button", { type: "button", class: "ai-chip-btn ai-primary", onclick: () => host.openNew({ ai: true, text: newSceneWords(t.request?.text ?? "") }) }, icon("sparkle"), "Build it as a new scene…") : null
 			// (a question back: each reading is a chip that sends the whole request; nothing else is offered beside them)
-			const asks = kind === "ask" ? (r.suggestions ?? []).filter((s) => s?.label && s?.prompt).slice(0, 4) : []
+			// (never one that drops a count the request states; the table made longer first when it asks for want of room: §16.5)
+			const asks = kind === "ask" ? askChipsOf(r, { asked: t.request?.text ?? "", counts: tableCounts() }) : []
 			const askChips = asks.length ? h("div", { class: "ai-chips ai-ask-chips", role: "group", "aria-label": "Which one?" }, asks.map((s) => h("button", { type: "button", class: "ai-sugg", title: s.prompt, onclick: () => suggest(s) }, icon("sparkle"), h("span", {}, s.label)))) : null
 			return h(
 				"div",
@@ -1564,7 +1652,21 @@ export function mountAiPanel(host) {
 		const more = (n) => (n > 1 ? ` (and ${n - 1} more: see Details)` : "")
 		if (warn) return `Heads-up: ${warn.text}`
 		// (a stand-in that isn't on the table is never said: V8820 c04)
-		if (miss) return `Heads-up: there’s no ${String(miss.asked).replace(/^(a|an|the) /i, "")} in the library${miss.noSub ? "" : `, so ${miss.substitute_type ? `I used ${/^[aeiou]/i.test(types.get(miss.substitute_type)?.name ?? miss.substitute_type) ? "an" : "a"} ${String(types.get(miss.substitute_type)?.name ?? miss.substitute_type).toLowerCase()}` : "I left it out"}`}${more(r.missing.length)}.`
+		if (miss) {
+			// ("there are no standing toilet paper rolls in the library, so I used toilet paper rolls", never "there’s no … rolls" (V8842 n2))
+			const asked = String(miss.asked).replace(/^(a|an|the|some) /i, "")
+			const many = (/s$/i.test(asked.split(/\s+(?:in place of|instead of|for)\s+/)[0]) && !/ss$/i.test(asked)) || /^(\d+|two|three|four|five|six|seven|eight|nine|ten|several|many)\b/i.test(asked)
+			const sub = miss.substitute_type
+			let used = "I left it out"
+			if (sub) {
+				let subW = String(types.get(sub)?.name ?? sub).toLowerCase()
+				try {
+					if (many) subW = String(kindNoun(sub, 2) ?? subW).toLowerCase()
+				} catch {}
+				used = `I used ${many ? "" : /^[aeiou]/i.test(subW) ? "an " : "a "}${subW}`
+			}
+			return `Heads-up: ${many ? "there are no" : "there’s no"} ${asked} in the library${miss.noSub ? "" : `, so ${used}`}${more(r.missing.length)}.`
+		}
 		if (r.differences?.length) return `Heads-up: ${String(r.differences[0]).replace(/\.$/, "")}${more(r.differences.length)}.`
 		return null
 	}
@@ -1627,12 +1729,32 @@ export function mountAiPanel(host) {
 		const types = new Map((host.getCatalog()?.types ?? []).map((ty) => [ty.key, ty]))
 		return nameAsShown(s, realItems(), (type) => types.get(type)?.name ?? "")
 	}
+	/** How many of each kind are on the table, by the words a person counts them with: "dominoes" -> 7 (a row's count), "soda cans" -> 6. */
+	function tableCounts() {
+		const out = new Map()
+		for (const it of realItems()) {
+			const n = it.type === "domino-row" ? Number(it.props?.count ?? 7) || 0 : 1
+			let w = "dominoes"
+			if (it.type !== "domino-row")
+				try {
+					w = String(kindNoun(it.type, 2, { short: true }) ?? "").toLowerCase()
+				} catch {
+					continue
+				}
+			if (w) out.set(w, (out.get(w) ?? 0) + n)
+		}
+		return out
+	}
 	function chipsFor(t) {
 		const r = t.report ?? {}
 		const latest = t.id === activeTurn()?.id
 		// (a reply that changed nothing: its chips follow the card whose scene is on the table, its goals and its fix: V8832 y2 / y19)
 		const sc = r.replyOnly ? sceneCard(t.baseJSON && sameTable(t.baseJSON, tableJSON()) ? t.baseJSON : tableJSON()) : null
-		const list = editChips(r, { rework: !!t.request?.rework || !!r.reworkFailed, examples: latest ? editExamples().map((ex) => ex.text) : [], asked: t.request?.text ?? "", isOutcome: statesOutcome, mine: personKinds(t), ...(r.replyOnly ? { scene: sc?.report ?? null } : {}) })
+		// (a plain answer after a card with a checked fix shows that fix too, applied from that card: V8838 Q)
+		const offer = r.replyOnly && latest ? offeringCard(t) ?? offerBeside(t) ?? offerFromOf(t) : null
+		// (the question's own request: the person's words before it, for the counts it states)
+		const askedText = t.request?.text || (r.replyOnly ? [...S.turns.slice(0, S.turns.indexOf(t))].reverse().find((x) => x.role === "user")?.text : "") || ""
+		const list = editChips(r, { rework: !!t.request?.rework || !!r.reworkFailed, examples: latest ? editExamples().map((ex) => ex.text) : [], asked: askedText, isOutcome: statesOutcome, mine: personKinds(t), counts: latest ? tableCounts() : null, ...(r.replyOnly ? { scene: sc?.report ?? null, sceneLive: !!offer } : {}) })
 			.filter((s) => !(s.rework && t.reworkAsked))
 			.map((s) => (s.fix || s.apply || s.rework ? s : nameShown(s)))
 			.filter((s) => s && (s.fix || s.apply || s.rework || !latest || !namesAbsent(`${s.label} ${s.prompt ?? ""}`)))
@@ -1641,14 +1763,14 @@ export function mountAiPanel(host) {
 			"div",
 			{ class: "ai-chips", role: "group", "aria-label": "Try next" },
 			// (a fix chip's request is long and written for the AI: the bubble shows the chip's own words, and the request goes as sent)
-			list.slice(0, 3).map((s) => h("button", { type: "button", class: `ai-sugg${s.fix ? " fix" : ""}${s.go ? " go" : ""}`, title: s.prompt, onclick: () => (s.apply ? applyFix(t, s.apply) : s.rework ? askRework(t) : suggest(s, s.fix ? s.label : null)) }, s.go ? icon("check") : s.fix ? icon("retry") : icon("sparkle"), h("span", {}, s.label)))
+			list.slice(0, 3).map((s) => h("button", { type: "button", class: `ai-sugg${s.fix ? " fix" : ""}${s.go ? " go" : ""}`, title: s.prompt, onclick: () => (s.apply ? applyFix(s.sceneFix && offer ? offer : t, s.apply) : s.rework ? askRework(t) : suggest(s, s.fix ? s.label : null)) }, s.go ? icon("check") : s.fix ? icon("retry") : icon("sparkle"), h("span", {}, s.label)))
 		)
 	}
 	/** The offer after an edit's reply, from the search for a fix: "Want me to lower the box 4 cm? (checked: Ball 2 lands in the box ✓)"; when
 	 *  nothing works, said so, with the button that asks the AI to rework it right there (never a question without a button). */
 	function fixOffer(r, t = null) {
 		const fx = r?.fix
-		const words = offerWords(fx, { rework: !!t?.request?.rework })
+		const words = offerWords(fx, { rework: !!t?.request?.rework || !!r?.reworkFailed })
 		if (!words) return []
 		if (fx.state === "found") {
 			const ok = h("span", { class: "ai-ok-mark", "aria-label": "works" }, "✓")
@@ -1658,7 +1780,7 @@ export function mountAiPanel(host) {
 		// (once asked from this card, never again: the paid rework is one press, and its own reply says how it went)
 		const btn = t && words.button && !t.reworkAsked ? h("button", { type: "button", class: "ai-offer-btn", onclick: () => askRework(t) }, icon("retry"), words.button) : null
 		// (stopped by its Stop: the physics search may go on from the start, which costs nothing: "Look again")
-		const again = t && fx.state === "stopped" && !fx.movedOn && fixCtxs.has(t.id) && !t.reworkAsked ? h("button", { type: "button", class: "ai-again-btn", title: "Run the physics search for a fix again (no AI call)", onclick: () => lookAgain(t) }, icon("replay"), "Look again") : null
+		const again = t && fx.state === "stopped" && (!fx.movedOn || fx.movedOn === "new") && fixCtxs.has(t.id) && !t.reworkAsked ? h("button", { type: "button", class: "ai-again-btn", title: "Run the physics search for a fix again (no AI call)", onclick: () => lookAgain(t) }, icon("replay"), "Look again") : null
 		return [` ${words.text}`, ...(again ? [" ", again] : []), ...(btn ? [" ", btn] : [])]
 	}
 	/** "Ask the AI to rework it": the same rework the background tried (its words, what it keeps, what never comes back, the reasons the run
@@ -1830,6 +1952,9 @@ export function mountAiPanel(host) {
 				// (with how many model calls the AI's reworks started for it, a stopped one too: Details and the measurements read it)
 				turn.report.fix = r.status === "ok" ? null : { ...r.info, ...(r.aiCalls ? { aiCalls: r.aiCalls } : {}) }
 				rerenderTurn(turn)
+				// (a question asked while it looked was answered meanwhile: that answer is the live card, and shows the offer now)
+				const act = activeTurn()
+				if (act && act !== turn && act.report?.replyOnly && act.state === "done") rerenderTurn(act)
 				persist()
 				const fx = turn.report.fix
 				// a "yes" typed while it looked: the fix goes on the table now (or the reply says plainly that there is none)
@@ -1894,7 +2019,7 @@ export function mountAiPanel(host) {
 		const now = tableJSON()
 		for (const t of S.turns) {
 			const fx = t.report?.fix
-			if (t.role !== "ai" || t.state !== "done" || fx?.state !== "stopped" || !fx.movedOn || !t.sceneJSON || !sameTable(t.sceneJSON, now)) continue
+			if (t.role !== "ai" || t.state !== "done" || fx?.state !== "stopped" || !fx.movedOn || fx.movedOn === "new" || !t.sceneJSON || !sameTable(t.sceneJSON, now)) continue
 			t.report.fix = { ...fx, movedOn: null, back: true }
 			rerenderTurn(t)
 			persist()
@@ -1959,9 +2084,69 @@ export function mountAiPanel(host) {
 	 * found); "want the AI to rework it?" asks the AI; "Want me to fix it?" asks for the fix. With nothing offered it says so: a bare yes never goes
 	 * to the AI as a change. -> false when the words are a request after all ("fix it" with nothing offered: the AI makes it work)
 	 */
+	/** The latest reply, when it owns an offer of its own (ownOffer) and is about the scene on the table: {turn, kind}; else null. */
+	function ownOfferNow() {
+		const act = activeTurn()
+		const last = [...S.turns].reverse().find((x) => x.role === "ai" && x.state === "done")
+		if (!act || act !== last) return null
+		const kind = ownOffer(act)
+		return kind ? { turn: act, kind } : null
+	}
+	/**
+	 * A "yes" (or "make it work") to a reply that owns its offer: a question back is answered by its choices ("Which one?", nothing spent); an
+	 * answer that proposes a change goes to the AI as that change, the conversation with it ("Yes, do that: …"), and what the question said to
+	 * keep goes with it ("without moving the box"); an answer that proposes nothing asks which change is meant. -> true (handled)
+	 */
+	function yesToOwn(own, text, { make = false } = {}) {
+		const x = own.turn
+		const r = x.report ?? {}
+		input.value = ""
+		autosize()
+		syncCount()
+		const asked = askedBefore(x)
+		const kept = keepClauses(asked)
+		const keepW = kept.length ? `, ${kept.join(" and ")}` : ""
+		if (own.kind === "ask") {
+			userBubble(text)
+			replyTurn("Which one? Pick one of these.", { edit: { kind: "ask" }, suggestions: (r.suggestions ?? []).slice(0, 4) })
+			return true
+		}
+		// (the question asked for it to work with something kept, "is there a way to fix it without touching the box?": a yes is that, a "make it
+		// work" with the box kept, which the physics looks at first (V8842 ql / qa: "Yes, do that: try a steeper tilt" cost $0.20 and didn't work,
+		// where the physics finds a smaller tilt in seconds))
+		if (kept.length && statesOutcome(asked)) {
+			suggest({ prompt: `make it work${keepW}` }, text)
+			return true
+		}
+		if (own.kind === "proposal") {
+			const idea = lastSentence(r.reply).replace(/^(?:or|and|so|but)\s+/i, "").trim()
+			suggest({ prompt: `${make ? "Make it work that way" : "Yes, do that"}: ${idea}${keepW && !/\b(without|besides|instead|keep|leave)\b/i.test(idea) ? ` (${kept.join(" and ")})` : ""}` }, text)
+			return true
+		}
+		// (it asked for another way, and the answer proposed none: a "make it work" goes to the AI with what to keep; a "yes" to a question that
+		// itself names the way, "could I fix it by tilting the seesaw more instead?", is that way asked for (V8843 Q3); else it asks which change)
+		if (make) {
+			suggest({ prompt: `${String(text).trim().replace(/[.!?\s]+$/, "")}${keepW}` }, text)
+			return true
+		}
+		const way = /\bby\s+\w+ing\b/i.test(asked) && statesOutcome(asked) ? String(asked).trim().replace(/^(?:so\s+|and\s+)?(?:could|can|would|should|shall|may|might)\s+(?:i|we|you)\s+/i, "").replace(/[?.!\s]+$/, "") : null
+		if (way) {
+			suggest({ prompt: `Yes: ${way}` }, text)
+			return true
+		}
+		userBubble(text)
+		const sc = offerBeside(x)
+		replyTurn(sc ? `Which change do you mean? The checked one is “${capFirst(sc.report.fix.label)}”, or tell me what to change instead.` : "Which change do you mean? Tell me what to change, and I’ll do it.", sc ? { offerFrom: sc.id } : {})
+		return true
+	}
 	function answerYes(text) {
-		// (the card about the scene on the table: after an Undo of a fix, the edit card it came from, whose checked fix a "yes" puts back)
-		const t = (S.fixJob && S.turns.find((x) => x.id === S.fixJob.turnId && sameTable(x.sceneJSON, tableJSON()))) || activeTurn()
+		// (the latest reply asked back with choices of its own, or answered a question that asked for another way, or proposed a change of its own:
+		// a "yes" is to that, never to the checked fix of the card before it: V8842 qa / qq / qr, V8843 Q3 / Q4)
+		const own = ownOfferNow()
+		if (own) return yesToOwn(own, text)
+		// (the card about the scene on the table: after an Undo of a fix, the edit card it came from, whose checked fix a "yes" puts back; after
+		// a plain answer to a question, the card before it, whose offer is still the one on screen: V8838 Q)
+		const t = (S.fixJob && S.turns.find((x) => x.id === S.fixJob.turnId && sameTable(x.sceneJSON, tableJSON()))) || offeringCard() || activeTurn()
 		const r = t?.report ?? {}
 		const fx = r.fix
 		const clear = () => {
@@ -1994,8 +2179,12 @@ export function mountAiPanel(host) {
 		if (fx?.state === "stopped" && !t?.request?.rework) {
 			clear()
 			userBubble(text)
-			if (fixCtxs.has(t.id) && sameTable(t.sceneJSON, tableJSON())) lookAgain(t)
-			else noFixReply(t, "I stopped looking for a fix, so there’s nothing checked to say yes to yet. Want the AI to rework it? That asks the AI (a paid call), so press the button if you do.")
+			// (a "yes" is a yes to the fix: put on the table as soon as it is found, as a typed "make it work" is (V8837 x9 / z2 / y7: it was only
+			// offered again, so a second "yes" was needed))
+			if (fixCtxs.has(t.id) && sameTable(t.sceneJSON, tableJSON())) {
+				lookAgain(t)
+				if (S.fixJob?.turnId === t.id) S.fixJob.applyOnFound = text
+			} else noFixReply(t, "I stopped looking for a fix, so there’s nothing checked to say yes to yet. Want the AI to rework it? That asks the AI (a paid call), so press the button if you do.")
 			return true
 		}
 		if (!t?.request?.rework && !t?.reworkAsked && ((fx && ["none", "error"].includes(fx.state)) || (r.fixNeeded && !fx))) {
@@ -2024,18 +2213,45 @@ export function mountAiPanel(host) {
 		replyTurn("There’s nothing to say yes to yet — what would you like to change?")
 		return true
 	}
+	/** The goals of the scene on the table when every one happens, as labels; else null (no goals, one fails, or no run yet). The card whose
+	 *  scene is on the table says it; else the engine's own verdict on the scene's goals. */
+	function tableWorks() {
+		const card = sceneCard()
+		const r = card && sameTable(card.sceneJSON, tableJSON()) ? card.report ?? {} : null
+		if (r && (r.goals ?? []).length) return r.goals.every((g) => g.ok === true) && !(r.targets ?? []).some((x) => x.ok === false) ? r.goals.map((g) => g.label) : null
+		try {
+			const sim = host.getSim?.()
+			const sc = host.getScene?.()
+			if (!sim?.summary || !sc || !(sc.goals ?? []).length) return null
+			const rs = goalResults(sim, sc.goals)
+			return rs.length && rs.every((g) => g.ok === true) ? rs.map((g) => g.label) : null
+		} catch {
+			return null
+		}
+	}
 	/** "make it work" typed: the live card's checked fix goes on the table at once (while it is still being looked for, when it is found);
 	 *  stopped, the free search runs again and its fix goes on when found; with no fix found yet and the rework button on the card, that rework
 	 *  (it is what the button offers). Else (false) it goes to the AI as a "make it work" request. */
 	function answerMakeItWork(text) {
-		const t = (S.fixJob && S.turns.find((x) => x.id === S.fixJob.turnId && sameTable(x.sceneJSON, tableJSON()))) || activeTurn()
+		const own = ownOfferNow()
+		if (own) return yesToOwn(own, text, { make: true })
+		const t = (S.fixJob && S.turns.find((x) => x.id === S.fixJob.turnId && sameTable(x.sceneJSON, tableJSON()))) || offeringCard() || activeTurn()
 		const fx = t?.report?.fix
-		if (!t) return false
 		const clear = () => {
 			input.value = ""
 			autosize()
 			syncCount()
 		}
+		// (it already works: said, and nothing is asked of the AI (V8837 z5: $0.03 to be told "It already works"))
+		const works = !(S.fixJob && t && S.fixJob.turnId === t.id) ? tableWorks() : null
+		if (works) {
+			clear()
+			userBubble(text)
+			const plain = (l) => String(l).replace(/[.!]+$/, "").replace(/^(The|A|An|All|Every|Each|Both)\b/, (w) => w.toLowerCase())
+			replyTurn(`It already works: ${works.length > 2 ? `all ${works.length} goals happen` : works.map(plain).join(" and ")} ✓`)
+			return true
+		}
+		if (!t) return false
 		if (S.fixJob && S.fixJob.turnId === t.id) {
 			clear()
 			userBubble(text, "fix")
@@ -2073,6 +2289,22 @@ export function mountAiPanel(host) {
 				S.reworkOfNext = null
 			}
 			rerenderTurn(t)
+			return true
+		}
+		// (the AI's rework of this very scene just didn't work: said again, with the closest it got, and nothing is asked of the AI again; new
+		// words of the person's own still go to it (V8837 z7 / y5 / y20: $0.06 to be told the same))
+		if ((t.report?.reworkFailed || (t.request?.rework && fx?.state === "none")) && t.report?.replyOnly && sameTable(t.baseJSON, tableJSON())) {
+			clear()
+			userBubble(text)
+			const near = fx?.near?.sceneJSON ? fx.near : null
+			const what = near?.happened ? `: ${String(near.happened).replace(/[.!]+$/, "")}` : ""
+			const turn = replyTurn(`The AI already tried to rework this, and it didn’t work${what}. Your scene is as it was.${near ? " The closest it got is below." : " Undo the change, or tell me what to change instead."}`, { reworkFailed: true, ...(near ? { fix: { state: "none", goal: fx.goal, near, quiet: true, reworked: true } } : {}), suggestions: [] })
+			// (said about the scene on the table: a second "make it work" is answered the same way)
+			turn.baseJSON = tableJSON()
+			if (near) {
+				turn.sceneJSON = tableJSON()
+				rerenderTurn(turn)
+			}
 			return true
 		}
 		return false
@@ -2377,7 +2609,10 @@ export function mountAiPanel(host) {
 			.map((x) => (x.role === "user" ? { role: "user", text: x.sent || x.text || "(pictures)" } : { role: "assistant", text: x.report?.replyOnly ? x.report.reply : x.report?.lead ? `${x.report.lead}${x.report.human?.length ? ` Changes: ${x.report.human.join("; ")}.` : ""}${x.report.fix?.state === "found" ? ` I offered to ${x.report.fix.say} (checked in the physics).` : ""}` : `${x.report?.mode === "check" ? "Checked" : "Built"} “${x.report?.title}”${x.report?.edit?.reply ? `: ${x.report.edit.reply}` : ""}` }))
 	}
 	function start(request, replacing = null) {
-		stopFixSearch()
+		// (a plain question changes nothing on the table: the search for a fix goes on, and its offer shows when found (V8842 qj: "why doesn't
+		// the egg move?" stopped it, and the card said "I stopped looking for a fix" with no Stop pressed). Any other request stops it, and the
+		// card says why)
+		if (!(request.mode === "edit" && request.asked && !(request.images ?? []).length)) stopFixSearch("new")
 		const turn = { id: `a${nextId++}`, at: Date.now(), role: "ai", state: "running", request, baseJSON: tableJSON() }
 		// (a rework asked from a card's button: that card's own, so an answer that never came lets it be asked again)
 		if (request.rework && S.reworkOfNext) turn.reworkOf = S.reworkOfNext
@@ -2411,8 +2646,11 @@ export function mountAiPanel(host) {
 				// and the rework button, never another set of background reworks: V8818, about $0.19 more per follow-up)
 				turn.aiSpent = !!(act.aiSpent || (act.report?.fix?.state !== "found" && (act.aiTried || act.report?.fix?.reworked)))
 			} catch {}
+		// (the "Try:" this card already offers, when the AI is asked to make it work: a rework that fails offers its own closest only when it is
+		// closer than that one, else that one stays: V8837 y4 / x5)
+		const nearNow = request.mode === "edit" && act && act !== turn && sameTable(act.sceneJSON, turn.baseJSON) && act.report?.fix?.near?.sceneJSON ? act.report.fix.near : null
 		const job = ai.build(
-			{ ...request, scene, sim: request.mode === "edit" || request.mode === "check" ? host.getSim?.() ?? null : null, plan: lb?.plan ?? null, planScene: lb?.sceneJSON ? JSON.parse(lb.sceneJSON) : null, history, ...(reference ? { reference } : {}) },
+			{ ...request, scene, sim: request.mode === "edit" || request.mode === "check" ? host.getSim?.() ?? null : null, plan: lb?.plan ?? null, planScene: lb?.sceneJSON ? JSON.parse(lb.sceneJSON) : null, history, ...(reference ? { reference } : {}), ...(nearNow ? { near: nearNow } : {}) },
 			// (a concept sketch only for a new scene from words, as the setting says; never for an edit or a check, never with a photo)
 			{ onEvent: (e) => onEvent(turn, e), imagine: request.mode === "new" && !(request.images ?? []).length ? request.imagine ?? conceptSetting() : "off", ...(request.mode === "check" ? { refineRounds: 1 } : {}) }
 		)

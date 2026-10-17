@@ -9,7 +9,13 @@
 //   5. a double click on the checked fix applies it once; 6. no "Check it" beside a checked fix; 7. both undone: every card stale, "yes" asks
 //      nothing (ai/DESIGN.md §16.2); 8–13 the paid button once, Undo while the AI works, a rename by hand, Look again; 14. a rework stopped
 //      by its Cancel and asked again: no "Run again", no second paid button; 15. a search stopped by an Undo, its scene back by Redo: "Look
-//      again" and the button, and "yes" spends nothing (§16.3).
+//      again" and the button, and "yes" spends nothing (§16.3); 16. a question after the checked offer: the card stays live with its
+//      chip, the answer shows it too, and "yes" / "make it work" apply it with no AI call; "make it work" on a scene that works, or right
+//      after a failed rework, asks nothing; a "yes" after a stopped search puts the fix on when found (§16.5); 17. "make it work without
+//      touching the box" never moves the box; 18. a question that asks for another way, then "yes": the table never changes, and "yes" goes to
+//      the AI as what the answer proposed; 19. a question while it looks never stops the search; 20. a question back with choices, then "yes":
+//      "Which one?", nothing spent; 21. a question that keeps the box, then "yes": "make it work" with the box kept; 22. "could I fix it by
+//      tilting the seesaw more instead?", then "yes": that way asked for (§16.6).
 //   node web/ai/test/make-it-work.e2e.mjs [--base http://localhost:8790] [outDir]
 import fs from "node:fs"
 import path from "node:path"
@@ -153,7 +159,7 @@ const shot = (p, name) => p.locator(".ai-thread").screenshot({ path: path.join(O
 // ---- 5: a double click on the checked fix puts it on the table once (the second click never lands on the Restore that slid under the pointer)
 // ---- 6: "Check it" is not offered beside a checked fix
 {
-	const { p, ctx, errors } = await page()
+	const { p, ctx, errors, edits } = await page()
 	await send(p, USER)
 	await searching(p)
 	await p.waitForFunction(() => !document.querySelector(".ai-fixline"), null, { timeout: 120000 })
@@ -179,6 +185,12 @@ const shot = (p, name) => p.locator(".ai-thread").screenshot({ path: path.join(O
 		await p.waitForTimeout(1500)
 		const lead = await lastLead(p)
 		ok("7. 'yes' then asks nothing and changes nothing", /nothing to say yes to/i.test(lead ?? "") && (await p.evaluate(() => window.sandbox.scene.items.some((i) => i.type === "domino-row"))), lead)
+		// (and "make it work" on the starter, which works: said, no AI call (V8837 z5))
+		const n7 = edits.length
+		await send(p, "make it work again")
+		await p.waitForTimeout(1500)
+		const lead7 = await lastLead(p)
+		ok("7. 'make it work' on a scene that already works: said, no AI call", /^It already works: .+ ✓$/.test(lead7 ?? "") && edits.length === n7, `${lead7} / ${n7} → ${edits.length}`)
 	} else ok("5. a checked fix is offered to double-click", false, await lastLead(p))
 	ok("5–7. no page errors", !errors.length, errors.join(" | "))
 	await shot(p, "5-double-click")
@@ -254,6 +266,11 @@ const MISS = { kind: "fix", mode: "patch", targets: [{ says: "the box", ids: ["b
 		await p.locator("li.ai-bot").first().locator(".ai-offer-btn").click({ force: true, timeout: 2000 }).catch(() => {})
 		await p.waitForTimeout(1500)
 		ok("8. the older card's button can't send another rework", calls.length === n, `${n} → ${calls.length}`)
+		// (a typed "make it work again" right after that rework failed on this scene: said again, no AI call (V8837 z7 / y5 / y20))
+		await send(p, "make it work again")
+		await p.waitForTimeout(1500)
+		const lead8 = await lastLead(p)
+		ok("8. 'make it work again' right after the failed rework: said, no AI call", /^The AI already tried to rework this, and it didn’t work/.test(lead8 ?? "") && calls.length === n, `${lead8} / ${n} → ${calls.length}`)
 	}
 	ok("8. no page errors", !errors.length, errors.join(" | "))
 	await shot(p, "8-rework-once")
@@ -411,8 +428,201 @@ const MISS = { kind: "fix", mode: "patch", targets: [{ says: "the box", ids: ["b
 	await p.waitForTimeout(1500)
 	ok("15. 'yes' then looks again with the physics, no AI call", edits.length === n && (await p.evaluate(() => !!document.querySelector(".ai-fixline"))), `${n} → ${edits.length}`)
 	await p.waitForFunction(() => !document.querySelector(".ai-fixline"), null, { timeout: 120000 }).catch(() => {})
+	await p.waitForTimeout(1500)
+	// (the "yes" was a yes to the fix: it goes on the table when found, no second "yes" (V8837 x9 / z2 / y7))
+	const lead15 = await lastLead(p)
+	ok("15. the fix it finds goes on the table, no second 'yes' needed", /^Done — I /.test(lead15 ?? "") && (await p.evaluate(() => window.sandbox.scene.items.some((i) => /^standin/.test(i.id)))) && edits.length === n, lead15)
 	ok("15. no page errors", !errors.length, errors.join(" | "))
 	await shot(p, "15-undo-redo-look-again")
+	await ctx.close()
+}
+// ---- 16: a question after the checked offer (V8838 Q: the card went stale with its chip, the answer had none, "yes" said there was nothing to
+// say yes to, and "make it work" went to the AI)
+{
+	const Q = "why does the egg never land in the box?"
+	const ANSWER = { kind: "answer", mode: "patch", targets: [], why: "a question", reply: "The orange only shoves the first soda can, so the egg never moves.", patches: [], missing: [], suggestions: [{ label: "Make the box wider", prompt: "Make the box wider" }] }
+	const { p, ctx, errors, calls } = await pageWith((pl) => (pl.text === USER && !pl.feedback ? BREAKFAST : pl.text === Q ? ANSWER : null))
+	const replied = (n0) => p.waitForFunction((n0) => { const lis = [...document.querySelectorAll("li.ai-bot")]; if (lis.length <= n0) return false; const li = lis.at(-1); return !!li.querySelector(".ai-card:not(.ai-progress), .ai-reply") && !li.querySelector(".ai-fixline") && !li.classList.contains("ai-s-running") }, n0, { timeout: 120000, polling: 250 })
+	const standin = () => p.evaluate(() => window.sandbox.scene.items.some((i) => /^standin/.test(i.id)))
+	await send(p, USER)
+	await searching(p)
+	await p.waitForFunction(() => !document.querySelector(".ai-fixline"), null, { timeout: 120000 })
+	const go0 = await p.locator("li.ai-bot").last().locator(".ai-chips button.go").count()
+	ok("16. a checked fix is offered", go0 === 1, await lastLead(p))
+	if (go0 === 1) {
+		await send(p, Q)
+		await replied(1)
+		await p.waitForTimeout(1200)
+		const cards = await cardsNow(p)
+		// (the chip shows once, on the newest live card: the answer; the edit card stays live, its offer in words: V8842)
+		ok("16. after the question the edit card is still live, and the answer shows its checked chip (once, not twice)", cards.length === 2 && !cards[0].stale && cards[1].chips.length >= 1 && !cards[0].chips.includes(cards[1].chips[0]) && /Want me to/.test(cards[0].lead), JSON.stringify(cards))
+		const n = calls.length
+		await send(p, "yes")
+		await p.waitForFunction(() => /^Done — I /.test([...document.querySelectorAll("li.ai-bot")].at(-1)?.querySelector(".ai-lead")?.textContent ?? ""), null, { timeout: 30000 }).catch(() => {})
+		await p.waitForTimeout(1200)
+		const lead = await lastLead(p)
+		ok("16. 'yes' after the question puts the checked fix on the table, no AI call", /^Done — I /.test(lead ?? "") && (await standin()) && calls.length === n, `${lead} / ${n} → ${calls.length}`)
+		// (the fix card's Undo, the question again, then "make it work")
+		await p.locator("li.ai-bot").last().locator(".ai-undo").click()
+		await p.waitForTimeout(1500)
+		const nb = await p.locator("li.ai-bot").count()
+		await send(p, Q)
+		await replied(nb)
+		await p.waitForTimeout(1200)
+		const m = calls.length
+		await send(p, "make it work")
+		await p.waitForFunction(() => /^Done — I /.test([...document.querySelectorAll("li.ai-bot")].at(-1)?.querySelector(".ai-lead")?.textContent ?? ""), null, { timeout: 30000 }).catch(() => {})
+		await p.waitForTimeout(1200)
+		const lead2 = await lastLead(p)
+		ok("16. 'make it work' after a question puts the checked fix on the table, no AI call", /^Done — I /.test(lead2 ?? "") && (await standin()) && calls.length === m, `${lead2} / ${m} → ${calls.length}`)
+	}
+	ok("16. no page errors", !errors.length, errors.join(" | "))
+	await shot(p, "16-question-then-yes")
+	await ctx.close()
+}
+// ---- 17–20 (V8842 / V8843, ai/DESIGN.md §16.6): what the person said to keep is kept; a "yes" is to the latest reply's own offer
+/** The starter's swap as the edit step answered it live (V8842 QB): the tennis ball then hits the side of the box; lowering it 5 cm works. */
+const SWAP_T = "replace the yellow ball with a tennis ball and the red ball with a basketball"
+const SWAP = { kind: "change", mode: "patch", why: "They asked to swap two balls.", reply: "I swapped the yellow ball on the seesaw for a tennis ball and the red ball at the top for a basketball.", targets: [{ says: "the yellow ball", ids: ["ball2"] }, { says: "the red ball", ids: ["ball1"] }], patches: [{ op: "replace_type", id: "ball2", type: "tennis-ball", props: {} }, { op: "set_item", id: "ball2", name: "Tennis ball" }, { op: "replace_type", id: "ball1", type: "basketball", props: {} }, { op: "set_item", id: "ball1", name: "Basketball" }], missing: [], suggestions: [] }
+const boxAt = (p) => p.evaluate(() => { const b = window.sandbox.scene.items.find((i) => i.id === "box"); return { x: b.x, y: b.y, props: JSON.stringify(b.props ?? {}) } })
+const replied = (p, n0, ms = 150000) => p.waitForFunction((n0) => { const lis = [...document.querySelectorAll("li.ai-bot")]; if (lis.length <= n0) return false; const li = lis.at(-1); return !!li.querySelector(".ai-card:not(.ai-progress), .ai-reply") && !li.querySelector(".ai-fixline") && !li.classList.contains("ai-s-running") }, n0, { timeout: ms, polling: 250 })
+// ---- 17: "make it work without touching the box" after the swap: the box stays where it is (the AI's answer lowers it anyway: refused)
+{
+	const KEEP = "make it work without touching the box"
+	const LOWER = { kind: "fix", mode: "patch", why: "make it work", reply: "I lowered the box 5 cm.", targets: [{ says: "the box", ids: ["box"] }], patches: [{ op: "move", id: "box", dy: -0.05 }], missing: [], suggestions: [] }
+	const { p, ctx, errors, calls } = await pageWith((pl) => (pl.text === SWAP_T && !pl.feedback ? SWAP : pl.text === KEEP && !pl.feedback ? LOWER : null))
+	await send(p, SWAP_T)
+	await replied(p, 0)
+	const box0 = await boxAt(p)
+	const n0 = await p.locator("li.ai-bot").count()
+	await send(p, KEEP)
+	await replied(p, n0, 150000)
+	await p.waitForTimeout(1500)
+	const box1 = await boxAt(p)
+	const lead = await lastLead(p)
+	ok("17. 'make it work without touching the box': the box stays where it is, its size too", box1.x === box0.x && box1.y === box0.y && box1.props === box0.props, `${JSON.stringify(box0)} → ${JSON.stringify(box1)} · ${lead}`)
+	ok("17. the card never says it moved or lowered the box", !/(moved|lowered|raised) the box/i.test(lead ?? "") && !(await p.locator("li.ai-bot").last().locator(".ai-delta li", { hasText: /the box/i }).count()), lead)
+	ok("17. no page errors", !errors.length, errors.join(" | "))
+	await shot(p, "17-keep-the-box")
+	await ctx.close()
+}
+// ---- 18: a question that asks for another way, then "yes": the checked fix that moves the box is not applied; "yes" goes to the AI as what
+// the answer proposed
+{
+	const Q = "could I fix it by tilting the seesaw more instead?"
+	const ANS = { kind: "answer", mode: "patch", why: "a question", reply: "Possibly. The tennis ball now hits the box's right wall, so more tilt (about 12° → 20°) would fling it higher.", targets: [], patches: [], missing: [], suggestions: [] }
+	const { p, ctx, errors, calls } = await pageWith((pl) => (pl.text === SWAP_T && !pl.feedback ? SWAP : pl.text === Q ? ANS : null))
+	await send(p, SWAP_T)
+	await replied(p, 0)
+	await p.waitForFunction(() => !document.querySelector(".ai-fixline"), null, { timeout: 120000 }).catch(() => {})
+	const go0 = await p.locator("li.ai-bot").last().locator(".ai-chips button.go").count()
+	ok("18. the swap gets its checked offer", go0 === 1, await lastLead(p))
+	const box0 = await boxAt(p)
+	const n0 = await p.locator("li.ai-bot").count()
+	await send(p, Q)
+	await replied(p, n0)
+	await p.waitForTimeout(1000)
+	const m = calls.length
+	const n1 = await p.locator("li.ai-bot").count()
+	await send(p, "yes")
+	await replied(p, n1, 60000).catch(() => {})
+	await p.waitForTimeout(1500)
+	const box1 = await boxAt(p)
+	const sent = calls.slice(m).map((c) => c.text)
+	ok("18. 'yes' after 'instead?' never lowers the box", box1.x === box0.x && box1.y === box0.y, `${JSON.stringify(box0)} → ${JSON.stringify(box1)}`)
+	ok("18. 'yes' goes to the AI as the change the answer proposed", sent.length >= 1 && /^Yes, do that: .*more tilt/.test(sent[0]), JSON.stringify(sent))
+	ok("18. no page errors", !errors.length, errors.join(" | "))
+	await shot(p, "18-instead-then-yes")
+	await ctx.close()
+}
+// ---- 19: a question while the search looks: the search goes on, and its checked fix is offered (V8842 qj: "I stopped looking for a fix")
+{
+	const Q = "why doesn't the egg move?"
+	const ANSWER = { kind: "answer", mode: "patch", targets: [], why: "a question", reply: "The orange only shoves the first soda can, so the egg never moves.", patches: [], missing: [], suggestions: [] }
+	const { p, ctx, errors } = await pageWith((pl) => (pl.text === USER && !pl.feedback ? BREAKFAST : pl.text === Q ? ANSWER : null))
+	await send(p, USER)
+	await searching(p)
+	await p.waitForTimeout(800)
+	await send(p, Q)
+	await replied(p, 1, 60000).catch(() => {})
+	await p.waitForFunction(() => !document.querySelector(".ai-fixline"), null, { timeout: 150000 }).catch(() => {})
+	await p.waitForTimeout(1500)
+	const cards = await cardsNow(p)
+	ok("19. a question while it looks never stops the search ('I stopped looking' never said)", !cards.some((c) => /stopped looking/.test(c.lead)), JSON.stringify(cards.map((c) => c.lead.slice(0, 90))))
+	ok("19. its checked fix is offered once found, on the newest card", cards.some((c) => !c.stale && c.chips.length >= 1) && /Want me to/.test(cards[0].lead), JSON.stringify(cards))
+	ok("19. no page errors", !errors.length, errors.join(" | "))
+	await shot(p, "19-question-while-looking")
+	await ctx.close()
+}
+// ---- 20: a question back with choices of its own, then "yes": "Which one?", nothing spent, nothing changed (V8842 qq / qr)
+{
+	const B = "make it bigger"
+	const ASK = { kind: "ask", mode: "patch", targets: [{ says: "it", ids: ["box", "ball2"] }], why: "ambiguous", reply: "Which should I make bigger: the box on the seesaw, or the tennis ball?", patches: [], missing: [], suggestions: [{ label: "Bigger box", prompt: "Make the box on the seesaw bigger" }, { label: "Bigger tennis ball", prompt: "Make the tennis ball bigger" }] }
+	const { p, ctx, errors, calls } = await pageWith((pl) => (pl.text === SWAP_T && !pl.feedback ? SWAP : pl.text === B ? ASK : null))
+	await send(p, SWAP_T)
+	await replied(p, 0)
+	await p.waitForFunction(() => !document.querySelector(".ai-fixline"), null, { timeout: 120000 }).catch(() => {})
+	const box0 = await boxAt(p)
+	const n0 = await p.locator("li.ai-bot").count()
+	await send(p, B)
+	await replied(p, n0)
+	const m = calls.length
+	await send(p, "yes")
+	await p.waitForTimeout(2000)
+	const lead = await lastLead(p)
+	const box1 = await boxAt(p)
+	const chips = (await cardsNow(p)).at(-1)?.chips ?? []
+	ok("20. 'yes' to a question back: 'Which one?', its choices again, no AI call, nothing changed", /^Which one\?/.test(lead ?? "") && calls.length === m && box1.y === box0.y && chips.includes("Bigger box"), `${lead} / ${m} → ${calls.length} / ${JSON.stringify(chips)}`)
+	ok("20. no page errors", !errors.length, errors.join(" | "))
+	await shot(p, "20-ask-then-yes")
+	await ctx.close()
+}
+// ---- 21: "is there a way to fix it without touching the box?", answered, then "yes": a "make it work" with the box kept (V8842 ql / qa)
+{
+	const Q = "is there a way to fix it without touching the box?"
+	const ANS = { kind: "answer", mode: "patch", why: "a question", reply: "Yes. The tennis ball peaks at 34 cm, just over the 32 cm rim, so it clips the wall.", targets: [], patches: [], missing: [], suggestions: [] }
+	const LOWER = { kind: "fix", mode: "patch", why: "make it work", reply: "I lowered the box 5 cm.", targets: [{ says: "the box", ids: ["box"] }], patches: [{ op: "move", id: "box", dy: -0.05 }], missing: [], suggestions: [] }
+	const { p, ctx, errors, calls } = await pageWith((pl) => (pl.text === SWAP_T && !pl.feedback ? SWAP : pl.text === Q ? ANS : /^make it work, without touching the box$/.test(pl.text) && !pl.feedback ? LOWER : null))
+	await send(p, SWAP_T)
+	await replied(p, 0)
+	const box0 = await boxAt(p)
+	const n0 = await p.locator("li.ai-bot").count()
+	await send(p, Q)
+	await replied(p, n0)
+	const m = calls.length
+	const n1 = await p.locator("li.ai-bot").count()
+	await send(p, "yes please")
+	await replied(p, n1, 150000).catch(() => {})
+	await p.waitForTimeout(1500)
+	const box1 = await boxAt(p)
+	const sent = calls.slice(m).map((c) => c.text)
+	ok("21. 'yes' to 'is there a way … without touching the box?' asks for it to work with the box kept", sent[0] === "make it work, without touching the box", JSON.stringify(sent))
+	ok("21. and the box stays where it is", box1.x === box0.x && box1.y === box0.y && box1.props === box0.props, `${JSON.stringify(box0)} → ${JSON.stringify(box1)} · ${await lastLead(p)}`)
+	ok("21. no page errors", !errors.length, errors.join(" | "))
+	await shot(p, "21-keep-question-then-yes")
+	await ctx.close()
+}
+// ---- 22: "could I fix it by tilting the seesaw more instead?", answered with no proposal, then "yes": that way asked for, the box never lowered
+{
+	const Q = "could I fix it by tilting the seesaw more instead?"
+	const ANS = { kind: "answer", mode: "patch", why: "a question", reply: "Maybe, but it's uncertain. In the last run the tennis ball rose only to 0.34 m against the box rim at 0.32 m and hit the box's side.", targets: [], patches: [], missing: [], suggestions: [] }
+	const { p, ctx, errors, calls } = await pageWith((pl) => (pl.text === SWAP_T && !pl.feedback ? SWAP : pl.text === Q ? ANS : null))
+	await send(p, SWAP_T)
+	await replied(p, 0)
+	await p.waitForFunction(() => !document.querySelector(".ai-fixline"), null, { timeout: 120000 }).catch(() => {})
+	const box0 = await boxAt(p)
+	const n0 = await p.locator("li.ai-bot").count()
+	await send(p, Q)
+	await replied(p, n0)
+	const m = calls.length
+	const n1 = await p.locator("li.ai-bot").count()
+	await send(p, "yes")
+	await replied(p, n1, 60000).catch(() => {})
+	await p.waitForTimeout(1500)
+	const box1 = await boxAt(p)
+	const sent = calls.slice(m).map((c) => c.text)
+	ok("22. 'yes' to 'could I fix it by tilting the seesaw more instead?' asks for that way, and the box is never lowered", sent[0] === "Yes: fix it by tilting the seesaw more instead" && box1.y === box0.y, `${JSON.stringify(sent)} / ${box0.y} → ${box1.y}`)
+	ok("22. no page errors", !errors.length, errors.join(" | "))
 	await ctx.close()
 }
 await browser.close()

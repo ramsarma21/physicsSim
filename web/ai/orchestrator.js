@@ -23,12 +23,12 @@ import { checkGoals, goalItems, goalRefs, goalKind as goalKindOf, goalLabel } fr
 import { createStageTuner, judgeRun as judgeStages } from "./stage-tune.js"
 import { quotaWords, resetWords, OFF_WORDS, SIGN_IN_WORDS } from "./access.js"
 export { quotaWords, resetWords, OFF_WORDS, SIGN_IN_WORDS }
-import { findFix as searchFix, restageFix, TIME_SCALE, probeRun, fixTargets, judge as judgeTargets, outcomeWords, FIX_MS, riderMap, groupNames, chainStop, tippers as fixerTippers, chainBreak, claimLabel, characterBreak, placeName } from "./fixer.js"
+import { findFix as searchFix, restageFix, TIME_SCALE, probeRun, fixTargets, judge as judgeTargets, outcomeWords, FIX_MS, riderMap, groupNames, chainStop, tippers as fixerTippers, chainBreak, claimLabel, characterBreak, placeName, standardSized, containerKind, STD_SIZE, dimKeys, offRealSize, helperSizeBreak, farness, chainOf, frozenChanged } from "./fixer.js"
 import { build as buildDoc, catalog as simCatalog, MATERIALS, layout as simLayout, inside as simInside } from "../sim/index.js"
 import { conceptRoute, pickConcept, withDeadline, dropPictureLines, dropPictureSentences, mentionsPicture, CONCEPT_LABEL, CONCEPT_NOTE, IMAGINE_DEADLINE_MS } from "./imagine.js"
 import { routeKind, REPLY_KINDS, cleanTargets, targetWords, overlapFeedback, fixFeedback, newOverlaps, headsUpLines, lastUserTurn, namedInTurn, aimReply } from "./edit-turns.js"
 import { aimContainer } from "./aim.js"
-import { kindNoun, aKindOf, weightOf, imperative, solidMass, clipLabel } from "./words.js"
+import { kindNoun, aKindOf, weightOf, imperative, solidMass, clipLabel, changesLabel, tidyBrackets } from "./words.js"
 export { isChainRequest, conceptPlan, conceptRoute, CONCEPT_NOTE, CONCEPT_LABEL, IMAGINE_MODES, imagineMode } from "./imagine.js"
 
 export const MAX_IMAGES = 4
@@ -47,12 +47,47 @@ export const AI_USD = 0.15 // the most the AI's reworks may spend for one broken
 // call is stopped (V8820/VERIFY: two reworks cost $0.076–0.142, one call alone up to $0.086, so two of those would be ≈ $0.17)
 export const AI_IN_USD = 0.03
 export const AI_OUT_USD = 0.000025
+// (a running call's input, from the size of what it sends: ≈ 4 characters a token at the uncached input price, never below AI_IN_USD, nor below
+// the last billed call on this scene (`floor`): a big scene's rework call was billed $0.074–0.147 against the flat $0.03 it was counted at, and
+// two of them ran past AI_USD (V8837 k3: $0.169, $0.220))
+export const AI_IN_TOKEN_USD = 0.000004
+export const AI_CALL_MARGIN = 1.3 // (a rework call is counted at the last billed call on this scene times this, at least, while it runs or before it
+// starts: its reasons make its prompt longer than the edit's own (V8841 k3: $0.079 and $0.090 against the edit's $0.063); and another is started
+// only when one more like that still fits)
+/** One more "make it work" round fits its budget: what the edit calls cost so far, and one more like the last one, within `cap`; and time
+ *  for the round and the fix search after it (30 s) before `deadline`. */
+export function roundBudget(calls, { cap = AI_USD, deadline = null, now = Date.now() } = {}) {
+	const edits = (Array.isArray(calls) ? calls : []).filter((c) => c?.step === "edit")
+	const spent = edits.reduce((t, c) => t + (num(c?.usage?.costInUSD) ?? 0), 0)
+	const last = num(edits.at(-1)?.usage?.costInUSD) ?? AI_IN_USD
+	return spent + last <= cap + 1e-9 && (deadline === null || now < deadline - 30000)
+}
+export const inputUsd = (chars) => Math.max(AI_IN_USD, ((Number(chars) || 0) / 4) * AI_IN_TOKEN_USD)
+// (a token written to the prompt cache costs this much more than one read from it (fitted on 445 billed edit calls: $5 against $0.2 a million):
+// the first call after the cache expires was billed $0.25–0.28, a warm one $0.03 (V8843: 4 cold-cache calls in one bench))
+export const AI_CACHE_WRITE_USD = 0.0000048
+/** A call's cost as it would be billed with a warm prompt cache (its one-off cache write taken off): the floor a rework is counted from. */
+export function warmUsd(usage) {
+	const c = num(usage?.costInUSD)
+	if (c === null) return null
+	const made = num(usage?.cache_creation_input_tokens) ?? 0
+	return Math.max(Math.min(c, AI_IN_USD), c - made * AI_CACHE_WRITE_USD)
+}
+export const AI_FLOOR_MAX = 0.6 * AI_USD // (the floor never above this: a bigger one leaves no room for any rework)
+export const AI_REWORK_X = 2.2 // (a rework call is reserved at this many times the edit's own call: its reasons and its way make its prompt and its answer longer (V8842 y5: 2.15×))
+export const AI_REWORK_TIME = 1.3 // (and it takes about this many times as long, plus its own search and check)
+/** The least time left for a background rework: its call (AI_REWORK_TIME × the edit's own call on this scene, when measured), 8 s for its
+ *  own search and check, never under REWORK_MIN_MS. */
+export const reworkNeedMs = (editMs) => Math.max(REWORK_MIN_MS, num(editMs) !== null ? AI_REWORK_TIME * editMs + 8000 : 0)
+export const REPAIR_MS = 18000 // the one repair turn after an edit that starts things inside each other: past this, the answer as it was stays
+export const PHYS_FIRST_MS = 15000 // a typed "make it work": the physics' own search on the scene as it is, beside the AI's first answer
+export const PHYS_FIRST_RUNS = 40 // (and at least this many runs, on a busy machine, up to the request's own deadline: V8842 x42d found its fix in 39)
 export const AI_AFTER_MS = 20000 // the AI is asked once the physics has looked everywhere (both searches done), or found nothing in this long
 export const SEARCH_MS = 30000 // the fix search's own budget in the background (its runs: SEARCH_RUNS)
 export const SEARCH_RUNS = 1400
 export const SEARCH_MIN_RUNS = 240 // a heavy scene's search goes on past SEARCH_MS (to SEARCH_HARD_MS) until it has run this many, while the AI works
 export const SEARCH_HARD_MS = 45000
-const REWORK_MIN_MS = 28000 // the least time a background rework needs (its call, its own fix search, the check): with less left it isn't asked
+export const REWORK_MIN_MS = 28000 // the least time a background rework needs (its call, its own fix search, the check): with less left it isn't asked
 export const RESTAGE_MS = 25000 // stage by stage: the chain's receivers set up again (./fixer.js restageFix)
 const cap = (s) => String(s ?? "").replace(/^./, (c) => c.toUpperCase())
 /** The stage tuner before the critic (a new scene): its most engine runs, per stage and in all, and its time. */
@@ -316,16 +351,72 @@ export function swapPhraseLabels(plan, text) {
 		// (the whole phrase, "the giant domino"; else its first word when it is no kind of its own, "the giant")
 		const words = x.split(/\s+/)
 		const forms = [x, ...(words.length > 1 && !kinds.has(words[0]) && !kinds.has(words[0].replace(/s$/, "")) && words[0].length > 3 ? [words[0]] : [])]
+		// (a word of the phrase that, with the next one, names another thing on the table or in the catalog is that other thing: "the glass jar" is
+		// never "the steel ball jar" after "swap the glass marble for a steel ball" (V8842 n3))
+		const names = new Set([...kinds.keys(), ...(Array.isArray(plan.items) ? plan.items : []).flatMap((i) => [i?.name, kindNoun(i?.type, 1, { short: true }), kindNoun(i?.type, 2, { short: true })]).filter(Boolean).map((n) => String(n).toLowerCase())])
+		const another = (f, rest) => {
+			const next = /^\s+([\p{L}'’-]+)(?:\s+([\p{L}'’-]+))?/u.exec(rest)
+			if (!next) return false
+			const two = `${f} ${next[1]}`.toLowerCase()
+			return names.has(two) || names.has(two.replace(/s$/, "")) || (!!next[2] && names.has(`${two} ${next[2].toLowerCase()}`))
+		}
 		for (const g of plan.goals) {
 			if (!isObj(g) || typeof g.label !== "string") continue
 			for (const f of forms) {
 				const re = new RegExp(`\\bthe\\s+${esc(f)}\\b(?!\\s+(?:${words.slice(1).map(esc).join("|") || "\\u0000"})\\b)`, "giu")
 				if (!re.test(g.label)) continue
-				g.label = g.label.replace(re, (mm, off) => (off === 0 ? `The ${y}` : `the ${y}`))
+				let hit = false
+				const out = g.label.replace(re, (mm, off, all) => (another(f, all.slice(off + mm.length)) ? mm : ((hit = true), off === 0 ? `The ${y}` : `the ${y}`)))
+				if (!hit) continue
+				g.label = out
 				break
 			}
 		}
 	}
+}
+/**
+ * Goals after a row was replaced (a = the scene before, b = after; goals changed in place; followed: Map old label -> new): a row swapped into
+ * one thing of a kind, with more of that kind added, falls as all of them ("All the cereal boxes fall"); and once a growing row (its last one
+ * "the giant") is gone, no label names the giant any more ("…, up to the giant" dropped; "The giant knocks the tennis ball into the bucket" ->
+ * "The tennis ball lands in the bucket"). -> whether a goal changed.
+ */
+export function tidyGoneLabels(goals, a, b, followed = new Map()) {
+	if (!Array.isArray(goals) || !a?.items || !b?.items) return false
+	const at = new Map(b.items.map((i) => [i.id, i]))
+	const was = new Map(a.items.map((i) => [i.id, i]))
+	let changed = false
+	const set = (g, label) => {
+		if (!label || label === g.label) return
+		followed.set(g.label, label)
+		g.label = label
+		changed = true
+	}
+	// (1) a row turned into one thing, its kind's others added beside it
+	for (const g of goals) {
+		if (!isObj(g) || goalKindOf(g) !== "falls") continue
+		const ids = goalItems(g)
+		if (ids.length !== 1) continue
+		const r0 = was.get(ids[0])
+		const r1 = at.get(ids[0])
+		if (!r0 || !r1 || r0.type === r1.type || !/-row$/.test(r0.type) || /-row$/.test(r1.type)) continue
+		const more = b.items.filter((i) => i.type === r1.type && i.id !== r1.id && !was.has(i.id))
+		if (!more.length) continue
+		g.items = [r1, ...more].sort((p, q) => (Number(p.x) || 0) - (Number(q.x) || 0)).map((i) => i.id)
+		delete g.item
+		set(g, `All the ${kindNoun(r1.type, 2, { short: true })} fall`)
+	}
+	// (2) a growing row gone (taken away or swapped into another kind): its giant with it
+	const giantGone = a.items.some((i) => i.type === "domino-row" && (num(i.props?.growth) ?? 1) > 1.05 && at.get(i.id)?.type !== "domino-row")
+	if (giantGone && !b.items.some((i) => i.type === "domino-row" && (num(i.props?.growth) ?? 1) > 1.05))
+		for (const g of goals) {
+			if (!isObj(g) || typeof g.label !== "string" || !/\bgiant\b/i.test(g.label)) continue
+			let label = g.label.replace(/,?\s*(?:all the way |right )?up to (?:and including )?the giant(?: domino)?\b/i, "")
+			if (goalKindOf(g) === "falls") label = label.replace(/\bgrowing\s+/i, "")
+			if (/\bthe giant\b/i.test(label) && goalKindOf(g) === "in" && at.has(g.item) && at.has(g.container)) label = `${cap(theName(at.get(g.item)))} lands in ${theName(at.get(g.container))}`
+			if (goalKindOf(g) === "falls" && /^the [\p{L} ]+ fall$/iu.test(label.trim())) label = `All ${label.trim().replace(/^The/, "the")}`
+			set(g, label.trim())
+		}
+	return changed
 }
 /** Goal labels that name one of a row of things by a numbered name that is only its kind's ("It bounces off Trampoline 3"), said by its place
  *  as the lead and the offer say it: "It bounces off the last trampoline" (V8832 c09). items: the plan's things with where they stand. */
@@ -450,7 +541,21 @@ export function applyPatches(planIn, patches, scene = null) {
 			const was = nameOf(it)
 			const wasType = typeName(it.type)
 			const keys = propKeys(p.type)
-			const kept = Object.fromEntries(Object.entries(isObj(it.props) ? it.props : {}).filter(([k]) => keys?.has(k)))
+			// (a kind with a real everyday size takes its own size and weight, never the old thing's: a basket's 35 cm width carried onto a plastic
+			// cup made a 35 cm cup that nothing said (V8837 k5); a size the AI gives it is its own)
+			let sized = new Set()
+			try {
+				if (standardSized(p.type)) sized = new Set([...dimKeys(p.type).len, ...dimKeys(p.type).kg])
+				// (a container takes its usual size too, where what it carries over is more than ±20 % off it: a cup swapped for a basket was a
+				// 12 cm basket, a box swapped for a bucket kept the box's 13 cm walls (V8842 k3 / n1, V8843 s-swap-box-cup: a 26 cm cup))
+				else if (containerKind(p.type))
+					for (const k of dimKeys(p.type).len) {
+						const v = num(it.props?.[k])
+						const d = num(propSpec(p.type, k)?.default)
+						if (v !== null && d && (v < (1 - STD_SIZE) * d - 1e-9 || v > (1 + STD_SIZE) * d + 1e-9)) sized.add(k)
+					}
+			} catch {}
+			const kept = Object.fromEntries(Object.entries(isObj(it.props) ? it.props : {}).filter(([k]) => keys?.has(k) && !sized.has(k)))
 			const before = { type: it.type, props: isObj(it.props) ? it.props : {}, fixed: it.fixed === true }
 			it.type = p.type
 			it.props = { ...kept, ...(isObj(p.props) ? p.props : {}) }
@@ -850,6 +955,18 @@ const trimNum = (v, d) => String(Number(Number(v).toFixed(d)))
 const sig = (v) => (Math.abs(v) >= 100 ? String(Math.round(v)) : String(Number(Number(v).toPrecision(3))))
 const lc = (s) => (/^[A-Z][a-z]+['’]s\b/.test(String(s)) ? String(s) : String(s).replace(/^./, (c) => c.toLowerCase())) // ("Rubik's cube" keeps its capital)
 const andList = (list, and = "and") => (list.length <= 1 ? list.join("") : `${list.slice(0, -1).join(", ")} ${typeof and === "string" ? and : "and"} ${list.at(-1)}`)
+/** What was tried, for inside a bracket: each line's own brackets said as a clause ("tilted the seesaw more, 12.5° → 20°"), and the lines
+ *  joined with ";" when one has a comma of its own. */
+export function triedWords(lines) {
+	const flat = (lines ?? []).map((t) => {
+		let x = String(t)
+		// (a bracket in the middle closes with a comma, "moved the pedestal, with the bowling ball on it, 11 cm left"; one thing's own changes stay
+		// together, "height 17.8 → 40 cm and 187 g → 420 g", never a weight that reads as another change (V8843 rw-books / rw-cupbox))
+		for (let k = 0; k < 4 && /\([^()]*\)/.test(x); k++) x = x.replace(/\s*\(([^()]*)\)(\s+(?=\S))?/g, (m, inner, after) => `, ${inner.replace(/;\s*/g, " and ")}${after ? ", " : ""}`)
+		return x.replace(/,\s*,/g, ",").trim()
+	})
+	return flat.some((t) => t.includes(",")) && flat.length > 1 ? `${flat.slice(0, -1).join("; ")}; and ${flat.at(-1)}` : andList(flat)
+}
 const nameOfItem = (it) => it?.name ?? typeName(it?.type) ?? it?.id
 const isSafetyWall = (it) => it?.type === "wall" && it.props?.invisible_in_3d === true
 const sameValue = (a, b) => (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) <= Math.max(1e-6, Math.abs(b) * 1e-6) : JSON.stringify(a ?? null) === JSON.stringify(b ?? null))
@@ -865,8 +982,12 @@ export function fmtLen(v) {
 /** A prop's change in words with its unit: "diameter 10 → 20 cm", "stiffness 800 → 1200 N/m", "tilt 20° → 31°", "legs under it: off". */
 export function propChange(type, key, a, b) {
 	const sp = propSpec(type, key)
-	const label = /^how many$/i.test(sp?.label ?? "") ? "count" : /^front to back$/i.test(sp?.label ?? "") ? "depth" : lc(sp?.label ?? String(key).replace(/_/g, " "))
+	// (a label with brackets of its own is said without them: "top width", never "width (top)" inside a line's bracket: V8838 a-m2-basket-bigger)
+	const raw = /^how many$/i.test(sp?.label ?? "") ? "count" : /^front to back$/i.test(sp?.label ?? "") ? "depth" : lc(sp?.label ?? String(key).replace(/_/g, " "))
+	const label = raw.replace(/^(.+?)\s*\(([^()]+)\)$/, "$2 $1").trim()
 	if (sp?.kind === "bool" || typeof b === "boolean") return `${label}: ${b ? "on" : "off"}`
+	// (a row's growth: "each one 1.19 → 1.21× the one before", never "each one bigger by 1.19 → 1.21 ×")
+	if (typeof a === "number" && typeof b === "number" && (key === "growth" || /bigger by/i.test(raw))) return `each one ${sig(a)} → ${sig(b)}× the one before`
 	if (typeof a === "number" && typeof b === "number") {
 		const u = sp?.unit ?? ""
 		if (u === "m") {
@@ -1073,8 +1194,9 @@ function propWord(type, key, a, b) {
 		[/diameter|size|radius|scale/, "bigger", "smaller"],
 		[/mass|weight|heavy/, "heavier", "lighter"],
 		[/spacing|gap|apart/, "further apart", "closer together"],
-		[/grow|bigger by/, "growing faster", "growing more slowly"],
+		[/grow|bigger by/, "grow faster", "grow more slowly"],
 		[/compress|pulled back|pull back/, "pulled back further", "pulled back less"],
+		[/start.?angle/, "pulled back further", "pulled back less"],
 		[/tilt|angle|slope|lift/, "tilted more", "tilted less"],
 		[/stiff|spring/, "stiffer", "softer"],
 		[/speed|power|force/, "faster", "slower"],
@@ -1098,6 +1220,8 @@ const theName = (it) => {
 	// (a number of its own, "Ball 2", or two capitalised words make a proper name; a number that is part of a word, "the 8-ball", does not)
 	// ("Newton's cradle" keeps its capital: "the Newton's cradle")
 	if (/^[A-Z][a-z]+['’]s\b/.test(n)) return `the ${n}`
+	// (a name that starts with a number is a description, "5 kg steel weight": "the 5 kg steel weight" (V8842 n4))
+	if (/^\d/.test(n)) return `the ${n}`
 	return /(^|\s)\d+(\s|$)/.test(n) || /^[A-Z][a-z]+ [A-Z]/.test(n) ? n : `the ${lc(n)}`
 }
 /** "a tennis ball", "an egg", "a standing soda can" (the catalog's "Soda can, standing" as a person says it: ./words.js). */
@@ -1207,15 +1331,25 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 	// (the person's own words for a thing, when they say more than its name: "the yellow ball" for Ball 2, never "the box" for Box; and only
 	// words that are theirs: in their request)
 	const own = new Map()
+	// (the first words for a thing are what the person called it; a later "the mug" for the cup made a coffee mug is what it became, never what
+	// it was: "swapped the mug for a coffee mug" (V8842 k2 r1))
+	const seenSay = new Set()
 	for (const t of Array.isArray(says) ? says : []) {
 		const ids = Array.isArray(t?.ids) ? t.ids : []
 		const w = personWords(t?.says, text)
-		if (ids.length !== 1 || !w || own.has(ids[0])) continue
+		if (ids.length !== 1 || !w || own.has(ids[0]) || seenSay.has(ids[0])) continue
+		seenSay.add(ids[0])
 		const it = a.items.find((i) => i.id === ids[0])
 		if (!it) continue
 		const bare = (x) => String(x ?? "").toLowerCase().replace(/^(the|a|an|that|this|my) /, "").trim()
 		const n = bare(nameOfItem(it))
 		if (!bare(w) || n.includes(bare(w)) || bare(w).includes(n) || /^(it|that|this|them|one|the one)$/.test(bare(w))) continue
+		const now = b.items.find((i) => i.id === ids[0])
+		// (its word is the new kind's and not the old one's: "the mug" for the cup made a coffee mug; never "the yellow ball" for a ball made a
+		// tennis ball)
+		const headW = bare(w).split(/\s+/).at(-1)
+		const wordsOf = (type) => String(`${kindNoun(type, 1, { short: true }) ?? ""} ${typeName(type) ?? ""}`).toLowerCase().split(/[^\p{L}]+/u)
+		if (now && now.type !== it.type && wordsOf(now.type).includes(headW) && !wordsOf(it.type).includes(headW) && !n.split(/\s+/).includes(headW)) continue
 		// (the person's words pick it out: its name on screen is not said again, "the yellow ball", never "the yellow ball (Ball 2)")
 		own.set(ids[0], `${/^(the|a|an|that|this|my) /i.test(w) ? lc(w[0]) + w.slice(1) : `the ${lc(w)}`}`)
 	}
@@ -1310,7 +1444,15 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 				return !numbered && head(nm) === head(kindW.toLowerCase())
 			})()
 			const who = N === MARK ? "\u0001" : ownOk ? ownW : `${theName(ia)}${nameSays ? "" : ` (the ${kindW})`}`
-			bits.push(`swapped ${who} for ${N.aKind(ib.type)}${what.length ? ` (${what.join(", ")})` : ""}`)
+			// (a kind with a real size made another size is said so, never silently: "a plastic cup 35 cm wide (a real one is 9.5 cm)" (V8837 k5);
+			// one bracket for all of it)
+			let off = null
+			try {
+				off = offRealSize(ib.type, ib.props ?? {})
+			} catch {}
+			const sizeW = off ? ` ${off.words.replace(/ \(a (?:real|usual) one is .*\)$/, "")}` : ""
+			const inBr = off ? [`${off.ref ?? "a real one"} is ${fmtLen(off.d)}`, ...what] : what
+			bits.push(`swapped ${who} for ${N.aKind(ib.type)}${sizeW}${inBr.length ? ` (${inBr.join(off ? "; " : ", ")})` : ""}`)
 			return bits
 		}
 		let keys = [...new Set([...Object.keys(ia.props ?? {}), ...Object.keys(ib.props ?? {})])].filter((k) => !sameValue(propValue(ia, k), propValue(ib, k)))
@@ -1358,7 +1500,7 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 			const label = lc(propSpec(ib.type, keys[0])?.label ?? keys[0].replace(/_/g, " "))
 			bits.push(`turned ${propValue(ib, keys[0]) ? "on" : "off"} “${label}” on ${N.callIt(ib)}`)
 		} else if (inner && massMoved) bits.push(`made ${N.callIt(ib)} ${mb < ma ? "lighter" : "heavier"} (${fmtMass(ma)} → ${fmtMass(mb)}${words[0].w ? `, ${words[0].w}` : ""})`)
-		else if (/^pulled back/.test(words[0].w ?? "") && typeof propValue(ia, words[0].k) === "number") {
+		else if (/^pulled back/.test(words[0].w ?? "") && typeof propValue(ia, words[0].k) === "number" && !(only && /start.?angle/i.test(`${only} ${propSpec(ib.type, only)?.label ?? ""}`))) {
 			// ("pulled the spring launcher back less (4.6 → 3.5 cm)")
 			bits.push(`pulled ${N.callIt(ib)} back ${/further/.test(words[0].w) ? "further" : "less"} (${words[0].c.replace(/^[^0-9-]*?(?=-?\d)/, "")})`)
 		} else if (only && /start.?angle/i.test(`${only} ${propSpec(ib.type, only)?.label ?? ""}`)) {
@@ -1373,11 +1515,15 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 			bits.push(`spaced ${N.callIt(ib)} ${vb > va ? "further apart" : "closer together"} (first gap ${ga.split(" ").at(-1) === gb.split(" ").at(-1) ? ga.replace(/ \S+$/, "") : ga} → ${gb})`)
 		} else {
 			const main = words.filter((x) => x.w).slice(0, 2)
-			const how = main.length ? andList([...new Set(main.map((x) => x.w))]) : "different"
+			const how = main.length ? andList([...new Set(main.map((x) => x.w))]) : null
 			// (a row of many things, the dominoes: its weight in all says little)
 			// (a weight of its own already said, "bob weight 514 g → 3 kg", is never said twice: V8832 y15)
 			const ownWeight = keys.some((k) => k === "mass" || propSpec(ib.type, k)?.unit === "kg")
-			bits.push(`made ${N.callIt(ib)} ${how} (${words[0].c}${massMoved && !ownWeight && !MULTI_UNIT[ib.type] ? `; ${fmtMass(ma)} → ${fmtMass(mb)}` : ""})`)
+			// (every setting it says gets its number: "shorter and tilted less (rope length 80 → 50 cm; start angle 40° → 30°)", never the first
+			// alone; one with no word of its own is said by its setting, never "made the seesaw different" (V8842 y4 / a-m2 / x42c))
+			const nums = [...new Set((main.length ? main : words.slice(0, 2)).map((x) => x.c).filter(Boolean))]
+			const wt = massMoved && !ownWeight && !MULTI_UNIT[ib.type] ? `; ${fmtMass(ma)} → ${fmtMass(mb)}` : ""
+			bits.push(how ? `made ${N.callIt(ib)} ${how} (${nums.join("; ")}${wt})` : `changed ${N.callIt(ib)} (${nums.join("; ")}${wt})`)
 		}
 		return bits
 	}
@@ -1715,8 +1861,32 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 		return parts.length ? ` (${parts.join(", ")})` : ""
 	}
 	const whereOf = (list) => {
-		// (one thing the person put by another, "next to the box": said with their words for where)
-		if (list.length === 1 && anchors?.get?.(list[0].id)) return ` ${anchors.get(list[0].id).words}`
+		// (one thing the person put by another, "next to the box": said with their words for where; one pinned in the air there says so: "pinned
+		// in the air beside the box" (V8842 k1 r1: "added a sneaker next to the box" for a sneaker fixed 25 cm up))
+		if (list.length === 1 && anchors?.get?.(list[0].id)) {
+			const an = anchors.get(list[0].id)
+			const it = list[0]
+			let pinned = false
+			if (it.fixed === true && insB)
+				try {
+					pinned = !supportIn(b, insB, it.id) && (insB.box(it.id)?.y0 ?? 0) > 0.02
+				} catch {}
+			return pinned ? ` pinned in the air ${String(an.words).replace(/^(?:on the table )?(?:next to|by|near|close to)\b/i, "beside")}` : ` ${an.words}`
+		}
+		// (a group put by one thing, all of them: "next to the pedestal", or "either side of the pedestal" when they stand on both sides of it)
+		if (list.length > 1 && anchors && list.every((it) => anchors.get?.(it.id)?.anchor && anchors.get(it.id).anchor === anchors.get(list[0].id).anchor)) {
+			const an = anchors.get(list[0].id)
+			const A0 = B.get(an.anchor)
+			let sides = new Set()
+			try {
+				const ab = insB?.box(an.anchor)
+				if (ab) for (const it of list) {
+					const bx = insB.box(it.id)
+					if (bx) sides.add((bx.x0 + bx.x1) / 2 < (ab.x0 + ab.x1) / 2 ? -1 : 1)
+				}
+			} catch {}
+			return sides.size > 1 && A0 && /^(?:on the table )?(?:next to|beside|by|near|close to)\b/i.test(an.words) ? ` either side of ${theName(A0)}` : ` ${an.words}`
+		}
 		if (!insB) return ""
 		const sups = list.map((it) => supportIn(b, insB, it.id))
 		if (sups[0] && sups.every((s) => s && s.id === sups[0].id && s.inside === sups[0].inside)) {
@@ -1734,6 +1904,21 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 		const edge = flat && flat.w > 2 * flat.h && Math.abs(Math.abs(Number(it.angle) || 0) - 90) < 2 ? ", on its edge," : ""
 		const kinds = new Map()
 		for (const o of B.values()) kinds.set(o.type, (kinds.get(o.type) ?? 0) + 1)
+		// (under something that was there: a thing above it along the table, the lowest, says where it is before any neighbour does: "added a cup
+		// under Ramp 1", never "next to Ramp 2" (V8838 s-add-cup-under))
+		let overThing = null
+		{
+			let over = null
+			for (const o of B.values()) {
+				if (o.id === it.id || o.type === "table" || o.type === "wall" || !A.has(o.id)) continue
+				const ob = insB.box(o.id)
+				if (!ob || ob.y0 < bx.y1 - 0.002 || ob.y0 - bx.y1 > 0.8) continue
+				const ov = Math.min(ob.x1, bx.x1) - Math.max(ob.x0, bx.x0)
+				if (ov < 0.5 * Math.min(bx.x1 - bx.x0, ob.x1 - ob.x0)) continue
+				if (!over || ob.y0 < over.y0) over = { o, y0: ob.y0 }
+			}
+			overThing = over?.o ?? null
+		}
 		const near = (side) => {
 			let best = null
 			for (const o of B.values()) {
@@ -1754,6 +1939,8 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 		}
 		const L = near(-1)
 		const Rr = near(1)
+		// (between two things of the chain it stands in a row; else under one above it says where it is before a neighbour does)
+		if (!(L && Rr) && overThing) return `${edge} under ${theName(overThing)}`.replace(/,(?= under)/, "")
 		return `${edge}${L && Rr ? ` between ${L} and ${Rr}` : L || Rr ? ` next to ${L ?? Rr}` : ""}`.replace(/,$/, "")
 	}
 	// (several of a kind standing on one another: "a stack of 4 hardcover books")
@@ -1767,24 +1954,47 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 		return on === g.length - 1 ? `a stack of ${g.length} ${kindNoun(g[0].type, g.length)}` : null
 	}
 	for (const { e, g, n, end } of rowCuts) out.push({ text: `replaced the ${end} ${n === 1 ? "domino" : `${n} dominoes`} with ${stackWords(g) ?? addWords(g)}${detailOf(g)}`, id: e.it.id, name: theName(e.it) })
-	const usedRem = new Set()
+	// (what was added where something was taken away is paired by the best overlap over all of them, not first come in the patch's order, and
+	// a kind the words name after "replace … with" goes first: "replaced the 7 dominoes with 6 paperback books", never "with a sneaker" because
+	// the sneaker came first in the patch and stood over the old row (V8837 k1))
+	const withKinds = (() => {
+		const w = String(text ?? "").toLowerCase()
+		const out = new Set()
+		for (const m of w.matchAll(/\b(?:replace|swap|switch|exchange|trade)\b[^.;!?]*?\b(?:with|for)\s+([^.;!?]*?)(?=,|\band\b|\bthen\b|[.;!?]|$)/g))
+			for (const g of addGroups) {
+				const words = `${kindNoun(g[0].type, 1, { short: true })} ${kindNoun(g[0].type, 2, { short: true })} ${typeName(g[0].type) ?? ""}`.toLowerCase().split(/[^\p{L}]+/u).filter((x) => x.length > 2 && !["the", "and", "standing"].includes(x))
+				if (words.some((x) => new RegExp(`\\b${x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(m[1]))) out.add(g)
+			}
+		return out
+	})()
+	const pairs = []
 	for (const g of addGroups) {
 		const sb = spanOf(insB, g)
-		let pair = null
-		let best = 0
-		if (sb)
-			for (const r of remGroups) {
-				if (usedRem.has(r)) continue
-				const sa = spanOf(insA, r)
-				if (!sa) continue
-				const ov = Math.min(sa.x1, sb.x1) - Math.max(sa.x0, sb.x0)
-				const need = 0.4 * Math.min(sa.x1 - sa.x0, sb.x1 - sb.x0)
-				if (ov > 0 && ov >= need && ov > best) ((best = ov), (pair = r))
-			}
-		if (pair) {
-			usedRem.add(pair)
-			out.push({ text: `replaced ${remWords(pair)} with ${stackWords(g) ?? addWords(g)}${detailOf(g)}`, id: g[0].id, name: theName(g[0]) })
-		} else out.push({ text: `added ${stackWords(g) ?? addWords(g)}${detailOf(g)}${whereOf(g)}`, id: g[0].id, name: theName(g[0]) })
+		if (!sb) continue
+		for (const r of remGroups) {
+			const sa = spanOf(insA, r)
+			if (!sa) continue
+			const ov = Math.min(sa.x1, sb.x1) - Math.max(sa.x0, sb.x0)
+			const need = 0.4 * Math.min(sa.x1 - sa.x0, sb.x1 - sb.x0)
+			if (!(ov > 0 && ov >= need)) continue
+			// (how much of each the overlap covers, so a small thing over a long row never beats the row that took its place)
+			const share = ov / Math.max(sa.x1 - sa.x0, sb.x1 - sb.x0, 1e-6)
+			pairs.push({ g, r, named: withKinds.has(g) ? 1 : 0, share, ov })
+		}
+	}
+	pairs.sort((p, q) => q.named - p.named || q.share - p.share || q.ov - p.ov)
+	const usedRem = new Set()
+	const pairOf = new Map()
+	for (const pr of pairs) {
+		if (usedRem.has(pr.r) || pairOf.has(pr.g)) continue
+		usedRem.add(pr.r)
+		pairOf.set(pr.g, pr.r)
+	}
+	for (const g of addGroups) {
+		const pair = pairOf.get(g)
+		if (pair) out.push({ text: `replaced ${remWords(pair)} with ${stackWords(g) ?? addWords(g)}${detailOf(g)}`, id: g[0].id, name: theName(g[0]) })
+		// (where a group stands before what each weighs: "added 2 rubber ducks either side of the pedestal (40 g each)")
+		else out.push({ text: g.length > 1 ? `added ${stackWords(g) ?? addWords(g)}${whereOf(g)}${detailOf(g)}` : `added ${stackWords(g) ?? addWords(g)}${detailOf(g)}${whereOf(g)}`, id: g[0].id, name: theName(g[0]) })
 	}
 	const rest = remGroups.filter((r) => !usedRem.has(r))
 	if (rest.length) out.push({ text: `removed ${andList(rest.map(remWords))}`, id: rest[0][0].id, name: theName(rest[0][0]) })
@@ -1792,6 +2002,8 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 	// (an invisible wall at a table's end taken away, so a thing can go off that end: said, never hidden)
 	const tbl = b.items.find((i) => i.type === "table") ?? a.items.find((i) => i.type === "table")
 	for (const w of a.items.filter((i) => isSafetyWall(i) && !b.items.some((x) => x.id === i.id))) out.push({ text: `took away the invisible wall at the table's ${tbl && (Number(w.x) || 0) > (Number(tbl.x) || 0) ? "right" : "left"} end`, id: w.id, name: "the end wall" })
+	// (one bracket at a time: "Ramp 1 (top), with the ball on it, 16 cm up", "10 LEGO bricks (2 × 4; 2.3 g each)")
+	for (const o of out) o.text = tidyBrackets(o.text)
 	return out
 }
 /** "both" for two, "all 3" for more: "both goals happen ✓", never "all 2 goals". */
@@ -2290,6 +2502,66 @@ export function namedIn(text, scene) {
 	for (const it of items) if (!out.has(it.id) && heads.get(it.id).some((h) => has(h) && !said.has(h))) out.add(it.id)
 	return out
 }
+// ---- what a request says to leave as it is: "make it work without touching the box", "fix it but leave the box alone", "can you make it work
+// with the box where it is?", "don't move the box", "is there another way besides moving the box?" (V8842 ql / qn / qo / qp: the physics' own
+// fix lowered the box in 4 of 4, though the AI's answers had kept it)
+const KEEP_VERB = "(?:touch(?:ing)?|mov(?:e|ing)|chang(?:e|ing)|shift(?:ing)?|lower(?:ing)?|rais(?:e|ing)|lift(?:ing)?|adjust(?:ing)?|nudg(?:e|ing)|disturb(?:ing)?|resiz(?:e|ing)|tilt(?:ing)?|swap(?:ping)?|replac(?:e|ing)|remov(?:e|ing)|mess(?:ing)? with|do(?:ing)? anything (?:to|with)|repositio\\w*)"
+const KEEP_STAY = "(?:alone|as (?:it|they) (?:is|are|was|were|stands?)|as is|where (?:it|they) (?:is|are|stands?|was|were|sits?)|in (?:its|their) (?:place|spot)|in place|untouched|unchanged|the same|still|put|be|fixed|exactly as (?:it|they) (?:is|are))"
+const KEEP_RES = [
+	// (never "not" alone: "the dominoes are not touching the seesaw" says how it is, not what to keep)
+	new RegExp(`\\b(?:without|besides|other than|apart from|except(?: for)?|instead of|rather than)\\s+${KEEP_VERB}\\s+([^.,;:!?]+)`, "gi"),
+	new RegExp(`(?:^|[.,;:!?]\\s*|\\b(?:and|but|please|just|so)\\s+)(?:don['’]?t|do not|never)\\s+${KEEP_VERB}\\s+([^.,;:!?]+)`, "gi"),
+	new RegExp(`\\b(?:leave|leaving|keep|keeping|let)\\s+([^.,;:!?]+?)\\s+${KEEP_STAY}(?=\\s|[.,;:!?]|$)`, "gi"),
+	// ("with the box where it is", never "with the ball still on it": only the words that say where it stands)
+	new RegExp(`\\bwith\\s+([^.,;:!?]+?)\\s+(?:where (?:it|they) (?:is|are|stands?|was|were|sits?)|as (?:it|they) (?:is|are|was|were)|in (?:its|their) (?:place|spot)|in place|untouched|unchanged)(?=\\s|[.,;:!?]|$)`, "gi"),
+	new RegExp(`(?:^|[.,;:!?]\\s*|\\b(?:and|but|while|so)\\s+)([^.,;:!?]+?)\\s+(?:stays?|staying|remains?|remaining)\\s+${KEEP_STAY}(?=\\s|[.,;:!?]|$)`, "gi")
+]
+/** The lengths a text states, in metres: "a 45 cm basket", "moved 12 cm right", "12 → 45 cm wide" (both). */
+export function lengthsIn(text) {
+	const t = String(text ?? "")
+	const out = []
+	const m2 = (v, u) => (u === "mm" ? v / 1000 : u === "cm" ? v / 100 : v)
+	for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*→\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)\b/g)) out.push(m2(Number(m[1]), m[2] ?? m[4]), m2(Number(m[3]), m[4]))
+	for (const m of t.replace(/(\d+(?:\.\d+)?)\s*(mm|cm|m)?\s*→\s*(\d+(?:\.\d+)?)\s*(mm|cm|m)\b/g, " ").matchAll(/(\d+(?:\.\d+)?)\s*(mm|cm|m)\b(?![²³\/])/g)) out.push(m2(Number(m[1]), m[2]))
+	return out.filter((v) => Number.isFinite(v) && v > 0)
+}
+/** Does the AI's own account of an edit state a length the card's lines (what is on the table) don't have? Each length it gives must be one of
+ *  theirs, give or take 6 % (or 6 mm). */
+export function plannedOff(planned, lines = []) {
+	const said = lengthsIn(planned)
+	if (!said.length) return false
+	const facts = lengthsIn((Array.isArray(lines) ? lines : []).join("; "))
+	return said.some((v) => !facts.some((f) => Math.abs(f - v) <= Math.max(0.006, 0.06 * v)))
+}
+/** The words of a request that say to leave something as it is, as said: ["without moving the box"]. */
+export function keepClauses(text) {
+	const t = String(text ?? "")
+	const out = []
+	for (const re of KEEP_RES) {
+		re.lastIndex = 0
+		for (const m of t.matchAll(re)) out.push(m[0].replace(/^[.,;:!?\s]+|^(?:and|but|while|so)\s+/i, "").trim())
+	}
+	return [...new Set(out)].filter(Boolean)
+}
+/** The things a request says to leave as they are: Set of ids (each phrase cut at its first place word: "without touching the box on the seesaw"
+ *  is the box). Whatever finds a fix for this request never changes them. */
+export function keptByWords(text, scene) {
+	const t = String(text ?? "")
+	const out = new Set()
+	if (!t.trim() || !scene?.items?.length) return out
+	for (const re of KEEP_RES) {
+		re.lastIndex = 0
+		for (const m of t.matchAll(re)) {
+			for (const part of String(m[1] ?? "").split(/\s*(?:\band\b|\bor\b|\bnor\b|&)\s*/i)) {
+				// (the thing, not where it is: "the box on the seesaw", "the box at the end")
+				const head = part.split(/\b(?:on|in|at|by|next to|near|under|over|beside|behind|above|below|of|so|to|that|which|while|because|when|if|but|either|anymore|any more|at all|please|for now)\b/i)[0].trim()
+				if (!head || /^(it|them|this|that|everything|anything|things|the rest|everything else|all|the scene|the machine)$/i.test(head.replace(/\s+else$/i, "").trim())) continue
+				for (const id of namedIn(head, scene)) out.add(id)
+			}
+		}
+	}
+	return out
+}
 // (words that pick a thing out some other way, by its colour or its place in the chain, or that ask about everything: the request can't be
 // held to the names in it)
 const DESCRIBE_RE = /\b(red|orange|yellow|green|blue|purple|violet|pink|white|black|grey|gray|brown|silver|golden|first|second|third|fourth|fifth|last|other|both|each|every|all|everything|whole|machine|layout|things|stuff)\b/i
@@ -2303,7 +2575,9 @@ const TIME_RE = /\b(seconds?|secs?|\d+(\.\d+)?\s*s|duration|run(s|ning)? (for|lo
  *  names (it states an outcome or a behaviour, picks things out by colour or order, or names nothing in the scene). */
 export function editScope(text, scene) {
 	const t = String(text ?? "")
-	if (!t.trim() || statesOutcome(t) || BEHAVIOR_RE.test(t) || DESCRIBE_RE.test(t)) return null
+	// ("a small orange" is the fruit, not a colour: "swap the 8-ball for a small orange" names things, it describes none (V8837 k3))
+	const d = t.replace(/\b(an?|the|small|big|large|little|ripe|whole)\s+((?:\w+\s+)?)orange\b(?=\s*(?:[,.;!?]|$|\s+(?:and|then|so|on|in|for|with|to|next|by|instead)\b))/gi, "$1 $2fruit")
+	if (!t.trim() || statesOutcome(t) || BEHAVIOR_RE.test(t) || DESCRIBE_RE.test(d)) return null
 	const named = namedIn(t, scene)
 	if (!named.size) return null
 	let R = new Map()
@@ -2411,6 +2685,17 @@ export function unaskedMoves(text, a, b) {
 			const hit = inspect(test).overlaps.filter((o) => (o.a === ia.id || o.b === ia.id) && o.depth > 0.002 && !base?.has(`${o.a}|${o.b}`)).sort((p, q) => q.depth - p.depth)[0]
 			const other = hit ? B.get(hit.a === ia.id ? hit.b : hit.a) : null
 			if (other && other.type !== "table" && !isSafetyWall(other)) reason = `to clear ${placeName(other, b)}`
+			// (raised onto what it would have started inside: said as where it went, "onto the 3 hardcover books", never "to clear the 2nd hardcover
+			// book from the bottom" for a pillow put on top of the stack (V8837 c08))
+			if (other && uy2 > 0) {
+				const insB = inspect(b)
+				const sp = supportIn(b, insB, ia.id)
+				const S = sp && !sp.inside ? B.get(sp.id) : null
+				if (S && S.type === other.type) {
+					const stack = b.items.filter((i) => i.type === S.type && Math.abs((Number(i.x) || 0) - (Number(S.x) || 0)) < 0.05)
+					reason = `onto ${stack.length > 1 ? `the ${stack.length} ${kindNoun(S.type, stack.length, { short: true })}` : placeName(S, b)}`
+				}
+			}
 		} catch {}
 		// (a thing swapped or resized and set on the middle of what it stands on, the bowling ball on the pedestal: said so (V8832 c02))
 		if (!reason && ux && reshaped)
@@ -2433,6 +2718,33 @@ export function unaskedMoves(text, a, b) {
 	}
 	return out
 }
+/** Where the person put a thing in words that place it over or under another ("under ramp 1", "on top of the box"): kept as their words for
+ *  where it is on the card, never a place a fix slides it along. */
+const UNDER_RE = /\b(under(?:neath)?|below|beneath|above|on top of)\s+(?:the\s+|a\s+|an\s+)?([\p{L}\p{N}'’ -]+?)(?=\s+(?:to|so|that|and|then|for|waiting|watching|as)\b|[,.;!?]|$)/iu
+export function placeWordsOf(text, a, b) {
+	const out = new Map()
+	if (!a?.items || !b?.items) return out
+	const had = new Set(a.items.map((i) => i.id))
+	const added = b.items.filter((i) => !had.has(i.id) && i.type !== "table" && !isSafetyWall(i))
+	if (!added.length) return out
+	for (const c of String(text ?? "").split(/[,;.!?]|\b(?:and|then|also)\b(?=\s+(?:put|place|add|stand|set|lay|drop|swap|replace|make|move))/i)) {
+		const m = UNDER_RE.exec(c)
+		if (!m) continue
+		const mover = c.slice(0, m.index).toLowerCase()
+		const at = [...namedIn(m[2], a)]
+		if (at.length !== 1) continue
+		const A = a.items.find((i) => i.id === at[0])
+		const mine = added.filter((it) => {
+			const k = String(kindNoun(it.type, 1, { short: true }) ?? "").toLowerCase()
+			const head = k.split(/\s+/).at(-1)
+			return head && head.length > 2 && (mover.includes(k) || new RegExp(`\\b${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(mover))
+		})
+		// (several of one kind, "a stack of 3 hardcover books under the pillow": each of them (V8842: the place words were dropped for a group))
+		if (!mine.length || mine.some((it) => it.type !== mine[0].type || out.has(it.id))) continue
+		for (const it of mine) out.set(it.id, { anchor: A.id, words: `${m[1].toLowerCase()} ${theName(A)}`, ...(mine.length > 1 ? { group: true } : {}) })
+	}
+	return out
+}
 /** Where the person's words put a thing they added, by another thing: "put a sneaker next to the box", "a rubber duck on the table next to the
  *  box to watch" (a = before, b = after). -> Map id (the added thing) -> {anchor (its id), words ("on the table next to the box")}: the card's
  *  line says it so (never "next to the seesaw" for where the AI happened to put it: V8832 m1 / m2 / c13), and a thing only put there may be moved
@@ -2448,18 +2760,24 @@ export function anchorsOf(text, a, b) {
 		const m = ANCHOR_RE.exec(c)
 		if (!m) continue
 		const mover = c.slice(0, m.index).toLowerCase()
-		const at = [...namedIn(m[2], a)]
-		if (at.length !== 1) continue
-		const A = a.items.find((i) => i.id === at[0])
+		// (by its name before, or by what it is now when the same request swapped it: "next to the mug" for the cup made a coffee mug (V8841 k2))
+		let at = [...namedIn(m[2], a)]
+		let A = at.length === 1 ? a.items.find((i) => i.id === at[0]) : null
+		if (at.length !== 1) {
+			at = [...namedIn(m[2], b)].filter((id) => had.has(id))
+			A = at.length === 1 ? b.items.find((i) => i.id === at[0]) : null
+		}
+		if (!A) continue
 		// (the added thing its clause names by its kind: "a sneaker", "a coffee mug", "a rubber duck"; only one of a kind)
 		const mine = added.filter((it) => {
 			const k = String(kindNoun(it.type, 1, { short: true }) ?? "").toLowerCase()
 			const head = k.split(/\s+/).at(-1)
 			return head && head.length > 2 && (mover.includes(k) || new RegExp(`\\b${head.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`).test(mover))
 		})
-		if (mine.length !== 1 || out.has(mine[0].id)) continue
+		// (several of one kind, "two rubber ducks next to the pedestal": each of them, said once for the group (V8842 n5))
+		if (!mine.length || mine.some((it) => it.type !== mine[0].type || out.has(it.id))) continue
 		const onTable = /\bon the table\b/i.test(c)
-		out.set(mine[0].id, { anchor: A.id, words: `${onTable ? "on the table " : ""}${m[1].toLowerCase()} ${theName(A)}` })
+		for (const it of mine) out.set(it.id, { anchor: A.id, words: `${onTable ? "on the table " : ""}${m[1].toLowerCase()} ${theName(A)}`, ...(mine.length > 1 ? { group: true } : {}) })
 	}
 	return out
 }
@@ -2752,6 +3070,8 @@ export function createOrchestrator(deps) {
 				const r = await raceAbort(api(`/api/ai/${step}`, { payload, client: { requestId, attempt } }, ctl.signal), ctl.signal)
 				if (!r || r.ok === false) throw Object.assign(new Error(r?.error ?? "no answer"), { body: r })
 				report.calls.push({ step, model: r.model ?? null, ms: r.ms ?? Math.round(now() - t), usage: r.usage ?? null, attempt, waitedMs: busyMs || undefined })
+				// (what it was billed, as soon as it is: the background's dollars count it at once)
+				if (num(r.usage?.costInUSD) !== null) onEvent?.({ type: "ai-cost", step, usd: num(r.usage.costInUSD) })
 				return r.result ?? r
 			} catch (e) {
 				if (signal?.aborted) throw abortError()
@@ -2822,7 +3142,7 @@ export function createOrchestrator(deps) {
 		return { cancel: () => ctl.abort(), result, signal }
 	}
 
-	async function run(request, { onEvent, signal, refineRounds, tune: doTune = true, finalCheck = true, reconcile: doReconcile = true, quickEdits = true, stageTune: doStage = true, imagine: imagineSetting = "off", aimFirst = true }) {
+	async function run(request, { onEvent, signal, refineRounds, tune: doTune = true, finalCheck = true, reconcile: doReconcile = true, quickEdits = true, stageTune: doStage = true, imagine: imagineSetting = "off", aimFirst = true, physFirst: physFirstOn = true, physFirstMs = PHYS_FIRST_MS * TIME_SCALE }) {
 		const T0 = now()
 		const text = String(request.text ?? "").trim()
 		// (the person's own words: a rework's text is the app's, so a target's words never pass for theirs there)
@@ -2943,6 +3263,69 @@ export function createOrchestrator(deps) {
 		let seatedIds = new Set() // (a swapped thing given its seat on its support: adjustEdit (0a))
 		const planOnScreen = !!(request.plan && sameScene(request.planScene, request.scene))
 		const basePlan = mode !== "new" ? (planOnScreen ? clone(request.plan) : planFromScene(request.scene)) : null
+		// (what the person's words say to leave as it is, "make it work without touching the box": kept by every search, round and rework of this
+		// request as a choice of theirs (request.keep / request.hard), and any fix that changes it thrown away (`frozen`): V8842 ql / qn / qo / qp)
+		const frozen = mode === "edit" && personText ? keptByWords(personText, request.scene) : new Set()
+		if (frozen.size) {
+			const typeOf = new Map(request.scene.items.map((i) => [i.id, i.type]))
+			request = {
+				...request,
+				keep: [...(Array.isArray(request.keep) ? request.keep.filter((k) => !(Array.isArray(k) && frozen.has(k[0]))) : []), ...[...frozen].map((id) => [id, "all"])],
+				hard: [...(Array.isArray(request.hard) ? request.hard : []), ...[...frozen].map((id) => [id, ["place", ...(propKeys(typeOf.get(id)) ?? [])]])]
+			}
+			report.kept = [...frozen]
+		}
+		/** Does a scene change any thing the person said to leave as it is (frozen)? */
+		const touchesFrozen = (sc) => {
+			if (!frozen.size || !sc?.items) return false
+			const at = new Map(sc.items.map((i) => [i.id, i]))
+			for (const id of frozen) {
+				const a = request.scene.items.find((i) => i.id === id)
+				const b = at.get(id)
+				if (!a) continue
+				if (!b || b.type !== a.type || Math.abs((Number(a.x) || 0) - (Number(b.x) || 0)) > 1e-4 || Math.abs((Number(a.y) || 0) - (Number(b.y) || 0)) > 1e-4 || Math.abs((Number(a.angle) || 0) - (Number(b.angle) || 0)) > 0.01) return true
+				for (const k of new Set([...Object.keys(a.props ?? {}), ...Object.keys(b.props ?? {})])) {
+					const p = propValue(a, k)
+					const q = propValue(b, k)
+					if (typeof p === "number" && typeof q === "number" ? Math.abs(p - q) > 1e-6 * Math.max(1, Math.abs(p)) : JSON.stringify(p ?? null) !== JSON.stringify(q ?? null)) return true
+				}
+			}
+			return false
+		}
+		// (a "make it work" typed in the open, nothing of its own to change: held to the background's budget, AI_USD and MAKE_IT_WORK_MS, and the
+		// physics looks first (physFirst))
+		const typedMake = physFirstOn && mode === "edit" && request.rework !== true && !request.background && statesOutcome(text) && !EXPLICIT_RE.test(text) && !PLACE_RE.test(text) && !OWN_CHANGE_RE.test(text) && !!request.sim?.track?.frames?.length
+		const madeDeadline = Date.now() + MAKE_IT_WORK_MS
+		let physFirst = null
+		let physFix = null
+		const physCtl = new AbortController()
+		signal.addEventListener("abort", () => physCtl.abort(), { once: true })
+		const startPhysFirst = () =>
+			(async () => {
+				let before = null
+				if (isObj(request.reference) && Array.isArray(request.reference.items)) before = { scene: request.reference, sim: await simulate(request.reference, physCtl.signal) }
+				const goals = Array.isArray(basePlan?.goals) ? basePlan.goals : null
+				const targets = fixTargets({ goals, scene: request.scene, before, sim: request.sim })
+				if (!judgeTargets(targets, request.sim).some((r) => r.ok === false)) return null
+				const touchedK = new Map()
+				for (const [id, keys] of (Array.isArray(request.keep) ? request.keep : []).filter(Array.isArray)) if (request.scene.items.some((i) => i.id === id)) touchedK.set(id, keys === "all" ? "all" : new Set(Array.isArray(keys) ? keys : []))
+				const hard = Array.isArray(request.hard) ? new Map(request.hard.filter(Array.isArray).map(([id, ks]) => [id, ks === "all" ? "all" : new Set(Array.isArray(ks) ? ks : [])])) : null
+				const fr = await findFix({ scene: request.scene, sim: request.sim, goals, before, touched: touchedK, swapped: new Set(), targets, ...(hard ? { hard } : {}), ...(frozen.size ? { frozen } : {}) }, { signal: physCtl.signal, budgetMs: physFirstMs, minRuns: PHYS_FIRST_RUNS, hardMs: Math.max(physFirstMs, madeDeadline - Date.now() - 16000) })
+				// (a fix that changes what the person said to leave as it is is no fix for this request)
+				return fr?.status === "found" && touchesFrozen(fr.fix?.scene) ? { ...fr, status: "none", fix: undefined } : fr
+			})().catch(() => null)
+		let physDone = null // (its answer, once it has one)
+		let physT0 = Date.now()
+		/** The physics' own search's answer when it is done within `ms`; else null (it goes on). */
+		const physWait = async (ms) => {
+			if (!physFirst) return null
+			if (physDone) return physDone
+			const r = await Promise.race([physFirst, sleep(ms, signal).then(() => null, () => null)])
+			return r ?? physDone
+		}
+		const physFound = () => physDone?.status === "found" && !!physDone.fix?.sim
+		/** Whether one more round of the typed "make it work" fits its budget (AI_USD, MAKE_IT_WORK_MS). */
+		const roundFits = () => !typedMake || roundBudget(report.calls, { deadline: madeDeadline })
 		const realIds = (request.scene?.items ?? []).filter((i) => i.type !== "table" && !isSafetyWall(i)).map((i) => i.id)
 		/** Goal labels that name a thing the library doesn't have, said by its stand-in (plan.missing's substitute_type): in the version's plan,
 		 *  its solved goals and its scene's goals alike. */
@@ -2963,7 +3346,14 @@ export function createOrchestrator(deps) {
 						const plural = /s$/.test(w) && w !== one
 						const to = kindNoun(S, plural ? 2 : 1, { short: true })
 						if (new RegExp(`\\b${to}\\b`, "i").test(label)) continue
-						label = label.replace(new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), (x, off) => (off === 0 ? to.replace(/^./, (c) => c.toUpperCase()) : to))
+						// (a last word whose word before it is already one of the stand-in's own is the AI's name for it: "the first toilet roll" is
+						// never "the first toilet toilet paper roll" (V8842 n2))
+						const toW = new Set(to.toLowerCase().split(/\s+/))
+						label = label.replace(new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "gi"), (x, off, all) => {
+							const prev = /([\p{L}'’-]+)\s+$/u.exec(all.slice(0, off))?.[1]?.toLowerCase()
+							if (!/\s/.test(w) && prev && toW.has(prev)) return x
+							return off === 0 ? to.replace(/^./, (c) => c.toUpperCase()) : to
+						})
 					}
 				}
 				if (label !== g.label) map.set(g.label, label)
@@ -3093,6 +3483,14 @@ export function createOrchestrator(deps) {
 			editPayload = { text, scene: request.scene, ...(planOnScreen ? { plan: basePlan } : {}), images: refs, history: (request.history ?? []).slice(-20), intent: "edit" }
 			// (a background rework spends from its edit's allowance of model calls, request.aiBudget: none left, it isn't asked)
 			if (!spendCall()) throw new AiError("budget", "No AI calls are left for this change", { step: "edit", retryable: false })
+			// (a typed "make it work" with nothing of its own to change: the physics looks for the smallest checked change on the scene as it is, side
+			// by side with the AI's first answer, and is used when that answer doesn't work, before any more AI rounds (V8838 s-fix-user-swap: three
+			// calls, $0.15–0.21 and 65–85 s, then nothing, where lowering the box 5 cm works))
+			if (typedMake) {
+				physT0 = Date.now()
+				physFirst = startPhysFirst()
+				physFirst.then((r) => (physDone = r), () => {})
+			}
 			// (a rework the app asks for in the background, after a change stopped a goal: the reasons the run shows go with the request, as the
 			// measured "make it work" feedback does: ai/DESIGN.md §16)
 			const out = await timed("edit", null, () => callStep("edit", typeof request.feedback === "string" && request.feedback.trim() ? { ...editPayload, feedback: request.feedback.slice(0, 7000) } : editPayload))
@@ -3649,7 +4047,7 @@ export function createOrchestrator(deps) {
 				for (const id of scope.named) {
 					const it = plan.items.find((x) => isObj(x) && x.id === id)
 					const a = was.get(id)
-					if (!it || !a || a.type !== it.type || JSON.stringify(a.place ?? null) === JSON.stringify(it.place ?? null)) continue
+					if (!it || !a || JSON.stringify(a.place ?? null) === JSON.stringify(it.place ?? null)) continue
 					// (only where it stands: a turn the edit gave it stays)
 					const spot = (pl) => {
 						const o = isObj(pl) ? clone(pl) : {}
@@ -3658,7 +4056,14 @@ export function createOrchestrator(deps) {
 					}
 					if (spot(a.place) === spot(it.place)) continue
 					const alt = clone(plan)
-					for (const rid of [id, ...(R.get(id) ?? [])]) {
+					// (a thing the words only swap, moved along the table too ("swap the cup for a basket" that also slid it 12 cm right, said with no
+					// reason: V8837 k3): put back where it stood along the table, its new seat kept, when that runs into nothing; else that move made room)
+					if (a.type !== it.type) {
+						const x = alt.items.find((y) => isObj(y) && y.id === id)
+						if (!isObj(a.place) || !isObj(x?.place) || a.place.on !== x.place.on || num(a.place.x) === null || num(x.place.x) === null || Math.abs(num(a.place.x) - num(x.place.x)) < 0.005) continue
+						x.place = { ...x.place, x: a.place.x }
+						for (const k of ["left_of", "right_of", "dx"]) delete x.place[k]
+					} else for (const rid of [id, ...(R.get(id) ?? [])]) {
 						const x = alt.items.find((y) => isObj(y) && y.id === rid)
 						const b = was.get(rid)
 						if (!x || !b || b.type !== x.type) continue
@@ -3669,8 +4074,25 @@ export function createOrchestrator(deps) {
 					}
 					let ok = false
 					try {
-						const ta = trouble(solveV(plan))
-						ok = [...trouble(solveV(alt))].every((k) => ta.has(k))
+						const r0 = solveV(plan)
+						const r1 = solveV(alt)
+						const ta = trouble(r0)
+						// (and never when the move made some room, even not all of it: a trampoline moved 4.5 cm left, still in the basket by less, was put
+						// back into it (V8843 c09 r3); what is left is cleared further its own way, shiftAside)
+						// (how far along the table it is into what it starts inside: the overlaps' own depth is no measure of that)
+						const deep = (r) => {
+							try {
+								const ins = inspect(r.scene)
+								const me = ins.box(id)
+								return ins.overlaps.filter((o) => (o.a === id || o.b === id) && ![o.a, o.b].some((q) => r.scene.items.find((i) => i.id === q)?.type === "table")).reduce((t, o) => {
+									const ob = ins.box(o.a === id ? o.b : o.a)
+									return t + (me && ob ? Math.max(0, Math.min(me.x1, ob.x1) - Math.max(me.x0, ob.x0)) : o.depth ?? 0)
+								}, 0)
+							} catch {
+								return 0
+							}
+						}
+						ok = [...trouble(r1)].every((k) => ta.has(k)) && deep(r1) <= deep(r0) + 1e-4
 					} catch {}
 					if (!ok) continue
 					plan = alt
@@ -3810,17 +4232,127 @@ export function createOrchestrator(deps) {
 			return { out: isObj(out) ? out : { patches: out }, ...pp, ...ad, v, overlaps: overlapsOf(v.scene), failing: failingIn(v) }
 		}
 		/** Another edit call with feedback (the scene, plan, history and pictures exactly as the first): its answer, or null when it failed. */
-		const askAgain = async (feedback, detail, label) => {
+		const askAgain = async (feedback, detail, label, { ms = null } = {}) => {
 			// (a background rework keeps its reasons in front of each round)
 			if (typeof request.feedback === "string" && request.feedback.trim()) feedback = `${request.feedback.slice(0, 4500)}\n\n${feedback}`.slice(0, 8000)
 			if (!spendCall()) return null
+			// (a call held to `ms`: past it, it is stopped and the answer before it kept)
+			const sub = ms ? new AbortController() : null
+			const onAbort = () => sub?.abort()
+			if (sub) signal.addEventListener("abort", onAbort, { once: true })
+			const timer = sub ? setTimeout(() => sub.abort(), ms) : null
 			try {
-				return await timed("edit", detail, () => callStep("edit", { ...editPayload, feedback }), label)
+				return await timed("edit", detail, () => (sub ? call("edit", { ...editPayload, feedback }, sub.signal, report, onEvent) : callStep("edit", { ...editPayload, feedback })), label)
 			} catch (e) {
-				if (e?.name === "AbortError" || signal.aborted) throw e
-				say("info", "edit_again_failed", `${label} couldn't run (${whyFailed(e)}): kept the first answer`)
+				if (signal.aborted) throw e
+				if (e?.name === "AbortError" && !sub?.signal.aborted) throw e
+				say("info", "edit_again_failed", sub?.signal.aborted ? `${label} took too long: kept the first answer` : `${label} couldn't run (${whyFailed(e)}): kept the first answer`)
+				return null
+			} finally {
+				clearTimeout(timer)
+				if (sub) signal.removeEventListener("abort", onAbort)
+			}
+		}
+		/** A thing the edit left as it was that the change now starts inside, moved along the table as a whole, the least that clears it (never
+		 *  re-spaced or reshaped): the version, or null (V8837 plainmove: "move the box 30 cm left" had the repair turn re-space the dominoes,
+		 *  which broke the chain, in a second 16 s call). */
+		const shiftAside = async (A) => {
+			let pairs
+			let ins
+			try {
+				const had = new Set(inspect(request.scene).overlaps.flatMap((o) => [`${o.a}|${o.b}`, `${o.b}|${o.a}`]))
+				ins = inspect(A.v.scene)
+				pairs = ins.overlaps.filter((o) => o.depth > 0.002 && !had.has(`${o.a}|${o.b}`))
+			} catch {
 				return null
 			}
+			const same = (id) => {
+				const x = A.plan.items.find((y) => isObj(y) && y.id === id)
+				return !!x && was.has(id) && JSON.stringify(x) === JSON.stringify(was.get(id))
+			}
+			// (a thing this edit added, set down on the table where it starts inside another, is the AI's own placing unless the words give a number:
+			// it moves aside the least that clears it (V8841 k2: a rubber duck "next to the mug" inside the bigger coffee mug, whose repair call was
+			// stopped at REPAIR_MS))
+			const placedFree = (id) => !was.has(id) && !EXPLICIT_RE.test(text)
+			for (const o of pairs) {
+				let [X, Y] = same(o.a) && !same(o.b) ? [o.b, o.a] : same(o.b) && !same(o.a) ? [o.a, o.b] : [null, null]
+				// (only for a thing the change moved along the table into it: a swap or a resize that keeps its seat is the repair turn's, as before)
+				const xi = X ? A.plan.items.find((i) => isObj(i) && i.id === X) : null
+				if (!Y || !was.has(X) || !(Math.abs((num(xi?.place?.x) ?? 0) - (num(was.get(X)?.place?.x) ?? 0)) > 0.005)) [X, Y] = placedFree(o.a) && !placedFree(o.b) ? [o.b, o.a] : placedFree(o.b) && !placedFree(o.a) ? [o.a, o.b] : [null, null]
+				if (!Y) continue
+				let y = A.plan.items.find((i) => isObj(i) && i.id === Y)
+				// (placed by its neighbour, "right of the mug": from where it stands now)
+				if (isObj(y?.place) && num(y.place.x) === null && !was.has(Y)) {
+					const at = num(A.v.scene.items.find((i) => i.id === Y)?.x)
+					if (at !== null) {
+						y = { ...clone(y), place: { ...clone(y.place), x: at } }
+						for (const k of ["left_of", "right_of"]) delete y.place[k]
+					}
+				}
+				// (only a thing standing on the table on its own: never what rests on the changed thing (it is re-seated), nor a goal's own thing)
+				const goalIds = new Set((G(A.v) ?? []).filter(isObj).flatMap((g) => goalItems(g)))
+				const bx = ins.box(X)
+				const by = ins.box(Y)
+				if (!bx || !by) continue
+				if (!isObj(y?.place) || y.place.on !== "table" || num(y.place.x) === null || ["table", "wall"].includes(y.type) || isSafetyWall(y) || goalIds.has(Y) || (R.get(X) ?? []).includes(Y)) {
+					// (the other one can't move (a goal's container, a fixed thing): the thing the change moved goes on further its own way, the least
+					// that clears it, with no call (V8843 c09 r3: a trampoline moved 4.5 cm left still started inside the basket, and the repair call was
+					// stopped at REPAIR_MS))
+					const x0 = num(was.get(X)?.place?.x)
+					const x1 = num(xi?.place?.x)
+					if (!xi || !isObj(xi.place) || xi.place.lean || x0 === null || x1 === null || Math.abs(x1 - x0) <= 0.005 || EXPLICIT_RE.test(text) || (R.get(Y) ?? []).includes(X)) continue
+					let t1
+					try {
+						t1 = trouble(solveV(A.plan))
+					} catch {
+						continue
+					}
+					// (it alone, then, when that runs into its other neighbour first, it and the other one (a thing the words don't name, set at the
+					// least that clears it) each the other way, the smallest pair first: the trampoline 4 cm further left and the basket 6 cm right)
+					const yMay = isObj(y?.place) && num(y.place.x) !== null && !y.place.lean && !isSafetyWall(y) && !["table", "wall"].includes(y.type) && !scope?.named?.has(Y) && !frozen.has(Y) && !(R.get(X) ?? []).includes(Y)
+					const steps = [...ROOM.map((d) => [d, 0]), ...(yMay ? ROOM.slice(0, 9).flatMap((d1) => ROOM.slice(0, 11).map((d2) => [d1, d2])).sort((p, q) => p[0] + p[1] - (q[0] + q[1])) : [])]
+					let solves = 0
+					for (const [d1, d2] of steps) {
+						if (solves++ > 150) break
+						let p2 = withEntry(A.plan, X, shiftX(xi, Math.sign(x1 - x0) * d1))
+						if (d2) p2 = withEntry(p2, Y, shiftX(y, -Math.sign(x1 - x0) * d2))
+						let r
+						try {
+							r = solveV(p2)
+						} catch {
+							continue
+						}
+						if (![...trouble(r)].every((k) => t1.has(k)) || overlapsOf(r.scene).length >= A.overlaps.length) continue
+						const v2 = await attempt(p2, "made room")
+						const B = { ...A, plan: p2, v: v2, overlaps: overlapsOf(v2.scene), failing: failingIn(v2), ...(d2 ? { madeRoom: new Set([...(A.madeRoom ?? []), Y]) } : {}) }
+						if (B.overlaps.length < A.overlaps.length && !(fixKind && B.failing.length > A.failing.length)) return B
+						break
+					}
+					continue
+				}
+				const dir = (by.x0 + by.x1) / 2 < (bx.x0 + bx.x1) / 2 ? -1 : 1
+				let t0
+				try {
+					t0 = trouble(solveV(A.plan))
+				} catch {
+					continue
+				}
+				for (const d of [...ROOM, 0.2, 0.25, 0.3]) {
+					const p2 = withEntry(A.plan, Y, shiftX(y, dir * d))
+					let r
+					try {
+						r = solveV(p2)
+					} catch {
+						continue
+					}
+					if (![...trouble(r)].every((k) => t0.has(k)) || overlapsOf(r.scene).length >= A.overlaps.length) continue
+					const v2 = await attempt(p2, "made room")
+					const B = { ...A, plan: p2, v: v2, overlaps: overlapsOf(v2.scene), failing: failingIn(v2), madeRoom: new Set([...(A.madeRoom ?? []), Y]) }
+					if (B.overlaps.length < A.overlaps.length && !(fixKind && B.failing.length > A.failing.length)) return B
+					break
+				}
+			}
+			return null
 		}
 		const placeOrNull = async (out, label) => {
 			try {
@@ -3891,7 +4423,15 @@ export function createOrchestrator(deps) {
 				const was = (Array.isArray(basePlan?.goals) ? basePlan.goals : []).filter(isObj)
 				const have = new Set(A.v.scene.items.map((i) => i.id))
 				const lost = was.filter((g) => goalRefs(g).some((id) => !have.has(id)))
-				if (!lost.length) return A
+				if (!lost.length) {
+					// (a row swapped into one thing of a kind, with more of that kind added beside it: its "falls" goal is about all of them (V8843 n5t:
+					// "The cereal box fall, up to the giant · 0 of 1 fell" for a row of 5))
+					const goals = clone(Array.isArray(A.plan.goals) ? A.plan.goals : [])
+					if (!tidyGoneLabels(goals, request.scene, A.v.scene, followed)) return A
+					const plan2 = { ...A.plan, goals }
+					const v = await attempt(plan2, "goals followed", true)
+					return { ...A, plan: plan2, v, overlaps: overlapsOf(v.scene), failing: failingIn(v) }
+				}
 				const real = (i) => i.type !== "table" && !isSafetyWall(i)
 				const removed = request.scene.items.filter((i) => real(i) && !have.has(i.id))
 				const added = A.v.scene.items.filter((i) => real(i) && !request.scene.items.some((x) => x.id === i.id))
@@ -3952,6 +4492,9 @@ export function createOrchestrator(deps) {
 					followed.set(g.label, ng.label)
 					changed = true
 				}
+				// (and the labels that still name what is gone: "up to the giant", "The giant knocks the tennis ball into the bucket", once the growing
+				// row and its giant were replaced (V8842 n5))
+				if (tidyGoneLabels(goals, request.scene, A.v.scene, followed)) changed = true
 				if (!changed) return A
 				const plan2 = { ...A.plan, goals }
 				const v = await attempt(plan2, "goals followed", true)
@@ -3984,10 +4527,18 @@ export function createOrchestrator(deps) {
 					}
 				}
 				const aimed = aimFirst && pureFix ? await aimFirstTry(A) : null
+				// (the physics' own search on the scene as it is, started beside the first answer: when that answer doesn't work and it found a checked
+				// change, that change is used and no more AI rounds are asked)
+				// (waited for up to PHYS_FIRST_MS from its start; on a busy machine it goes on beside the AI's rounds (it runs at least PHYS_FIRST_RUNS,
+				// up to the request's own deadline) and is used whenever it is found: V8842 x42a–d, 8 of 12 under load, the search a few runs short)
+				const pf = !aimed && physFirst && bad(A) > 0 ? await physWait(Math.max(0, physT0 + physFirstMs - Date.now())) : null
 				if (aimed) {
 					A = aimed
 					fx.aimed = aimed.aim
 					draft(A.v, "aimed")
+				} else if (pf?.status === "found" && pf.fix?.sim) {
+					physFix = pf
+					fx.physics = true
 				} else if (pureFix && !fx.dropped) {
 					// (6b) ≤ 2 more edit calls, told how the last answer ran; the version with the fewest failing goals and overlaps is kept. A round
 					// that got no closer ends them (the fix search starts at once: round 3's acceptance measured make-it-work p90 98.5 s against E0's
@@ -4003,8 +4554,16 @@ export function createOrchestrator(deps) {
 					let last = A
 					// (a background rework has a deadline: no round starts that the fix search after it would not have time for)
 					for (let round = 1; round <= (num(request.maxRounds) ?? 2) && bad(A) > 0 && !(num(request.deadline) !== null && Date.now() > request.deadline - 22000); round++) {
+						// (a typed "make it work" stops at its budget, as the background does, and says so)
+						if (!roundFits()) {
+							fx.capped = true
+							break
+						}
+						// (the physics found its checked change meanwhile: that is used, no more rounds)
+						if (physFound()) break
 						const fb = fixFeedback({ patches: last.out.patches ?? [], diff: describeDiff(request.scene, last.v.scene), failing: last.failing, overlaps: last.overlaps, sim: last.v.sim })
-						const a2 = await askAgain(fb, `round ${round} of 2`, "Making it work")
+						// (a typed "make it work" is held to its minute: a round's call that would run past it is stopped, the answer before it kept)
+						const a2 = await askAgain(fb, `round ${round} of 2`, "Making it work", typedMake ? { ms: Math.max(6000, madeDeadline - Date.now() - 12000) } : {})
 						if (!a2) break
 						fx.rounds = round
 						if (!Array.isArray(a2.patches) || !a2.patches.length) break
@@ -4020,12 +4579,48 @@ export function createOrchestrator(deps) {
 						if (!closer) break
 					}
 				}
+				// (the AI's rounds didn't make it work: the physics' own search, still running on a busy machine, is waited for up to the request's
+				// deadline and used when it finds its checked change)
+				if (!aimed && !physFix && physFirst && bad(A) > 0) {
+					const r = physFound() ? physDone : await physWait(Math.max(0, madeDeadline - 14000 - Date.now()))
+					if (r?.status === "found" && r.fix?.sim) {
+						physFix = r
+						fx.physics = true
+					}
+				}
+				// (still nothing that works: what the fix search looks at is the scene as it was, never the AI's failed version with the search's change
+				// on top of it (V8843 v43f5 s-fix-user-swap: the AI's longer table and faster-growing dominoes kept, and a laptop and two moves added,
+				// 5 things changed), unless that version is closer: fewer goals fail in it)
+				// (the answer's goals and title stay: only what it changed of the things is dropped)
+				const keepOps = (A.out.patches ?? []).filter((q) => isObj(q) && ["set_goals", "set_scene"].includes(String(q.op ?? "").toLowerCase()))
+				if (typedMake && pureFix && !aimed && !physFix && bad(A) > 0 && !fx.dropped && (A.out.patches ?? []).length > keepOps.length) {
+					const B0 = await placeOrNull({ kind: "fix", targets: editOut.targets, patches: keepOps, reply: null, suggestions: editOut.suggestions }, "as it was")
+					if (B0 && bad(B0) <= bad(A)) {
+						// (what it tried is still said: "I couldn't make it work (I tried: …)")
+						Object.defineProperty(fx, "droppedScene", { value: A.v.scene, enumerable: false, configurable: true, writable: true })
+						A = B0
+						fx.dropped = "the AI’s answers didn’t work in the physics"
+						fx.unworked = true
+					}
+				}
 			}
-			// (4) ONE repair turn when the change makes things start inside each other (about 3 % of edits)
-			if (A.overlaps.length) {
+			// (4) ONE repair turn when the change makes things start inside each other (about 3 % of edits); never for an answer the physics' own
+			// checked change replaces (physFix)
+			// (first, what it starts inside, moved along as a whole, the least that clears it: no call)
+			if (A.overlaps.length && !physFix) {
+				const B = await shiftAside(A)
+				if (B) {
+					const rep = (report.edit.repair = { before: A.overlaps.length, after: B.overlaps.length, kept: true, by: "room" })
+					Object.defineProperty(rep, "fromScene", { value: A.v.scene, enumerable: false, configurable: true, writable: true })
+					A = B
+					draft(A.v, "made room")
+				}
+			}
+			if (A.overlaps.length && !physFix) {
 				const rep = (report.edit.repair = { before: A.overlaps.length, after: A.overlaps.length, kept: false })
 				const fb = overlapFeedback({ patches: A.out.patches ?? [], diff: describeDiff(request.scene, A.v.scene), overlaps: A.overlaps, fix: fixKind })
-				const a2 = await askAgain(fb, "things would start inside each other", "Making the change fit")
+				// (held to REPAIR_MS: past it, the change as answered stays, and the card says what starts inside what)
+				const a2 = await askAgain(fb, "things would start inside each other", "Making the change fit", { ms: REPAIR_MS })
 				const k2 = a2 ? routeKind(a2, text) : null
 				if (k2 === "ask" || k2 === "answer") return { replyOnly: a2, kind: k2 }
 				if (a2 && (k2 === "change" || k2 === "fix") && Array.isArray(a2.patches) && a2.patches.length) {
@@ -4046,6 +4641,28 @@ export function createOrchestrator(deps) {
 		let cur
 		let firstV = null // (an edit: the version that is exactly what was asked)
 		let anchorsNow = new Map() // (an edit: the things the person put by another, "next to the box": id -> {anchor, words})
+		/** Of `ids`, the things the chain strikes in a run (a firm hit after the release by anything but another of them or what rests on them). */
+		const struckIn = (v, ids) => {
+			const of = new Map((v.sim?.doc?.solids ?? []).map((x) => [x.id, x.item]))
+			const typeOf = new Map(v.scene.items.map((i) => [i.id, i.type]))
+			let R = new Map()
+			try {
+				R = riderMap(v.scene)
+			} catch {}
+			const out = new Set()
+			for (const h of v.sim?.track?.impacts ?? []) {
+				if ((h.speed ?? 0) < 0.1 || h.t <= (Number(v.scene.release) || 0) + 0.3) continue
+				const p = of.get(h.a)
+				const q = of.get(h.b)
+				for (const [x, y] of [[p, q], [q, p]]) if (ids.has(x) && y && y !== x && !ids.has(y) && !["table", "wall"].includes(typeOf.get(y)) && !(R.get(x) ?? []).includes(y)) out.add(x)
+			}
+			return out
+		}
+		/** A thing as the card calls it now: a swapped one by its new kind ("the cup"), else its name. */
+		const callNow = (it, scene) => {
+			const was = request.scene.items.find((i) => i.id === it.id)
+			return was && was.type !== it.type && scene.items.filter((i) => i.type === it.type).length === 1 ? `the ${kindNoun(it.type, 1, { short: true })}` : placeName(it, scene)
+		}
 		/** Things the chain strikes in a run that the person only put by another (anchorsNow): ids. */
 		const inTheWay = (v) => {
 			const of = new Map((v.sim?.doc?.solids ?? []).map((x) => [x.id, x.item]))
@@ -4103,7 +4720,13 @@ export function createOrchestrator(deps) {
 			return null
 		}
 		if (mode === "edit") {
-			const A = await editTurns()
+			let A
+			try {
+				A = await editTurns()
+			} finally {
+				// (the physics' own search of a typed "make it work" is used inside the turns, or not at all)
+				if (physFix === null) physCtl.abort()
+			}
 			if (A.replyOnly) {
 				// (the repair turn found the request a question after all: shown as such, nothing changed)
 				report.edit.kind = A.kind
@@ -4113,6 +4736,18 @@ export function createOrchestrator(deps) {
 			seatedIds = A.seated ?? new Set()
 			editOut = A.out
 			cur = A.v
+			physCtl.abort()
+			// (the physics found a checked change on the scene as it is: that goes on the table, the AI's own answer (which didn't work) does not)
+			if (physFix) {
+				cur = { id: nextId++, plan: planAfterFix(basePlan, physFix.fix.scene), solved: cur.solved, scene: physFix.fix.scene, sim: physFix.fix.sim, score: null, judged: false, fromRound: 0, parent: cur, fixed: true }
+				plan = cur.plan
+				leftAlone = []
+				madeRoom = new Set()
+				report.fixApplied = { say: physFix.fix.words.say, did: physFix.fix.words.did, label: physFix.fix.words.label, changes: physFix.fix.changes, runs: physFix.runs, ms: physFix.ms }
+				report.quickNote = `${physFix.runs} runs in the physics engine found the smallest change that makes it work (${physFix.fix.words.did}); the AI didn’t look at pictures of it`
+				if (report.edit) report.edit.fixFlow = { ...(report.edit.fixFlow ?? {}), fixer: true, physics: true }
+				draft(cur, "fixed")
+			}
 			// (a goal that names what isn't in the library by what stands in for it: "All ten rolls fall" for ten cardboard boxes: V8817 m3)
 			subLabels(cur, plan)
 			// (a thing the person only put by another, "a sneaker next to the box", that the AI set down in the chain's way: moved along its anchor,
@@ -4296,14 +4931,124 @@ export function createOrchestrator(deps) {
 			report.targets = now0.map((r, i) => ({ label: r.label, ok: r.ok, implicit: !!targets[i].implicit, ...(was && typeof was[i]?.ok === "boolean" && targets[i].goal && goalItems(targets[i].goal).every((id) => request.scene.items.some((x) => x.id === id)) ? { was: was[i].ok } : {}), ...(r.ok === false ? { happened: safeWords(r, targets[i].goal, cur.sim, cur.scene, before) } : {}) }))
 			// (a thing the person only put by another that the machine now runs into: said as the reason, "the sneaker is in the way: nothing
 			// reaches the seesaw" (V8832 m1), never only "nothing reaches the seesaw")
+			// (only when it really is: the run without it gets further. V8842 k1 r2: "the sneaker is in the way: nothing reaches the seesaw", and
+			// without the sneaker the books reached nothing either)
+			const inWayReally = async (v, id) => {
+				try {
+					// (it and what it holds up: a post taken away without its cup would drop the cup into the chain)
+					let RM = new Map()
+					try {
+						RM = riderMap(v.scene)
+					} catch {}
+					const gone = new Set([id, ...(RM.get(id) ?? [])])
+					try {
+						const insV = inspect(v.scene)
+						for (const o of v.scene.items) if (supportIn(v.scene, insV, o.id)?.id === id) gone.add(o.id)
+					} catch {}
+					const sc = { ...clone(v.scene), items: v.scene.items.filter((i) => !gone.has(i.id)) }
+					const sm = await simulate(sc, signal)
+					const there = (t) => goalItems(t.goal).every((gid) => sc.items.some((i) => i.id === gid))
+					const tg1 = fixTargets({ goals: G(v), scene: sc, before: beforeRun, sim: sm }).filter(there)
+					const tg0 = fixTargets({ goals: G(v), scene: v.scene, before: beforeRun, sim: v.sim }).filter(there)
+					const r1 = judgeTargets(tg1, sm)
+					const r0 = judgeTargets(tg0, v.sim)
+					const okN = (rs) => rs.filter((r) => r.ok === true).length
+					if (okN(r1) > okN(r0)) return true
+					return farness(tg1, r1, sm, sc) < farness(tg0, r0, v.sim, v.scene) - 0.15
+				} catch (e) {
+					if (e?.name === "AbortError" || signal.aborted) throw e
+					return true
+				}
+			}
 			if (anchorsNow.size && report.targets.some((t) => t.ok === false))
 				try {
 					const way = [...inTheWay(cur)].map((id) => cur.scene.items.find((i) => i.id === id)).filter(Boolean)
-					if (way.length) {
+					if (way.length && (await inWayReally(cur, way[0].id))) {
 						const nm = placeName(way[0], cur.scene)
 						const t = report.targets.find((x) => x.ok === false && !x.implicit) ?? report.targets.find((x) => x.ok === false)
 						const h = String(t.happened ?? "").replace(/[.!]+$/, "")
 						t.happened = new RegExp(`\\b${nm.replace(/^the /, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(h) ? h.replace(/ and it doesn't tip over/, ", which is in the way") : `${nm} is in the way: ${h || `“${String(t.label).replace(/[.!]+$/, "")}” doesn’t happen`}`
+					}
+				} catch {}
+			// (a thing the edit added that nobody asked for (a post to stand the cup on) and that the machine now runs into: said as the reason, "the
+			// post I added to hold the cup is in the way: nothing reaches the seesaw", never only "nothing reaches the seesaw" (V8838 s-swap-box-cup))
+			if (report.targets.some((t) => t.ok === false && !/ is in the way/.test(t.happened ?? "")))
+				try {
+					const said = String(text ?? "").toLowerCase()
+					const unasked = cur.scene.items.filter((it) => !request.scene.items.some((o) => o.id === it.id) && !["table", "wall"].includes(it.type) && !anchorsNow.has(it.id) && !`${kindNoun(it.type, 1, { short: true })} ${kindNoun(it.type, 2, { short: true })} ${it.name ?? ""}`.toLowerCase().split(/[^\p{L}]+/u).some((w) => w.length > 2 && new RegExp(`\\b${w}`).test(said)))
+					// (in the way: struck, and it stays where it stands, a fixed post; a helper that tips over when struck is a link of the chain)
+					const stays = (id) => {
+						const it = cur.scene.items.find((i) => i.id === id)
+						const st = (cur.sim?.summary?.stories ?? []).find((x) => x.item === id)
+						return !!it && (isStaticItem(it.type, it.fixed === true) || it.fixed === true || !st || st.moved_at === null || st.moved_at === undefined)
+					}
+					const hit = new Set([...struckIn(cur, new Set(unasked.map((i) => i.id)))].filter(stays))
+					// (or one that stands where a part of the chain used to strike the next: between them, at the striker's height (the post under the
+					// cup, between the dominoes and the seesaw: the last domino leans on it too gently for the engine to log a hit))
+					if (!hit.size && request.sim?.track?.frames?.length) {
+						const failing = report.targets.filter((t) => t.ok === false)
+						const C0 = chainOf(request.sim, request.scene)
+						const ins = inspect(cur.scene)
+						const steps = []
+						for (const t of failing) {
+							const g0 = (G(cur) ?? []).find((x) => isObj(x) && x.label === t.label)
+							for (let p = g0 ? goalItems(g0)[0] : null, k = 0; p && C0.get(p)?.by && k < 12; p = C0.get(p).by, k++) steps.push([C0.get(p).by, p])
+						}
+						for (const it of unasked) {
+							if (!stays(it.id)) continue
+							const b = ins.box(it.id)
+							if (!b) continue
+							const cx = (b.x0 + b.x1) / 2
+							for (const [D, L] of steps) {
+								const bD = ins.box(D)
+								const bL = ins.box(L)
+								if (!bD || !bL) continue
+								const right = (bD.x0 + bD.x1) / 2 < (bL.x0 + bL.x1) / 2
+								const between = right ? cx > bD.x1 - 0.03 && cx < (bL.x0 + bL.x1) / 2 : cx < bD.x0 + 0.03 && cx > (bL.x0 + bL.x1) / 2
+								if (between && b.y1 > bD.y0 + 0.01 && b.y0 < bD.y1) hit.add(it.id)
+							}
+						}
+					}
+					const it0 = hit.size ? unasked.find((i) => hit.has(i.id)) : null
+					if (it0 && (await inWayReally(cur, it0.id))) {
+						const it = it0
+						const R = riderMap(cur.scene)
+						const insC = inspect(cur.scene)
+						// (what it holds up: placed on it in the version's plan ("on": the post), or resting on it)
+						const onIt = new Set((cur.plan?.items ?? []).filter((o) => isObj(o) && isObj(o.place) && (o.place.on === it.id || o.place.inside === it.id)).map((o) => o.id))
+						const held = [...(R.get(it.id) ?? []).map((id) => cur.scene.items.find((i) => i.id === id)), ...cur.scene.items.filter((o) => o.id !== it.id && (onIt.has(o.id) || supportIn(cur.scene, insC, o.id)?.id === it.id))].find((o) => o && request.scene.items.some((x) => x.id === o.id))
+						const nm = placeName(it, cur.scene)
+						const t = report.targets.find((x) => x.ok === false && !x.implicit) ?? report.targets.find((x) => x.ok === false)
+						const h = String(t.happened ?? "").replace(/[.!]+$/, "")
+						// (the AI's rework's own helper is "it added": the card says "The AI's rework didn't work either (it tried: …)")
+						t.happened = `${nm} ${request.rework === true ? "it" : "I"} added${held ? ` to hold ${callNow(held, cur.scene)}` : ""} is in the way: ${h || `“${String(t.label).replace(/[.!]+$/, "")}” doesn’t happen`}`
+					}
+				} catch {}
+			// (a change that still starts things inside each other (its repair turn ran out of time or found nothing): said as the reason, "the
+			// dominoes now start inside the box: …", never only what follows from it)
+			if (report.edit?.repair && !report.edit.repair.kept && report.targets.some((t) => t.ok === false))
+				try {
+					// (two things of the machine: a thing sunk a little into the table is its seat, never the reason)
+					const real = (id) => { const it = cur.scene.items.find((i) => i.id === id); return it && !["table", "wall"].includes(it.type) ? it : null }
+					// (and only a pair the failing goal's chain goes through: its own things, or what set them off in the run before, a duck inside the
+					// mug beside a marble that misses the bottom ramp is no reason (V8841 k2))
+					const chainIds = new Set()
+					try {
+						const C0 = request.sim?.track?.frames?.length ? chainOf(request.sim, request.scene) : new Map()
+						for (const t of report.targets.filter((x) => x.ok === false)) {
+							const g0 = (G(cur) ?? []).find((x) => isObj(x) && x.label === t.label)
+							for (const id of g0 ? goalItems(g0) : []) for (let p = id, k = 0; p && k < 12; p = C0.get(p)?.by ?? null, k++) chainIds.add(p)
+						}
+					} catch {}
+					const w = overlapsOf(cur.scene).find((x) => Array.isArray(x.items) && x.items.length === 2 && x.items.every(real) && x.items.some((id) => chainIds.has(id)))
+					const [p, q] = (w?.items ?? []).map(real)
+					if (p && q) {
+						const t = report.targets.find((x) => x.ok === false && !x.implicit) ?? report.targets.find((x) => x.ok === false)
+						const np = placeName(p, cur.scene)
+						const h = String(t.happened ?? "").replace(/[.!]+$/, "")
+						// (never two colons in a lead)
+						const first = `${np} ${/s$/i.test(np) && !/\d/.test(np) ? "start" : "starts"} inside ${placeName(q, cur.scene)}`
+						if (!/ starts? inside /.test(h)) t.happened = !h ? `${first}: “${String(t.label).replace(/[.!]+$/, "")}” doesn’t happen` : /:/.test(h) ? `${first}, and ${h}` : `${first}: ${h}`
 					}
 				} catch {}
 			// (a request that only states an outcome, with no number of its own, lets the search go on adjusting what the edit set for it)
@@ -4368,7 +5113,13 @@ export function createOrchestrator(deps) {
 				} catch (e) {
 					if (e?.name === "AbortError" || signal.aborted) throw e
 				}
-			const fixCtx = { scene: cur.scene, sim: cur.sim, goals: G(cur), before: fixBefore, touched: protect, swapped, targets: fixTargetsNow, flex, origin, hard: choice.hard, forward: choice.forward }
+			// (what the edit's own call was billed: the floor of what a rework call on this scene is counted at while it runs)
+			// (as billed with a warm prompt cache: a cold cache's one-off write is no measure of a rework's call (V8843 rw-cradle); and how long it
+			// took, for whether a background rework has the time it needs: reworkNeedMs)
+			const editCalls = report.calls.filter((c) => c.step === "edit")
+			const lastUsd = warmUsd(editCalls.at(-1)?.usage)
+			const lastMs = num(editCalls.at(-1)?.ms)
+			const fixCtx = { scene: cur.scene, sim: cur.sim, goals: G(cur), before: fixBefore, touched: protect, swapped, targets: fixTargetsNow, flex, origin, hard: choice.hard, forward: choice.forward, ...(lastUsd ? { lastUsd } : {}), ...(lastMs ? { lastMs } : {}), ...(frozen.size ? { frozen } : {}) }
 			// (the person's own change puts a goal out of reach whatever else changes, a thing wider than the opening it must land in: the lead says
 			// why, and nothing is searched or asked: V8817 h1 / h4, 237 runs, 3 reworks and $0.26 to find out)
 			const reach = now0.some((r) => r.ok === false) ? reachOf(fixCtx) : null
@@ -4406,13 +5157,27 @@ export function createOrchestrator(deps) {
 				if (fixKind) {
 					let fr = null
 					if (report.edit?.fixFlow) report.edit.fixFlow.fixer = true
+					// (a typed "make it work" is held to MAKE_IT_WORK_MS in all, as the background is: a hard stop, never 41 s for a 12 s search on a
+					// busy machine (V8843 v43f5: 77 s in all))
+					const dl = num(request.deadline) ?? (typedMake ? madeDeadline : null)
+					const stopCtl = dl !== null ? new AbortController() : null
+					const onStop = () => stopCtl?.abort()
+					if (stopCtl) signal.addEventListener("abort", onStop, { once: true })
+					const stopTimer = stopCtl ? setTimeout(onStop, Math.max(1500, dl - Date.now() - 1500)) : null
 					try {
-						const left = num(request.deadline) !== null ? Math.max(2000, Math.min(FIX_MS, request.deadline - Date.now() - 3000)) : FIX_MS
-						fr = await timed("fix", null, () => findFix(only ? { ...fixCtx, only } : fixCtx, { signal, budgetMs: left, onProgress: (pr) => onEvent({ type: "progress", step: "fix", ...pr }) }))
+						const left = dl !== null ? Math.max(2000, Math.min(FIX_MS, dl - Date.now() - 3000)) : FIX_MS
+						fr = await timed("fix", null, () => findFix(only ? { ...fixCtx, only } : fixCtx, { signal: stopCtl?.signal ?? signal, budgetMs: left, ...(dl !== null ? { hardMs: left } : {}), onProgress: (pr) => onEvent({ type: "progress", step: "fix", ...pr }) }))
 					} catch (e) {
-						if (e?.name === "AbortError" || signal.aborted) throw e
-						say("warn", "fix_failed", `Couldn’t look for a fix: ${e?.message ?? e}`)
+						if (signal.aborted) throw e
+						if (e?.name === "AbortError" && !stopCtl?.signal.aborted) throw e
+						if (!stopCtl?.signal.aborted) say("warn", "fix_failed", `Couldn’t look for a fix: ${e?.message ?? e}`)
+						else fr = { status: "none", runs: 0, targets: fixCtx.targets ?? [], results: [], timedOut: true }
+					} finally {
+						clearTimeout(stopTimer)
+						if (stopCtl) signal.removeEventListener("abort", onStop)
 					}
+					// (nor anything that changes what the person said to leave as it is)
+					if (fr?.status === "found" && touchesFrozen(fr.fix?.scene)) fr = { ...fr, status: "none", fix: undefined }
 					if (outcomeEdit && fr?.status !== "found" && fr?.status !== "ok") {
 						// (nothing of the outcome's own things makes it happen: the panel looks further, the AI's reworks too, and offers what works)
 						report.fixNeeded = true
@@ -4917,7 +5682,10 @@ export function createOrchestrator(deps) {
 		// (a stand-in is said only when it is there: "so I used a wooden plank" with no plank on the table is untrue (V8820 c04))
 		const missing = [...(Array.isArray(finalPlan.missing) ? finalPlan.missing : [])].filter(isObj).map((m) => {
 			const sub = m.substitute_type ?? m.substitute ?? null
-			const there = !sub || scene.items.some((it) => it.type === sub)
+			// (and, in an edit, only when this edit put one there: a plank that was on the table already stands in for nothing it added: "so I used
+			// a wooden plank" with only the marble run's own planks was untrue (V8837 c04))
+			const was = mode === "edit" ? new Map((request.scene?.items ?? []).map((i) => [i.id, i.type])) : null
+			const there = !sub || scene.items.some((it) => it.type === sub && (!was || was.get(it.id) !== sub))
 			return { asked: String(m.asked ?? m.what ?? "?"), reason: m.reason ? String(m.reason) : "", substitute_type: there ? sub : null, ...(there ? {} : { noSub: true }) }
 		})
 		for (const e of cur.solved.errors.filter((x) => x.code === "unknown_type")) missing.push({ asked: e.item ?? e.text, reason: "not in the library", substitute_type: null })
@@ -5052,7 +5820,9 @@ export function createOrchestrator(deps) {
 			try {
 				unasked = unaskedMoves(text, request.scene, cur.scene)
 			} catch {}
-		let humanList = mode !== "new" ? humanChangeList(request.scene, cur.scene, { room, says, why: whyMoved(cur), text: personText, reasons: unasked, anchors: anchorsNow, ...masses }) : []
+		// (where the person put an added thing in their words: "next to the box", "under ramp 1")
+		const whereSaid = mode === "edit" ? new Map([...placeWordsOf(personText, request.scene, cur.scene), ...anchorsNow]) : anchorsNow
+		let humanList = mode !== "new" ? humanChangeList(request.scene, cur.scene, { room, says, why: whyMoved(cur), text: personText, reasons: unasked, anchors: whereSaid, ...masses }) : []
 		if (mode === "edit") {
 			// (with a fix that went on the table too, the change is said first and the fix after it)
 			if (report.fixApplied) report.targets = (report.targets ?? []).map((t) => ({ label: t.label, ok: true, implicit: t.implicit, ...(t.was !== undefined ? { was: t.was } : {}) }))
@@ -5082,14 +5852,28 @@ export function createOrchestrator(deps) {
 				const g = stillFailing.find((t) => !t.implicit) ?? stillFailing[0] ?? (report.targets ?? []).find((t) => !t.implicit) ?? (report.targets ?? [])[0] ?? { label: "it" }
 				const tried = humanList.map((c) => c.text)
 				const what = refused ? refused : g.happened ? String(g.happened).replace(/[.!]+$/, "") : `“${String(g.label).replace(/[.!]+$/, "")}” still doesn’t happen`
+				// (the AI's answers that didn't work were not kept, the scene as it was searched instead: what they tried is still said)
+				let saidTried = tried
+				const dropped = report.edit?.fixFlow?.droppedScene
+				if (!tried.length && dropped)
+					try {
+						saidTried = humanChangeList(request.scene, dropped, { says, text: personText }).map((c) => c.text)
+					} catch {}
+				// (the list inside the brackets has none of its own: "(I tried: tilted the seesaw more, 12.5° → 20°; and moved the box 5 cm left)", never
+				// "(I tried: tilted the seesaw more (12.5° → 20°) and …)": V8838 v38f2)
+				const triedW = triedWords(saidTried)
+				// (never two colons outside the brackets: "…): the cutting board it added is in the way, and the tennis ball moves only 8 mm")
+				const whatW = /: /.test(what) ? what.replace(/: /, ", and ") : what
+				// (a typed "make it work" stopped at its budget says so)
+				const capped = !!report.edit?.fixFlow?.capped
 				const words =
 					request.rework === true
 						? tried.length
-							? `The AI’s rework didn’t work either (it tried: ${andList(tried)}): ${what}. Your scene is as it was.`
-							: `The AI’s rework didn’t find anything to change that works: ${what}. Your scene is as it was.`
-						: tried.length
-							? `I couldn’t make it work (I tried: ${andList(tried)}): ${what}. Your scene is as it was.`
-							: `I couldn’t find anything to change that makes it work: ${what}. Your scene is as it was.`
+							? `The AI’s rework didn’t work either (it tried: ${triedW}): ${whatW}. Your scene is as it was.`
+							: `The AI’s rework didn’t find anything to change that works: ${whatW}. Your scene is as it was.`
+						: saidTried.length
+							? `I couldn’t make it work${capped ? " within the AI budget for one request" : ""} (I tried: ${triedW}): ${whatW}. Your scene is as it was.`
+							: `I couldn’t find anything to change that makes it work${capped ? " within the AI budget for one request" : ""}: ${whatW}. Your scene is as it was.`
 				// (a version refused for how it gets there is no idea to try either; nor one that makes the person's things something else, a cardboard
 				// box 1 m deep, a pendulum's bob four times as heavy (V8832 y14 / y15): the closest miss goes through the same check as a fix)
 				let charWhy = null
@@ -5097,11 +5881,35 @@ export function createOrchestrator(deps) {
 					const ref = isObj(request.reference) && Array.isArray(request.reference.items) ? request.reference : null
 					const keepIds = new Set((Array.isArray(request.keep) ? request.keep : []).filter(Array.isArray).map((k) => k[0]))
 					const mineBefore = ref ?? { items: request.scene.items.map((i) => (keepIds.has(i.id) ? { ...i, type: `${i.type}#theirs` } : i)) }
-					charWhy = characterBreak(request.scene, cur.scene, mineBefore, Array.isArray(request.hard) ? request.hard : null)
+					charWhy = characterBreak(request.scene, cur.scene, mineBefore, Array.isArray(request.hard) ? request.hard : null) ?? helperSizeBreak(request.scene, cur.scene)
 				} catch {}
-				const near = tried.length && !refused && !charWhy
-					? { say: imperative(andList(tried)), did: andList(tried), label: clipLabel(cap(imperative(tried[0]).replace(/ \([^)]*\)/g, "")), 40), happened: what, sceneJSON: JSON.stringify(cur.scene), planJSON: JSON.stringify(finalPlan), results: (report.targets ?? []).map((t) => ({ label: t.label, ok: t.ok, ...(t.implicit ? { implicit: true } : {}) })) }
+				// (its label names every change it makes: "2 changes: move the seesaw and add a cutting board", never the first alone: V8837 y4)
+				let near = tried.length && !refused && !charWhy
+					? { say: imperative(andList(tried)), did: andList(tried), label: changesLabel(tried), happened: what, sceneJSON: JSON.stringify(cur.scene), planJSON: JSON.stringify(finalPlan), results: (report.targets ?? []).map((t) => ({ label: t.label, ok: t.ok, ...(t.implicit ? { implicit: true } : {}) })) }
 					: null
+				// (and it is offered only when it is closer than the scene as it is, by the margin the fix search asks of its own closest miss, and
+				// closer than a "Try:" the card already offers: V8837 y19 / y4 / x5, a "closest" that was worse than the scene, 5.6 mm against 8.6 mm)
+				const earlier = isObj(request.near) && typeof request.near.sceneJSON === "string" ? request.near : null
+				if (near)
+					try {
+						const sim0 = beforeRun ? request.sim : await simulate(request.scene, signal)
+						const tg = fixTargets({ goals: G(cur), scene: request.scene, before: { scene: request.scene, sim: sim0 }, sim: sim0 }).filter((t) => goalItems(t.goal).every((id) => cur.scene.items.some((i) => i.id === id)))
+						const fOf = (sc, sm) => farness(tg, judgeTargets(tg, sm), sm, sc)
+						const f0 = fOf(request.scene, sim0)
+						const f1 = fOf(cur.scene, cur.sim)
+						let fN = num(earlier?.f)
+						if (earlier && fN === null) {
+							const ns = JSON.parse(earlier.sceneJSON)
+							fN = fOf(ns, await simulate(ns, signal))
+						}
+						near.f = f1
+						if (!tg.length || !(f1 < f0 - 0.15) || (fN !== null && !(f1 < fN - 1e-6))) near = null
+					} catch (e) {
+						if (e?.name === "AbortError" || signal.aborted) throw e
+						near = null
+					}
+				// (none closer: the "Try:" already offered stays the one offered)
+				if (!near && earlier) near = earlier
 				replyOnlyReport({ reply: words, suggestions: [] }, "answer")
 				if (report.edit) report.edit.kind = "answer"
 				// (nothing of it goes on the table: the scene it tried is only the "Try:" chip's)
@@ -5117,7 +5925,7 @@ export function createOrchestrator(deps) {
 			// (only a move of what the person's words moved: a thing they only swapped, moved 1 cm by the fix, is the fix's, said with "so it works"
 			// (V8832 m6: "Done — everything still works ✓" over a move nobody asked for))
 			const oneChange = report.fixApplied && fixIds.length > 0 && fixIds.every((id) => touched.has(id)) && (report.fixApplied.changes ?? []).every((c) => c.kind !== "move" || (Array.isArray(c.ids) ? c.ids : [c.id]).every((id) => { const w = askedWays(text, request.scene, id); return w.x || w.y }))
-			const asked = report.fixApplied && firstV && !oneChange ? order(humanChangeList(request.scene, firstV.scene, { room, says, why: whyMoved(firstV), text: personText, reasons: unasked, anchors: anchorsNow, ...masses })) : humanList
+			const asked = report.fixApplied && firstV && !oneChange ? order(humanChangeList(request.scene, firstV.scene, { room, says, why: whyMoved(firstV), text: personText, reasons: unasked, anchors: whereSaid, ...masses })) : humanList
 			if (report.fixApplied && report.edit) report.edit.noChange = false
 			// (a change the scene shows, a rename too, is a change: never "that's already how it is")
 			if (report.edit && humanList.length) report.edit.noChange = false
@@ -5134,6 +5942,9 @@ export function createOrchestrator(deps) {
 			const alsoLines = () => {
 				const failing = (report.targets ?? []).filter((t) => t.ok === false)
 				const g = failing.find((t) => !t.implicit) ?? failing[0]
+				// (never when the goal's own thing doesn't move at all: where its container stands is then no reason (k3: "to clear the orange I also
+				// moved the basket 12 cm right, and now … don't move the orange"))
+				if (g && /\b(never moves|never move|don['’]t move|doesn['’]t move|never touches|nothing launches)\b/i.test(String(g.happened ?? ""))) return []
 				const goal = g ? (G(cur) ?? []).find((x) => isObj(x) && x.label === g.label) : null
 				// (the goal's container or target moved: "Ball 2 lands in the box" with the box raised; never the goal's own thing re-seated)
 				const refs = new Set(goal ? [goal.container, goal.target].filter(Boolean) : [])
@@ -5167,6 +5978,13 @@ export function createOrchestrator(deps) {
 		report.human = humanList.map((c) => c.text)
 		report.planned = typeof editOut?.reply === "string" ? editOut.reply : typeof finalPlan.reply === "string" ? finalPlan.reply : null
 		if (concept && report.planned) report.planned = dropPictureSentences(report.planned)
+		// (the version on the table is the physics' own (the fix search changed the AI's answer, or aimed it), not what the AI said it planned:
+		// its words would contradict the lead ("What I planned: I left the seesaw as it was…" under "I moved the seesaw 23 cm right": V8838
+		// v38a s-fix-tennis), so they are not shown; the lines say what was done)
+		if (report.edit?.fixFlow?.fixer) report.planned = ""
+		// (nor when a size or a move it states isn't what is on the table: "a paper cup (8 cm wide)" over a 26 cm cup, "a 45 cm basket, moved 12 cm
+		// right" over a 12 cm basket that stayed (V8842 k3, V8843 s-swap-box-cup))
+		else if (mode === "edit" && report.planned && plannedOff(report.planned, report.human ?? [])) report.planned = ""
 		report.suggestions = cleanSuggestions(editOut?.suggestions ?? finalPlan.suggestions ?? report.initialPlan?.suggestions)
 		report.models = [...new Set(report.calls.map((c) => c.model).filter(Boolean))]
 		return report
@@ -5177,13 +5995,14 @@ export function createOrchestrator(deps) {
 	 * once, off the page's thread), each found fix checked once more on the app's own engine (simulate) before it is offered.
 	 * ctx: an edit report's fixCtx. -> findFix's answer
 	 */
-	async function findFix(ctx, { signal, onProgress, budgetMs = FIX_MS, maxRuns } = {}) {
+	async function findFix(ctx, { signal, onProgress, budgetMs = FIX_MS, maxRuns, minRuns, hardMs } = {}) {
 		let pool = null
 		try {
 			pool = deps.fixPool?.() ?? null
 		} catch {}
 		const usePool = !!pool && !pool.broken
-		return searchFix(ctx, { evaluate: usePool ? pool.evaluate : undefined, simulate, verify: simulate, parallel: usePool ? pool.size : 2, signal, onProgress, budgetMs, ...(maxRuns ? { maxRuns } : {}) })
+		// (a heavy scene's run count and its hard stop go through too: SEARCH_MIN_RUNS, PHYS_FIRST_RUNS)
+		return searchFix(ctx, { evaluate: usePool ? pool.evaluate : undefined, simulate, verify: simulate, parallel: usePool ? pool.size : 2, signal, onProgress, budgetMs, ...(maxRuns ? { maxRuns } : {}), ...(num(minRuns) ? { minRuns } : {}), ...(num(hardMs) ? { hardMs } : {}) })
 	}
 	/** Stage by stage (./fixer.js restageFix): on the fix workers when there are any, each candidate's path read there; checked on the app's engine. */
 	async function restage(ctx, { signal, onProgress, budgetMs = RESTAGE_MS } = {}) {
@@ -5238,13 +6057,23 @@ export function createOrchestrator(deps) {
 		// other on every update: V8817)
 		const say = (p) => onProgress?.({ ms: ms(), ...p, ...(p.phase === "search" || p.phase === "stage" ? { phase: "search", staging } : {}), runs: runsS + runsR })
 		// (the AI's reworks share one allowance of model calls for this edit: AI_CALLS, every call counted when it starts, a stopped one too)
-		const aiBudget = { left: num(job.aiCalls) ?? AI_CALLS, started: 0, usd: 0, cap: num(job.aiUsd) ?? AI_USD, flights: new Map(), onStart: () => ((phase = "ai"), say({ phase: "ai" })) }
-		// (the dollars: finished calls as billed, running ones estimated from what they have written so far; past AI_USD the youngest running
-		// rework is stopped)
+		// (floor: the edit's own call as billed with a warm prompt cache (warmUsd: never the cold cache's one-off write, V8843 rw-cradle: $0.16,
+		// and the rework was started and stopped at once), at most AI_FLOOR_MAX; highest: the dearest rework call billed on this scene)
+		const aiBudget = { left: num(job.aiCalls) ?? AI_CALLS, started: 0, answered: 0, usd: 0, cap: num(job.aiUsd) ?? AI_USD, floor: Math.min(AI_FLOOR_MAX, num(job.lastUsd) ?? num(ctx.lastUsd) ?? 0), highest: 0, flights: new Map(), onStart: () => ((phase = "ai"), say({ phase: "ai" })) }
+		// (the dollars: finished calls as billed, running ones estimated from what they send (its size, never below the last billed call on this
+		// scene) and what they have written so far; past AI_USD the youngest running rework is stopped)
+		// (a flight: what its calls were billed as they came back (`billed`, from run()'s "ai-cost" event), and while one runs, or before its first
+		// starts, at least AI_REWORK_X times the edit's own call, or the dearest rework billed on this scene: a rework's prompt carries its reasons
+		// and its thinking isn't streamed, so what it writes says little while it runs (V8842 y5: $0.109 against the edit's $0.051, two side by
+		// side came to $0.167))
+		const reserve = (inUsd = AI_IN_USD) => Math.max(AI_REWORK_X * aiBudget.floor, aiBudget.highest ?? 0, inUsd)
+		const flightUsd = (f) => (f.billed ?? 0) + (f.calling ? Math.max(reserve(f.inUsd), (f.inUsd ?? AI_IN_USD) + (f.tokens ?? 0) * AI_OUT_USD) : f.billed ? 0 : reserve(f.inUsd))
+		aiBudget.estimate = () => aiBudget.usd + [...aiBudget.flights.values()].filter((f) => !f.done).reduce((t, f) => t + flightUsd(f), 0)
+		// (one more call like the last one fits: the second rework starts only then, never to be stopped half-way through and billed for nothing)
+		aiBudget.fitsAnother = (inUsd = AI_IN_USD) => aiBudget.estimate() + reserve(inUsd) <= aiBudget.cap + 1e-9
 		const budgetTimer = setInterval(() => {
 			const live = [...aiBudget.flights.values()].filter((f) => !f.done && f.calling)
-			let est = aiBudget.usd
-			for (const f of live) est += AI_IN_USD + (f.tokens ?? 0) * AI_OUT_USD
+			const est = aiBudget.estimate()
 			if (est > aiBudget.cap + 0.002 && live.length) {
 				const f = live.sort((a, b) => b.t0 - a.t0)[0]
 				f.done = true
@@ -5288,24 +6117,39 @@ export function createOrchestrator(deps) {
 			ctl.signal.addEventListener("abort", () => aiCtl.abort(), { once: true })
 			const reach = outOfReach(ctx)
 			let rework = Promise.resolve(null)
+			let diagDone = null
 			if (ai && job.text && !reach && aiBudget.left > 0) {
 				const diag = quiet(diagnose(ctx, { signal: aiCtl.signal, job }))
+				diag.then((x) => (diagDone = x), () => {})
 				// (asked once the physics has looked everywhere it can, or has found nothing in AI_AFTER_MS: at 8 s the search was often seconds from
 				// its fix, and three calls were started and thrown away: V8818)
 				// (a heavy scene's search, still short of its runs then, goes on and the AI waits for it: never started and then thrown away when the
 				// search finds the fix after all (V8817 c02: two rework calls aborted at 50 s); with too little time left for a rework after it, the
 				// AI isn't asked in the background: the button asks it, in the open)
+				// (a rework needs its call (about AI_REWORK_TIME × the edit's own, measured on this scene), its own fix search and the check: with less
+				// time left it isn't started in the background, the button asks it: V8842 k3 / n5 / c02, cut off at the minute with its cost spent)
+				const needMs = reworkNeedMs(ctx.lastMs)
 				const gate = quiet(
 					(async () => {
 						await Promise.race([Promise.all([search, staged]), sleep(Math.min(AI_AFTER_MS, Math.max(0, budgetMs - 25000)), aiCtl.signal)])
-						if (!searchDone && runsS < SEARCH_MIN_RUNS) await Promise.race([search, sleep(Math.max(0, until - Date.now() - REWORK_MIN_MS), aiCtl.signal)])
+						if (!searchDone && runsS < SEARCH_MIN_RUNS) await Promise.race([search, sleep(Math.max(0, until - Date.now() - needMs), aiCtl.signal)])
 						if (foundIn(searchDone) || foundIn(stageDone) || aiCtl.signal.aborted) throw abortError()
-						if (until - Date.now() < REWORK_MIN_MS) throw abortError()
+						if (until - Date.now() < needMs) throw abortError()
 					})()
 				)
+				// (every rework, the first too, starts only when its call still fits AI_USD beside the ones running (never one started and stopped at once:
+				// V8843 rw-cradle); a second one waits for the first to be billed when it doesn't yet fit; else it isn't asked: V8837 k3, V8842 y5)
+				const roomFor = async (k) => {
+					if (k > 0) await sleep(300, aiCtl.signal)
+					while (!aiBudget.fitsAnother()) {
+						if (k === 0 || ![...aiBudget.flights.values()].some((f) => !f.done)) return false
+						await sleep(400, aiCtl.signal)
+					}
+					return until - Date.now() >= needMs
+				}
 				const tries = Array.from({ length: REWORKS }, (_, k) =>
 					Promise.all([diag, gate])
-						.then(([d]) => reworkInBackground(ctx, { signal: aiCtl.signal, job, until, onProgress: (p) => ((phase = "ai"), say(p)), diag: d, variant: k, aiBudget }))
+						.then(async ([d]) => ((await roomFor(k)) ? reworkInBackground(ctx, { signal: aiCtl.signal, job, until, onProgress: (p) => ((phase = "ai"), say(p)), diag: d, variant: k, aiBudget }) : { skipped: true, capped: true }))
 						.catch((e) => (e?.name === "AbortError" ? { aborted: true } : { error: String(e?.message ?? e) }))
 				)
 				// (every rework that passes is a candidate; the one that changes least is offered: the first to pass waits a little for the others)
@@ -5368,7 +6212,26 @@ export function createOrchestrator(deps) {
 			base.runs = runsS + runsR
 			// (out of reach: no "closest miss" either, nothing near it works)
 			if (reach) delete base.near
-			const d = rw?.diag ?? (await diagnose(ctx, {}).catch(() => null))
+			// (the reasons, for the button's rework: the ones already worked out, else worked out now held to a few seconds, never past the minute by
+			// one engine run per part with no stop (V8843 c02: 64.7 s and 78.4 s))
+			let d = rw?.diag ?? diagDone
+			if (!d) {
+				const dc = new AbortController()
+				const onOut = () => dc.abort()
+				signal?.addEventListener?.("abort", onOut, { once: true })
+				const dt = setTimeout(onOut, Math.max(500, Math.min(4000, until - Date.now())))
+				try {
+					d = await diagnose(ctx, { signal: dc.signal })
+				} catch {
+					d = null
+				} finally {
+					clearTimeout(dt)
+					signal?.removeEventListener?.("abort", onOut)
+				}
+				if (signal?.aborted) throw abortError()
+			}
+			// (a rework that started and was cut off at the minute with no answer: said as such, never "and the AI's reworks")
+			const late = aiBudget.started > 0 && !aiBudget.answered && ctl.signal.aborted && !signal?.aborted
 			let rq = null
 			try {
 				const q = reworkRequest(ctx, d ?? { lines: [] })
@@ -5377,7 +6240,7 @@ export function createOrchestrator(deps) {
 			return {
 				status: "none",
 				aiCalls: aiBudget.started,
-				info: { ...base, why: reach ?? d?.why ?? null, ...(reach ? { outOfReach: true } : {}), reworked: aiBudget.started > 0 && !!(rw && !rw.skipped && !rw.aborted), timedOut: ctl.signal.aborted && !signal?.aborted, ...(rw?.tried ? { tried: rw.tried } : {}), ...(rq && !reach ? { rework: rq } : {}), ms: ms() }
+				info: { ...base, why: reach ?? d?.why ?? null, ...(reach ? { outOfReach: true } : {}), reworked: aiBudget.started > 0 && !!(rw && !rw.skipped && !rw.aborted && !rw.error), ...(aiBudget.started ? { aiCalls: aiBudget.started, aiAnswered: aiBudget.answered ?? 0, ...(late ? { reworkLate: true } : {}), ...(aiBudget.capped && !aiBudget.answered ? { reworkCapped: true } : {}) } : {}), timedOut: ctl.signal.aborted && !signal?.aborted, ...(rw?.tried ? { tried: rw.tried } : {}), ...(rq && !reach ? { rework: rq } : {}), ms: ms() }
 			}
 		} finally {
 			clearTimeout(timer)
@@ -5641,16 +6504,28 @@ export function createOrchestrator(deps) {
 		const own = new AbortController()
 		const onAbort = () => own.abort()
 		signal?.addEventListener?.("abort", onAbort, { once: true })
-		const flight = { ctl: own, tokens: 0, t0: Date.now(), done: false, calling: false }
-		aiBudget?.flights?.set(variant, flight)
 		// (the shared allowance is the same object: its counts and dollars are kept across both reworks)
 		const req = { text, mode: "edit", images: [], scene, sim, plan: job.plan ?? null, planScene: job.plan ? scene : null, history: Array.isArray(job.history) ? job.history.slice(-20) : [], keep, hard, rework: true, background: true, feedback, removedTypes, deadline: until, maxRounds: 0, ...(aiBudget ? { aiBudget } : {}) }
+		// (its input counted from what it sends: the scene, its plan, the conversation, the reasons)
+		let chars = 0
+		try {
+			chars = JSON.stringify({ text, scene, plan: job.plan ?? null, history: req.history, feedback }).length
+		} catch {}
+		const flight = { ctl: own, tokens: 0, t0: Date.now(), done: false, calling: false, inUsd: inputUsd(chars) }
+		aiBudget?.flights?.set(variant, flight)
 		const costOf = (r) => (r?.calls ?? []).reduce((t, c) => t + (num(c?.usage?.costInUSD) ?? 0), 0)
 		let rep
 		try {
 			rep = await run(req, {
 				onEvent: (e) => {
 					if (e?.type === "ai-progress" && num(e.tokens) !== null) flight.tokens = e.tokens
+					// (a call billed: counted at once, never only when the rework's own fix search is done too)
+					if (e?.type === "ai-cost" && num(e.usd) !== null && aiBudget) {
+						flight.billed = (flight.billed ?? 0) + e.usd
+						aiBudget.highest = Math.max(aiBudget.highest ?? 0, e.usd)
+						// (a rework call that came back: only those are "the AI's reworks" on the card, never one stopped half-way: V8843 rw-cradle)
+						if (!flight.answered) ((flight.answered = true), (aiBudget.answered = (aiBudget.answered ?? 0) + 1))
+					}
 					if (e?.type === "step" && e.step === "edit" && e.state === "active") flight.calling = true
 					if (e?.type === "step" && e.step === "edit" && e.state !== "active") flight.calling = false
 					return e?.type === "step" && e.state === "active" && e.step !== "edit" ? onProgress?.({ phase: e.step === "fix" ? "ai-fix" : "ai-check" }) : null
@@ -5658,8 +6533,8 @@ export function createOrchestrator(deps) {
 				signal: own.signal
 			})
 		} catch (e) {
-			// (stopped for the budget: what it had written so far is counted, at its estimate)
-			if (aiBudget && flight.calling) aiBudget.usd += AI_IN_USD + flight.tokens * AI_OUT_USD
+			// (stopped: what was billed already is counted, and a call stopped while it ran at its estimate)
+			if (aiBudget) aiBudget.usd += (flight.billed ?? 0) + (flight.calling ? Math.max(aiBudget.floor ?? 0, flight.inUsd + flight.tokens * AI_OUT_USD) : 0)
 			flight.done = true
 			if (flight.capped && !signal?.aborted) return { skipped: true, capped: true }
 			throw e
@@ -5668,7 +6543,13 @@ export function createOrchestrator(deps) {
 		}
 		flight.done = true
 		flight.calling = false
-		if (aiBudget) aiBudget.usd += costOf(rep)
+		if (aiBudget) {
+			const billed = costOf(rep)
+			aiBudget.usd += billed
+			// (the last billed call on this scene is the floor of the next one's estimate)
+			if (billed > 0) aiBudget.highest = Math.max(aiBudget.highest ?? 0, billed)
+			if (billed > 0 && !flight.answered) ((flight.answered = true), (aiBudget.answered = (aiBudget.answered ?? 0) + 1))
+		}
 		if (signal?.aborted) throw abortError()
 		onProgress?.({ phase: "ai-check" })
 		const verdict = await judgeRework(ctx, rep, { signal, mine, removedTypes, targets, hard })
@@ -5786,6 +6667,11 @@ export function createOrchestrator(deps) {
 		const sc = rep.scene
 		for (const it of mine) if (!sc.items.some((i) => i.id === it.id && i.type === it.type)) return { ok: false, why: `it took away or swapped ${theName(it)}` }
 		if (sc.items.some((i) => removedTypes.includes(i.type))) return { ok: false, why: "it brought back what you took away" }
+		// (what the person said to leave as it is, "without touching the box": never changed)
+		if (ctx.frozen instanceof Set && ctx.frozen.size && frozenChanged(ctx.scene, sc, ctx.frozen)) {
+			const it = ctx.scene.items.find((i) => ctx.frozen.has(i.id) && frozenChanged(ctx.scene, sc, [i.id]))
+			return { ok: false, why: `it changed ${it ? theName(it) : "what you said to leave as it is"}, which you said to leave as it is` }
+		}
 		// (what the person's words set stays as they set it: c02 "added 1 domino (8 → 9)", e5 "made the box wider (width 5 → 30 cm)")
 		const at = new Map(sc.items.map((i) => [i.id, i]))
 		for (const [id, keys] of Array.isArray(hard) ? hard : []) {
@@ -5802,7 +6688,7 @@ export function createOrchestrator(deps) {
 		// (what the person chose stays what they chose: a size or a weight of theirs never made absurd (the 7.3 kg bowling ball made a 151 g one, a
 		// 4 cm ping-pong ball 10 cm across), nothing the other way from a word they gave it ("a heavy steel weight" made 100 g: V8820 x5))
 		{
-			const ch = characterBreak(ctx.scene, sc, ctx.before?.scene ?? null, ctx.hard instanceof Map ? ctx.hard : hard)
+			const ch = characterBreak(ctx.scene, sc, ctx.before?.scene ?? null, ctx.hard instanceof Map ? ctx.hard : hard) ?? helperSizeBreak(ctx.scene, sc)
 			if (ch) return { ok: false, why: ch }
 		}
 		// (what the person added stays where they put it, give or take 10 cm: c02's books parked 1.46 m away past the bucket were no fix; a row of
@@ -5851,7 +6737,8 @@ export function createOrchestrator(deps) {
 		if (ctx.before?.sim) {
 			const changed = new Set(mine.map((i) => i.id))
 			const lost = lostStageList(ctx.before.sim, run, sc).filter((l) => !l.ids.some((id) => changed.has(id)))
-			if (lost.length) return { ok: false, why: `it skips a step that worked before (${inClause(clauseName(lost[0].text, sc))})` }
+			// (no bracket inside the bracket: "(the growing dominoes, and 8 of 8 fall; was 9 of 9)", V8843 rw-books)
+			if (lost.length) return { ok: false, why: `it skips a step that worked before (${tidyBrackets(inClause(clauseName(lost[0].text, sc))).replace(/\s*\((was [^()]*)\)/g, "; $1")})` }
 		}
 		// (what the person put in a container stays in it: "a rubber duck in the box waiting for its egg" is never knocked out by the fix)
 		try {
