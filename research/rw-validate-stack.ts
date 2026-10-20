@@ -1,8 +1,11 @@
 // Stacks placed touching (tooling/src/sim/physics.ts, "Impacts solved for nothing"; web/CONTRACT.md "Engine repair (2026-10-19): stacks placed
 // touching stand"): solids placed inside the time-of-impact pass's target of one another (exactly touching, or 0.5 mm apart) must stand as a stack
-// built 2 mm apart does, and the pass must still catch a real strike. Every scene is built by web/sim and run by the engine, as the app runs it.
+// built 2 mm apart does, and the pass must still catch a real strike, the strikes a heavy ball drives through a stack included. Every scene is
+// built by web/sim and run by the engine, as the app runs it.
 //   node --no-warnings --import ./tools/engine-math-node.mjs research/rw-validate-stack.ts
-// Exits 1 when any check fails. Before the repair the first five fail (the 10-block stack spread 1.22 m, the wrecking-ball's bricks walked 3 mm).
+// Exits 1 when any check fails. Before the repair the first five fail (the 10-block stack spread 1.14 m, the wrecking-ball's bricks walked 3.4 mm);
+// the last two failed with its first version, which undid strikes on a struck stack too (phones thrown 18 cm up, one ending under another; a
+// bowling ball 9 mm into a block).
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -59,7 +62,7 @@ const stands = (what: string, items: unknown[]) => {
 	)
 }
 
-// ---- stacks placed inside the pass's target stand (each spread 0.03-1.5 m before the repair)
+// ---- stacks placed inside the pass's target stand (each spread 0.38-1.14 m before the repair)
 stands("10 wooden blocks stacked exactly touching stand", column("wooden-block", 0.05, 10, 0))
 stands("10 wooden blocks stacked 0.5 mm apart stand", column("wooden-block", 0.05, 10, 0.0005))
 stands("10 bricks stacked exactly touching stand", column("brick", 0.065, 10, 0))
@@ -105,6 +108,63 @@ stands("blocks 1 mm apart on a bottom block set exactly on the table stand", col
 		if (ball !== undefined && Math.abs(ball.x - 2) < 0.4) lowest = Math.min(lowest, ball.y)
 	}
 	check(lowest >= 0.5 + thick / 2, "a steel ball let fall 3 m onto a thin board stays on it", `board ${(thick * 1000).toFixed(1)} mm thick; the ball's centre never below ${lowest.toFixed(4)} m (its top at ${(0.5 + thick / 2).toFixed(4)} m)`)
+}
+
+// ---- strikes a heavy ball drives through a stack built 1.5 mm apart (where the engine rests a pair) are the pass's: squeezed, the stack's pairs
+// stay inside its target, so the strikes of the next steps begin inside it too, but they are no resting pair's
+type Solid = { id: string; body: { width?: number; height?: number; radius?: number } }
+/** How deep a circle (centre c, radius r) is into a rectangle (centre p, half sizes hw and hh, turned by p's angle): below 0 apart. */
+const into = (c: Place, r: number, p: Place, hw: number, hh: number) => {
+	const dx = c.x - p.x
+	const dy = c.y - p.y
+	const cos = Math.cos(-p.angle)
+	const sin = Math.sin(-p.angle)
+	const lx = dx * cos - dy * sin
+	const ly = dx * sin + dy * cos
+	if (Math.abs(lx) <= hw && Math.abs(ly) <= hh) return r + Math.min(hw - Math.abs(lx), hh - Math.abs(ly))
+	return r - Math.hypot(lx - Math.max(-hw, Math.min(hw, lx)), ly - Math.max(-hh, Math.min(hh, ly)))
+}
+/** A bowling ball let fall `drop` m onto n pieces h tall stacked 1.5 mm apart, every step looked at: how deep it got into a piece, how far up a
+ *  piece was thrown, and whether the pieces end in their order. */
+const struck = (type: string, h: number, n: number, drop: number, seconds: number) => {
+	const sc = scene([...column(type, h, n, 0.0015), { id: "ball", type: "bowling-ball", x: 2, y: n * (h + 0.0015) + 0.109 + drop }], seconds)
+	const doc = sim.prepare(sc).doc as { solids: Solid[] }
+	const pieces = doc.solids.filter((s) => /^b\d+\//.test(s.id)).sort((a, b) => Number(a.id.slice(1).split("/")[0]) - Number(b.id.slice(1).split("/")[0]))
+	const ball = doc.solids.find((s) => s.id.startsWith("ball/")) as Solid
+	const track = run(sc, 480)
+	const first = at(track, 0)
+	let deepest = Number.NEGATIVE_INFINITY
+	let thrown = 0
+	for (const f of track.frames) {
+		const pose = (id: string) => (f.placements[id] ?? first[id]) as Place
+		for (const p of pieces) {
+			deepest = Math.max(deepest, into(pose(ball.id), ball.body.radius ?? 0, pose(p.id), (p.body.width ?? 0) / 2, (p.body.height ?? 0) / 2))
+			thrown = Math.max(thrown, pose(p.id).y - (first[p.id] as Place).y)
+		}
+	}
+	const last = at(track, track.frames.at(-1)?.t ?? 0)
+	const ys = pieces.map((p) => ((last[p.id] ?? first[p.id]) as Place).y)
+	return { deepest, thrown, inOrder: ys.every((y, i) => i === 0 || y > (ys[i - 1] as number)) }
+}
+{
+	// six phones (7.8 mm) under a bowling ball let fall 1.5 m: as before the repair, they stay a stack in their order
+	const s = struck("smartphone", 0.0078, 6, 1.5, 2.5)
+	check(
+		s.inOrder && s.thrown <= 0.02 && s.deepest < 0.0078,
+		"a bowling ball let fall 1.5 m onto six phones 1.5 mm apart: they keep their order, none is thrown up, the ball never goes a phone deep",
+		`order ${s.inOrder ? "kept" : "broken"}; a phone thrown ${(s.thrown * 1000).toFixed(1)} mm up at most, the ball ${(s.deepest * 1000).toFixed(2)} mm into one; limits 20 mm, 7.8 mm`
+	)
+}
+{
+	// five wooden blocks under a bowling ball let fall 1.5 to 2.5 m: it is stopped at their skins (the median of five drops, as a heavy strike's
+	// tumble differs from drop to drop)
+	const deep = [1.5, 1.75, 2, 2.25, 2.5].map((drop) => struck("wooden-block", 0.05, 5, drop, 3).deepest)
+	const median = [...deep].sort((a, b) => a - b)[2] as number
+	check(
+		median <= 0.003,
+		"a bowling ball let fall 1.5-2.5 m onto five blocks 1.5 mm apart goes no more than 3 mm into one (the median of five drops)",
+		`into a block at most ${deep.map((d) => (d * 1000).toFixed(2)).join(" / ")} mm, median ${(median * 1000).toFixed(2)} mm; limit 3 mm`
+	)
 }
 
 console.log(failed === 0 ? "ALL PASS" : `${failed} FAILED`)

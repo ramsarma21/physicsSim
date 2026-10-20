@@ -780,22 +780,29 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	 * losing what the step's solve did to part them, and parts only those two, holding every other moving body where it is: a block
 	 * between the table and the block on it cannot get clear, so the same strike comes back up to nine times a step, each time moving
 	 * the block sideways (a 10-block stack placed touching fell over within 6 s; the wrecking-ball scenario's bricks, 0.5 mm apart,
-	 * walked 3 mm before the ball came). So a strike on a contact the step's solve already holds (touching as the step began, `held`) that
-	 * leaves the two solids still inside the target is undone: its island goes back to where the pass found it (each body's path before
-	 * the pass moved it back, `before`, and its motion), the contact sits out the rest of the pass, and from then on the pass leaves it to
-	 * the solve while the solve holds it (`stuck`); the solve parts them over the next steps, as it parts a pair placed 1 mm apart. A strike
-	 * that gets its pair clear (a domino set exactly on the table, lifted out of its skin at once) is kept, as is every strike on a contact
-	 * the step began without (a real one, which the pass is there to catch).
+	 * walked 3 mm before the ball came). So a strike that gets nowhere on a pair at rest inside the target is undone (`undoable`): the solve
+	 * held the contact as the step began (`held`), its two solids were inside the target where the step began (`began`) and are at rest
+	 * where they touch (`still`: slower than VELOCITY_THRESHOLD), and the strike leaves them still inside the target. Its island goes back
+	 * to where the pass found it (each body's path before the pass moved it back, `before`, and its motion; what its contacts recorded), the
+	 * contact sits out the rest of the pass, and from then on, while the pair stays so, the pass leaves it to the solve (`stuck`); the solve
+	 * parts them over the next steps, as it parts a pair placed 1 mm apart. A strike that gets its pair clear (a domino set exactly on the
+	 * table, lifted out of its skin at once) is kept, and so is every strike on a pair that moves or began the step apart: a real one, which
+	 * the pass is there to catch, and those an impact drives through a stack (squeezed, a stack's pairs stay inside the target, as the pass
+	 * parts only two bodies at a time, so the strikes of the next steps begin inside as well: undone too, a heavy ball sank deeper into a
+	 * struck stack and a phone passed down through another).
 	 */
 	const held = new Set<Touch>()
 	const stuck = new Set<Touch>()
 	/** Each body's path before the pass last moved it back along it (planck's `advance`), stamped with the strike it was moved for. */
 	const before = new Map<Body, { sweep: Sweep; stamp: number }>()
+	/** Where each moving body stood as the step began (before its solve). */
+	const began = new Map<Body, Transform>()
 	let stamp = 0
 	for (let b = world.getBodyList(); b !== null; b = b.getNext()) {
 		const body = b
 		const was = { sweep: new Sweep(), stamp: -1 }
 		before.set(body, was)
+		if (!body.isStatic()) began.set(body, Transform.clone(body.getTransform()))
 		const advance = body.advance.bind(body)
 		body.advance = (alpha: number) => {
 			was.sweep.set(sweepOf(body))
@@ -807,14 +814,19 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	const distanceOutput = new DistanceOutput()
 	const startA = new Transform()
 	const startB = new Transform()
-	/** Whether a contact's two solids are nearer than the pass's target where their paths now begin (TimeOfImpact's own test). */
-	const inside = (c: Touch) => {
+	/** Whether a contact's two solids are nearer than the pass's target (TimeOfImpact's own test) where their paths now begin, or where the step began. */
+	const inside = (c: Touch, asBegun = false) => {
 		const fA = c.getFixtureA()
 		const fB = c.getFixtureB()
 		distanceInput.proxyA.set(fA.getShape(), c.getChildIndexA())
 		distanceInput.proxyB.set(fB.getShape(), c.getChildIndexB())
-		sweepOf(fA.getBody()).getTransform(startA, 0)
-		sweepOf(fB.getBody()).getTransform(startB, 0)
+		if (asBegun) {
+			startA.set(began.get(fA.getBody()) ?? fA.getBody().getTransform())
+			startB.set(began.get(fB.getBody()) ?? fB.getBody().getTransform())
+		} else {
+			sweepOf(fA.getBody()).getTransform(startA, 0)
+			sweepOf(fB.getBody()).getTransform(startB, 0)
+		}
 		distanceInput.transformA = startA
 		distanceInput.transformB = startB
 		distanceInput.useRadii = false
@@ -822,13 +834,29 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		const radii = (distanceInput.proxyA as unknown as { m_radius: number }).m_radius + (distanceInput.proxyB as unknown as { m_radius: number }).m_radius
 		return distanceOutput.distance < Math.max(Settings.linearSlop, radii - 3 * Settings.linearSlop) + 0.25 * Settings.linearSlop
 	}
+	/** Whether a contact's two solids are at rest where they touch: both slower than VELOCITY_THRESHOLD (an impact's speed) at each of its points. */
+	const still = (c: Touch) => {
+		const wm = c.getWorldManifold(null)
+		const fast = VELOCITY_THRESHOLD * LENGTH_SCALE
+		for (let i = 0; wm !== null && wm !== undefined && i < wm.pointCount; i++) {
+			const point = wm.points[i]
+			if (point === undefined) continue
+			for (const body of [c.getFixtureA().getBody(), c.getFixtureB().getBody()]) {
+				const v = body.getLinearVelocityFromWorldPoint(point)
+				if (v.x * v.x + v.y * v.y >= fast * fast) return false
+			}
+		}
+		return true
+	}
+	/** A strike the pass would solve for nothing: on a contact the solve held, its pair at rest inside the target where the step began. */
+	const undoable = (c: Touch) => held.has(c) && inside(c, true) && still(c)
 	const solveIslandTOI = solver.solveIslandTOI.bind(solver)
 	solver.solveIslandTOI = (...args: unknown[]) => {
 		const island = solver as unknown as Island
 		const contact = island.m_contacts[0]
-		// (a strike on a contact the solve holds: the island as the pass found it, to put back if the strike gets nowhere)
+		// (a strike that may get nowhere: the island as the pass found it, to put back if it does)
 		let kept: { body: Body; sweep: Sweep; v: Vec2; w: number }[] | undefined
-		if (contact !== undefined && held.has(contact)) {
+		if (contact !== undefined && undoable(contact)) {
 			kept = []
 			for (const body of island.m_bodies) {
 				const was = before.get(body)
@@ -839,8 +867,21 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				kept.push({ body, sweep: was.sweep, v: Vec2.clone(motion(body).m_linearVelocity), w: motion(body).m_angularVelocity })
 			}
 		}
-		// (and what the strike would record: its contacts' pushes, the strikes passed on through them, the impacts it lists)
-		const pushes = kept === undefined ? [] : island.m_contacts.map((c) => [pressed.get(c), passed.get(c)] as const)
+		// (and what its contacts would record: their pushes, the strikes passed on through them, a Garwin spring's impulses, the impulses
+		// kept for warm starting (post-solve drops an over-large one); and the impacts it lists)
+		const records =
+			kept === undefined
+				? []
+				: island.m_contacts.map((c) => {
+						const spring = springs.get(c)
+						const m = c.getManifold()
+						return {
+							push: pressed.get(c),
+							pass: passed.get(c),
+							spring: spring === undefined ? undefined : ([spring.normalImpulse, spring.tangentImpulse] as const),
+							stored: Array.from({ length: m.pointCount }, (_, k) => [m.points[k]?.normalImpulse ?? 0, m.points[k]?.tangentImpulse ?? 0] as const)
+						}
+					})
 		const listed = hits.length
 		const loudest = impacts.get(stepIndex)
 		propagate(island)
@@ -853,11 +894,21 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				motion(body).m_angularVelocity = w
 			}
 			island.m_contacts.forEach((c, i) => {
-				const [push, pass] = pushes[i] ?? []
-				if (push === undefined) pressed.delete(c)
-				else pressed.set(c, push)
-				if (pass === undefined) passed.delete(c)
-				else passed.set(c, pass)
+				const was = records[i]
+				if (was === undefined) return
+				if (was.push === undefined) pressed.delete(c)
+				else pressed.set(c, was.push)
+				if (was.pass === undefined) passed.delete(c)
+				else passed.set(c, was.pass)
+				const spring = springs.get(c)
+				if (spring !== undefined && was.spring !== undefined) [spring.normalImpulse, spring.tangentImpulse] = was.spring
+				const m = c.getManifold()
+				was.stored.forEach(([normal, tangent], k) => {
+					const p = m.points[k]
+					if (p === undefined) return
+					p.normalImpulse = normal
+					p.tangentImpulse = tangent
+				})
 			})
 			hits.length = listed
 			if (loudest === undefined) impacts.delete(stepIndex)
@@ -1264,9 +1315,9 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			touch.setEnabled(false)
 			return
 		}
-		// (a strike the pass could not get clear before, on a contact the solve holds again: left to the solve, `stuck`; planck then puts its
-		// two bodies back. Only as the pass picks it as a strike, before any island is made: neither body is in one yet)
-		if (continuous && stuck.has(touch) && held.has(touch) && !islanded(touch.getFixtureA().getBody()) && !islanded(touch.getFixtureB().getBody())) {
+		// (a strike the pass could not get clear before, on a pair still at rest inside the target: left to the solve, `stuck`; planck then
+		// puts its two bodies back. Only as the pass picks it as a strike, before any island is made: neither body is in one yet)
+		if (continuous && stuck.has(touch) && !islanded(touch.getFixtureA().getBody()) && !islanded(touch.getFixtureB().getBody()) && undoable(touch)) {
 			touch.setEnabled(false)
 			return
 		}
@@ -1747,6 +1798,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				struck.clear()
 				passed.clear()
 				held.clear()
+				for (const [body, at] of began) at.set(body.getTransform())
 				world.step(h)
 				springBack()
 				unsound("ending")
