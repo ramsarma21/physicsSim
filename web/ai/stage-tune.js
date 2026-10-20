@@ -12,6 +12,8 @@
 //   st.verified(ev), st.lostChecks(a, b), st.stageFacts(ev, k, logEntry)
 // The engine is deterministic: the same plan gives the same run. evalRun (optional, ./fix-pool.js workers) runs a candidate off the page's thread
 // and sends back only its judgement ({goals, checks: [{res, d}], warnings}); the version kept is always run again on the app's own engine.
+// stageTune ends within its maxMs even when a run never comes back (a fix worker's lost job hung every balanced-forces Build with AI of the video
+// pipeline's batch, 19 Oct): each run it waits for is raced with the deadline, and at the deadline the runs still out are stopped (their signal).
 // Pure apart from the injected deps (no DOM), so ./fix-worker.js and node tests import it as is.
 import { checkGoals, goalKind, goalItems, goalRefs } from "./goals.js"
 
@@ -31,6 +33,43 @@ const halton = (i, b) => {
 		i = Math.floor(i / b)
 	}
 	return r
+}
+const abortError = () => (typeof DOMException !== "undefined" ? new DOMException("Cancelled", "AbortError") : Object.assign(new Error("Cancelled"), { name: "AbortError" }))
+const CUT = Symbol("cut") // (a run the tuner stopped waiting for: its time was up)
+const JOINT_SLACK_MS = 2000 // (the joint tuner stops starting runs this long before the deadline, so the ones it has out can come back in time)
+
+/**
+ * The tuner's time on top of the caller's signal. signal: aborts at the deadline, or with the caller's (a fix worker busy with that run is then
+ * replaced). wait(promise): the promise's value, or CUT once the deadline has passed, even when the promise never settles; the caller's own
+ * abort still throws (AbortError). end(): stops the clock.
+ */
+function timeLimit(outer, deadline) {
+	const ctl = new AbortController()
+	let expire
+	const expired = new Promise((r) => (expire = r)).then(() => CUT)
+	const stop = () => (expire(), ctl.abort())
+	if (outer?.aborted) stop()
+	else outer?.addEventListener?.("abort", stop, { once: true })
+	const ms = deadline - now()
+	const timer = ms < 2 ** 31 - 1 ? setTimeout(stop, Math.max(0, ms)) : 0
+	return {
+		signal: ctl.signal,
+		async wait(p) {
+			let r
+			try {
+				r = await Promise.race([p, expired])
+			} catch (e) {
+				if (outer?.aborted || e?.name !== "AbortError" || !ctl.signal.aborted) throw e
+				r = CUT // (stopped by the deadline)
+			}
+			if (outer?.aborted) throw abortError()
+			return r
+		},
+		end() {
+			clearTimeout(timer)
+			outer?.removeEventListener?.("abort", stop)
+		}
+	}
 }
 
 /** The closest two items came during a run (m, ≥ 0: centre distance minus their own sizes). */
@@ -218,7 +257,7 @@ export function createStageTuner(deps) {
 		for (let j = k + 1; j < S.length; j++) later += S[j].check ? S[j].d : 0
 		return 1000 * broken + 30 * worse + 3 * noisy + 10 * (S[k]?.d ?? 0) + 0.5 * later
 	}
-	async function searchStage(base, k, knobs, { maxRuns, deadline, signal, onRun }) {
+	async function searchStage(base, k, knobs, { maxRuns, deadline, signal, limit, onRun }) {
 		const plan = base.plan
 		const stages = base.stages.map(({ res, d, ...s }) => s)
 		const start = knobs.map((kn) => {
@@ -240,7 +279,9 @@ export function createStageTuner(deps) {
 			runs++
 			const p = clone(plan)
 			knobs.forEach((kn, i) => setKnob(p, kn, Math.round(v[i] * 1e5) / 1e5))
-			const ev = await evaluate(p, { stages, signal })
+			const ev = await limit.wait(evaluate(p, { stages, signal: limit.signal }))
+			// (it didn't come back in the tuner's time: not a run, and nothing is known of that version)
+			if (ev === CUT) return runs--, null
 			const e = { v, f: objective(ev, k, base), ev }
 			cache.set(key, e)
 			if (e.f < best.f) best = e
@@ -274,54 +315,68 @@ export function createStageTuner(deps) {
 	 * Stage by stage: for the first failing stage, search its knobs (its own + auto) so its check passes without breaking an earlier one; keep the
 	 * best; go on. Then the app's joint tuner (deps.tune) on what still fails, kept only when it loses no passing check.
 	 * onProgress({runs, stage, of, label, passed}) after each engine run. -> {ev, failStage (1-based or null), runs, ms, log}
+	 * Ends within maxMs: a run still out at the deadline is stopped and left out (not counted), and the best found so far is kept; the joint
+	 * tuner gets the time that is left. The caller's signal still cancels it (AbortError).
 	 */
 	async function stageTune(plan, { from = null, maxRuns = 150, perStage = 30, maxMs = 90000, fromStage = 1, joint = true, signal, onProgress } = {}) {
 		const t0 = now()
 		const deadline = t0 + maxMs
-		let cur = from ?? (await evaluate(plan, { signal }))
-		const log = []
-		let runs = 0
-		let failStage = null
-		if (!cur.ok) return { ev: cur, failStage, runs, ms: now() - t0, log }
-		const of = cur.stages.filter((s) => s.check).length
-		for (let k = fromStage - 1; k < cur.stages.length; k++) {
-			const st = cur.stages[k]
-			if (!st.check || st.res?.ok === true) continue
-			const own = safe(st.knobs ?? [], cur).filter((kn) => num(kn.min) !== null && num(kn.max) !== null && kn.max > kn.min)
-			const knobs = [...own.slice(0, 4), ...autoKnobs(cur.plan, cur.scene, st, { max: Math.max(0, 3 - own.length), have: own })].slice(0, 4).map((kn) => ({ id: kn.id, param: String(kn.param), min: num(kn.min), max: num(kn.max), auto: !!kn.auto }))
-			if (!knobs.length || runs >= maxRuns || now() >= deadline) {
-				failStage = st.stage
-				log.push({ stage: st.stage, label: st.label, knobs, runs: 0, passed: false })
-				break
-			}
-			const before = runs
-			const r = await searchStage(cur, k, knobs, { maxRuns: Math.min(perStage, maxRuns - runs), deadline, signal, onRun: (n, ok) => onProgress?.({ runs: before + n, stage: st.stage, of, label: st.label, passed: ok }) })
-			runs += r.runs
-			const ok = r.best.stages[k]?.res?.ok === true && objective(r.best, k, cur) < 1000
-			log.push({ stage: st.stage, label: st.label, knobs, runs: r.runs, passed: ok, changed: r.changed })
-			if (r.best !== cur && objective(r.best, k, cur) < objective(cur, k, cur)) cur = r.best
-			if (!ok) {
-				failStage = st.stage
-				break
-			}
-		}
-		if (joint && tune && cur.ok && (cur.f.goalsOk < cur.f.goals || cur.f.stagesOk < cur.f.stages) && (cur.plan.tune?.length ?? 0) > 0 && now() < deadline && !signal?.aborted) {
-			// (the joint tuner needs the whole run of the version it starts from)
-			if (!cur.sim) cur = await evaluate(cur.plan, { stages: cur.stages.map(({ res, d, ...s }) => s), signal, full: true })
-			const tr = cur.ok ? await tune({ plan: cur.plan, scene: cur.scene, sim: cur.sim, goals: cur.goalDefs, simulate, signal }) : { changed: [] }
-			runs += tr.runs ?? 0
-			if (tr.changed?.length) {
-				const b = await evaluate(tr.plan, { signal })
-				const kept = b.ok && b.f.goalsOk + b.f.stagesOk > cur.f.goalsOk + cur.f.stagesOk && !lostChecks(cur, b).length && b.f.errors + b.f.through <= cur.f.errors + cur.f.through
-				log.push({ joint: true, runs: tr.runs, kept, changed: tr.changed })
-				if (kept) {
-					cur = b
-					failStage = cur.stages.find((s) => s.check && s.res?.ok !== true)?.stage ?? null
+		const limit = timeLimit(signal, deadline)
+		try {
+			let cur = from ?? (await limit.wait(evaluate(plan, { signal: limit.signal })))
+			const log = []
+			let runs = 0
+			let failStage = null
+			if (cur === CUT) cur = { ok: false, plan, error: `the stage tuner's ${Math.round(maxMs / 1000)} s ran out` }
+			if (!cur.ok) return { ev: cur, failStage, runs, ms: now() - t0, log }
+			const of = cur.stages.filter((s) => s.check).length
+			for (let k = fromStage - 1; k < cur.stages.length; k++) {
+				const st = cur.stages[k]
+				if (!st.check || st.res?.ok === true) continue
+				const own = safe(st.knobs ?? [], cur).filter((kn) => num(kn.min) !== null && num(kn.max) !== null && kn.max > kn.min)
+				const knobs = [...own.slice(0, 4), ...autoKnobs(cur.plan, cur.scene, st, { max: Math.max(0, 3 - own.length), have: own })].slice(0, 4).map((kn) => ({ id: kn.id, param: String(kn.param), min: num(kn.min), max: num(kn.max), auto: !!kn.auto }))
+				if (!knobs.length || runs >= maxRuns || now() >= deadline) {
+					failStage = st.stage
+					log.push({ stage: st.stage, label: st.label, knobs, runs: 0, passed: false })
+					break
+				}
+				const before = runs
+				const r = await searchStage(cur, k, knobs, { maxRuns: Math.min(perStage, maxRuns - runs), deadline, signal, limit, onRun: (n, ok) => onProgress?.({ runs: before + n, stage: st.stage, of, label: st.label, passed: ok }) })
+				runs += r.runs
+				const ok = r.best.stages[k]?.res?.ok === true && objective(r.best, k, cur) < 1000
+				log.push({ stage: st.stage, label: st.label, knobs, runs: r.runs, passed: ok, changed: r.changed })
+				if (r.best !== cur && objective(r.best, k, cur) < objective(cur, k, cur)) cur = r.best
+				if (!ok) {
+					failStage = st.stage
+					break
 				}
 			}
+			if (joint && tune && cur.ok && (cur.f.goalsOk < cur.f.goals || cur.f.stagesOk < cur.f.stages) && (cur.plan.tune?.length ?? 0) > 0 && now() < deadline - JOINT_SLACK_MS && !signal?.aborted) {
+				// (the joint tuner needs the whole run of the version it starts from; it gets the time that is left, and what comes back after the
+				// deadline is left out)
+				const whole = cur.sim ? cur : await limit.wait(evaluate(cur.plan, { stages: cur.stages.map(({ res, d, ...s }) => s), signal: limit.signal, full: true }))
+				if (whole !== CUT && whole.ok) {
+					cur = whole
+					const tr = await limit.wait(tune({ plan: cur.plan, scene: cur.scene, sim: cur.sim, goals: cur.goalDefs, simulate, signal: limit.signal, maxMs: Math.max(0, deadline - now() - JOINT_SLACK_MS) }))
+					if (tr !== CUT) {
+						runs += tr.runs ?? 0
+						const b = tr.changed?.length ? await limit.wait(evaluate(tr.plan, { signal: limit.signal })) : CUT
+						if (b !== CUT) {
+							const kept = b.ok && b.f.goalsOk + b.f.stagesOk > cur.f.goalsOk + cur.f.stagesOk && !lostChecks(cur, b).length && b.f.errors + b.f.through <= cur.f.errors + cur.f.through
+							log.push({ joint: true, runs: tr.runs, kept, changed: tr.changed })
+							if (kept) {
+								cur = b
+								failStage = cur.stages.find((s) => s.check && s.res?.ok !== true)?.stage ?? null
+							}
+						}
+					}
+				}
+			}
+			if (failStage === null) failStage = cur.stages.find((s) => s.check && s.res?.ok !== true)?.stage ?? null
+			return { ev: cur, failStage, runs, ms: now() - t0, log }
+		} finally {
+			limit.end()
 		}
-		if (failStage === null) failStage = cur.stages.find((s) => s.check && s.res?.ok !== true)?.stage ?? null
-		return { ev: cur, failStage, runs, ms: now() - t0, log }
 	}
 
 	/** Verified by the physics: it has something to check, every goal and stage check passes, nothing builds badly. */

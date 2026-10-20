@@ -3142,7 +3142,7 @@ export function createOrchestrator(deps) {
 		return { cancel: () => ctl.abort(), result, signal }
 	}
 
-	async function run(request, { onEvent, signal, refineRounds, tune: doTune = true, finalCheck = true, reconcile: doReconcile = true, quickEdits = true, stageTune: doStage = true, imagine: imagineSetting = "off", aimFirst = true, physFirst: physFirstOn = true, physFirstMs = PHYS_FIRST_MS * TIME_SCALE }) {
+	async function run(request, { onEvent, signal, refineRounds, tune: doTune = true, finalCheck = true, reconcile: doReconcile = true, quickEdits = true, stageTune: doStage = true, imagine: imagineSetting = "off", aimFirst = true, physFirst: physFirstOn = true, physFirstMs = PHYS_FIRST_MS * TIME_SCALE, stageMs = STAGE_MS }) {
 		const T0 = now()
 		const text = String(request.text ?? "").trim()
 		// (the person's own words: a rework's text is the app's, so a target's words never pass for theirs there)
@@ -3805,7 +3805,8 @@ export function createOrchestrator(deps) {
 				: null,
 			goalDistance,
 			setKnob,
-			tune: (o) => tune({ ...o, solver: solveV, signal }),
+			// (inside the stage tuner: its signal, which stops at its deadline, and no more than the time it has left)
+			tune: (o) => tune({ ...o, solver: solveV, signal: o.signal ?? signal, maxMs: Math.min(TUNE_MS, o.maxMs ?? TUNE_MS) }),
 			// (a height knob on a static thing that can't hold itself up turns what it stands on instead, or is left out: nothing is tuned into mid-air)
 			safe: (knobs, ev) => safeKnobs({ items: ev.plan.items, tune: knobs }, ev.scene).knobs,
 			parallel: pool && !pool.broken ? Math.max(2, pool.size) : TUNE_PARALLEL
@@ -4842,7 +4843,7 @@ export function createOrchestrator(deps) {
 				onEvent({ type: "step", step: "stagetune", state: "skipped", label: `every ${ev0.f.stages > ev0.f.goals ? "stage" : "goal"} works in the first run` })
 			} else {
 				const t = await timed("stagetune", `${ev0.f.stages - ev0.f.stagesOk} of ${ev0.f.stages} failing`, () =>
-					ST.stageTune(v0.plan, { from: ev0, signal, maxRuns: STAGE_RUNS, perStage: STAGE_RUNS_PER, maxMs: STAGE_MS, onProgress: (p) => onEvent({ type: "progress", step: "stagetune", ...p }) })
+					ST.stageTune(v0.plan, { from: ev0, signal, maxRuns: STAGE_RUNS, perStage: STAGE_RUNS_PER, maxMs: stageMs, onProgress: (p) => onEvent({ type: "progress", step: "stagetune", ...p }) })
 				)
 				stageLog = t.log
 				const st = { runs: t.runs, ms: Math.round(t.ms), before: counts(ev0), after: counts(ev0), kept: false, changes: [], stages: t.log.filter((l) => !l.joint).map((l) => ({ stage: l.stage, label: l.label, runs: l.runs, passed: l.passed, knobs: (l.knobs ?? []).length })), joint: t.log.find((l) => l.joint) ? { runs: t.log.find((l) => l.joint).runs, kept: t.log.find((l) => l.joint).kept } : null }
