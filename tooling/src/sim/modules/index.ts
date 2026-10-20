@@ -4,7 +4,7 @@
 // "no process kind", and every other document runs (the server's worker never stops for one module being written).
 import { type ProcessKind, registerProcess } from "#sim/plugins.ts"
 
-const FILES: readonly (readonly [string, () => Promise<{ default: unknown }>])[] = [["optics", () => import("#sim/modules/optics.ts")]]
+const FILES: readonly (readonly [string, () => Promise<{ default: unknown }>])[] = [["fluids", () => import("#sim/modules/fluids.ts")], ["optics", () => import("#sim/modules/optics.ts")]]
 export const ENGINE_MODULES: string[] = []
 export const ENGINE_MODULE_ERRORS: Record<string, string> = {}
 const loaded = await Promise.allSettled(FILES.map(([, load]) => load()))
