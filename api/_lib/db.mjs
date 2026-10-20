@@ -5,7 +5,9 @@
 // Postgres). docs/ACCOUNTS.md §3.
 import { HttpError, logLine, scrubSecrets } from "./http.mjs"
 
-export const SCHEMA_VERSION = 2 // 2: scenes.saved_as (the app's Save links a scene to its scenario), the deleted-scenes index
+export const SCHEMA_VERSION = 4 // 2: scenes.saved_as (the app's Save links a scene to its scenario), the deleted-scenes index; 3: agent_keys
+// (robot keys for the video pipeline, api/_lib/agent-keys.mjs) and videos (the team gallery, api/_lib/videos.mjs); 4: each robot key's video
+// caps (agent_keys.videos_per_day, upload_mb_per_day)
 const QUERY_TIMEOUT_MS = 10000 // (a database asleep after 5 idle minutes wakes in about a second)
 
 export const DDL = [
@@ -53,6 +55,38 @@ export const DDL = [
 		usd numeric(10,4) not null default 0,
 		primary key (key, bucket)
 	)`,
+	// 3: per-person robot keys (only the key's sha256 is kept; the owner issues them with tools/video-agent/keys.mjs) and the videos they publish
+	`create table if not exists agent_keys (
+		id text primary key,
+		name text not null unique,
+		key_sha256 text not null unique,
+		usd_per_day numeric(8,2) not null default 25,
+		steps_per_hour integer not null default 120,
+		created_at timestamptz not null default now(),
+		revoked_at timestamptz
+	)`,
+	`create table if not exists videos (
+		gallery text not null,
+		job text not null,
+		owner text not null,
+		batch text,
+		title text,
+		request text,
+		lesson json,
+		seconds double precision,
+		checks json,
+		cost_usd numeric(10,4),
+		files json,
+		published_by text,
+		published_at timestamptz,
+		created_at timestamptz not null default now(),
+		updated_at timestamptz not null default now(),
+		primary key (gallery, job)
+	)`,
+	`create index if not exists videos_published on videos (gallery, published_at desc) where published_at is not null`,
+	// 4: a robot key's daily video caps (new jobs, megabytes of upload grants; api/_lib/videos.mjs counts them in counters as vid:<name>)
+	`alter table agent_keys add column if not exists videos_per_day integer not null default 50`,
+	`alter table agent_keys add column if not exists upload_mb_per_day integer not null default 2000`,
 	`create table if not exists schema_version (v integer primary key)`,
 	`insert into schema_version (v) values (${SCHEMA_VERSION}) on conflict do nothing`,
 ]

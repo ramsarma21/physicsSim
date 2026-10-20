@@ -11,6 +11,7 @@ The deploy is a **static site** (the whole app, with the physics engine running 
 | `dist/` (Vercel's `outputDirectory`) | index.html, the app's modules, models, styles, the engine bundle (`sim/engine-worker.js`, a module Worker), the 12 built-in scenes and `scenario-list.json`, vendored three.js and mediabunny (the MP4 muxer) | `tools/build-static.mjs`, from `web/` |
 | `/api/ai/observe\|plan\|refine\|edit` | the Vercel twin of `web/server.py`'s AI route | `api/ai/[step].mjs`, with all of `ai/` (the AI core, `ai/prompts/`, `ai/models.json`) and `web/sim/`'s code |
 | `/api/scenes`, `/api/scenes/:id[/thumb\|/restore]`, `/api/scenes/me` | accounts: sign in with Google, a person's saved scenes on any device, their AI allowance. **Off until Clerk and Neon are connected** (setup step 6); until then `/api/scenes/me` answers `{accounts: null}` and the page keeps scenes in the browser | `api/scenes/index.mjs` with `api/_lib/` and `web/sim/`'s code (docs/ACCOUNTS.md) |
+| `/api/videos/upload`, `/api/videos/publish`, `/videos/<gallery>[/batches/<batch>]`, `/videos/<gallery>/jobs/<job>/<file>` | the video pipeline: Blob upload tokens, publishing to the team gallery, the gallery page and each video's report page. Robot keys only (`x-agent-key`); see "Robot keys and the video gallery" below | `api/videos/*.mjs` with `api/_lib/` (videos, blob, agent-keys, gallery) |
 
 On any host that is not this machine the page picks the browser engine by itself (`web/app.js`: `localhost`, `*.localhost`, `127.x`
 and `[::1]` use the local server, every other host the browser). So the deployed page makes no calls to a physics server: the catalog,
@@ -158,7 +159,8 @@ client (docs/ACCOUNTS.md 9.5).
 | `...includeFiles` | `{ai/**,web/sim/**/*.js,web/sim/**/*.json}` | The AI core reads its prompts and routing and imports web/sim (the catalog digest, `clean()`, and the engine bundle that checks a refine's goals) by computed paths, which the file tracer cannot follow. All of `ai/` goes in, so a new module or data file there needs no change here; web/sim's `.js` and `.json` at any depth, never its source maps. |
 | `...excludeFiles` | `web/sim/**/*.map` | Keeps the 6 MB engine source map out of what the tracer adds (the function is 1.1 MB). It does not filter `includeFiles`, which is why that pattern names `.js` and `.json` only. |
 | `functions["api/scenes/*.mjs"]` | `maxDuration` 30, `includeFiles` web/sim's `.js` and `.json` | The accounts' scenes function (docs/ACCOUNTS.md): short requests (a list, a save, a picture); it validates scenes with web/sim's `clean()`, which imports the catalog. |
-| `rewrites` | `/api/scenes/:id` and `/api/scenes/:id/:part` to `/api/scenes` | One function serves the whole group of scene routes (Vercel's advice: a warm instance serves them all); the named segments arrive as `?id=` and `?part=`. Checked by `check:vercel`. |
+| `functions["api/videos/*.mjs"]` | `maxDuration` 60 | The video functions (upload tokens, publish, the gallery page, a video's report page): short requests; the video bytes go straight to Blob, never through a function. |
+| `rewrites` | `/api/scenes/:id` and `/api/scenes/:id/:part` to `/api/scenes`; `/videos/:gallery`, `/videos/:gallery/batches/:batch` and `/videos/:gallery/jobs/:job/:file` to `/api/videos/gallery` | One function serves the whole group of scene routes (Vercel's advice: a warm instance serves them all); the named segments arrive as `?id=` and `?part=` (`?gallery=`, `?batch=`, `?job=&file=`). `cleanUrls` sends `.../index.html` to `.../` and `.../report.html` to `.../report` first (308), so a report's link `../../index.html` lands on the gallery page. Checked by `check:vercel`. |
 | headers `/(.*)` | `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` | No MIME guessing; no full URLs in Referer to other sites. |
 | headers `/((?!vendor/\|api/).*)` | `Cache-Control: public, max-age=0, must-revalidate` | The app's files keep their names between deploys, so browsers revalidate them (a 304 when unchanged; Vercel's CDN serves each deployment's files from its edge). |
 | headers `/vendor/(.*)` | `Cache-Control: public, max-age=31536000, immutable` | `dist/vendor/<pkg>-<12 hex of its content>/`: the build names each vendored package's folder by its content and rewrites the importmap in `dist/index.html`, so a new three.js, a new addon or a new mediabunny export set is a new URL. |
@@ -225,6 +227,119 @@ These are open on Hobby, and owned by the AI client and server code, not by this
 - **The model** is the real cost, paid to the gateway, not Vercel: `ai/research/benchmark.md` measured a plan call with the 40k-token
   catalog at about $0.21–0.34 when it writes the prompt cache and $0.02–0.09 when it reads it (all Opus routes); a full "Build with AI"
   run is a plan, a picture step when there are pictures, and a few refine rounds. Protection (above) is what keeps strangers from spending it.
+
+## Robot keys and the video gallery (the video pipeline)
+
+An agent makes physics lesson videos on the live site by itself and publishes each one, once every check passed, to the team's gallery in
+Vercel Blob. It has no Google sign-in: it sends a **robot key** in the header `x-agent-key` on `/api/ai/*` and `/api/videos/*`.
+
+**Variables** (names only; values never in this repo, a command line or a log):
+
+| Name | Where | What |
+| --- | --- | --- |
+| `AI_AGENT_KEY` | Vercel Production + Preview (sensitive); `~/.config/physics-sandbox/agent.env` | the owner's master robot key (caller `agent:owner`); at least 32 characters |
+| `VIDEO_GALLERY_ID` | Vercel Production + Preview (sensitive); `agent.env` | the gallery's unguessable folder: `videos/<VIDEO_GALLERY_ID>/` in Blob and the page `/videos/<VIDEO_GALLERY_ID>` (made with `openssl rand -hex 16`, 2026-10-19) |
+| `BLOB_READ_WRITE_TOKEN` | set by the Blob store `physics-sandbox-videos` (public access) linked to the project; also `.env.local` | server only: signs the upload tokens, checks the files, writes the indexes |
+| `AI_AGENT_USD_PER_DAY`, `AI_AGENT_STEPS_PER_HOUR` | optional | the master key's caps, and a new key's defaults: 25, 120 |
+| `AI_AGENT_VIDEOS_PER_DAY`, `AI_AGENT_UPLOAD_MB_PER_DAY` | optional | the master key's video caps: 50 new videos and 2000 MB of upload grants a day (a new key's defaults are the same, set per key with `--videos`, `--mb`) |
+| `VIDEO_BLOB_API_URL` | tests only | a mock Blob API instead of `https://vercel.com/api/blob` |
+
+Vercel applies a variable to deployments made after it: deploy once after adding them.
+
+### Robot keys (`api/_lib/agent-keys.mjs`)
+
+- **Keys**: the master `AI_AGENT_KEY` (name `owner`) and per-person keys in Neon (`agent_keys`: name, the key's **sha256** only, `usd_per_day`
+  default 25, `steps_per_hour` default 120, `videos_per_day` default 50, `upload_mb_per_day` default 2000, created, revoked). The tables and
+  columns are made by the functions on first use (schema version 4: the two video caps).
+- **Checking**: the key is hashed and compared to the master's hash with `crypto.timingSafeEqual` (fixed 32-byte digests: no length or
+  prefix shows in the time); a per-person key is found by its hash and compared again the same way. A match is the caller `agent:<name>`;
+  a wrong, unknown or revoked key is **403** `{code: "forbidden"}`; no header changes nothing for anyone else.
+- **On `/api/ai/*`**: no Origin, sign-in, invite cookie or preview token is needed (the key is the proof; a page on another site cannot send
+  the header without a CORS preflight, which these functions never grant). Each key has **its own caps** (dollars per day, steps per hour,
+  reserved and settled like a person's), and agents are **not counted in `AI_SITE_USD_PER_DAY`**, so a batch of videos never closes Build
+  with AI for people, nor people's use a batch. Over a cap: **403** `{code: "quota", resetsAt}`.
+- **The owner's tool** (on the owner's machine; changes apply at once, no redeploy):
+  ```sh
+  node tools/video-agent/keys.mjs issue <name> [--usd 25] [--steps 120] [--videos 50] [--mb 2000] [--out <file>]   # prints the key ONCE (or writes it, mode 600)
+  node tools/video-agent/keys.mjs revoke <name>                                                               # refused from the next request on
+  node tools/video-agent/keys.mjs list                                                                        # names, caps, status, today's use (never a key)
+  ```
+  It needs `DATABASE_URL` (the site's Neon connection string) in `blender-playground/.env.local` or the environment. On Vercel it is a
+  sensitive variable, so `vercel env pull` leaves it empty: copy it once from the Vercel dashboard (Storage, the Neon database, its
+  connection string) or the Neon console into `.env.local` (git and the upload ignore `.env*`). A revoked name can be issued again (a new key).
+
+### The video endpoints (`api/_lib/videos.mjs`)
+
+`POST /api/videos/upload` `{job, files: [{name, type, size}]}` answers, per file, a Blob **client token** good for 15 minutes and only for
+`videos/<VIDEO_GALLERY_ID>/jobs/<job>/<name>`, that name's content type and at most the declared size (the Blob API refuses anything else:
+another path, a bigger file, another type, an expired or forged token; checked against the real store on 2026-10-19). The caller uploads the
+bytes straight to Blob with one request, no SDK and no 4.5 MB function limit:
+
+```js
+const { uploads } = await (await fetch(`${site}/api/videos/upload`, { method: "POST", headers: { "content-type": "application/json", "x-agent-key": key }, body: JSON.stringify({ job, files }) })).json()
+for (const u of uploads) await fetch(u.put.url, { method: u.put.method, headers: u.put.headers, body: bytesOf(u.name) }) // put.headers carry the token
+```
+
+(`@vercel/blob/client`'s `put(u.pathname, body, {access: "public", token: u.token, contentType: u.contentType})` works too.) Asking again for
+the same job gives fresh tokens and overwrites, **until it is published**: then its files are final and asking is 409 `already_published`
+(for every key; a new video is a new job name), and publish records each file's size and etag. The **first key to ask for a job owns it**:
+another key gets 409 `conflict` (the master key may touch any job). Job and batch names: 3-80 of `a-z 0-9 - _`, starting with a letter or
+digit. A token already handed out stays good until it expires (15 minutes), also after its key is revoked or its job published: Blob checks
+only the token's own signature and expiry.
+
+**Each key's daily caps** (counted in `counters` as `vid:<name>`, reset at 00:00 UTC; over one: **403** `{code: "quota", resetsAt}`, and a
+refused ask counts nothing): **new videos** (a job's first upload grant; `videos_per_day`, default 50), **megabytes of upload grants** (the
+declared sizes, rounded up, every ask; `upload_mb_per_day`, default 2000) and **publishes** (each rewrites 2-4 index files in Blob: at most 3
+per video of the key's cap). The master key's come from `AI_AGENT_VIDEOS_PER_DAY` and `AI_AGENT_UPLOAD_MB_PER_DAY`. `keys.mjs list` shows
+each key's caps and today's videos and megabytes.
+
+| File | Type | At most | |
+| --- | --- | --- | --- |
+| `video.mp4` | `video/mp4` | 200 MB | required to publish |
+| `poster.jpg` | `image/jpeg` | 5 MB | required to publish |
+| `concept.jpg`, `frames.jpg` | `image/jpeg` | 10 MB, 15 MB | |
+| `scene.json`, `audit.json` | `application/json` | 5 MB each | |
+| `captions.vtt` | `text/vtt` | 1 MB | shown as the player's captions |
+| `report.html` | `text/html` | 4 MB | Blob serves HTML as a **download** (`Content-Disposition: attachment`, measured), so the site shows it: `report_url` |
+
+`POST /api/videos/publish` `{job, batch?, title, request, lesson: {id?, grade?, concept?}, seconds, checks, cost_usd}`: checks that the job's
+`video.mp4` and `poster.jpg` are in Blob (409 `missing_files`) and that **every check passed**, then records the publishing key's name. The
+check gate **fails closed**: `checks` is `[{name, ok: true | false}, ...]` (`id` may stand for `name`; other descriptive fields such as
+`detail` are fine) or `{name: true | false, ...}`, at most 500 (413). Any entry it can't read is **400** `bad_input`, never skipped: `ok`
+not a boolean (`"false"`, `1`), a result said another way (`result`, `status`, `passed`, `failed`, ...), no name, an empty list, a summary
+such as `{passed: 40, failed: 0}`. Any `ok: false` anywhere in the list: 409 `checks_failed` with the failed names. What is stored (and shown)
+is the whole list as `[{name, ok}]`. Then it rewrites from the database the gallery's
+`videos/<id>/index.json` + `index.html` and, with `batch`, `videos/<id>/batches/<batch>/index.(json|html)` (60 s cache). Publishing the same
+job again is idempotent (one entry, the same bytes; its first publish time kept); a job moved to another batch leaves the old batch's index.
+It answers `{video_url, poster_url, report_url, gallery_url, gallery_json_url, gallery_html_url, batch_url, batch_json_url, published_by,
+published_at, checks}`. `gallery_url`, `batch_url` and `report_url` are **pages on this site**, `/videos/<VIDEO_GALLERY_ID>[/batches/<batch>]`
+and `/videos/<VIDEO_GALLERY_ID>/jobs/<job>/report` (`api/videos/gallery.mjs`, from the database, no script, a strict CSP, `noindex`), because
+Blob hands HTML out as a download; the Blob `index.html` is the same page as a file, and the cards' Report links and index.json's
+`report_url` are the report pages (index.json's `files` keep the raw Blob URLs). A report page is the job's `report.html` as uploaded; its
+relative links work: `/videos/<id>/jobs/<job>/captions.vtt` is served by the function (a `<track>` loads same-origin only), any other of the
+job's files (`video.mp4`, `poster.jpg`, `audit.json`, ...) redirects (302) to its Blob URL, and `../../index.html` reaches the gallery page.
+Only a published job's files are there (anything else 404). Anyone with the gallery's link can watch it (the production domain is public); a new
+`VIDEO_GALLERY_ID` starts a new gallery (the old files stay in Blob). Nothing in any answer, index or page is a key or the Blob token.
+
+**Blob's Hobby limits** (Vercel's docs, 2026-09-23): 1 GB stored, 2,000 advanced operations (every upload, each multipart part, every
+index rewrite), 10,000 simple operations and 10 GB of downloads a month; **over any of them Blob stops for 30 days** (no bill). One video
+here is about 4-8 uploads plus 2 index writes (4 with a batch), so roughly 150-250 videos a month by operations and, at 10-20 MB a video,
+50-100 by storage; a class watching them spends the 10 GB fast. For mass production, move the team to Pro (usage-based, with Spend
+Management) or keep videos short and small; Observability, Blob in the dashboard, shows the use (browsing the store there counts as operations).
+
+**For an agent driving the live page** (not only calling the API): with accounts on, `/api/scenes/me` says `ai: {signInRequired: true}` and
+the page shows its sign-in sheet instead of Build with AI (docs/ACCOUNTS.md §6). The robot key is honoured on `/api/ai/*` and
+`/api/videos/*` only, so such an agent adds the header to those requests itself (for example Playwright `page.route("**/api/ai/**")`) and
+answers the page's own `/api/scenes/me` with `signInRequired: false` in the same way.
+
+**Checked** (2026-10-19): `ai/test/agent-videos.test.mjs` (in `npm run test:ai`: the master key, a per-person key, revoked, wrong, empty,
+oversized and missing keys, caps independent of the site cap, the constant-time comparison, tokens held to the job's path, names, types and
+sizes, ownership, publish's refusals, idempotent indexes, batches, the gallery page, the keys tool, no key in any answer, stored file or log
+line; PGlite and a mock Blob API; since 2026-10-19 evening also the fail-closed checks gate (a failure at #220 of 250, 21 unreadable shapes,
+over 500), no upload after publish, the report page and a job's files, each key's caps); `check:vercel` builds and calls the three
+functions and resolves `/videos/<id>/index.html` and `.../report.html` through the built routes; and one run against the **real** Blob store with a
+throwaway gallery id (upload tokens, the PUTs, a wrong path refused, publish, index.json at its public URL, republish, the page; its 8 files
+deleted after).
 
 ## Troubleshooting the build
 

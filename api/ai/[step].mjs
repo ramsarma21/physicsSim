@@ -12,6 +12,8 @@
 //     (VERCEL_ENV != "production"), the header `x-ai-access: <AI_ACCESS_TOKEN>` (the protected preview's simple token, which the static
 //     build may put in the page). On Vercel with neither configured every AI call is refused (503 "not configured"); off Vercel the check
 //     applies when AI_ACCESS_TOKEN or AI_SESSION_SECRET is set.
+//   - A robot key instead (the video pipeline): the header `x-agent-key` with the owner's AI_AGENT_KEY or a per-person key (api/_lib/agent-keys.mjs,
+//     docs/DEPLOY.md "Robot keys"): no Origin, sign-in or cookie needed; a wrong, unknown or revoked key is 403 {code: "forbidden"}.
 //   - Shape: POST only (405), one of the steps (404), Content-Type application/json (415), at most 12 MB (413; Vercel itself stops
 //     bodies over 4.5 MB), a JSON object {payload: {...}} (400). The payload goes through the same checks as the local server's
 //     (ai/steps.mjs: web/sim clean() for scenes, pictures as data URLs, size caps).
@@ -209,9 +211,12 @@ export default async function handler(req, res) {
 		return fail(res, 405, "bad_input", "use POST")
 	}
 	if (!STEPS.includes(step)) return fail(res, 404, "bad_input", `no AI step "${step.slice(0, 40)}" (one of ${STEPS.join(", ")})`)
-	const bad = originProblem(req)
+	// a robot key (x-agent-key: the video pipeline, api/_lib/agent-keys.mjs) is its own proof, checked by the gate, so it needs no Origin: a page
+	// on another site can't send that header without a CORS preflight, which this function never grants
+	const agent = header(req, "x-agent-key") !== undefined
+	const bad = agent ? null : originProblem(req)
 	if (bad) return fail(res, 403, "forbidden", bad)
-	const gate = await aiGate(req, step, { accessProblem }) // a signed-in person (accounts), else accessProblem's invite cookie or preview token
+	const gate = await aiGate(req, step, { accessProblem }) // a robot key, a signed-in person (accounts), else accessProblem's invite cookie or preview token
 	if (!gate.ok) return fail(res, gate.status, gate.code, gate.error, gate.extra)
 	const ctype = (header(req, "content-type") ?? "").split(";")[0].trim().toLowerCase()
 	if (ctype !== "application/json") return fail(res, 415, "bad_input", "the body must be JSON (Content-Type: application/json)")

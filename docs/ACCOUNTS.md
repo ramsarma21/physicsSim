@@ -439,6 +439,8 @@ Duplicate and export are done in the page: it reads the scene, then POSTs a copy
 Order, for each `POST /api/ai/<step>`, after the existing method, step and origin checks:
 
 1. **Who.**
+   - A robot key in `x-agent-key` (the video pipeline's agent, added 2026-10-19): `agent:<name>`, with that key's own caps and outside the
+     site-wide cap; no Origin or sign-in needed; a wrong or revoked key 403 `forbidden` (docs/DEPLOY.md "Robot keys and the video gallery").
    - A valid Clerk token: that account.
    - Otherwise, the existing `accessProblem()` rules: an `ai_session` invite cookie (counted as `inv_<its nonce>`), or the preview token
      (counted as `tok`).
