@@ -30,7 +30,9 @@ export function createFixPool({ size = null } = {}) {
 			const m = e.data
 			if (!m || m.fix !== 1) return
 			slot.loaded = true
-			if (m.ready) return
+			// (a job goes to a worker only once it says it is ready: web/sim's module index loads with a top-level await, and a message posted
+			// before the worker's own listener is in place is answered by the engine bundle's listener alone, so its job would wait for ever)
+			if (m.ready) return void pump()
 			const job = slot.job
 			if (!job || job.id !== m.id) return
 			slot.job = null
@@ -72,9 +74,12 @@ export function createFixPool({ size = null } = {}) {
 	}
 	function pump() {
 		while (waiting.length) {
-			let slot = slots.find((s) => !s.job)
-			if (!slot && slots.length < n) slot = make()
-			if (!slot) return
+			const slot = slots.find((s) => !s.job && s.loaded)
+			if (!slot) {
+				// (one more worker for each job that waits, up to n: they load side by side)
+				if (slots.length < n && slots.filter((s) => !s.loaded).length < waiting.length) make()
+				return
+			}
 			const job = waiting.shift()
 			slot.job = job
 			slot.w.postMessage(job.op === "stage" ? { fix: 1, id: job.id, op: "stage", scene: job.scene, goals: job.goals, checks: job.checks } : job.op === "probe" ? { fix: 1, id: job.id, op: "probe", scene: job.scene, targets: job.targets, item: job.item } : { fix: 1, id: job.id, scene: job.scene, targets: job.targets })

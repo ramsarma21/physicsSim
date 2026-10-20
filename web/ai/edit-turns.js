@@ -164,6 +164,11 @@ export function offerWords(fx, { rework = false } = {}) {
 	const lateW = !aiTried && started > 0 ? (fx.reworkLate ? "; the AI’s rework ran out of time" : fx.reworkCapped ? "; the AI’s rework was stopped at the AI budget" : "") : ""
 	const tried = fx.runs ? ` (I tried ${fx.runs} in the physics${aiW}${fx.timedOut ? ", for a minute" : ""}${lateW})` : aiTried ? " (the AI’s reworks too)" : lateW ? ` (${lateW.slice(2)})` : ""
 	if (fx.quiet) return { text: "", button }
+	// (only undoing the person's own on/off or pick-from-list choice would make it work, "take the cap off": said honestly, never offered)
+	if (fx.undoOnly?.say) {
+		const why = fx.undoOnly.why ? `: ${String(fx.undoOnly.why).replace(/[.!]+$/, "")}` : ""
+		return { text: `Only undoing your change would make it work (${lcFirst(String(fx.undoOnly.say).replace(/[.!?]+$/, ""))}${why}), so I left it as you asked${tried}. Change the goal, or undo the change?`, button }
+	}
 	return { text: rework ? `It still doesn’t work, and I couldn’t find a change that does${tried}.` : `I couldn’t find a change that works${tried}.`, button }
 }
 /** The "Looking for a fix…" line's detail, from the search's progress ({phase, runs}). */
@@ -294,6 +299,7 @@ export function askChips(r = {}, { asked = "", counts = null } = {}) {
 	if (asked && NO_ROOM_RE.test(String(r.reply ?? "")) && !out.some((s) => /\btable\b/i.test(`${s.label} ${s.prompt}`))) out.unshift({ label: "Make the table longer", prompt: `${String(asked).trim().replace(/[.!?\s]+$/, "")}, and make the table longer so everything fits.` })
 	return out.slice(0, 4)
 }
+const clipChip = (t) => (String(t).length > 48 ? `${String(t).slice(0, 47).trimEnd()}…` : String(t))
 export function editChips(r = {}, { rework = false, examples = [], asked = "", isOutcome = (t) => FIX_RE.test(t), mine = null, scene = undefined, sceneLive = false, counts = null } = {}) {
 	const list = []
 	const fx = r.fix
@@ -325,6 +331,10 @@ export function editChips(r = {}, { rework = false, examples = [], asked = "", i
 		const g = String(failed[0].label).replace(/[.!]+$/, "")
 		list.push({ label: `Fix it so ${inSentence(g)}`, prompt: `Fix it so this happens in the run: ${g}. Change only what is needed for that (say what you moved), and keep everything else as it is.`, fix: true })
 	}
+	// (a goal an answer wanted lower, kept as the person set it, that still fails: the lower goal is offered, the person's last resort to choose,
+	// never taken for them: ./goal-targets.js, V8956 F5)
+	if (r.edit?.goalOffer?.label && r.edit.goalOffer.prompt && fx?.state !== "found" && (failed.length || r.reworkFailed || ["none", "stopped", "error"].includes(fx?.state)) && !list.some((x) => x.label === r.edit.goalOffer.label))
+		list.push({ label: clipChip(r.edit.goalOffer.label), prompt: r.edit.goalOffer.prompt, fix: true })
 	const outcome = (s) => isOutcome(s) || FIX_RE.test(s)
 	// (out of reach: only ideas about the things that can't fit, never one that tries to win the goal some other way: "Heavier hit on the
 	// seesaw" beside "the bowling ball can't fit the box's 5 cm opening": V8817 h1)

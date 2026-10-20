@@ -29,6 +29,10 @@ import { conceptRoute, pickConcept, withDeadline, dropPictureLines, dropPictureS
 import { routeKind, REPLY_KINDS, cleanTargets, targetWords, overlapFeedback, fixFeedback, newOverlaps, headsUpLines, lastUserTurn, namedInTurn, aimReply } from "./edit-turns.js"
 import { aimContainer } from "./aim.js"
 import { kindNoun, aKindOf, weightOf, imperative, solidMass, clipLabel, changesLabel, tidyBrackets } from "./words.js"
+import { statesNewOutcome, orderKey, overriddenBy } from "./outcome-goals.js"
+import { refreshPlanned } from "./planned-words.js"
+import { holdTargets, targetLines, targetChanges, changeWords as targetChangeWords, heldOffer, heldWords, heldSentence, targetValue } from "./goal-targets.js"
+import { addedWords as moduleAddedWords, changeWords as moduleChangeWords, howWords as moduleHowWords, keyWords as moduleKeyWords, outcomeWords as moduleOutcomeWords, moduleRegoals, settingWords as moduleSettingWords, properName as moduleProperName, knobTunable, moduleMass, moduleMoves, ownHitsTold } from "../sim/plugins.js"
 export { isChainRequest, conceptPlan, conceptRoute, CONCEPT_NOTE, CONCEPT_LABEL, IMAGINE_MODES, imagineMode } from "./imagine.js"
 
 export const MAX_IMAGES = 4
@@ -273,6 +277,14 @@ export function summarizeRun(sim) {
  * becomes "the egg" when the new name is a kind's: "The egg lands in the box"; "the 8-ball" becomes "the bowling ball", never "the Bowling
  * ball"); in a goal about several things, oldPlurals -> nowPlural ("All ten pins fall" -> "All ten water bottles fall").
  */
+/** Whether item x (another of the plan's things) is named by one of the old words too (its name or its kind's noun has the word whole). */
+function sameWordsAs(plan, x, id, olds) {
+	if (x === id) return false
+	const it = (plan?.items ?? []).find((i) => i?.id === x)
+	if (!it) return false
+	const said = ` ${String(it.name ?? "")} ${String(kindNoun(it.type, 1, { short: true }) ?? "")} `.toLowerCase()
+	return olds.some((w) => typeof w === "string" && w.trim().length > 2 && new RegExp(`(^|[^\\p{L}])${w.trim().toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}([^\\p{L}]|$)`, "u").test(said))
+}
 /** Words that link a name into a sentence ("bounces off pad 1", "lands in box"), never a word that describes it ("the bowling ball"). */
 const LINK_WORDS = new Set(["off", "on", "onto", "into", "in", "at", "to", "from", "by", "with", "of", "over", "past", "under", "and", "or", "than", "hits", "hit", "strikes", "knocks", "reaches", "toward", "towards", "its", "their", "his", "her", "each", "every", "all", "both", "first", "last", "next", "then"])
 export function relabelGoals(plan, id, olds, now, oldPlurals = [], nowPlural = null, oldHead = null, { any = false, short = null } = {}) {
@@ -287,6 +299,9 @@ export function relabelGoals(plan, id, olds, now, oldPlurals = [], nowPlural = n
 	for (const g of plan.goals) {
 		// (any: a goal that only mentions the thing, "…sails over the cone into the bucket", for a thing taken away and replaced)
 		if (!isObj(g) || typeof g.label !== "string" || (!any && !goalRefs(g).includes(id))) continue
+		// (never a goal about another thing still there that the old words name too: "The orange's scale reads 131 g" of a kitchen scale that
+		// stays, when the apple's kitchen scale became a spring scale; vfy-ai5 M2: "The baseball's spring scale reads about 145 g")
+		if (any && !goalRefs(g).includes(id) && goalRefs(g).some((x) => sameWordsAs(plan, x, id, olds))) continue
 		// (a label that already says the new name, the AI's own "The tennis ball drops into the cup", is left as it is: never "the tennis tennis ball")
 		if (new RegExp(`(^|[^\\p{L}])${esc(String(now))}([^\\p{L}]|$)`, "iu").test(g.label)) continue
 		// (nor one that already says the new thing's noun: "The bowling ball hits…" for a "Bowling ball on a rope", never "The bowling bowling ball
@@ -339,7 +354,7 @@ export function relabelGoals(plan, id, olds, now, oldPlurals = [], nowPlural = n
 /** A goal label's words for a thing the request swapped away, "the giant" of "swap the giant domino for a stack of hardcover books", said as
  *  what took its place: "The stack of hardcover books knocks the bowling ball into the bucket" (V8832 c02: "The giant knocks …" after the giant
  *  was taken away). In place, plan.goals. */
-const SWAP_PHRASE_RE = /\b(?:swap|replace|switch|exchange|trade)\s+(?:out\s+)?(?:the\s+)?([\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,2}?)\s+(?:for|with)\s+(?:a|an|the|some)?\s*(?:(stack|pile|tower|row|line|set)\s+of\s+)?(?:\d+\s+|one\s+|two\s+|three\s+|four\s+|five\s+|six\s+)?([\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2}?)(?=\s*(?:[,.;!?]|$)|\s+(?:and|then|so|but|on|in|next|by|to)\b)/giu
+const SWAP_PHRASE_RE = /\b(?:swap|replace|switch|exchange|trade)\s+(?:out\s+)?(?:the\s+)?([\p{L}\p{N}'’-]+(?:\s+[\p{L}\p{N}'’-]+){0,2}?)\s+(?:for|with)\s+(?:(?:an|a|the|some)\s+)?(?:(stack|pile|tower|row|line|set)\s+of\s+)?(?:\d+\s+|one\s+|two\s+|three\s+|four\s+|five\s+|six\s+)?([\p{L}'’-]+(?:\s+[\p{L}'’-]+){0,2}?)(?=\s*(?:[,.;!?]|$)|\s+(?:and|then|so|but|on|in|next|by|to)\b)/giu
 export function swapPhraseLabels(plan, text) {
 	if (!Array.isArray(plan?.goals)) return
 	const esc = (w) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -610,7 +625,17 @@ export function applyPatches(planIn, patches, scene = null) {
 			changes.push(`${nameOf(it)} ${it.fixed ? "fixed in place" : "free to move"}`)
 		} else if (op === "set_scene") {
 			for (const k of ["title", "seconds", "release"]) if (p[k] !== undefined) plan[k] = p[k]
-			changes.push(`Scene: ${["title", "seconds", "release"].filter((k) => p[k] !== undefined).map((k) => `${k} → ${p[k]}`).join(", ")}`)
+			// (a taller frame for what an edit put higher: the server's ai/schemas.mjs growStage patch)
+			if (isObj(p.stage) && ["x0", "x1", "y0", "y1"].every((k) => num(p.stage[k]) !== null)) plan.stage = clone(p.stage)
+			// (the scene's settings merge into the plan's: a key set to null goes back to the standard)
+			if (isObj(p.settings)) {
+				const st = { ...(isObj(plan.settings) ? plan.settings : {}) }
+				for (const [k, v] of Object.entries(p.settings)) if (v === null) delete st[k]
+				else st[k] = v
+				if (Object.keys(st).length) plan.settings = st
+				else delete plan.settings
+			}
+			changes.push(`Scene: ${[...["title", "seconds", "release"].filter((k) => p[k] !== undefined).map((k) => `${k} → ${p[k]}`), ...(isObj(p.settings) ? Object.entries(p.settings).map(([k, v]) => `${k} → ${v}`) : [])].join(", ")}`)
 		} else if (op === "set_goals") {
 			if (Array.isArray(p.goals)) plan.goals = clone(p.goals)
 			for (const r of relabels) relabelGoals(plan, ...r)
@@ -694,6 +719,11 @@ export function safeKnobs(plan, scene = null) {
 				knobs.push({ ...k, id: sup.id, param: "y", min: num(k.min) + d, max: num(k.max) + d, via: it.id })
 				notes.push(`${name(it)}'s height was tuned by moving ${name(sup)}, which it stands on`)
 			} else notes.push(`${name(it)}'s height was left alone: moved off what holds it up, it would float`)
+			continue
+		}
+		// (a module's knob that is what a lesson compares, a ball's pressure, a beam's material: never tuned to make a guessed outcome come true)
+		if (!knobTunable(it.type, p)) {
+			notes.push(`${name(it)}'s ${String(propSpec(it.type, p)?.label ?? p).toLowerCase()} was left as planned: it is what the lesson compares, not a dial to tune`)
 			continue
 		}
 		knobs.push(k)
@@ -970,6 +1000,13 @@ export function triedWords(lines) {
 const nameOfItem = (it) => it?.name ?? typeName(it?.type) ?? it?.id
 const isSafetyWall = (it) => it?.type === "wall" && it.props?.invisible_in_3d === true
 const sameValue = (a, b) => (typeof a === "number" && typeof b === "number" ? Math.abs(a - b) <= Math.max(1e-6, Math.abs(b) * 1e-6) : JSON.stringify(a ?? null) === JSON.stringify(b ?? null))
+/** A scene setting the same both ways, a key left out being the standard ("air" left out is air on: "standard → on" is no change, vfy, 20 Oct;
+ *  gravity "earth" is 9.81). */
+const SETTING_STD = { gravity: 9.81, air: true, air_density: 1.2, room_temp: 20, time_lapse: 1 }
+const sameSetting = (k, a, b) => {
+	const v = (x) => (x === undefined || x === null ? SETTING_STD[k] : k === "gravity" && typeof x === "string" && x.trim().toLowerCase() === "earth" ? 9.81 : x)
+	return sameValue(v(a), v(b))
+}
 /** A length in words: "8 mm", "4.5 cm", "35 cm", "1.25 m". */
 export function fmtLen(v) {
 	const a = Math.abs(v)
@@ -980,8 +1017,13 @@ export function fmtLen(v) {
 	return `${trimNum(a, 2)} m`
 }
 /** A prop's change in words with its unit: "diameter 10 → 20 cm", "stiffness 800 → 1200 N/m", "tilt 20° → 31°", "legs under it: off". */
-export function propChange(type, key, a, b) {
+export function propChange(type, key, a, b, nameOf = (id) => id, items = null) {
 	const sp = propSpec(type, key)
+	// (a physics module's own words for it, "heater Pad 1 → Pad 2", "distance to the ice 30 → 20 cm"; a link otherwise names the items; items:
+	// {before, after} so it can say an unset auto prop's own value, a sail that followed its size choice: "sail 120 → 104 cm²", never "NaN")
+	const mw = moduleChangeWords(type, key, a, b, nameOf, items)
+	if (mw) return mw
+	if (sp?.kind === "link") return `${lc(sp.label ?? key)} ${a ? nameOf(a) : "none"} → ${b ? nameOf(b) : "none"}`
 	// (a label with brackets of its own is said without them: "top width", never "width (top)" inside a line's bracket: V8838 a-m2-basket-bigger)
 	const raw = /^how many$/i.test(sp?.label ?? "") ? "count" : /^front to back$/i.test(sp?.label ?? "") ? "depth" : lc(sp?.label ?? String(key).replace(/_/g, " "))
 	const label = raw.replace(/^(.+?)\s*\(([^()]+)\)$/, "$2 $1").trim()
@@ -1056,7 +1098,9 @@ export function describeDiff(a, b) {
 			for (const k of new Set([...Object.keys(ia.props ?? {}), ...Object.keys(ib.props ?? {})])) {
 				const va = propValue(ia, k)
 				const vb = propValue(ib, k)
-				if (!sameValue(va, vb)) bits.push(propChange(ib.type, k, va, vb))
+				// (a module's words that cover several settings at once are said once, never once for each of them)
+				const pc = !sameValue(va, vb) ? propChange(ib.type, k, va, vb, (id) => (B.has(id) ? nameOfItem(B.get(id)) : A.has(id) ? nameOfItem(A.get(id)) : id), { before: ia, after: ib }) : null
+				if (pc && !bits.includes(pc)) bits.push(pc)
 			}
 		if (!!ia.held !== !!ib.held) bits.push(ib.held ? "held until the release" : "no longer held")
 		if (!!ia.fixed !== !!ib.fixed) bits.push(ib.fixed ? "fixed in place" : "free to move")
@@ -1083,6 +1127,17 @@ export function describeDiff(a, b) {
 	}
 	if (num(a.seconds) !== null && num(b.seconds) !== null && Math.abs(a.seconds - b.seconds) > 1e-6) lines.push(`Runs ${sig(a.seconds)} s → ${sig(b.seconds)} s`)
 	if (num(a.release) !== null && num(b.release) !== null && Math.abs(a.release - b.release) > 1e-6) lines.push(`Lets go at ${sig(a.release)} s → ${sig(b.release)} s`)
+	// (the scene's settings: gravity, air, room temperature, time-lapse)
+	const sa = isObj(a.settings) ? a.settings : {}
+	const sb = isObj(b.settings) ? b.settings : {}
+	const SETTING_WORDS = { gravity: ["gravity", ""], air: ["air", ""], air_density: ["air density", " kg/m³"], room_temp: ["room temperature", " °C"], time_lapse: ["time-lapse", "×"] }
+	const setBits = [...new Set([...Object.keys(sa), ...Object.keys(sb)])].filter((k) => !sameSetting(k, sa[k], sb[k])).map((k) => {
+		const [w, u] = SETTING_WORDS[k] ?? [k, ""]
+		const v = (x) => (x === undefined || x === null ? "standard" : typeof x === "boolean" ? (x ? "on" : "off (a vacuum)") : `${x}${typeof x === "number" ? u : ""}`)
+		// (a module may say it in real terms: "gravity Earth → the Moon (g 9.81 → 1.62 m/s²)")
+		return moduleSettingWords(k, sa[k], sb[k]) ?? `${w} ${v(sa[k])} → ${v(sb[k])}`
+	})
+	if (setBits.length) lines.push(`Settings: ${setBits.join(", ")}`)
 	// goals by what they are about (a renamed goal is the same goal; one that now covers more things is the same goal, grown)
 	lines.push(...goalDiffLines(a.goals, b.goals, B))
 	return lines.map((l) => (typeof l === "string" ? l : `${andList(l.names)} moved ${l.text}`))
@@ -1098,8 +1153,19 @@ function goalDiffLines(listA, listB, items = new Map()) {
 	const B = (Array.isArray(listB) ? listB : []).filter(isObj).map(norm)
 	const key = (g) => `${g.kind}|${goalRefs(g).join(",")}`
 	const lbl = (g) => String(g.label ?? "").trim().toLowerCase()
-	const added = B.filter((g) => !A.some((x) => key(x) === key(g)))
-	const dropped = A.filter((g) => !B.some((x) => key(x) === key(g)))
+	// (one to one: goals of one kind about the same things, the Moon's phases, are each a goal of their own, paired by label, then by what else
+	// they say ("name": "last quarter"), then in order (vfy-ai5 R4-S6, 20 Oct: "It reaches last quarter" dropped went unsaid))
+	const rest = (g) => JSON.stringify(Object.entries(g).filter(([k, v]) => k !== "label" && typeof v === "string" && !goalRefs(g).includes(v)).sort())
+	const usedA = new Set()
+	const usedB = new Set()
+	for (const same of [(a, b) => !!lbl(a) && lbl(a) === lbl(b), (a, b) => rest(a) === rest(b), () => true])
+		A.forEach((a, i) => {
+			if (usedA.has(i)) return
+			const j = B.findIndex((b, k) => !usedB.has(k) && key(b) === key(a) && same(a, b))
+			if (j >= 0) usedA.add(i), usedB.add(j)
+		})
+	const added = B.filter((_, k) => !usedB.has(k))
+	const dropped = A.filter((_, i) => !usedA.has(i))
 	const out = []
 	for (const g of added) {
 		const i = dropped.findIndex((x) => x.kind === g.kind && ((lbl(x) && lbl(x) === lbl(g)) || goalItems(x).some((id) => goalItems(g).includes(id))))
@@ -1117,6 +1183,8 @@ function goalDiffLines(listA, listB, items = new Map()) {
 		else out.push(`Goal “${g.label}” now about ${andList(goalRefs(g).map((id) => items.get?.(id)?.name ?? id))}`)
 	}
 	for (const g of dropped) out.push(`Goal dropped: ${g.label ?? g.kind}`)
+	// (the same goal asking for another number: "Goal “The hose carries at least 4 L”: at least 4 L → 200 mL")
+	for (const t of targetChanges(A, B)) out.push(`Goal “${t.label}”: ${t.changes.map(targetChangeWords).join("; ")}`)
 	return out
 }
 /** "wooden block" -> "wooden blocks" (n ≠ 1), "box" -> "boxes". */
@@ -1162,6 +1230,12 @@ export function massOf(type, props = {}) {
 	}
 	// (the engine's own figure: each moving solid's volume × its own material's density in the built doc, a thing tuned to a measured weight
 	// included: ./words.js)
+	// (a module's own figure for a thing whose moving parts are not all of it: a ruler whose clamped end the engine holds still)
+	const own = moduleMass(type, props ?? {})
+	if (own) {
+		massCache.set(key, own)
+		return own
+	}
 	const exact = weightOf(type, props ?? {})
 	if (exact) {
 		massCache.set(key, exact)
@@ -1180,7 +1254,13 @@ export function massOf(type, props = {}) {
 const fmtMass = (kg) => (kg >= 1 ? `${trimNum(kg, kg >= 10 ? 0 : 1)} kg` : `${trimNum(kg * 1000, kg < 0.01 ? 1 : 0)} g`)
 /** A setting's change as a word: "taller", "thinner wall", "more", "steeper". */
 function propWord(type, key, a, b) {
+	// (a physics module's own word where the plain one would mislead: a lamp's watts "brighter", its beam angle "a narrower beam")
+	const mod = moduleHowWords(type, key, a, b)
+	if (mod) return mod
 	const label = String(propSpec(type, key)?.label ?? key).toLowerCase()
+	// (what is drawn over a thing, its force arrows or energy bars, changes nothing about it: "changed the book (force arrows ...)", never "made
+	// the book faster"; and a choice of words has no "more": its setting says the change)
+	if (/arrow|energy bar/.test(label) || (propSpec(type, key)?.kind === "choice" && (typeof a !== "number" || typeof b !== "number"))) return null
 	// (an angle is how far it is from straight down or level, whichever side: a start angle of -55° → -20° is less)
 	const angle = /angle|tilt|pull/.test(`${label} ${key}`)
 	const up = angle && typeof a === "number" && typeof b === "number" ? Math.abs(b) > Math.abs(a) : b > a
@@ -1199,7 +1279,8 @@ function propWord(type, key, a, b) {
 		[/start.?angle/, "pulled back further", "pulled back less"],
 		[/tilt|angle|slope|lift/, "tilted more", "tilted less"],
 		[/stiff|spring/, "stiffer", "softer"],
-		[/speed|power|force/, "faster", "slower"],
+		[/speed/, "faster", "slower"],
+		[/power|force/, "stronger", "weaker"],
 		[/bounce/, "bouncier", "less bouncy"],
 		[/friction|grip/, "grippier", "slicker"]
 	]
@@ -1217,6 +1298,9 @@ const lowOf = (type, props, fixed, angle = 0) => {
 }
 const theName = (it) => {
 	const n = nameOfItem(it) ?? "it"
+	// (a module's proper noun: "the Earth", "Mars", never "the earth": web/sim/plugins.js properName)
+	const pn = moduleProperName(n)
+	if (pn) return pn
 	// (a number of its own, "Ball 2", or two capitalised words make a proper name; a number that is part of a word, "the 8-ball", does not)
 	// ("Newton's cradle" keeps its capital: "the Newton's cradle")
 	if (/^[A-Z][a-z]+['’]s\b/.test(n)) return `the ${n}`
@@ -1326,6 +1410,39 @@ export function personWords(says, text = null, { n = 1, all = n } = {}) {
 	if (n > 1 && all > n && !counts.length) return null
 	return w
 }
+let tagsCache = null
+/** Whether a person's words for a thing name it, as a name does ("the yellow ball", "the ramp"): one phrase, ending in a word of its name, kind
+ *  or tags; never a description of the change ("a narrower hose", "the bigger sail"), two phrases ("the pump the air out") or an "instead". */
+export function nameLike(w, it) {
+	const ws = String(w ?? "").toLowerCase().replace(/[’']s\b/g, "").split(/[^\p{L}\p{N}-]+/u).filter(Boolean)
+	if (!ws.length || /^(a|an|some|another|any)$/.test(ws[0])) return false
+	if (ws.slice(1).some((x) => /^(the|a|an|this|that|these|those|my|its|their|it|them)$/.test(x))) return false
+	if (ws.some((x) => /^(instead|of|than|out|off|into|onto|from|with|without|for|by|so|which|who|to|more|less|too|up|down|away)$/.test(x))) return false
+	if (ws.some((x) => new RegExp(`^(?:${WAY_RE})$`).test(x))) return false
+	const st = (x) => (x.length <= 3 ? x : /(sses|xes|zes|ches|shes)$/.test(x) ? x.slice(0, -2) : x.replace(/(?<!s)s$/, ""))
+	try {
+		tagsCache ??= new Map(simCatalog().types.map((t) => [t.key, (t.tags ?? []).join(" ")]))
+	} catch {
+		tagsCache = new Map()
+	}
+	const own = new Set(`${it?.name ?? ""} ${typeName(it?.type) ?? ""} ${kindNoun(it?.type, 1, { short: true }) ?? ""} ${String(it?.type ?? "").replace(/-/g, " ")} ${tagsCache.get(it?.type) ?? ""}`.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).map(st))
+	return own.has(st(ws.at(-1)))
+}
+const SETTING_SAID = { gravity: ["gravity", ""], air: ["air", ""], air_density: ["air density", " kg/m³"], room_temp: ["room temperature", " °C"], time_lapse: ["time-lapse", "×"] }
+/** The scene settings an edit changed, as change lines: "changed the time-lapse (2× → 4×)" (a module's own words where it has them). */
+export function settingLines(a, b) {
+	const sa = isObj(a?.settings) ? a.settings : {}
+	const sb = isObj(b?.settings) ? b.settings : {}
+	return [...new Set([...Object.keys(sa), ...Object.keys(sb)])]
+		.filter((k) => !sameSetting(k, sa[k], sb[k]))
+		.map((k) => {
+			const mw = moduleSettingWords(k, sa[k], sb[k])
+			if (mw) return `changed ${lc(mw)}`
+			const [w, u] = SETTING_SAID[k] ?? [k.replace(/_/g, " "), ""]
+			const v = (x) => (x === undefined || x === null ? "standard" : typeof x === "boolean" ? (x ? "on" : "off (a vacuum)") : `${x}${typeof x === "number" ? u : ""}`)
+			return `changed the ${w} (${v(sa[k])} → ${v(sb[k])})`
+		})
+}
 export function humanChangeList(a, b, { room = null, says = null, why = null, massA = null, massB = null, text = null, reasons = null, anchors = null } = {}) {
 	if (!a?.items || !b?.items) return []
 	// (the person's own words for a thing, when they say more than its name: "the yellow ball" for Ball 2, never "the box" for Box; and only
@@ -1341,6 +1458,9 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 		seenSay.add(ids[0])
 		const it = a.items.find((i) => i.id === ids[0])
 		if (!it) continue
+		// (words that say what it should become are never its name: "a narrower hose", "the pump the air out", "the honey instead of water", "a
+		// bigger sail" (V8956 F5 / A2 / X3 / X6: "Made a narrower hose narrower"): its name on screen is said instead)
+		if (!nameLike(w, it)) continue
 		const bare = (x) => String(x ?? "").toLowerCase().replace(/^(the|a|an|that|this|my) /, "").trim()
 		const n = bare(nameOfItem(it))
 		if (!bare(w) || n.includes(bare(w)) || bare(w).includes(n) || /^(it|that|this|them|one|the one)$/.test(bare(w))) continue
@@ -1477,7 +1597,9 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 		const inner = keys.every((k) => /wall|thick|fill|hollow|density/.test(String(propSpec(ib.type, k)?.label ?? k).toLowerCase()))
 		// (a weight left to follow the size has no number of its own: it is what the thing weighs)
 		const pv = (it, k) => (typeof propValue(it, k) !== "number" && /^mass$|weight/i.test(`${k} ${propSpec(it.type, k)?.label ?? ""}`) ? weighs(it, it === ia ? massA : massB) ?? propValue(it, k) : propValue(it, k))
-		const words = keys.map((k) => ({ k, w: propWord(ib.type, k, pv(ia, k), pv(ib, k)), c: propChange(ib.type, k, pv(ia, k), pv(ib, k)) }))
+		// (a link names the thing it now points at by its name: "lamp aimed at the salted cube → the plain cube", never their ids)
+		const linked = (id) => (B.has(id) ? theName(B.get(id)) : A.has(id) ? theName(A.get(id)) : id)
+		const words = keys.map((k) => ({ k, w: propWord(ib.type, k, pv(ia, k), pv(ib, k)), c: propChange(ib.type, k, pv(ia, k), pv(ib, k), linked, { before: ia, after: ib }) }))
 		const only = keys.length === 1 && typeof propValue(ia, keys[0]) === "number" && typeof propValue(ib, keys[0]) === "number" ? keys[0] : null
 		const va = only ? propValue(ia, only) : null
 		const vb = only ? propValue(ib, only) : null
@@ -1498,7 +1620,9 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 			bits.push(`made ${N.callIt(ib)} of ${String(propValue(ib, "material")).toLowerCase()} (was ${String(propValue(ia, "material") ?? "its own").toLowerCase()}${massMoved ? `; ${fmtMass(ma)} → ${fmtMass(mb)}` : ""})`)
 		} else if (keys.length === 1 && typeof propValue(ib, keys[0]) === "boolean") {
 			const label = lc(propSpec(ib.type, keys[0])?.label ?? keys[0].replace(/_/g, " "))
-			bits.push(`turned ${propValue(ib, keys[0]) ? "on" : "off"} “${label}” on ${N.callIt(ib)}`)
+			// (a physics module's own words for it when it has them: "changed Cart B (poles back the usual way round)")
+			const mw = moduleChangeWords(ib.type, keys[0], propValue(ia, keys[0]), propValue(ib, keys[0]))
+			bits.push(mw ? `changed ${N.callIt(ib)} (${mw})` : `turned ${propValue(ib, keys[0]) ? "on" : "off"} “${label}” on ${N.callIt(ib)}`)
 		} else if (inner && massMoved) bits.push(`made ${N.callIt(ib)} ${mb < ma ? "lighter" : "heavier"} (${fmtMass(ma)} → ${fmtMass(mb)}${words[0].w ? `, ${words[0].w}` : ""})`)
 		else if (/^pulled back/.test(words[0].w ?? "") && typeof propValue(ia, words[0].k) === "number" && !(only && /start.?angle/i.test(`${only} ${propSpec(ib.type, only)?.label ?? ""}`))) {
 			// ("pulled the spring launcher back less (4.6 → 3.5 cm)")
@@ -1518,10 +1642,14 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 			const how = main.length ? andList([...new Set(main.map((x) => x.w))]) : null
 			// (a row of many things, the dominoes: its weight in all says little)
 			// (a weight of its own already said, "bob weight 514 g → 3 kg", is never said twice: V8832 y15)
-			const ownWeight = keys.some((k) => k === "mass" || propSpec(ib.type, k)?.unit === "kg")
+			// (in grams too: a salt pile's "salt 6 → 12 g" is its weight, never followed by "; 6 g → 12 g")
+			const ownWeight = keys.some((k) => k === "mass" || /^mass_/.test(k) || ["kg", "g"].includes(propSpec(ib.type, k)?.unit))
 			// (every setting it says gets its number: "shorter and tilted less (rope length 80 → 50 cm; start angle 40° → 30°)", never the first
 			// alone; one with no word of its own is said by its setting, never "made the seesaw different" (V8842 y4 / a-m2 / x42c))
-			const nums = [...new Set((main.length ? main : words.slice(0, 2)).map((x) => x.c).filter(Boolean))]
+			// (and a pick-from-list or a link that has no word but a module's own words, "incandescent → led bulb", "lamp aimed at A → B": said
+			// with the rest, never left out of the line)
+			const plain = words.filter((x) => !x.w && x.c && moduleChangeWords(ib.type, x.k, pv(ia, x.k), pv(ib, x.k), undefined, { before: ia, after: ib })).map((x) => x.c)
+			const nums = [...new Set([...(main.length ? main : words.slice(0, 2)).map((x) => x.c), ...plain].filter(Boolean))]
 			const wt = massMoved && !ownWeight && !MULTI_UNIT[ib.type] ? `; ${fmtMass(ma)} → ${fmtMass(mb)}` : ""
 			bits.push(how ? `made ${N.callIt(ib)} ${how} (${nums.join("; ")}${wt})` : `changed ${N.callIt(ib)} (${nums.join("; ")}${wt})`)
 		}
@@ -1839,6 +1967,9 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 		if (list.length !== 1) return `${list.length} ${kindNoun(list[0].type, list.length)}`
 		// (one made a size of its own says it: "a closed laptop 6 mm thick", as the offer said it: V8820 c11)
 		const it = list[0]
+		// (a physics module may name it itself: "a stack of 20 pennies", web/sim/plugins.js words.added)
+		const own = moduleAddedWords(it)
+		if (own) return own
 		for (const k of Object.keys(it.props ?? {})) {
 			const sp = propSpec(it.type, k)
 			const v = num(it.props[k])
@@ -1999,6 +2130,10 @@ export function humanChangeList(a, b, { room = null, says = null, why = null, ma
 	const rest = remGroups.filter((r) => !usedRem.has(r))
 	if (rest.length) out.push({ text: `removed ${andList(rest.map(remWords))}`, id: rest[0][0].id, name: theName(rest[0][0]) })
 	if (num(a.seconds) !== null && num(b.seconds) !== null && Math.abs(a.seconds - b.seconds) > 1e-6) out.push({ text: `made it run ${sig(b.seconds)} s instead of ${sig(a.seconds)} s`, id: null, name: "the run" })
+	// (the scene's settings and the goals' numbers a change moved are said too, never left to the details: V8956 F5, "make it work" took a goal
+	// from 4 L to 200 mL and the list said only what moved; G2, the time-lapse went 2× → 4× unsaid)
+	for (const t of settingLines(a, b)) out.push({ text: t, id: null, name: "the scene" })
+	for (const t of targetLines(a.goals, b.goals)) out.push({ text: t, id: null, name: "the goals" })
 	// (an invisible wall at a table's end taken away, so a thing can go off that end: said, never hidden)
 	const tbl = b.items.find((i) => i.type === "table") ?? a.items.find((i) => i.type === "table")
 	for (const w of a.items.filter((i) => isSafetyWall(i) && !b.items.some((x) => x.id === i.id))) out.push({ text: `took away the invisible wall at the table's ${tbl && (Number(w.x) || 0) > (Number(tbl.x) || 0) ? "right" : "left"} end`, id: w.id, name: "the end wall" })
@@ -2098,7 +2233,8 @@ export function editLead({ changes = [], targets = [], noChange = false, fixAppl
 		return `Done${fixApplied ? `, and I ${fixApplied.did}${/ to line up with |, so /.test(fixApplied.did) ? "" : " so it works"}` : ""}${outcome ? ` — ${outcome}` : "."}`
 	}
 	const g = failed.find((t) => !t.implicit) ?? failed[0]
-	const words = g.happened ? String(g.happened).replace(/\.$/, "") : `“${String(g.label).replace(/[.!]+$/, "")}” doesn’t happen`
+	// (a goal's own words start with its label: inside the sentence, "now the small cube is all melted …: no", never "now The small cube")
+	const words = g.happened ? inClause(String(g.happened).replace(/\.$/, "")) : `“${String(g.label).replace(/[.!]+$/, "")}” doesn’t happen`
 	const others = failed.filter((t) => t !== g && !t.implicit).length
 	// (never two colons in one sentence: "it still doesn’t work — Ball 2 never moves: only 6 of 7 dominoes fall": V8820)
 	const what = `${g.was === false ? `it still doesn’t work${/:/.test(words) ? " —" : ":"} ${words}` : `now ${words}`}${others ? ` (and ${plural(others, "more goal")} fail${others === 1 ? "s" : ""})` : ""} ✗`
@@ -2147,12 +2283,44 @@ export function describeRun(sim, scene = null, goals = null) {
 	const more = pool.length - shown.length
 	const stories = Array.isArray(s.stories) ? s.stories : []
 	const moved = stories.filter((st) => st.moved_at !== null && st.moved_at !== undefined)
-	const inner = [...innerHits(sim)].filter(([id, h]) => h.n >= 2 && typeOf.get(id) !== "domino-row" && !scenery(id))
+	const inner = [...innerHits(sim)].filter(([id, h]) => h.n >= 2 && typeOf.get(id) !== "domino-row" && !scenery(id) && ownHitsTold(typeOf.get(id)))
 	const innerWords = inner.slice(0, 2).map(([id, h]) => `${nameOf.get(id) ?? id}: its ${typeOf.get(id) === "newtons-cradle" ? "balls" : "parts"} strike each other ${h.n} times (first at ${Number(h.t).toFixed(2)} s)`)
-	if (!moved.length && !all.length && !inner.length) return "In the run nothing moves: everything stays where it was put."
+	// (a physics module's happenings, sand pouring, ice melting, a bulb lighting: things happen though no solid moves; each said with the names of
+	// the items it is about)
+	const happ = (Array.isArray(s.happenings) ? s.happenings : []).filter((e) => typeof e?.text === "string" && e.text)
+	// (the names on screen, and where each stands whole in a text: "Desk lamp" in "Desk lamp's light", never in "Desk lamps")
+	const sayNames = [...nameOf].filter(([id, nm]) => typeof nm === "string" && nm && nm !== id)
+	const W = /[\w-]/
+	const spansOf = (t, nm) => {
+		const out = []
+		for (let at = t.indexOf(nm); at !== -1; at = t.indexOf(nm, at + 1)) {
+			const end = at + nm.length
+			if ((at === 0 || !W.test(t[at - 1]) || !W.test(nm[0])) && (end === t.length || !W.test(t[end]) || !W.test(nm[nm.length - 1]))) out.push([at, end])
+		}
+		return out
+	}
+	const named = (e) => {
+		const t = e.text
+		// (a module that already says an item's name, "Desk lamp's light reaches White plate (salt + lamp)", keeps it: that item's id is then a
+		// plain word of its text, and no id is swapped inside a name already there, "lamp" and "salt" in "White plate (salt + lamp)")
+		const said = new Map(sayNames.map(([id, nm]) => [id, spansOf(t, nm)]))
+		const ids = [...new Set((Array.isArray(e.items) ? e.items : []).map(String))].filter((id) => said.has(id) && !said.get(id).length).sort((a, b) => b.length - a.length)
+		if (!ids.length) return t
+		const kept = [...said.values()].flat()
+		// (every swap in one pass over the module's own words: a name swapped in is never scanned again, "Spoonful of salt" stays that)
+		const re = new RegExp(`(^|[^\\w-])(${ids.map((id) => id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?![\\w-])`, "g")
+		return t.replace(re, (m, pre, id, at) => {
+			const s0 = at + pre.length
+			const s1 = s0 + id.length
+			return kept.some(([a, b]) => s0 < b && a < s1) ? m : pre + nameOf.get(id)
+		})
+	}
+	if (!moved.length && !all.length && !inner.length)
+		return happ.length ? `In the run: ${happ.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${happ.length > 4 ? ` → ${happ.length - 4} more` : ""}.` : "In the run nothing moves: everything stays where it was put."
 	const parts = []
 	if (shown.length) parts.push(`In the run: ${shown.map((e) => `${e.text} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${more > 0 ? ` → ${more} more hit${more === 1 ? "" : "s"}` : ""}.`)
 	else if (inner.length) parts.push(`In the run: ${innerWords.join("; ")}.`)
+	else if (happ.length) parts.push(`In the run: ${happ.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${happ.length > 4 ? ` → ${happ.length - 4} more` : ""}.`)
 	else parts.push(`In the run: ${andList(moved.slice(0, 3).map((st) => st.name))} ${moved.length === 1 ? "moves but hits" : "move but hit"} nothing.`)
 	const extra = [...(shown.length ? innerWords : []), ...stories.filter((st) => /^\d+ of \d+ fall$/.test(st.text ?? "")).map((st) => `${st.name}: ${fallText(sim, st)}`), ...stories.filter((st) => /^turns /.test(st.text ?? "") && st.ok).map((st) => `${st.name} ${st.text}`)]
 	if (extra.length) parts.push(`${extra.slice(0, 4).join("; ")}.`)
@@ -2322,6 +2490,8 @@ export function lostStageList(a, b, sceneB = null) {
 		if (pa <= 0) continue
 		const nb = B.get(st.item)
 		if (progressOf(nb, b) >= pa) continue
+		// (a module's thing that still does its thing though it hardly moves: a diving board that dips 8.7 mm)
+		if (there?.has(st.item) && moduleMoves(there.get(st.item), b) === true) continue
 		const name = there?.get(st.item)?.name ?? nb?.name ?? st.name
 		out.push({ text: /fall$/.test(nb?.text ?? "") ? `${name}: ${fallText(b, nb)} (was ${fallText(a, st)})` : `${name} no longer ${/^turns/.test(st.text) ? "turns" : "moves"}`, ids: [st.item] })
 	}
@@ -2462,6 +2632,29 @@ const CHECK_RE = /\b(check|verify|make sure|make (it|this|that|them) work|does (
  */
 export const OUTCOME_RE = /\b(make (it|this|that|them|everything|the \w+( \w+)?) (work|happen|land|go)|make (all|every|both)( of)?( the)? \w+( \w+)? (fall|land|topple|work|go in)|works? (again|still)|still (works?|working|lands?|landing|goes|going|falls?|falling|hits?|catch(es)?|knocks?)|so (that )?(it|they|the \w+( \w+)?|ball \d+) (still )?(lands?|goes|ends?|falls?|hits?|works?|reach(es)?|knocks?|catch(es)?|rolls?)|keep (it|them|everything|the \w+( \w+)?) (working|landing|going in|falling|hitting)|without breaking|fix( it| this| that)?\b(?!( (the |a |an )?\w+( \w+)?)? (to|onto|in place|on|down)\b)|until (it|they)|lands? in(to)?|landing in|land in|goes in(to)?|ends? (up )?in|rolls? into|drops? into|falls? into|make sure (that )?(it|they|everything|the \w+( \w+)?)( all| both)?( still)? (lands?|land|goes|go|falls?|fall|works?|work|hits?|hit|ends?|end|reach(es)?|knocks?|catch(es)?|rolls?|drops?)|catch(es)? (it|the))/i
 export const statesOutcome = (text) => OUTCOME_RE.test(String(text ?? ""))
+/** A request for how a thing moves or changes, said by how much or how fast ("make the ball go twice as fast", "make it go fast enough to escape
+ *  Earth", "go too slow so it falls", "roll three times as far", "turn at 120 rpm"): an outcome of its own, which its goals check (vfy-ai5 M3 /
+ *  S2b, 20 Oct: "make the ball go twice as fast" was taken as a pure "make it work": the answer's 2 m/s and its goals were dropped, and the card
+ *  said "It already works … nothing changed"). Beside ./outcome-goals.js statesNewOutcome ("go faster", "melts first"), which has no amounts. */
+export const HOW_RE = /\b(?:go|goes|going|move|moves|moving|roll|rolls|rolling|travel|travels|fly|flies|run|runs|spin|spins|turn|turns|swing|swings|fall|falls|bounce|bounces|orbit|orbits|sail|sails|slide|slides|drift|drifts|cool|cools|melt|melts|heat|heats|warm|warms)\s+(?:(?:a lot|a bit|a little|much|even|way|just|only|about)\s+)?(?:twice|double|triple|half|(?:one|two|three|four|five|ten|\d+(?:\.\d+)?)\s*(?:x|times)\b|too\s+(?:fast|slow(?:ly)?|far|high|low|quick(?:ly)?|hard|soft(?:ly)?)\b|(?:fast|slow(?:ly)?|far|high|quick(?:ly)?|hard)\s+enough\b|as\s+(?:fast|far|high|quick(?:ly)?|slow(?:ly)?|long|hard)\b|so\s+(?:fast|slow(?:ly)?|far|high)\b|at\s+(?:about\s+|exactly\s+)?\d)/i
+/** Does the request ask for an outcome of its own (statesNewOutcome, or HOW_RE's amounts, or a physics module's outcome words: "the needle
+ *  should turn around", "so the boat gets pushed away"), not only for the scene's goals to work again? (Then a goal's exact target may move with
+ *  it: a compass's 0° → 180° after "flip the bar magnet … the needle should turn around" was put back and the card said ✗: magnetism, 20 Oct.) */
+export const ownOutcome = (text) => statesNewOutcome(text) || HOW_RE.test(String(text ?? "")) || statesModuleOutcome(text)
+/** An outcome a request states in a physics module's words after "so", "until" or "make sure" ("flip the held magnet so the boat is pushed
+ *  away", "move the lamp so the ice melts first"): web/sim/plugins.js outcomeWords. Only lets an edit change the goals (goalsAsked below); the
+ *  rest of what statesOutcome decides stays as it is. */
+export function statesModuleOutcome(text) {
+	const w = moduleOutcomeWords()
+	if (!w) return false
+	const t = String(text ?? "")
+	// (also a check asked for in the module's words: "also check that the temperature stays at 100 °C while it boils" (matter's holds_at:
+	// adv-wmm X2, 20 Oct: the goal was dropped and the card said nothing needed changing), "verify that …", "show that …", "test whether …")
+	if (new RegExp(`\\b(?:so(?: that)?|until|make sure(?: that)?|check(?:s|ing)?(?: that| whether| if)?|verify(?: that| whether)?|show(?:s|ing)? that|test(?: that| whether| if))\\s+(?:it|they|both|all|each|the(?:\\s+[\\w'-]+){1,3}|[\\w-]+\\s+\\d+)\\s+(?:(?:is|are|gets?|will|would|still|then|also|now|be|stays?|keeps?|can|does|do)\\s+)*(?:${w})\\b`, "i").test(t)) return true
+	// (or said with "should" / "must": "swap the key for an iron nail, and the nail should be pulled too" (magnetism M4, 20 Oct: the AI's attracts
+	// goal for the nail was dropped, so the nail went unchecked))
+	return new RegExp(`\\b(?:it|they|both|all|each|the(?:\\s+[\\w'-]+){1,3})\\s+(?:should|must|needs? to|has to|have to|ought to)\\s+(?:(?:still|also|now|then|be|get|stay|keep)\\s+)*(?:${w})\\b`, "i").test(t)
+}
 /** The words of a request that state its outcome, from where that clause starts to the end of its sentence: "Swap …, and put a sponge in the
  *  basket so the apple lands softly." -> "so the apple lands softly". null when it states none. */
 export function outcomeClause(text) {
@@ -2528,10 +2721,42 @@ export function lengthsIn(text) {
 /** Does the AI's own account of an edit state a length the card's lines (what is on the table) don't have? Each length it gives must be one of
  *  theirs, give or take 6 % (or 6 mm). */
 export function plannedOff(planned, lines = []) {
-	const said = lengthsIn(planned)
+	// (a limit or a contrast is no claim about the table: "the room only shows drops up to 3 m", "3 m instead of 6 m")
+	const said = lengthsIn(String(planned ?? "").replace(/\b(?:instead of|rather than|not|than|up to|at most|no more than|beyond)\s+(?:about\s+)?\d+(?:\.\d+)?\s*(?:mm|cm|m)\b/gi, " "))
 	if (!said.length) return false
 	const facts = lengthsIn((Array.isArray(lines) ? lines : []).join("; "))
 	return said.some((v) => !facts.some((f) => Math.abs(f - v) <= Math.max(0.006, 0.06 * v)))
+}
+/** The highest a thing starts (m above the table top): ai/schemas.mjs HIGHEST_START_M (the room's wide shot frames up to 3 m; its ceiling is 4.45 m). */
+const ROOM_TOP_M = 3
+/** A request for a height above what the room shows ("drop them from 6 m"): the card's "Not done" line, with where the things start now; null
+ *  for any other request. */
+export function cappedDrop(text, before, after) {
+	const t = String(text ?? "")
+	if (!/\b(drop\w*|fall\w*|high\w*|height|rais\w*|lift\w*|up|above|hang\w*|hold\w*)\b/i.test(t)) return null
+	const asked = lengthsIn(t).filter((v) => v > ROOM_TOP_M + 0.05)
+	if (!asked.length) return null
+	const was = new Map((before?.items ?? []).map((i) => [i.id, Number(i.y)]))
+	const moved = (after?.items ?? []).filter((i) => Number.isFinite(was.get(i.id)) && Number(i.y) > was.get(i.id) + 0.001)
+	const held = (after?.items ?? []).filter((i) => i.held)
+	const top = Math.max(...(moved.length ? moved : held).map((i) => Number(i.y)).filter(Number.isFinite), -Infinity)
+	const n = (moved.length ? moved : held).length
+	const where = Number.isFinite(top) && top > 0 ? `, so ${n > 1 ? "they start" : "it starts"} at ${fmtLen(Math.min(top, ROOM_TOP_M))}` : ""
+	return `a ${fmtLen(Math.max(...asked))} drop (the room only shows drops up to ${ROOM_TOP_M} m${where})`
+}
+/** A reply that says the asked number could not be had ("the highest the room shows", "6 m is out of view", "won't fit"). */
+const LIMIT_SAID_RE = /\b(highest|lowest|at most|only shows?|can['’]?t|cannot|too (?:high|tall|big|far|long)|out of (?:view|the picture|the frame|frame)|does(?:n['’]t| not) fit|won['’]t fit|instead of|rather than|no higher than|the most|the limit)\b/i
+/** The heights (m above the table top) of the things a change moved up or down, before and after, as lines plannedOff reads ("3 m"). */
+export function movedHeights(before, after) {
+	const was = new Map((before?.items ?? []).map((i) => [i.id, Number(i.y)]))
+	const out = []
+	for (const it of after?.items ?? []) {
+		const y0 = was.get(it.id)
+		const y1 = Number(it.y)
+		if (!Number.isFinite(y0) || !Number.isFinite(y1) || Math.abs(y1 - y0) <= 0.001) continue
+		for (const y of [y0, y1]) if (y > 0) out.push(`${Math.round(y * 1000) / 1000} m`)
+	}
+	return out
 }
 /** The words of a request that say to leave something as it is, as said: ["without moving the box"]. */
 export function keepClauses(text) {
@@ -2570,7 +2795,11 @@ const BEHAVIOR_RE = /\b(fly|flies|flying|roll|rolls|rolling|bounce|bounces|trave
 // (words that ask for a thing's place: a named thing's move is then asked for)
 const PLACE_RE = /\b(move[sd]?|moving|shift(s|ed)?|slide|raise[sd]?|lower(s|ed)?|lift|drop|higher|up|down|left|right|nearer|closer to|(further|farther) (from|away|left|right|up|down|along|back)|position|put|place|push|cent(er|re)|align|line (it |them )?up|rotate|turn|tilt(ed)?|steep(er)?|flat(ter)?|slope|incline|angle|level|upright|flip|mirror|over|under|above|below|next to|beside|onto|on top)\b/i
 // (words that ask for the run's length)
-const TIME_RE = /\b(seconds?|secs?|\d+(\.\d+)?\s*s|duration|run(s|ning)? (for|longer|shorter)|(longer|shorter) (run|time|simulation)|run ?time|run length|time)\b/i
+// (and the run's end in lesson words: "run it for two hours", "watch for 40 minutes", "show it for a whole month", "until the ice melts", "stop it
+// at the full moon" (vfy-ai5 R4-S6, 20 Oct: the answer's 7.5 s for "stop it at the full moon" was put back to 15 s))
+const TIME_RE = /\b(seconds?|secs?|\d+(\.\d+)?\s*s|duration|run(s|ning)? ((it|the (run|scene|simulation|video)) )?(for|longer|shorter)|let it run|keep (it )?(going|running)|(longer|shorter) (run|time|simulation)|run ?time|run length|time|minutes?|mins?|hours?|hrs?|days?|weeks?|months?|years?|until|till|stop (it |the run |the scene |the video )?(at|when|once|after|before)|end (it |the run )?(at|when|once|after|before|on)|(full|new|half|crescent|gibbous) moon|for (a|an|one|another|\d+|two|three|four|five|six|ten|twenty|thirty) (whole |full |more )?(orbit|lap|turn|cycle|period|swing|night|season)s?)\b/i
+/** Does a request ask for the run's length (TIME_RE)? */
+export const asksRunLength = (text) => TIME_RE.test(String(text ?? ""))
 /** A plain edit's scope: {named, asked (named and what rides on them), placeAsked, timeAsked}, or null when the request can't be held to its
  *  names (it states an outcome or a behaviour, picks things out by colour or order, or names nothing in the scene). */
 export function editScope(text, scene) {
@@ -2820,7 +3049,8 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 	try {
 		R = riderMap(scene)
 	} catch {}
-	const clauses = t.split(/[.;:!?]+|,\s*(?:and\s+|then\s+)?/).map((c) => c.trim()).filter(Boolean)
+	// (a decimal point is not the end of a clause: "fire it at 0.8 times orbit speed" is one clause, its amount the cannonball's)
+	const clauses = t.split(/[;:!?]+|\.+(?!\d)|,\s*(?:and\s+|then\s+)?/).map((c) => c.trim()).filter(Boolean)
 	// (and the edit step's own reading of the words: "the yellow ball" is Ball 2, which no name says)
 	const said = (Array.isArray(targets) ? targets : []).filter((x) => typeof x?.says === "string" && x.says.trim() && Array.isArray(x.ids))
 	const namesOf = (c) => {
@@ -2846,12 +3076,20 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 			const label = `${k} ${propSpec(it.type, k)?.label ?? ""}`
 			if (/\bcount\b|how many/i.test(label)) add(hard, id, k)
 			else if (k === "full") mine && anyC(/\b(full|empty|emptied|filled|fill)\b/i) && add(hard, id, k)
-			else if (k === "material") mine && anyC(/\b(wood\w*|metal|steel|glass|plastic|rubber|material|made of|paper|cardboard|foam)\b/i) && add(hard, id, k)
+			else if (k === "material") mine && anyC(/\b(wood\w*|metal|steel|glass|plastic|rubber|material|made of|paper|cardboard|foam|alumin\w*|ceramic|china|melamine|copper|brass|iron|stone)\b/i) && add(hard, id, k)
 			else {
-				const kw = KEY_WORDS.find(([kr]) => kr.test(k))
+				// (a physics module's setting: the words its module says name it, web/sim/plugins.js keyWords)
+				const core = KEY_WORDS.find(([kr]) => kr.test(k))
+				const kw = core ?? (moduleKeyWords(it.type, k) ? [null, moduleKeyWords(it.type, k)] : null)
 				if (!kw || !mine) continue
 				const said = cs.filter((c) => new RegExp(`\\b(?:${kw[1]})\\b`, "i").test(c))
-				if (said.length) add(said.some((c) => keyAmount(c, kw[1])) ? hard : forward, id, k)
+				// (a module's switch the words name, "flip the held magnet", "put the cap on", or its choice said by the very value it now has, "pour
+				// honey instead", is the whole choice: there is no further that way, only back, so it is held (a fix offered "Turn the held magnet
+				// around…" back: verify-fga X2, 20 Oct))
+				const sp = core ? null : propSpec(it.type, k)
+				const v = typeof it.props?.[k] === "string" ? it.props[k].trim().replace(/[_\s]+/g, " ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : ""
+				const sw = sp?.kind === "bool" || (sp?.kind === "choice" && v.length > 1 && said.some((c) => new RegExp(`\\b${v.replace(/ /g, "\\s+")}\\b`, "i").test(c)))
+				if (said.length) add(sw || said.some((c) => keyAmount(c, kw[1])) ? hard : forward, id, k)
 			}
 		}
 	}
@@ -3294,7 +3532,7 @@ export function createOrchestrator(deps) {
 		}
 		// (a "make it work" typed in the open, nothing of its own to change: held to the background's budget, AI_USD and MAKE_IT_WORK_MS, and the
 		// physics looks first (physFirst))
-		const typedMake = physFirstOn && mode === "edit" && request.rework !== true && !request.background && statesOutcome(text) && !EXPLICIT_RE.test(text) && !PLACE_RE.test(text) && !OWN_CHANGE_RE.test(text) && !!request.sim?.track?.frames?.length
+		const typedMake = physFirstOn && mode === "edit" && request.rework !== true && !request.background && statesOutcome(text) && !ownOutcome(text) && !EXPLICIT_RE.test(text) && !PLACE_RE.test(text) && !OWN_CHANGE_RE.test(text) && !!request.sim?.track?.frames?.length
 		const madeDeadline = Date.now() + MAKE_IT_WORK_MS
 		let physFirst = null
 		let physFix = null
@@ -3374,6 +3612,8 @@ export function createOrchestrator(deps) {
 		/** The scene's goals, each in the form a set_goals gives it when it is the same goal there (its kind, and its label or a thing it is about),
 		 *  else as it was; goals that are new there are left out. */
 		const carriedGoals = new Map() // (a scene goal's label -> the label of the AI's own form of it, carried over to what replaced its thing)
+		const heldTargets = new Map() // (a scene goal's label -> the easier target an answer wanted and the version did not take: ./goal-targets.js)
+		let heldList = [] // (those of the version put on the table, for the card's words)
 		const keptGoals = (was, set, { removed = new Set(), added = new Set() } = {}) => {
 			const A = (Array.isArray(was) ? was : []).filter(isObj)
 			const S = (Array.isArray(set) ? set : []).filter(isObj)
@@ -3405,7 +3645,14 @@ export function createOrchestrator(deps) {
 			})
 		}
 		// (the words ask for an outcome, or about the goals themselves: only then may an edit change the goals)
-		const goalsAsked = statesOutcome(text) || /\b(goals?|targets?|aim|win|finish(es)? (in|on|at))\b/i.test(text)
+		// (also an outcome in the request's own words, "make the 100 g spring squash more than the 300 g spring", "make the boat float": its goal is
+		// kept, in a change or a fix: vfy-sbfr SB2, where a fix without it hunted for the scene's old goal the request had made untrue)
+		// (or how much, "make the ball go twice as fast": HOW_RE)
+		const newOutcome = mode === "edit" && request.rework !== true && ownOutcome(text)
+		// (or a change whose real result a module says changes what a goal must expect: "take the cap off the bottle" lets its gas out, so the
+		// scale's mass_same becomes mass_changes (web/sim/plugins.js moduleRegoals; adv-wmm X3, 20 Oct: the kept mass_same failed and the card
+		// asked for a rework of a right result))
+		const goalsAsked = statesOutcome(text) || /\b(goals?|targets?|aim|win|finish(es)? (in|on|at))\b/i.test(text) || statesModuleOutcome(text) || newOutcome || (mode === "edit" && request.rework !== true && moduleRegoals(text))
 		/** An edit answer -> the plan on screen with its patches applied (or its whole plan), the plan's changes and what couldn't be done. */
 		const patchPlan = (out) => {
 			let pl
@@ -3420,8 +3667,12 @@ export function createOrchestrator(deps) {
 				let ps = Array.isArray(out) ? out : out.patches
 				// (a "make it work" (kind fix) restores the scene's goals, never adds its own: "Ball 2 is launched" added to "fix it" made the run judged
 				// by a goal nobody asked for, edit bench 16 Oct)
-				const fixOnly = editKind === "fix" && !/\b(goals?|targets?)\b/i.test(text)
-				const dropGoals = mode === "edit" && Array.isArray(ps) && ps.some((p) => isObj(p) && String(p.op ?? "").toLowerCase() === "set_goals") && (request.rework === true || !goalsAsked || fixOnly)
+				const fixOnly = editKind === "fix" && !/\b(goals?|targets?)\b/i.test(text) && !newOutcome
+				// (a request for the run's length whose answer changes it, "stop it at the full moon" answered with 7.5 s: that answer's goals are about
+				// the run it set, and go as one set (vfy-ai5 R4-S6, 20 Oct: the old "reaches last quarter" and "goes once round" were merged back))
+				const lengthAsked = mode === "edit" && request.rework !== true && TIME_RE.test(text) && Array.isArray(ps) && ps.some((p) => isObj(p) && String(p.op ?? "").toLowerCase() === "set_scene" && (p.seconds !== undefined || (isObj(p.settings) && p.settings.time_lapse !== undefined)))
+				const goalsOk = goalsAsked || lengthAsked
+				const dropGoals = mode === "edit" && Array.isArray(ps) && ps.some((p) => isObj(p) && String(p.op ?? "").toLowerCase() === "set_goals") && (request.rework === true || !goalsOk || fixOnly)
 				// (a goal the scene had may still follow the change, "the whole tower falls" now covering the 4 new blocks, or a new name: kept in its
 				// new form; a goal the AI made up is left out, and one it dropped is kept)
 				const opOf = (p) => (isObj(p) ? String(p.op ?? "").toLowerCase() : "")
@@ -3440,8 +3691,10 @@ export function createOrchestrator(deps) {
 						const at = new Map((request.scene?.items ?? []).map((i) => [i.id, i]))
 						placeLabels(pl.goals, pl.items.filter(isObj).map((it) => ({ id: it.id, type: it.type, name: it.name, x: at.get(it.id)?.x ?? (isObj(it.place) ? num(it.place.x) : null), y: at.get(it.id)?.y ?? 0 })), text)
 					} catch {}
-				for (const k of ["title", "missing", "notes", "goals", "tune", "assumptions", "differences"]) if (isObj(out) && out[k] !== undefined && !(k === "goals" && (dropGoals || (mode === "edit" && (request.rework === true || !goalsAsked || fixOnly))))) pl[k] = out[k]
+				for (const k of ["title", "missing", "notes", "goals", "tune", "assumptions", "differences"]) if (isObj(out) && out[k] !== undefined && !(k === "goals" && (dropGoals || (mode === "edit" && (request.rework === true || !goalsOk || fixOnly))))) pl[k] = out[k]
 				if (dropGoals && report.edit) report.edit.goalsKept = true
+				// (the answer's own goals, taken as it gave them: a "make it work" is then judged by them, never by the goals they replaced)
+				else if (mode === "edit" && report.edit && ps.some((p) => opOf(p) === "set_goals")) report.edit.ownGoals = true
 				// (words that send a new thing off the table make its goal an "off" goal, never "moves": the server's validator does it too, ai/schemas.mjs
 				// offGoals; a ping-pong ball blown along the table "moved" 40 cm and the card said every goal happens: V8817 c01)
 				if (goalsAsked && OFF_TEXT_RE.test(text) && Array.isArray(pl.goals)) {
@@ -3466,6 +3719,25 @@ export function createOrchestrator(deps) {
 					if (!c || !pc) continue
 					pl.tune.push({ id: c.id, param: "x", min: Math.round(((Number(c.x) || 0) - 0.3) * 1000) / 1000, max: Math.round(((Number(c.x) || 0) + 0.3) * 1000) / 1000, why: "where the container stands decides whether it catches" })
 					if (pc.place?.on === "air" && num(pc.place?.y_m) !== null) pl.tune.push({ id: c.id, param: "y", min: Math.max(0, pc.place.y_m - 0.15), max: pc.place.y_m + 0.15, why: "how high the hanging container is" })
+				}
+			}
+			// (a goal's numbers are the person's: an answer to "make it work", or to any edit that asks for an outcome, that makes a goal easier to
+			// meet ("at least 4 L" lowered to 200 mL) keeps the person's number; what it wanted is said on the card and offered as a chip they may
+			// take. Words that ask for it, "lower the goal", "only 200 mL", let it through (V8956 F5, 20 Oct: the card said "Made it work: nothing
+			// needed" and the lowered goals showed only in the assumptions))
+			if (mode === "edit" && Array.isArray(pl.goals) && Array.isArray(basePlan?.goals) && (editKind === "fix" || statesOutcome(text) || request.rework === true || !!request.background)) {
+				// (a request with an outcome of its own may move an exact target, "reads about 1 m/s" to "about 2 m/s" for "twice as fast": only a
+				// target made easier is held: vfy-ai5 M3, 20 Oct)
+				const held = holdTargets(basePlan.goals, pl.goals, { text, moved: !newOutcome })
+				if (held.held.length) {
+					pl.goals = held.goals
+					// (the answer's own why for it, a sentence of its notes or reply that names the new number: "a 4 mm hose moves only a few hundred mL")
+					const said = [...(Array.isArray(out?.assumptions) ? out.assumptions : [out?.assumptions]), out?.notes, out?.reply].filter((x) => typeof x === "string").flatMap((x) => x.split(/(?<=[.!?])\s+/))
+					for (const h of held.held) {
+						const tos = h.changes.filter((c) => c.to !== null).map((c) => targetValue(c.field, c.to).toLowerCase())
+						h.why = said.find((x) => tos.some((t) => x.toLowerCase().includes(t))) ?? null
+						heldTargets.set(h.label, h)
+					}
 				}
 			}
 			return { plan: pl, planChanges, skipped }
@@ -3602,6 +3874,8 @@ export function createOrchestrator(deps) {
 			const order = new Map(request.scene.items.map((i, k) => [i.id, k]))
 			S.items = [...S.items.filter((i) => !isFrame(i)), ...frame0.map(clone)].sort((a, b) => (order.get(a.id) ?? 1e9) - (order.get(b.id) ?? 1e9))
 			if (request.scene.stage) S.stage = clone(request.scene.stage)
+			// (unless the change asks for a taller frame, set_scene stage: what it put higher is in it)
+			if (S.stage && isObj(p?.stage) && num(p.stage.y1) !== null && p.stage.y1 > S.stage.y1 && JSON.stringify(p.stage) !== JSON.stringify(basePlan?.stage ?? null)) S.stage.y1 = p.stage.y1
 			const slid = []
 			const wallsNow = S.items.filter(isSafetyWall)
 			for (let pass = 0; pass < 3 && wallsNow.length; pass++) {
@@ -4165,7 +4439,13 @@ export function createOrchestrator(deps) {
 		// further rounds are never its answer)
 		// (the app's own "make it work" (request.rework: the background rework, and the "Ask the AI to rework it" button) is one, whatever words
 		// it carries: D1, 16 Oct: "Change whatever else is needed" in the button's words turned the aim and the rounds off)
-		const pureFix = request.rework === true || (!EXPLICIT_RE.test(text) && !PLACE_RE.test(text) && !OWN_CHANGE_RE.test(text))
+		// (a request for an outcome of its own that the answer gives a goal the scene did not have, "make the plain ice cube melt first", is no pure
+		// "make it work": the scene's old goal it makes untrue failing is what was asked, never a reason to put the scene back (core-ai H1, "It already
+		// works: the salted ice cube melts first"); one that only names a goal the scene has, "make the ball land in the box", still is)
+		const wasGoals = Array.isArray(basePlan?.goals) ? basePlan.goals.filter(isObj) : []
+		const sameGoalAs = (w, g) => goalKindOf(w) === goalKindOf(g) && (orderKey(w) || orderKey(g) ? orderKey(w) === orderKey(g) : goalRefs(w).join("|") === goalRefs(g).join("|"))
+		const ownGoal = newOutcome && (Array.isArray(plan?.goals) ? plan.goals : []).some((g) => isObj(g) && !wasGoals.some((w) => sameGoalAs(w, g)))
+		const pureFix = request.rework === true || (!EXPLICIT_RE.test(text) && !PLACE_RE.test(text) && !OWN_CHANGE_RE.test(text) && !ownGoal)
 		/**
 		 * A "make it work" never undoes what the person chose: no kind swapped back, nothing their last turn removed put back, and what earlier
 		 * turns set (request.keep) as it was. -> null, or what the answer would undo, in words ("putting the seesaw back").
@@ -5210,7 +5490,9 @@ export function createOrchestrator(deps) {
 					}
 				// (the goals of the scene before, judged in both runs: an answer that drops a goal, or what it is about, loses it too; only what the
 				// scene before had counts)
-				const t0 = beforeSim ? fixTargets({ goals: Array.isArray(basePlan?.goals) ? basePlan.goals : null, scene: request.scene, before: beforeSim.doc ? { scene: request.scene, sim: beforeSim } : null, sim: cur.sim }) : []
+				// (or by the goals the answer set, when it replaced the scene's (report.edit.ownGoals): a goal it dropped on purpose is no loss)
+				const judged = report.edit?.ownGoals && Array.isArray(G(cur)) && G(cur).length ? G(cur) : Array.isArray(basePlan?.goals) ? basePlan.goals : null
+				const t0 = beforeSim ? fixTargets({ goals: judged, scene: request.scene, before: beforeSim.doc ? { scene: request.scene, sim: beforeSim } : null, sim: cur.sim }) : []
 				const known = t0.map((t) => !!t.goal && goalItems(t.goal).every((id) => request.scene.items.some((x) => x.id === id)))
 				const was0 = beforeSim && t0.length ? judgeTargets(t0, beforeSim) : null
 				if (was0) {
@@ -5328,7 +5610,7 @@ export function createOrchestrator(deps) {
 			const notes = v.solved.issues.filter((i) => i.level !== "info" || PLACING.includes(i.code)).map((i) => ({ text: `placing: ${i.text}` }))
 			// (the summary's events are hits between different things: a Newton's cradle's balls striking each other are told here, or the critic reads "no hits")
 			const own = new Map(v.scene.items.map((i) => [i.id, i]))
-			for (const [id, h] of innerHits(v.sim)) if (h.n >= 2 && own.get(id) && own.get(id).type !== "domino-row") notes.push({ text: `in the run: ${nameOfItem(own.get(id))}'s own parts strike each other ${h.n} times (first at ${Number(h.t).toFixed(2)} s; the events list only hits between different things)` })
+			for (const [id, h] of innerHits(v.sim)) if (h.n >= 2 && own.get(id) && own.get(id).type !== "domino-row" && ownHitsTold(own.get(id).type)) notes.push({ text: `in the run: ${nameOfItem(own.get(id))}'s own parts strike each other ${h.n} times (first at ${Number(h.t).toFixed(2)} s; the events list only hits between different things)` })
 			const payload = {
 				text,
 				round,
@@ -5383,6 +5665,8 @@ export function createOrchestrator(deps) {
 			issues: Array.isArray(critique?.issues) ? critique.issues.map(issueText).filter(Boolean) : [],
 			severities: Array.isArray(critique?.issues) ? critique.issues.map((i) => i?.severity ?? null) : [],
 			notes: typeof critique?.notes === "string" ? critique.notes : null,
+			// (what the user was told about the plan, rewritten by the critic for this version when it no longer fits: refine.md "# Answer")
+			...(typeof critique?.planned === "string" && critique.planned.trim() ? { planned: critique.planned.trim() } : {}),
 			changes: [],
 			skipped: [],
 			version: v.id,
@@ -5509,7 +5793,16 @@ export function createOrchestrator(deps) {
 			entry.planChanges = r.changes
 			entry.skipped = r.skipped
 			if (!r.changes.length) break
-			const next = await attempt(r.plan, `round ${round}`)
+			// (a round whose run the physics cannot finish, too slow under load: the version that ran is kept, never the scene there was before the
+			// request (verify-fga G3: three funnels, the third refine timed out and the table kept its old scene))
+			let next
+			try {
+				next = await attempt(r.plan, `round ${round}`)
+			} catch (e) {
+				if (e?.name === "AbortError" || signal.aborted || !(e instanceof AiError) || e.kind !== "engine" || !cur?.sim) throw e
+				entry.rejected = `the physics couldn't run it (${String(e.message).replace(/^The physics couldn't run it: /, "")}), so the last version that ran was kept`
+				break
+			}
 			const seen = describeDiff(cur.scene, next.scene)
 			entry.changes = [...seen, ...unseenChanges(r.changes)]
 			if (r.skipped.length) feedback.push(`These changes of yours were not applied: ${r.skipped.join("; ")}.`)
@@ -5628,7 +5921,8 @@ export function createOrchestrator(deps) {
 		// mug can't be a landing goal, so I removed that goal" was not shown, while the card said "as before ✓")
 		if (report.edit && Array.isArray(basePlan?.goals)) {
 			const now1 = G(cur) ?? []
-			const same = (a, b) => goalKindOf(a) === goalKindOf(b) && goalRefs(a).every((id) => goalRefs(b).includes(id)) && goalRefs(b).every((id) => goalRefs(a).includes(id))
+			// (a goal that puts things in an order is the same only the same way round: "the plain ice cube melts first" is not "the salted one does")
+			const same = (a, b) => goalKindOf(a) === goalKindOf(b) && (orderKey(a) || orderKey(b) ? orderKey(a) === orderKey(b) : goalRefs(a).every((id) => goalRefs(b).includes(id)) && goalRefs(b).every((id) => goalRefs(a).includes(id)))
 			// (a goal that followed what replaced its things counts only while the version on the table still has it: a later turn's answer may
 			// have dropped it again, V8820 n2: "All 24 dominoes of the run fall" went with the repair turn and nothing said so)
 			const gone = basePlan.goals.filter((g) => isObj(g) && !(followed.has(g.label) && now1.some((x) => x.label === followed.get(g.label))) && !now1.some((x) => same(x, g) || (x.label && x.label === g.label)))
@@ -5637,7 +5931,7 @@ export function createOrchestrator(deps) {
 					const missing = goalRefs(g).map((id) => request.scene.items.find((i) => i.id === id)).filter((it) => it && !cur.scene.items.some((x) => x.id === it.id))
 					// ("the dominoes were taken away": a row is many, never "the dominoes was")
 					const many = missing.length > 1 || MULTI_UNIT[missing[0]?.type] || (/[^s]s$/i.test(theName(missing[0] ?? {})) && !/\d/.test(theName(missing[0] ?? {})))
-					const why = missing.length ? `${andList(missing.map(theName))} ${many ? "were" : "was"} taken away` : "the change left it out"
+					const why = missing.length ? `${andList(missing.map(theName))} ${many ? "were" : "was"} taken away` : overriddenBy(g, now1) ? "the new outcome makes it untrue" : "the change left it out"
 					return `“${String(g.label ?? goalLabel(g)).replace(/[.!]+$/, "")}” (${why})`
 				})
 		}
@@ -5710,6 +6004,11 @@ export function createOrchestrator(deps) {
 		// says everything else is as it was without a word: V8820 c11 r2)
 		if (mode === "edit" && report.edit && request.rework !== true)
 			for (const w of unmovedAsks(text, request.scene, scene)) if (!(report.edit.skipped ?? []).includes(w)) (report.edit.skipped ??= []).push(w)
+		// (a height asked above what the room shows: said on the card, not only in the reply: "Not done: a 6 m drop (the room only shows drops up to 3 m…)")
+		if (mode === "edit" && report.edit) {
+			const w = cappedDrop(text, request.scene, scene)
+			if (w && !(report.edit.skipped ?? []).includes(w)) (report.edit.skipped ??= []).push(w)
+		}
 		// an edit or a check that did not write new notes or assumptions has none of its own: the old ones are not shown as this turn's
 		const ownPlan = isObj(editOut?.plan) || Array.isArray(editOut?.items)
 		const ownNotes = mode === "new" || (mode === "edit" && (editOut?.notes !== undefined || ownPlan))
@@ -5731,6 +6030,27 @@ export function createOrchestrator(deps) {
 		if (!concept) for (const a of assumptions) if (MIRROR_RE.test(a)) addDiff(a)
 		if (ownNotes && !concept && typeof finalPlan.notes === "string") for (const sent of finalPlan.notes.split(/(?<=[.!?])\s+/)) if (MIRROR_RE.test(sent)) addDiff(sent)
 		assumptions = assumptions.filter((a) => !differences.includes(a))
+		// (a goal an answer wanted lower that the version kept as the person had it: said on the card, with the AI's own why from its notes (which
+		// no longer hold: the goal was not lowered), and offered as a chip while it fails: lowering a goal is the person's last resort to choose)
+		if (report.edit && heldTargets.size) {
+			const nowGoals = (G(cur) ?? []).filter(isObj)
+			const list = [...heldTargets.values()].filter((h) => nowGoals.some((g) => (g.label ?? null) === (h.was.label ?? null) && goalKindOf(g) === goalKindOf(h.was)))
+			for (const h of list) {
+				const tos = h.changes.filter((c) => c.to !== null).map((c) => targetValue(c.field, c.to).toLowerCase())
+				const why = assumptions.find((x) => tos.some((t) => String(x).toLowerCase().includes(t)))
+				if (why) {
+					h.why ??= why
+					assumptions = assumptions.filter((x) => x !== why)
+				}
+			}
+			heldList = list
+			if (list.length) {
+				report.edit.goalsHeld = list.map(heldWords)
+				const res = goalResults(cur.sim, nowGoals)
+				const offer = heldOffer(list.filter((h) => res.some((g) => g.label === h.was.label && g.ok === false)))
+				if (offer) report.edit.goalOffer = offer
+			}
+		}
 		// (a concept picture is the app's own: a line comparing the scene with "the picture" would read as if it were the user's)
 		if (concept) assumptions = dropPictureLines(assumptions)
 		const onScreen = new Set((request.scene?.items ?? []).map((i) => i.id))
@@ -5851,7 +6171,9 @@ export function createOrchestrator(deps) {
 			if (openMake && (stillFailing.length || refused)) {
 				const g = stillFailing.find((t) => !t.implicit) ?? stillFailing[0] ?? (report.targets ?? []).find((t) => !t.implicit) ?? (report.targets ?? [])[0] ?? { label: "it" }
 				const tried = humanList.map((c) => c.text)
-				const what = refused ? refused : g.happened ? String(g.happened).replace(/[.!]+$/, "") : `“${String(g.label).replace(/[.!]+$/, "")}” still doesn’t happen`
+				// (a goal's own words, "<label>: no (it ran out after 70 lesson s; …)", said as what still doesn't happen, never "<label>, and no")
+				const bare = g.happened ? /^([\s\S]*?): no(?: \(([\s\S]*)\))?$/.exec(String(g.happened).replace(/[.!]+$/, "")) : null
+				const what = refused ? refused : bare ? `“${String(g.label).replace(/[.!]+$/, "")}” still doesn’t happen${bare[2] ? ` (${bare[2]})` : ""}` : g.happened ? String(g.happened).replace(/[.!]+$/, "") : `“${String(g.label).replace(/[.!]+$/, "")}” still doesn’t happen`
 				// (the AI's answers that didn't work were not kept, the scene as it was searched instead: what they tried is still said)
 				let saidTried = tried
 				const dropped = report.edit?.fixFlow?.droppedScene
@@ -5885,7 +6207,7 @@ export function createOrchestrator(deps) {
 				} catch {}
 				// (its label names every change it makes: "2 changes: move the seesaw and add a cutting board", never the first alone: V8837 y4)
 				let near = tried.length && !refused && !charWhy
-					? { say: imperative(andList(tried)), did: andList(tried), label: changesLabel(tried), happened: what, sceneJSON: JSON.stringify(cur.scene), planJSON: JSON.stringify(finalPlan), results: (report.targets ?? []).map((t) => ({ label: t.label, ok: t.ok, ...(t.implicit ? { implicit: true } : {}) })) }
+					? { say: imperative(andList(tried)), did: andList(tried), label: changesLabel(tried), happened: what, sceneJSON: JSON.stringify(cur.scene), planJSON: JSON.stringify(finalPlan), results: (report.targets ?? []).map((t) => ({ label: t.label, ok: t.ok, ...runDetail((report.goals ?? []).find((g) => g.label === t.label)), ...(t.implicit ? { implicit: true } : {}) })) }
 					: null
 				// (and it is offered only when it is closer than the scene as it is, by the margin the fix search asks of its own closest miss, and
 				// closer than a "Try:" the card already offers: V8837 y19 / y4 / x5, a "closest" that was worse than the scene, 5.6 mm against 8.6 mm)
@@ -5910,7 +6232,8 @@ export function createOrchestrator(deps) {
 					}
 				// (none closer: the "Try:" already offered stays the one offered)
 				if (!near && earlier) near = earlier
-				replyOnlyReport({ reply: words, suggestions: [] }, "answer")
+				// (a goal the AI wanted lower is said, the person's to choose: the chip offers it, ./goal-targets.js)
+				replyOnlyReport({ reply: heldList.length ? `${words} ${heldSentence(heldList)}` : words, suggestions: [] }, "answer")
 				if (report.edit) report.edit.kind = "answer"
 				// (nothing of it goes on the table: the scene it tried is only the "Try:" chip's)
 				delete report.scene
@@ -5978,13 +6301,24 @@ export function createOrchestrator(deps) {
 		report.human = humanList.map((c) => c.text)
 		report.planned = typeof editOut?.reply === "string" ? editOut.reply : typeof finalPlan.reply === "string" ? finalPlan.reply : null
 		if (concept && report.planned) report.planned = dropPictureSentences(report.planned)
+		// (a new scene: the planner wrote it before any run, and the tuners and the critic's patches may have changed a setting it states since:
+		// the critic's own rewrite of it for the version on the table when it gave one, else each setting it states with its value on the table:
+		// never "a 60 cm parachute" over a 150 cm one, vfy-sbfr FR3)
+		if (mode === "new" && report.planned) {
+			const own = cur.judged && typeof cur.verdict?.planned === "string" && cur.verdict.planned.trim() ? cur.verdict.planned.trim() : null
+			try {
+				report.planned = own ? (concept ? dropPictureSentences(own) : own) : refreshPlanned(report.planned, report.initialPlan, finalPlan, { propSpec, propKeys }).text
+			} catch {}
+		}
 		// (the version on the table is the physics' own (the fix search changed the AI's answer, or aimed it), not what the AI said it planned:
 		// its words would contradict the lead ("What I planned: I left the seesaw as it was…" under "I moved the seesaw 23 cm right": V8838
 		// v38a s-fix-tennis), so they are not shown; the lines say what was done)
 		if (report.edit?.fixFlow?.fixer) report.planned = ""
 		// (nor when a size or a move it states isn't what is on the table: "a paper cup (8 cm wide)" over a 26 cm cup, "a 45 cm basket, moved 12 cm
 		// right" over a 12 cm basket that stayed (V8842 k3, V8843 s-swap-box-cup))
-		else if (mode === "edit" && report.planned && plannedOff(report.planned, report.human ?? [])) report.planned = ""
+		// (the heights a move left things at, and came from, are on the table too: "I raised both boxes to 3 m"; and a reply that says why the asked
+		// number could not be had may name it: "the highest the room shows (6 m is out of view)")
+		else if (mode === "edit" && report.planned && plannedOff(report.planned, [...(report.human ?? []), ...movedHeights(request.scene, cur.scene), ...(LIMIT_SAID_RE.test(report.planned) ? lengthsIn(text).map((v) => `${v} m`) : [])])) report.planned = ""
 		report.suggestions = cleanSuggestions(editOut?.suggestions ?? finalPlan.suggestions ?? report.initialPlan?.suggestions)
 		report.models = [...new Set(report.calls.map((c) => c.model).filter(Boolean))]
 		return report
@@ -6240,7 +6574,7 @@ export function createOrchestrator(deps) {
 			return {
 				status: "none",
 				aiCalls: aiBudget.started,
-				info: { ...base, why: reach ?? d?.why ?? null, ...(reach ? { outOfReach: true } : {}), reworked: aiBudget.started > 0 && !!(rw && !rw.skipped && !rw.aborted && !rw.error), ...(aiBudget.started ? { aiCalls: aiBudget.started, aiAnswered: aiBudget.answered ?? 0, ...(late ? { reworkLate: true } : {}), ...(aiBudget.capped && !aiBudget.answered ? { reworkCapped: true } : {}) } : {}), timedOut: ctl.signal.aborted && !signal?.aborted, ...(rw?.tried ? { tried: rw.tried } : {}), ...(rq && !reach ? { rework: rq } : {}), ms: ms() }
+				info: { ...base, why: reach ?? d?.why ?? null, ...(reach ? { outOfReach: true } : {}), ...(sfr?.undoOnly && !reach ? { undoOnly: { say: sfr.undoOnly.words?.say ?? null, why: sfr.undoOnly.why ?? null } } : {}), reworked: aiBudget.started > 0 && !!(rw && !rw.skipped && !rw.aborted && !rw.error), ...(aiBudget.started ? { aiCalls: aiBudget.started, aiAnswered: aiBudget.answered ?? 0, ...(late ? { reworkLate: true } : {}), ...(aiBudget.capped && !aiBudget.answered ? { reworkCapped: true } : {}) } : {}), timedOut: ctl.signal.aborted && !signal?.aborted, ...(rw?.tried ? { tried: rw.tried } : {}), ...(rq && !reach ? { rework: rq } : {}), ms: ms() }
 			}
 		} finally {
 			clearTimeout(timer)
@@ -6652,7 +6986,7 @@ export function createOrchestrator(deps) {
 			sceneJSON: JSON.stringify(rep.scene),
 			planJSON: rep.plan ? JSON.stringify(rep.plan) : null,
 			changes: lines,
-			results: tg.map((t) => ({ label: t.label, ok: true, ...(t.implicit ? { implicit: true } : {}) })),
+			results: tg.map((t) => ({ label: t.label, ok: true, ...runDetail(t), ...(t.implicit ? { implicit: true } : {}) })),
 			reply: rep.planned ?? null,
 			runs: rep.fixApplied?.runs ?? 0
 		}
@@ -6736,7 +7070,14 @@ export function createOrchestrator(deps) {
 		// (no stage that worked before the person's change, of a thing they didn't change, lost: a rework that skips the machine is no fix)
 		if (ctx.before?.sim) {
 			const changed = new Set(mine.map((i) => i.id))
-			const lost = lostStageList(ctx.before.sim, run, sc).filter((l) => !l.ids.some((id) => changed.has(id)))
+			// (nor a "step" that was only a thing shoved out at the start, where it was put inside another: a bowl knocked away by the pitcher put
+			// in it (V8956 F1) did no work of the machine)
+			const shoved = new Set(
+				[...(ctx.before.sim.warnings ?? []), ...(ctx.before.sim.track?.events ?? []).filter((e) => e?.kind === "inside")]
+					.filter((w) => w?.kind === "inside" || /\bstarts? inside\b/.test(String(w?.text ?? "")))
+					.flatMap((w) => (Array.isArray(w.items) ? w.items : []))
+			)
+			const lost = lostStageList(ctx.before.sim, run, sc).filter((l) => !l.ids.some((id) => changed.has(id) || shoved.has(id)))
 			// (no bracket inside the bracket: "(the growing dominoes, and 8 of 8 fall; was 9 of 9)", V8843 rw-books)
 			if (lost.length) return { ok: false, why: `it skips a step that worked before (${tidyBrackets(inClause(clauseName(lost[0].text, sc))).replace(/\s*\((was [^()]*)\)/g, "; $1")})` }
 		}
@@ -6753,7 +7094,7 @@ export function createOrchestrator(deps) {
 				}
 			}
 		} catch {}
-		return { ok: true, targets: tg.map((t, i) => ({ label: t.label, ok: rs[i].ok, implicit: !!t.implicit })) }
+		return { ok: true, targets: tg.map((t, i) => ({ label: t.label, ok: rs[i].ok, implicit: !!t.implicit, ...runDetail(rs[i]) })) }
 	}
 
 	return { build, call: (step, payload, signal) => call(step, payload, signal, { calls: [] }), findFix, restage, fixInfo, makeItWork, diagnose, outOfReach, reachOf, reworkRequest, judgeRework }
@@ -6762,6 +7103,10 @@ export function createOrchestrator(deps) {
  *  soda can", never "Soda can 5"); else its name. */
 function amongName(it, scene) {
 	return placeName(it, scene)
+}
+/** A goal result's own words for what its run shows ({detail: "yes (at 0.95 s)"}), or nothing: what a fix's verified run carries to its card. */
+function runDetail(r) {
+	return typeof r?.detail === "string" && r.detail ? { detail: r.detail } : {}
 }
 /** The fix-search answer as the report keeps it (no runs; the scenes as JSON, so a reload can still apply them). */
 export function fixInfo(fr, scene, targets = null, report = null) {
@@ -6772,7 +7117,8 @@ export function fixInfo(fr, scene, targets = null, report = null) {
 	// (a path phrase of the label, "sails over the cone", is claimed only when the scene has that thing to go over: chainBreak checks it then)
 	const claim = (l) => (l && fr?.fix?.scene ? claimLabel(l, fr.fix.scene) : l)
 	const out = { state: fr?.status === "found" ? "found" : "none", checked: checked ? String(claim(checked)).replace(/[.!]+$/, "") : null, goal: first?.label ?? null, runs: fr?.runs ?? 0, ms: fr?.ms ?? 0 }
-	const res = (list) => (Array.isArray(list) ? list.map((r, i) => ({ label: r.label, ok: r.ok, ...(tg[i]?.implicit ? { implicit: true } : {}) })) : [])
+	// (each result keeps what its own checked run shows, "yes", "8 of 10 fell": the card of the fix once applied says that, never the edit's)
+	const res = (list) => (Array.isArray(list) ? list.map((r, i) => ({ label: r.label, ok: r.ok, ...runDetail(r), ...(tg[i]?.implicit ? { implicit: true } : {}) })) : [])
 	if (fr?.status === "found") {
 		let { say, did } = fr.fix.words
 		// (an offer that names three or more things one by one, "Book 1, Bowling pin 1, Bowling pin 2 and Bowling pin 3", is said by the grouped
@@ -6889,7 +7235,18 @@ export function pinUntouched(plan, basePlan, ref, free = new Set()) {
 	const out = clone(plan)
 	const pinned = new Set()
 	for (const it of out.items ?? []) {
-		if (!isObj(it) || !untouched(it.id)) continue
+		if (!isObj(it)) continue
+		if (!untouched(it.id)) {
+			// (a thing whose settings alone changed, put where it was put before, on what is held where it was: it keeps the x it has on screen,
+			// so a build that moved everything along the table to stand on it, its plan still at the old x, never moves it back: "shake the rope
+			// twice as fast" changes the rope, not its place; the solver still stands it on its support and may push it aside to clear another)
+			const r = R.get(it.id)
+			const b = B.get(it.id)
+			const same = (p, q) => !!p && !!q && p.type === q.type && !!p.held === !!q.held && !!p.fixed === !!q.fixed
+			if (r && b && !free.has(it.id) && same(it, b) && same(it, r) && isObj(it.place) && JSON.stringify(it.place) === JSON.stringify(b.place ?? null) && num(it.place.x) !== null && Number.isFinite(Number(r.x)) && Math.abs(it.place.x - Number(r.x)) > 1e-9 && placeRefs(it).every((x) => untouched(x)))
+				it.place = { ...it.place, x: Number(r.x) }
+			continue
+		}
 		const r = R.get(it.id)
 		it.place = { on: "air", x: Number(r.x) || 0, y_m: (Number(r.y) || 0) - top, angle_deg: Number(r.angle) || 0, ...(stood.has(it.id) ? {} : { keep: true }) }
 		pinned.add(it.id)

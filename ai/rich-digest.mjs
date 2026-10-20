@@ -65,13 +65,17 @@ const colourOf = (looks, item = null, T = null) => {
 	return best?.c ?? null
 }
 const an = (w) => (/^[aeiou]/i.test(String(w)) ? "an" : "a")
-/** The word a person would use for its kind ("ball", "ramp", "cup", "dominoes"). */
+/** A kind word that is already a plural ("scraps", "clips", "magnets": a type that is a set of things), not "glass", "bus" or "physics". */
+const plural = (w) => /[^su]s$/i.test(String(w)) && !/(ics|is)$/i.test(String(w))
+/** The word a person would use for its kind ("ball", "ramp", "cup", "dominoes"): its type name's last word, before "on …" or "with …" and
+ *  without anything in brackets ("Clip on a thread" is a clip, "Ring magnets on a dowel" magnets, "Electromagnet (nail and battery)" an
+ *  electromagnet). */
 function kindOf(item, T) {
 	if (!T) return item.type
 	if (T.category === "Balls") return "ball"
 	if (item.type === "domino-row" || item.type === "domino") return item.type === "domino-row" ? "dominoes" : "domino"
 	if (T.category === "Surfaces & ramps" && ["plank", "steel-beam", "ice-sheet", "glass-sheet", "rubber-mat", "carpet-strip", "concrete-slab", "cutting-board"].includes(item.type)) return Math.abs(Number(item.angle) || 0) > 3 ? "ramp" : "plank"
-	const name = String(T.name ?? item.type).replace(/\s*\(.*\)\s*/g, "").trim().toLowerCase()
+	const name = String(T.name ?? item.type).replace(/\s*\(.*\)\s*/g, "").replace(/\s+(?:on|with)\s+(?:a|an|its|the)\s+.*$/i, "").trim().toLowerCase()
 	return name.split(/\s+/).at(-1)
 }
 
@@ -109,18 +113,105 @@ export function goalFacts(run, goals) {
 	return out
 }
 
-/** Where each dynamic item ended (its first solid's pose in the last frame). */
+/** Where each dynamic item ended (its first solid's pose in the last frame), how far that solid went (dx, dy), and whether all its solids went
+ *  the same way (`together`: a toy car's chassis, cabin and wheels; never a row of dominoes that each tipped on their own). */
 function finalPoses(sim) {
 	const out = new Map()
 	const frames = sim?.track?.frames
 	if (!frames?.length) return out
 	const last = frames.at(-1).placements ?? {}
 	const first = frames[0].placements ?? {}
+	const moves = new Map()
 	for (const [sid, p] of Object.entries(last)) {
 		const id = sid.split("/")[0]
-		if (out.has(id)) continue
 		const p0 = first[sid]
-		out.set(id, { x: p.x, y: p.y, moved: p0 ? Math.hypot(p.x - p0.x, p.y - p0.y) : null })
+		if (p0) (moves.get(id) ?? moves.set(id, []).get(id)).push({ dx: p.x - p0.x, dy: p.y - p0.y })
+		if (out.has(id)) continue
+		out.set(id, { x: p.x, y: p.y, moved: p0 ? Math.hypot(p.x - p0.x, p.y - p0.y) : null, dx: p0 ? p.x - p0.x : null, dy: p0 ? p.y - p0.y : null })
+	}
+	for (const [id, fp] of out) {
+		const ms = moves.get(id) ?? []
+		const d0 = ms[0]
+		fp.together = !!d0 && ms.every((m) => Math.hypot(m.dx - d0.dx, m.dy - d0.dy) <= Math.max(0.03, 0.1 * Math.hypot(d0.dx, d0.dy)))
+	}
+	return out
+}
+
+/**
+ * A physics module's lines for an item (web/sim/plugins.js, read from its registry on globalThis): its readings in the run, start → end with
+ * their units and when they changed most ("temperature 20.0 → 58.0 °C; melted 0.00 → 1.00 (reaches its end value at 1.30 s)"), and whatever
+ * the module adds (its `digest`). [] for an item without readings (every item of a scene without modules).
+ */
+function moduleLines(r, it, Ty, sim) {
+	const out = []
+	const state = sim?.track?.state?.[r.id]
+	const frames = sim?.track?.frames ?? []
+	// (a time-lapse run's frames are run seconds: what a teacher asks about is lesson time, "what does it read at 20 minutes?")
+	const lapse = Number.isFinite(sim?.doc?.settings?.timeLapse) && sim.doc.settings.timeLapse > 1 ? sim.doc.settings.timeLapse : 1
+	const when = (t) => (lapse > 1 ? `${clock(t * lapse)} of lesson time` : `${Number(t).toFixed(2)} s`)
+	if (state && typeof state === "object") {
+		const specs = new Map((Ty?.readouts ?? []).map((x) => [x.key, x]))
+		const bits = []
+		const series = []
+		for (const [k, v] of Object.entries(state)) {
+			if (!Array.isArray(v) || !v.length) continue
+			const sp = specs.get(k)
+			const d = Number.isInteger(sp?.digits) ? sp.digits : 2
+			// (a state code with its word, "in pieces (2)": the readout's words, never a bare "broken 0 → 2")
+			const fmt = (x) => (typeof x === "number" ? (sp?.words?.[String(Math.round(x))] ? `${sp.words[String(Math.round(x))]} (${x.toFixed(d)})` : x.toFixed(d)) : String(x))
+			const end = v[v.length - 1]
+			const at = v.findIndex((x) => x === end)
+			// (when it settles: never for one still changing at the run's end)
+			const reach = v[0] !== end && at > 0 && at < v.length - 1 && frames[at] ? ` (reaches its end value at ${when(frames[at].t)})` : ""
+			const name = sp?.label ? sp.label.toLowerCase() : k
+			bits.push(`${name} ${v[0] === end ? fmt(end) : `${fmt(v[0])} → ${fmt(end)}`}${sp?.unit ? ` ${sp.unit}` : ""}${reach}`)
+			// (a measured quantity that changes, through the run: the readings at six times, so "what does it read at 10 minutes?" has its answer
+			// (vfy-ai5 T2, 20 Oct: "the run summary I have doesn't include the exact readings"); a state code or a 0/1 flag is said start → end only)
+			const n = Math.min(v.length, frames.length)
+			if (sp?.unit && !sp.words && n > 2 && series.length < 4 && v.slice(0, n).every((x) => typeof x === "number" && Number.isFinite(x)) && v.slice(0, n).some((x) => x !== v[0]))
+				series.push(`${name} (${sp.unit}): ${[...new Set([0, 1, 2, 3, 4, 5].map((j) => Math.round((j * (n - 1)) / 5)))].map((j) => `${fmt(v[j])} at ${lapse > 1 ? clock(frames[j].t * lapse) : `${Number(frames[j].t).toFixed(2)} s`}`).join(", ")}`)
+		}
+		if (bits.length) out.push(`  readings in the last run: ${bits.join("; ")}`)
+		if (series.length) out.push(`  through the run${lapse > 1 ? " (lesson time)" : ""}: ${series.join("; ")}`)
+	}
+	const S = globalThis[Symbol.for("sandbox.plugins")]
+	if (S && S.modules.size) {
+		for (const m of [...S.modules.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+			if (typeof m.digest !== "function") continue
+			try {
+				const lines = m.digest(it ?? r, sim, { type: Ty })
+				if (Array.isArray(lines)) for (const l of lines) if (typeof l === "string" && l) out.push(`  ${l}`)
+			} catch {} // (a module's digest never stops the step)
+		}
+	}
+	return out
+}
+/** Lesson time in a teacher's words: "45 s", "12 min", "1 h 5 min". */
+function clock(s) {
+	const v = Math.max(0, Number(s) || 0)
+	if (v < 120) return `${+v.toFixed(v < 10 ? 2 : 1)} s`
+	if (v < 3570) {
+		const m = Math.floor(v / 60)
+		const r = Math.round(v - m * 60)
+		return r && m < 20 ? `${m} min ${r} s` : `${Math.round(v / 60)} min`
+	}
+	const mins = Math.round(v / 60)
+	const h = Math.floor(mins / 60)
+	return mins % 60 ? `${h} h ${mins % 60} min` : `${h} h`
+}
+
+/**
+ * Each item's physics-module lines (moduleLines) read off a whole run, for a run that is kept without its track: the edit step's run cache
+ * (ai/steps.mjs digestPart) keeps only the first and last frames, and every module reads its readings over the whole track (its state series)
+ * and the run's document. -> {item id: [line]} (an item without lines is left out). richDigestFrom takes them from `sim.moduleLines`.
+ */
+export function moduleLinesOf(scene, sim, cat) {
+	const out = {}
+	const T = cat?.index?.types ?? {}
+	for (const it of Array.isArray(scene?.items) ? scene.items : []) {
+		if (!it || typeof it !== "object" || typeof it.id !== "string") continue
+		const lines = moduleLines({ id: it.id, type: it.type }, it, T[it.type], sim)
+		if (lines.length) out[it.id] = lines
 	}
 	return out
 }
@@ -157,17 +248,24 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 		const keyProps = Object.entries(r.props).filter(([k]) => !["material", "bounce", "friction", "rolling", "side", "invisible_in_3d"].includes(k))
 		// what is right under it (when it is not resting on anything): the nearest top below its bottom, across its width
 		// (a bottom within 2 cm of a top, not held up for a release, stands on it: "in the air; -1.2 cm above the table" was a box on a belt)
+		// (on a thread from a hook or a stand: a rope from a fixed point to one of its solids, above it (hung) or below it (tied down): never
+		// "standing on" whatever is under it: a balloon hung 8 mm over paper scraps (magnetism M3, 20 Oct))
+		const rope = (sim?.doc?.joints ?? []).find((j) => j?.kind === "rope" && j.a == null && typeof j.b === "string" && j.b.startsWith(`${r.id}/`))
+		const ropeAt = rope ? (sim?.doc?.solids ?? []).find((x) => x.id === rope.b) : null
+		const hung = rope && ropeAt ? (rope.anchorA?.y > ropeAt.at?.y ? "hanging on a thread" : "tied down by a thread") : null
 		let under = ""
 		let standsOn = null
 		if (r.box && /^nothing/.test(r.rests_on ?? "")) {
 			let best = null
+			// (a display-only item, every solid a ghost, holds nothing up, and a ghost part (a balance's pointer) is left out of its box: scene-digest.mjs)
 			for (const o of d.items) {
-				if (o.id === r.id || !o.box || safety(scene.items.find((i) => i.id === o.id))) continue
-				if (o.box.x1 < r.box.x0 || o.box.x0 > r.box.x1 || o.box.y1 > r.box.y0 + 0.02) continue
-				if (!best || o.box.y1 > best.box.y1) best = o
+				if (o.id === r.id || !o.box || o.ghost || safety(scene.items.find((i) => i.id === o.id))) continue
+				const ob = o.firm_box ?? o.box
+				if (ob.x1 < r.box.x0 || ob.x0 > r.box.x1 || ob.y1 > r.box.y0 + 0.02) continue
+				if (!best || ob.y1 > (best.firm_box ?? best.box).y1) best = o
 			}
-			const gap = best ? r.box.y0 - best.box.y1 : r.box.y0
-			if (Math.abs(gap) <= 0.02 && !r.held) standsOn = best && best.type !== "table" ? best.id : "table"
+			const gap = best ? r.box.y0 - (best.firm_box ?? best.box).y1 : r.box.y0
+			if (Math.abs(gap) <= 0.02 && !r.held && !hung) standsOn = best && best.type !== "table" ? best.id : "table"
 			else under = `; ${gap < 0 ? `its bottom ${len(-gap)} below the top of` : `${len(gap)} above`} ${!best || best.type === "table" ? "the table" : best.id}`
 		}
 		const holds = rows.filter((o) => o.rests_on === r.id).map((o) => o.id)
@@ -180,18 +278,29 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 		if (st?.moved_at != null) run.push(`starts moving at ${Number(st.moved_at).toFixed(2)} s`)
 		if (mine.length) run.push(mine.slice(0, 6).map((e) => `${e.a === r.id ? `hits ${nameOf(e.b)}` : `is hit by ${nameOf(e.a)}`} at ${e.t.toFixed(2)} s${e.speed != null ? ` (${e.speed.toFixed(2)} m/s)` : ""}`).join(", "))
 		if (st?.text) run.push(st.text)
-		if (fp && r.moves && fp.moved > 0.01 && !(r.parts?.length > 1)) run.push(`ends at x ${f2(fp.x)}, y ${f2(fp.y)}`)
+		// (and how far it went: "which car went farther?" (vfy-ai5 R-L1, A-K2, 20 Oct: a toy car of four solids had no end at all, so the answer
+		// had "I don't have the empty car's stopping point"); a thing of several solids that all went together is said by its first one)
+		if (fp && r.moves && fp.moved > 0.01 && (!(r.parts?.length > 1) || fp.together)) {
+			const went = [Math.abs(fp.dx) >= 0.005 ? `${len(Math.abs(fp.dx))} ${fp.dx > 0 ? "right" : "left"}` : null, Math.abs(fp.dy) >= 0.005 ? `${len(Math.abs(fp.dy))} ${fp.dy > 0 ? "up" : "down"}` : null].filter(Boolean)
+			run.push(`ends at x ${f2(fp.x)}, y ${f2(fp.y)}${went.length ? ` (it went ${went.join(" and ")} from its start)` : ""}`)
+		}
 		if (r.moves && (!st || st.moved_at == null) && !mine.length && !/\b(doesn['’]t|does not|never) move/i.test(st?.text ?? "")) run.push("does not move")
 		const pi = planOf.get(r.id)
+		// (a run kept without its track carries its module lines as read off the whole run: ai/steps.mjs digestPart)
+		const kept = sim?.moduleLines && typeof sim.moduleLines === "object" ? sim.moduleLines : null
+		const extra = kept ? (Array.isArray(kept[r.id]) ? kept[r.id] : []) : moduleLines(r, it, Ty, sim)
 		info.push({ r, it, kind, colour, lines: [
-			`- ${r.id} · “${r.name}” · ${an(colour ?? kind)} ${colour ? `${colour} ` : ""}${kind}: ${r.type} (${Ty?.name ?? "?"}; looks: ${looks[r.type] ?? "—"}) · ${size}${m}`,
-			`  where: ${third((r.box?.x0 + r.box?.x1) / 2)} of the table, ${r.rests_on === "table" || standsOn === "table" ? "standing on the table" : standsOn ? `standing on ${nameOf(standsOn)}` : /^nothing/.test(r.rests_on ?? "") ? `in the air` : `resting on ${nameOf(r.rests_on)}`}${under}; ${how}${holds.length ? `; holds up ${holds.map(nameOf).join(", ")}` : ""}`,
+			`- ${r.id} · “${r.name}” · ${plural(kind) ? "a set of" : an(colour ?? kind)} ${colour ? `${colour} ` : ""}${kind}: ${r.type} (${Ty?.name ?? "?"}; looks: ${looks[r.type] ?? "—"}) · ${size}${m}`,
+			`  where: ${third((r.box?.x0 + r.box?.x1) / 2)} of the table, ${hung ? (/^nothing/.test(r.rests_on ?? "") || !r.rests_on ? hung : `${hung} just over ${nameOf(r.rests_on)}`) : r.rests_on === "table" || standsOn === "table" ? "standing on the table" : standsOn ? `standing on ${nameOf(standsOn)}` : /^nothing/.test(r.rests_on ?? "") ? `in the air` : `resting on ${nameOf(r.rests_on)}`}${under}; ${how}${holds.length ? `; holds up ${holds.map(nameOf).join(", ")}` : ""}`,
 			`  in the last run: ${run.length ? run.join("; ") : "—"}`,
-			`  exact: anchor (${f3(r.x)}, ${f3(r.y)}), angle ${fa(r.angle)}°, outline x ${f3(r.box?.x0)}…${f3(r.box?.x1)}, y ${f3(r.box?.y0)}…${f3(r.box?.y1)}; props ${keyProps.length ? keyProps.map(([k, v]) => `${k} ${typeof v === "string" ? JSON.stringify(v) : v}`).join(", ") : "defaults"}${pi?.why ? `; the plan's reason for it: ${String(pi.why).slice(0, 160)}` : ""}`
+			`  exact: anchor (${f3(r.x)}, ${f3(r.y)}), angle ${fa(r.angle)}°, outline x ${f3(r.box?.x0)}…${f3(r.box?.x1)}, y ${f3(r.box?.y0)}…${f3(r.box?.y1)}; props ${keyProps.length ? keyProps.map(([k, v]) => `${k} ${typeof v === "string" ? JSON.stringify(v) : v}`).join(", ") : "defaults"}${pi?.why ? `; the plan's reason for it: ${String(pi.why).slice(0, 160)}` : ""}`,
+			...extra
 		] })
 	}
 	const lines = []
 	lines.push(`Stage x ${f3(d.stage.x0)}…${f3(d.stage.x1)}; the table top is y = 0 from x ${f3(table.x0)} to ${f3(table.x1)} (left third ends at x ${f2(table.x0 + (table.x1 - table.x0) / 3)}, right third starts at x ${f2(table.x0 + (2 * (table.x1 - table.x0)) / 3)}). The scene runs ${scene.seconds ?? 4.5} s; held things are let go at ${scene.release ?? 0.5} s. Two see-through safety walls at the table's ends are not listed.`)
+	const st = scene.settings
+	if (st && typeof st === "object" && Object.keys(st).length) lines.push(`Settings: ${Object.entries(st).map(([k, v]) => `${k} ${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ")} (gravity, air, room temperature °C, time-lapse ×; the rest standard).`)
 	lines.push(`## The items (${info.length})`)
 	for (const x of info) lines.push(...x.lines)
 	// look-alikes: the words a request may use for more than one item
@@ -204,7 +313,7 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 				const where = third((x.r.box?.x0 + x.r.box?.x1) / 2)
 				return `${id} (${x.colour ? `${x.colour}, ` : ""}${x.r.type}, ${where}${x.r.held ? ", held" : ""}${x.r.rests_on && !/^nothing/.test(x.r.rests_on) ? `, on ${x.r.rests_on}` : ""})`
 			})
-			lines.push(`- ${ids.length} ${kind === "dominoes" ? "domino rows" : `${kind}${/s$/.test(kind) ? "es" : "s"}`}: ${desc.join("; ")}`)
+			lines.push(`- ${ids.length} ${kind === "dominoes" ? "domino rows" : plural(kind) ? `sets of ${kind}` : `${kind}${/s$/.test(kind) ? "es" : "s"}`}: ${desc.join("; ")}`)
 		}
 	}
 	// the last run
@@ -218,6 +327,8 @@ export function richDigestFrom(scene, d, { sim = null, plan = null, cat, goalRes
 	}
 	if (goals.length || planGoals.length) lines.push(`Goals: ${[...goals.map((g) => `${g.ok ? "MET" : "FAILED"}: ${g.label}`), ...planGoals.map(other)].join("; ")}`)
 	if (events.length) lines.push(`What happened, in order: ${events.slice(0, 24).map((e) => `${e.t.toFixed(2)} s ${e.text}${e.speed != null ? ` (${e.speed.toFixed(2)} m/s)` : ""}`).join("; ")}`)
+	const happen = Array.isArray(sim?.summary?.happenings) ? sim.summary.happenings : []
+	if (happen.length) lines.push(`What else happened (the physics modules): ${happen.slice(0, 16).map((e) => `${Number(e.t).toFixed(2)} s ${e.text}`).join("; ")}`)
 	// (the goals' own things, measured on the whole track: the only heights and speeds an answer quotes about them)
 	if (Array.isArray(facts) && facts.length) {
 		lines.push("## The goals' moving things in the last run (measured; quote heights and speeds of these things only from here)")

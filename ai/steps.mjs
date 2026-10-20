@@ -28,10 +28,10 @@ import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync,
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { AIError, callModel, loadRouting } from "./core.mjs"
-import { DEFAULT_STAGE, detailFor, getCatalog, SURFACE_NOTE } from "./catalog-digest.mjs"
+import { DEFAULT_STAGE, detailFor, getCatalog, promptCatalog, SURFACE_NOTE } from "./catalog-digest.mjs"
 import { checkGoals, goalKind } from "./goals.mjs"
 import { applyPatches, planFromScene, unitsOfItem, validateObservation, VALIDATORS } from "./schemas.mjs"
-import { richDigestFrom, goalFacts } from "./rich-digest.mjs"
+import { richDigestFrom, goalFacts, moduleLinesOf } from "./rich-digest.mjs"
 import { roomUnder, withRoom } from "./room.mjs"
 import { sceneDigest, simText } from "./scene-digest.mjs"
 import { imagine } from "./imagine.mjs"
@@ -45,6 +45,34 @@ const MAX_TEXT = 8000
 const DATA_URL = /^data:image\/(jpeg|jpg|png|webp|gif);base64,/i
 
 // ---------------------------------------------------------------- prompts
+/**
+ * The physics modules' lines for a step's system prompt (web/sim/plugins.js, read from its registry on globalThis: web/sim is loaded by the time a
+ * step builds its prompt): each module's fixed text for this step, and for refine (whose catalog is the brief one) the modules' goal kinds too.
+ * "" without modules, so every prompt is what it was. Appended at the end of the system prompt: fixed per deployment, so it stays cached.
+ */
+export function moduleSnippets(step) {
+	const S = globalThis[Symbol.for("sandbox.plugins")]
+	if (!S || !S.modules.size) return ""
+	const mods = [...S.modules.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+	const parts = []
+	for (const m of mods) {
+		const t = typeof m.prompt?.[step] === "string" ? m.prompt[step].trim() : ""
+		const goals = step === "refine" ? (m.goals ?? []).map((k) => `- goal ${k.about ?? k.kind}`) : []
+		if (t || goals.length) parts.push(`### ${m.title ?? m.name}\n${[t, ...goals].filter(Boolean).join("\n")}`)
+	}
+	return parts.length ? `\n\n## Physics modules\n${parts.join("\n\n")}` : ""
+}
+
+/** moduleSnippets once web/sim (and with it the modules' registry) is loaded in this process; "" when it cannot be. */
+async function snippetsFor(step) {
+	try {
+		await sim()
+	} catch {
+		return ""
+	}
+	return moduleSnippets(step)
+}
+
 /** A prompt file with its {{include:file}} lines expanded (one level deep is enough; includes may include). */
 export function loadPrompt(name, depth = 0) {
 	const text = readFileSync(join(PROMPTS, name), "utf8")
@@ -269,8 +297,11 @@ async function freshPlan(p, o) {
 		parts.push(`# The current scene (the request may change it: your plan describes the whole new scene)\n${d.text}`)
 	}
 	if (obs?.objects?.length) parts.push(`# Account for every observed object\nList each of the observation's objects in "covers", by its exact label (${obs.objects.map((x) => `"${x.label}"${(x.count ?? 1) > 1 ? ` ×${x.count}` : ""}`).join(", ")}), with the ids of the plan items that build it, or ids [] and a note saying why it is not built.`)
+	// (a catalog with many module types: the cached prompt has its core, and the modules this request or scene uses come in full here)
+	const pc = promptCatalog(cat, { text: [t, ...(obs?.objects ?? []).map((x) => x.label)].join(" "), types: (cur?.items ?? []).map((i) => i.type) })
+	if (pc.extra) parts.push(pc.extra)
 	parts.push("Write the plan as one JSON object.")
-	const system = loadPrompt("plan.md").replace("{{CATALOG}}", cat.text)
+	const system = loadPrompt("plan.md").replace("{{CATALOG}}", pc.system) + (await snippetsFor("plan"))
 	return call("plan", { system, user: parts.join("\n\n"), imgs, ctx: { catalog: cat.index, stage: cur?.stage, observation: obs ?? undefined, text: t } }, o, cat)
 }
 
@@ -461,6 +492,8 @@ async function refine(p, o) {
 		fenced("# The request", t || "(no text)"),
 		rateOnly ? "# The final check: this version is what the user gets; nothing will be changed after it" : `# Round ${round} of at most ${rounds}${round >= rounds ? " (the last: change only what is clearly wrong)" : ""}`,
 		`# The plan\n${JSON.stringify(withoutChat(pl))}`,
+		// (what the user was told about it before any run: rewritten as `planned` when this version no longer fits it, refine.md "# Answer")
+		...(typeof pl.reply === "string" && pl.reply.trim() ? [`# What the user was told about the plan (its reply, written before any run)\n${pl.reply.trim().slice(0, 1200)}`] : []),
 		`# The solved scene (what the solver built from the plan)\n${d.text}`,
 		`# The types in this scene\n${SURFACE_NOTE}\n${detailFor(cat, types)}`,
 		`# What happened in the run\n${simText(simIn, { goals: goals.results, stages: goals.stages })}`
@@ -469,11 +502,11 @@ async function refine(p, o) {
 	parts.push(
 		pics.length ? `# Pictures\n${pics.join("; ")}.` : "# Pictures\nNone were given: judge from the scene and the run.",
 		rateOnly
-			? 'Rate it only: score it as "How to judge" says, and list the issues the user would see (most important first, at most 5, one sentence each). Answer as one JSON object {"score_0_10": n, "issues": [{"severity", "text", "ids"}], "notes": "one sentence, optional"}: no done, no patches.'
+			? 'Rate it only: score it as "How to judge" says, and list the issues the user would see (most important first, at most 5, one sentence each). Answer as one JSON object {"score_0_10": n, "issues": [{"severity", "text", "ids"}], "notes": "one sentence, optional", "planned": "optional: as # Answer says"}: no done, no patches.'
 			: "Judge the result and answer as one JSON object."
 	)
 	// (the same system prompt as a critique, so a rate-only check reads it from the prompt cache)
-	const system = loadPrompt("refine.md").replace("{{CATALOG_BRIEF}}", cat.brief)
+	const system = loadPrompt("refine.md").replace("{{CATALOG_BRIEF}}", cat.brief) + (await snippetsFor("refine"))
 	// the rate-only check runs on models.json "rate" (lower effort, a short answer); a routing without it uses refine's route at low effort
 	const rateRoute = rateOnly ? ((o.routing ?? safeRouting())?.steps?.rate ? "rate" : "refine") : undefined
 	const oo = rateOnly && rateRoute === "refine" ? { ...o, params: { reasoning_effort: "low", ...(o.params ?? {}) } } : o
@@ -489,16 +522,23 @@ async function refine(p, o) {
 // (web/sim: the catalog's fingerprint), so a repeated or undone scene (the client's repair turn and "make it work" rounds send the same scene
 // again; Undo then a new request) is not run twice. Kept in this process (Vercel's warm instances, the bench) and on disk under
 // AI_CACHE_DIR/edit-runs (the local server runs every step in a process of its own), when that is writable; only what the digest reads is
-// kept: each item's resolved size and mass, the run's summary, its first and last frames, and the other goals' results.
-const RUN_CACHE_V = 2 // (2: the goals' moving things measured on the whole track, `facts`)
+// kept: each item's resolved size and mass, the run's summary, its first and last frames, each item's physics-module lines (read off the whole
+// run before it is dropped) and the other goals' results.
+const RUN_CACHE_V = 3 // (2: the goals' moving things measured on the whole track, `facts`; 3: each item's physics-module lines, `moduleLines`)
 const RUN_MEM = new Map() // key -> Promise<{sim, goalResults}> (LRU)
 const RUN_MEM_MAX = 64
 const RUN_DISK_MAX = 400
 const runDir = () => join(process.env.AI_CACHE_DIR || join(HERE, ".cache"), "edit-runs")
-/** The parts of a run the edit digest reads (ai/rich-digest.mjs: resolved, summary, the first and last frames' placements). */
-function digestPart(run) {
+/** The parts of a run the edit digest reads (ai/rich-digest.mjs: resolved, summary, the first and last frames' placements), and each item's
+ *  physics-module lines read off the whole run here (its readings over the track and the run's document, which are not kept: moduleLinesOf;
+ *  vfy-ai5, 20 Oct: the kept run had none, so "what does each thermometer read?" got "the run summary I have doesn't include the readings"). */
+function digestPart(run, scene, cat) {
 	const f = Array.isArray(run?.track?.frames) ? run.track.frames : []
-	return { resolved: run?.resolved ?? {}, summary: run?.summary ?? null, track: { frames: f.length ? [f[0], f.at(-1)] : [] } }
+	let moduleLines = {}
+	try {
+		moduleLines = moduleLinesOf(scene, run, cat)
+	} catch {} // (a module's lines never stop the step: the digest is then without them)
+	return { resolved: run?.resolved ?? {}, summary: run?.summary ?? null, track: { frames: f.length ? [f[0], f.at(-1)] : [] }, moduleLines }
 }
 function diskGet(key) {
 	try {
@@ -549,7 +589,7 @@ async function editRun(cur, pl, given, cat) {
 				cached = false
 				p = (async () => {
 					const run = await runScene(toRun)
-					const val = { sim: digestPart(run), goalResults: others.length ? checkGoals(others, { doc: run.doc, track: run.track, summary: run.summary }) : null, facts: goalFacts(run, [...goals, ...others]) }
+					const val = { sim: digestPart(run, toRun, cat), goalResults: others.length ? checkGoals(others, { doc: run.doc, track: run.track, summary: run.summary }) : null, facts: goalFacts(run, [...goals, ...others]) }
 					diskPut(key, val)
 					return val
 				})()
@@ -611,8 +651,11 @@ async function edit(p, o) {
 	if (p.intent === "edit") parts.push(PRESSED_EDIT)
 	// the client's repair turn ("Ball 1 starts inside Ramp 1 ...") or "make it work" round ("In its run: FAILED: ..."), as measured
 	if (fb) parts.push(fb)
+	// (a catalog with many module types: the cached prompt has its core, and the modules this request, the conversation or the scene use in full)
+	const pc = promptCatalog(cat, { text: [t, ...turns].join(" "), types: [...(cur.items ?? []), ...(pl?.items ?? [])].map((i) => i.type) })
+	if (pc.extra) parts.push(pc.extra)
 	parts.push(fenced("# The user's request now", t), "Answer as one JSON object.")
-	const system = loadPrompt("edit.md").replace("{{CATALOG}}", cat.text)
+	const system = loadPrompt("edit.md").replace("{{CATALOG}}", pc.system) + (await snippetsFor("edit"))
 	const out = await call("edit", { system, user: parts.join("\n\n"), imgs, ctx: { catalog: cat.index, plan: pl ?? undefined, scene: cur, stage: cur.stage, intent: p.intent === "edit" ? "edit" : undefined, text: t } }, o, cat)
 	// (how long the scene's digest took here, its run of the scene included, and whether that run came from the cache: the step's own CPU
 	// work, which grows on a busy machine; `ms` stays the model's time, as for every step)

@@ -18,7 +18,8 @@
 // ctx extras (all optional): observation (plan: every observed object must be accounted for in plan.covers), text (the request: "make it
 // work" pictures need their depicted outcome as a goal; refine may not change the material of a requested thing), goalResults (refine: the
 // goals' results in the run being judged, from ai/goals.mjs checkGoals: a failing goal caps the score and keeps done false).
-import { GOAL_KINDS, goalItems, goalKind, goalLabel } from "./goals.mjs"
+import { GOAL_KINDS, allGoalKinds, goalItems, goalKind, goalLabel, moduleGoal, moduleGoalProblem } from "./goals.mjs"
+import { clashText, goalClash, statesNewOutcome } from "./edit-outcome.mjs"
 
 export const RESERVED_IDS = ["table", "air"]
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
@@ -30,6 +31,14 @@ export const MULTI_UNIT = { "domino-row": "count", "newtons-cradle": "count" }
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/
 const DEFAULT_STAGE = { x0: -0.559, x1: 3.191, y0: -0.156, y1: 2.344 }
 const STAGE_SLACK = 0.6 // m: how far outside the stage a placement may reach before it is called a mistake
+// The highest a thing can start (its anchor, m above the table top): the 3D room's wide shot frames y −0.02…3 m (web/view3d.js FRAME_Y) under
+// a ceiling 4.45 m up (its room shell), so a thing put higher starts out of the picture. Up to here a placement may reach past the stage's top
+// (the solver grows a new scene's stage round it; an edit's answer gets a set_scene stage patch that does: checkPatches growStage); higher is
+// refused with the limit, so the AI offers the highest drop instead (vfy-sbfr FR3: "drop them from 6 m" was "The AI's answer didn't fit").
+// A scene with a fixed camera (settings.camera, machines/mod_staging.py) frames what it is told: no limit then.
+export const HIGHEST_START_M = 3
+const START_SLACK = 0.05 // m (a drop "from 3 m" measured to the thing's bottom puts its anchor a little higher)
+const CEILING_M = 4.45 // m above the table top (web/view3d.js: the room shell spans y −0.76…4.45)
 
 // ---------------------------------------------------------------- the schemas (structure)
 const str = (maxLength, minLength = 0) => ({ type: "string", minLength, maxLength })
@@ -79,21 +88,38 @@ export const planItemSchema = {
 	}
 }
 
-const goalSchema = {
-	type: "object",
-	required: ["label"],
-	additionalProperties: false,
-	properties: {
-		kind: { enum: GOAL_KINDS },
-		label: str(200, 1),
-		item: str(40, 1),
-		items: { type: "array", minItems: 1, maxItems: LIMITS.items, items: str(40, 1) }, // falls: several things that must all fall
-		container: str(40, 1), // in
-		target: str(40, 1), // hits
-		before_s: num(0, 20), // hits: by this time (s)
-		min_m: num(0.005, 20) // moves: at least this far (m)
-	}
+const goalFields = {
+	label: str(200, 1),
+	item: str(40, 1),
+	items: { type: "array", minItems: 1, maxItems: LIMITS.items, items: str(40, 1) }, // falls: several things that must all fall
+	container: str(40, 1), // in
+	target: str(40, 1), // hits
+	before_s: num(0, 20), // hits: by this time (s)
+	min_m: num(0.005, 20) // moves: at least this far (m)
 }
+/** The fields the loaded physics modules' goal kinds add (web/sim/plugins.js: melts {item}, reads {stopwatch, seconds}, ...), as schemas. */
+function moduleGoalFieldSchemas() {
+	const out = {}
+	for (const kind of allGoalKinds()) {
+		const mod = GOAL_KINDS.includes(kind) ? null : moduleGoal(kind)
+		for (const [f, t0] of Object.entries(mod?.fields ?? {})) {
+			if (f in goalFields || f in out) continue
+			const t = String(t0).replace(/\?$/, "")
+			out[f] = t === "item" ? str(40, 1) : t === "items" ? { type: "array", minItems: 1, maxItems: LIMITS.items, items: str(40, 1) } : t === "number" ? { type: "number" } : t === "bool" ? { type: "boolean" } : str(200)
+		}
+	}
+	return out
+}
+// (built when read: the modules' goal kinds and their fields are those loaded at the time of the check)
+const makeGoalSchema = (required) => ({
+	type: "object",
+	required,
+	additionalProperties: false,
+	get properties() {
+		return { kind: { enum: allGoalKinds() }, ...goalFields, ...moduleGoalFieldSchemas() }
+	}
+})
+const goalSchema = makeGoalSchema(["label"])
 const tuneSchema = { type: "object", required: ["id", "param", "min", "max"], additionalProperties: false, properties: { id: str(40, 1), param: str(40, 1), min: num(-1e5, 1e5), max: num(-1e5, 1e5), why: str(300) } }
 const coverSchema = {
 	type: "object",
@@ -107,7 +133,7 @@ const coverSchema = {
 		note: str(300)
 	}
 }
-const stageCheckSchema = { ...goalSchema, required: [] } // a stage's check: a goal (its label defaults to the stage's)
+const stageCheckSchema = makeGoalSchema([]) // a stage's check: a goal (its label defaults to the stage's)
 const stageSchema = {
 	type: "object",
 	required: ["label"],
@@ -133,6 +159,21 @@ const missingSchema = {
 	properties: { asked: str(160, 1), reason: str(400, 1), substitute_type: { type: ["string", "null"], maxLength: 60 }, substitute_id: { type: ["string", "null"], maxLength: 40 } }
 }
 
+/** The scene's settings (web/CONTRACT.md "Scene settings"; machines/items.py settings_of checks them again when the scene is built). */
+const settingsSchema = {
+	type: "object",
+	additionalProperties: false,
+	properties: {
+		gravity: { type: ["string", "number"] }, // "earth" | "moon" | "mars" | "jupiter" | "none", or m/s² 0…30
+		air: { type: "boolean" }, // false: a vacuum (no drag, no buoyancy, fans blow nothing)
+		air_density: num(0.001, 100), // kg/m³ with air on: a world's own air (Mars 0.020, Venus 65, Jupiter 0.16); left out: a room's 1.2
+		room_temp: num(-60, 60), // °C
+		time_lapse: num(1, 100000), // seconds of slow processes (heat, melting) in each second of the run
+		// a fixed side camera (render only; machines/mod_staging.py): x0..x1 m across the picture at height y m, pitch° down, hfov° across
+		camera: { type: "object", required: ["x0", "x1"], additionalProperties: false, properties: { x0: num(-1000, 1000), x1: num(-1000, 1000), y: num(-10, 100), pitch: num(-20, 80), hfov: num(5, 120) } }
+	}
+}
+
 export const planSchema = {
 	type: "object",
 	required: ["title", "seconds", "items", "missing", "goals", "tune", "notes"],
@@ -153,7 +194,8 @@ export const planSchema = {
 		covers: { type: "array", maxItems: LIMITS.covers, items: coverSchema }, // with an observation: what builds each observed object
 		stages: { type: "array", maxItems: LIMITS.stages, items: stageSchema }, // a chain's stages in order (4 or more stages: the prompt asks for them)
 		reply: str(400), // ≤ 2 short first-person sentences for the chat, in the user's units (ai/DESIGN.md §13.9)
-		suggestions: suggestionsSchema // 2-3 next edits of THIS scene, as chips
+		suggestions: suggestionsSchema, // 2-3 next edits of THIS scene, as chips
+		settings: settingsSchema // the scene's settings (gravity, air, room temperature, time-lapse); left out: the standard ones
 	}
 }
 
@@ -167,7 +209,7 @@ const PATCH_FIELDS = {
 	replace_type: { required: ["id", "type"], properties: { type: str(60, 1), props: propsSchema } },
 	set_place: { required: ["id", "place"], properties: { place: placeSchema } },
 	set_item: { required: ["id"], properties: { name: str(80), held: { type: "boolean" }, fixed: { type: "boolean" } } },
-	set_scene: { required: [], properties: { seconds: num(0.5, 20), release: num(0, 20), title: str(80, 1) } },
+	set_scene: { required: [], properties: { seconds: num(0.5, 20), release: num(0, 20), title: str(80, 1), settings: settingsSchema, stage: { type: "object", required: ["x0", "x1", "y0", "y1"], additionalProperties: false, properties: { x0: num(-50, 50), x1: num(-50, 50), y0: num(-50, 50), y1: num(-50, 50) } } } },
 	set_goals: { required: ["goals"], properties: { goals: { type: "array", maxItems: LIMITS.goals, items: goalSchema } } },
 	set_tune: { required: ["tune"], properties: { tune: { type: "array", maxItems: LIMITS.tune, items: tuneSchema } } },
 	set_stages: { required: ["stages"], properties: { stages: { type: "array", maxItems: LIMITS.stages, items: stageSchema } } }
@@ -256,7 +298,8 @@ export const refineSchema = {
 			items: { type: "object", required: ["severity", "text"], additionalProperties: false, properties: { severity: { enum: ["high", "medium", "low"] }, text: str(400, 1), ids: { type: "array", maxItems: 20, items: str(40, 1) } } }
 		},
 		patches: { type: "array", maxItems: LIMITS.patches, items: { type: "object" } },
-		notes: str(1500)
+		notes: str(1500),
+		planned: str(1200) // what the user was told about the plan, rewritten for the version judged (refine.md "# Answer"): optional
 	}
 }
 
@@ -268,7 +311,8 @@ export const rateSchema = {
 	properties: {
 		score_0_10: num(0, 10),
 		issues: refineSchema.properties.issues,
-		notes: str(600)
+		notes: str(600),
+		planned: str(1200)
 	}
 }
 
@@ -388,12 +432,30 @@ function normTypeKey(t, catalog) {
 	return catalog.types[k] ? k : t
 }
 
+/**
+ * Whether v is a join of an open choice's words: an open choice some of whose listed choices join words with "+" (the mechanics module's
+ * force `arrows`: "all+net") takes any such join of the words its choices are made of ("gravity+support+net"); web/ai/solver.js the same.
+ */
+export function joinedChoice(spec, v) {
+	if (spec.open !== true || typeof v !== "string" || !spec.choices.some((c) => typeof c === "string" && c.includes("+"))) return false
+	const words = new Set(spec.choices.flatMap((c) => String(c).toLowerCase().split("+")))
+	const mine = v.trim().toLowerCase().split(/[,+\s]+/).filter(Boolean)
+	return mine.length > 0 && v.trim().length <= 64 && mine.every((w) => words.has(w))
+}
+
 /** Check one prop value against its catalog spec; returns [value (clamped / coerced), error or null]. */
 export function checkProp(spec, v, path) {
 	if (v === null) return [null, null] // null = back to the default (patches)
 	if (spec.kind === "bool") return typeof v === "boolean" ? [v, null] : [v, `${path} must be true or false, not ${short(v)}`]
+	if (spec.kind === "link") {
+		// (a link to another item: its id in the plan; the solver also reads an item's name there)
+		if (typeof v === "string" && v.trim()) return [v.trim(), null]
+		return [v, `${path} must name another item of the plan (its id), not ${short(v)}`]
+	}
 	if (spec.kind === "choice") {
 		if (typeof v === "string" && spec.choices.includes(v)) return [v, null]
+		if (spec.open === true && typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v)) return [v, null] // (an open choice: a colour's "#rrggbb" too)
+		if (joinedChoice(spec, v)) return [v.trim().toLowerCase().split(/[,+\s]+/).filter(Boolean).join("+"), null] // (an open choice of joinable words: force arrows' "gravity+support+net")
 		const hint = typeof v === "string" ? suggest(v, spec.choices) : null
 		return [v, `${path} must be one of ${spec.choices.map((c) => JSON.stringify(c)).join(", ")}, not ${short(v)}${hint ? ` (did you mean "${hint}"?)` : ""}`]
 	}
@@ -514,7 +576,12 @@ function tidyGoals(goals, path, warnings) {
 	for (const [i, g] of goals.entries()) {
 		if (!isObj(g)) continue
 		const at = `${path}[${i}]`
-		if (typeof g.kind === "string" && !GOAL_KINDS.includes(g.kind)) {
+		const mod = typeof g.kind === "string" && !GOAL_KINDS.includes(g.kind) ? moduleGoal(g.kind) : undefined
+		if (mod && mod.kind !== g.kind) {
+			warnings.push(`${at}.kind "${g.kind}" read as "${mod.kind}"`)
+			g.kind = mod.kind
+		}
+		if (typeof g.kind === "string" && !GOAL_KINDS.includes(g.kind) && !mod) {
 			const k = { inside: "in", into: "in", lands_in: "in", fall: "falls", topple: "falls", topples: "falls", tips: "falls", knock_over: "falls", hit: "hits", touches: "hits", reaches: "hits", move: "moves", travels: "moves", off_table: "off", off_the_table: "off", off_edge: "off", off_the_edge: "off", falls_off: "off", leaves: "off", leaves_table: "off", leaves_the_table: "off", onto_floor: "off" }[g.kind.toLowerCase().replace(/[\s-]+/g, "_")]
 			if (k) {
 				warnings.push(`${at}.kind "${g.kind}" read as "${k}"`)
@@ -526,7 +593,10 @@ function tidyGoals(goals, path, warnings) {
 			delete g.ids
 			warnings.push(`${at}.ids read as items`)
 		}
-		if (Array.isArray(g.items) && g.items.length === 1 && g.item === undefined) {
+		// (one item listed is read as `item` (the built-in "falls" convention) only for a kind that has an `item` field: a module kind whose fields
+		// are `items` alone (magnetism's holds {magnet, count, items}) keeps its list (VAI5 M2, 20 Oct: every electromagnet plan was refused)
+		const listOnly = mod && mod.fields && !Object.hasOwn(mod.fields, "item") && Object.hasOwn(mod.fields, "items")
+		if (Array.isArray(g.items) && g.items.length === 1 && g.item === undefined && !listOnly) {
 			g.item = g.items[0]
 			delete g.items
 		}
@@ -933,7 +1003,7 @@ function checkPlanSemantics(plan, ctx, errors, warnings) {
 					warnings.push(`${path}: ${f} dropped (a ${it.type} is static: it never moves anyway)`)
 				}
 		}
-		checkPlace(it.place, `${path}.place`, it, ids, known, catalog, stage, errors)
+		checkPlace(it.place, `${path}.place`, it, ids, known, catalog, stage, errors, isObj(plan.settings?.camera))
 	}
 	// support graph: each item is placed after what it rests on, leans on or is spaced from
 	const deps = new Map(plan.items.map((it) => [it.id, placeRefs(it.place).filter((r) => ids.has(r))]))
@@ -994,7 +1064,7 @@ export function placeRefs(p) {
 	return r.filter((x) => !RESERVED_IDS.includes(x))
 }
 
-function checkPlace(p, path, it, ids, known, catalog, stage, errors) {
+function checkPlace(p, path, it, ids, known, catalog, stage, errors, freeCam = false) {
 	const ref = (id, what) => {
 		if (id === it.id) return void errors.push(`${path}.${what} refers to the item itself`)
 		if (!RESERVED_IDS.includes(id) && !known.has(id)) {
@@ -1008,7 +1078,13 @@ function checkPlace(p, path, it, ids, known, catalog, stage, errors) {
 		if (x < xr[0] || x > xr[1]) errors.push(`${path}.${what} = ${x} m is outside the stage (x ${stage.x0}…${stage.x1}); keep things on the stage`)
 	}
 	const inY = (y, what) => {
-		if (y < yr[0] || y > yr[1]) errors.push(`${path}.${what} = ${y} m is outside the stage (y ${stage.y0}…${stage.y1}; the table top is y = 0)`)
+		// (above the stage's top but no higher than the room shows: the stage grows to it; higher than that: the room's limit, said with the
+		// highest drop it can show)
+		if (y > HIGHEST_START_M + START_SLACK && !freeCam)
+			errors.push(
+				`${path}.${what} = ${y} m is higher than the room shows: its camera frames things up to ${HIGHEST_START_M} m above the table top (the ceiling is ${CEILING_M} m up), so nothing can start higher than ${HIGHEST_START_M} m. Use at most ${HIGHEST_START_M} m (the highest drop it can show) and say so plainly in the reply or the assumptions ("the room only shows drops up to ${HIGHEST_START_M} m, so I dropped it from ${HIGHEST_START_M} m"); when it already starts there, change nothing and say that ${HIGHEST_START_M} m is the highest drop the room shows. A height is no missing thing: never list it in missing`
+			)
+		else if (y < yr[0] || (y > yr[1] && (freeCam || y > HIGHEST_START_M + START_SLACK))) errors.push(`${path}.${what} = ${y} m is outside the stage (y ${stage.y0}…${stage.y1}; the table top is y = 0)`)
 	}
 	if (p.on !== "table" && p.on !== "air") ref(p.on, "on")
 	if (p.x !== undefined) inX(p.x, "x")
@@ -1070,6 +1146,12 @@ function checkGoals(goals, path, ids, catalog, errors) {
 		}
 		const kind = goalKind(g)
 		g.kind = kind
+		if (!GOAL_KINDS.includes(kind)) {
+			// (a physics module's goal kind: its own fields, ai/goals.mjs moduleGoalProblem)
+			const why = moduleGoalProblem(g, (id) => ids.has(id))
+			if (why) errors.push(`${at}: ${why}`)
+			continue
+		}
 		const fieldsOf = { in: ["item", "container"], falls: ["item", "items"], hits: ["item", "target", "before_s"], moves: ["item", "min_m"], off: ["item"] }[kind]
 		for (const f of ["item", "items", "container", "target", "before_s", "min_m"]) if (g[f] !== undefined && !fieldsOf.includes(f)) errors.push(`${at}: a "${kind}" goal has no ${f} (its fields: ${fieldsOf.join(", ")})`)
 		if (kind === "in") {
@@ -1265,6 +1347,17 @@ export function checkPatches(patches, basePlan, ctx, path = "patches") {
 		plan = applyPatch(plan, p, catalog)
 		out.push(p)
 	}
+	if (errors.length === before && !ctx._inner && ctx.growStage) {
+		// (an edit: what the patches put above the stage's top, up to the most the room shows, gets a taller stage with it, said as a patch:
+		// the app keeps the scene's stage unless a patch changes it)
+		const g = grownStage(plan, basePlan, stageOf({ ...ctx, plan: undefined, stage: isObj(plan.stage) ? plan.stage : ctx.stage }))
+		if (g) {
+			const p = { op: "set_scene", stage: g, why: "the frame made taller to show what now starts higher" }
+			plan = applyPatch(plan, p, catalog)
+			out.push(p)
+			warnings.push(`the stage was made taller (its top ${g.y1} m above the table) to show what the patches put higher`)
+		}
+	}
 	if (errors.length === before && !ctx._inner) {
 		// the result must be a sound plan: references, props, goals, knobs. Problems the plan already had before the patches are not the
 		// patches' fault (a hand-made scene may hold an item off the stage): only new ones count.
@@ -1276,6 +1369,22 @@ export function checkPatches(patches, basePlan, ctx, path = "patches") {
 		if (r.ok) plan = r.value
 	}
 	return { errors, warnings, patches: out, plan }
+}
+
+/** The stage an edit's patched plan needs: its top raised over what the patches put higher than it (in the air: y_m, or a lean's end y) by
+ *  more than STAGE_SLACK, when that is no higher than the room shows (HIGHEST_START_M); else null (the stage stays: the checks say why). */
+function grownStage(plan, basePlan, stage) {
+	if (isObj(plan?.settings?.camera)) return null
+	const was = new Map((basePlan?.items ?? []).filter(isObj).map((it) => [it.id, JSON.stringify(it.place ?? null)]))
+	let top = -Infinity
+	for (const it of (plan?.items ?? []).filter(isObj)) {
+		if (was.get(it.id) === JSON.stringify(it.place ?? null)) continue // (unchanged: what the scene had is not this change's)
+		const pl = isObj(it.place) ? it.place : {}
+		const ys = [pl.on === "air" ? pl.y_m : undefined, ...(isObj(pl.lean) ? [pl.lean.from, pl.lean.to].map((e) => (isObj(e) && e.on === "air" ? e.y : undefined)) : [])]
+		for (const y of ys) if (Number.isFinite(y)) top = Math.max(top, y)
+	}
+	if (!(top > stage.y1 + STAGE_SLACK) || top > HIGHEST_START_M + START_SLACK) return null
+	return { x0: stage.x0, x1: stage.x1, y0: stage.y0, y1: Math.round(Math.min(CEILING_M, top + STAGE_SLACK) * 1000) / 1000 }
 }
 
 /** One patch applied to a plan (returns a new plan; the patch is assumed checked). */
@@ -1368,6 +1477,15 @@ export function applyPatch(plan, p, catalog) {
 			break
 		case "set_scene":
 			for (const k of ["seconds", "release", "title"]) if (p[k] !== undefined) P[k] = p[k]
+			if (isObj(p.stage)) P.stage = clone(p.stage)
+			// (settings merge into the plan's: a key set to null goes back to the standard)
+			if (isObj(p.settings)) {
+				const st = { ...(isObj(P.settings) ? P.settings : {}) }
+				for (const [k, v] of Object.entries(p.settings)) if (v === null) delete st[k]
+				else st[k] = v
+				if (Object.keys(st).length) P.settings = st
+				else delete P.settings
+			}
 			break
 		case "set_goals":
 			P.goals = clone(p.goals)
@@ -1412,16 +1530,18 @@ export function planFromScene(scene, catalog = null) {
 		items,
 		missing: [],
 		goals: (scene?.goals ?? [])
-			.filter((g) => g && (g.item || Array.isArray(g.items)) && (goalKind(g) !== "in" || g.container))
+			.filter((g) => g && (g.item || Array.isArray(g.items) || goalItems(g).length) && (goalKind(g) !== "in" || g.container))
 			.map((g) => {
 				const o = { kind: goalKind(g), label: String(g.label || goalLabel(g)).slice(0, 200) }
-				for (const f of ["item", "items", "container", "target", "before_s", "min_m"]) if (g[f] !== undefined && g[f] !== null) o[f] = clone(g[f])
+				const fields = GOAL_KINDS.includes(o.kind) ? ["item", "items", "container", "target", "before_s", "min_m"] : Object.keys(moduleGoal(o.kind)?.fields ?? {})
+				for (const f of fields) if (g[f] !== undefined && g[f] !== null) o[f] = clone(g[f])
 				return o
 			}),
 		tune: [],
 		notes: ""
 	}
 	if (scene?.stage) plan.stage = clone(scene.stage)
+	if (isObj(scene?.settings) && Object.keys(scene.settings).length) plan.settings = clone(scene.settings)
 	const table = scene?.items?.find((i) => i?.type === "table")
 	if (table?.props && Object.keys(table.props).length) plan.table = { props: clone(table.props) }
 	return plan
@@ -1716,6 +1836,17 @@ function keepLegs(patches, basePlan, catalog, warnings, path = "patches") {
 }
 
 // ---------------------------------------------------------------- refine
+/** The critic's `planned` (the user's account of the plan, rewritten for the version it judged): a string, cut to 1200 characters; anything
+ *  else, or an empty one, is dropped (it is optional: the app keeps the planner's words then). */
+function tidyPlanned(v, path, warnings) {
+	if (v.planned === undefined) return
+	if (typeof v.planned !== "string" || !v.planned.trim()) {
+		delete v.planned
+		return
+	}
+	v.planned = v.planned.trim()
+	cutStr(v, "planned", 1200, path, warnings)
+}
 /** ctx: {catalog, plan (the plan being refined), stage?, text? (the request), goalResults? (ai/goals.mjs checkGoals on the run judged)} */
 export function validateRefine(value, ctx = {}) {
 	const errors = []
@@ -1725,6 +1856,7 @@ export function validateRefine(value, ctx = {}) {
 	if (v.issues === undefined) v.issues = []
 	if (v.patches === undefined) v.patches = []
 	cutStr(v, "notes", 1500, "refine", warnings)
+	tidyPlanned(v, "refine", warnings)
 	if (Array.isArray(v.issues)) v.issues.forEach((is, i) => cutStr(is, "text", 400, `refine.issues[${i}]`, warnings))
 	tidyPatchText(v.patches, warnings)
 	checkSchema(refineSchema, v, "refine", errors)
@@ -1783,6 +1915,7 @@ export function validateRate(value, ctx = {}) {
 		warnings.push("score read as score_0_10")
 	}
 	cutStr(v, "notes", 600, "rate", warnings)
+	tidyPlanned(v, "rate", warnings)
 	if (Array.isArray(v.issues)) v.issues.forEach((is, i) => cutStr(is, "text", 400, `rate.issues[${i}]`, warnings))
 	checkSchema(rateSchema, v, "rate", errors)
 	const failing = (Array.isArray(ctx.goalResults) ? ctx.goalResults : []).filter((g) => g && g.ok === false)
@@ -1880,6 +2013,7 @@ export function validateEdit(value, ctx = {}) {
 	if (!isObj(value)) return { ok: false, errors: ["the answer must be a JSON object"], warnings, value }
 	const v = clone(value)
 	if (v.missing === undefined) v.missing = []
+	if (Array.isArray(v.missing)) dropHeightMissing(v.missing, "edit.missing", warnings)
 	delete v.plan_missing // (the validator's, below)
 	checkEditKind(v, errors, warnings)
 	tidyReply(v, "edit", warnings, 1200, EDIT_REPLY_WORDS)
@@ -1910,10 +2044,13 @@ export function validateEdit(value, ctx = {}) {
 		if (!Array.isArray(v.patches)) errors.push('mode "patch" needs patches (an empty list when nothing should change)')
 		else if (v.patches.length) {
 			const base = ctx.plan ?? planFromScene(ctx.scene, ctx.catalog)
-			const r = checkPatches(v.patches, base, ctx)
+			const r = checkPatches(v.patches, base, { ...ctx, growStage: true })
 			errors.push(...r.errors)
 			warnings.push(...r.warnings)
-			if (!r.errors.length) {
+			// (goals that go round in a circle can never all happen: the new outcome overrides one of the scene's, which goes)
+			const clash = r.errors.length ? null : goalClash(r.plan.goals, base?.goals)
+			if (clash) errors.push(clashText(clash))
+			if (!r.errors.length && !clash) {
 				v.patches = [...r.patches, ...renamesFor(base, r.plan, r.patches, ctx.catalog, warnings)]
 				offGoals(v.patches, base, ctx.text, warnings)
 				// `missing` is what THIS request asked for that the library does not have (the card tells the user); the scene's own list
@@ -1952,7 +2089,31 @@ export function validateEdit(value, ctx = {}) {
 	}
 	for (const [i, m] of v.missing.entries())
 		if (typeof m?.substitute_type === "string" && !ctx.catalog.types[m.substitute_type]) errors.push(`missing[${i}]: substitute_type "${m.substitute_type}" is not in the catalog; use a catalog key or null`)
-	return { ok: errors.length === 0, errors: dedupe(errors), soft: editIntentSoft(v, ctx), warnings, value: v }
+	return { ok: errors.length === 0, errors: dedupe(errors), soft: [...editIntentSoft(v, ctx), ...outcomeGoalSoft(v, ctx)], warnings, value: v }
+}
+
+/** A height is no thing the library lacks: "a 6 m drop" in `missing` read as "a 6 m drop · not in the library" on the card under the reply
+ *  that said the room shows drops up to 3 m (vfy core-ai FR3-6m). Such entries go, with a warning. Changes the list in place. */
+const HEIGHT_ASKED_RE = /^\s*(?:(?:an?|the)\s+)?(?:(?:\d+(?:\.\d+)?[\s-]*(?:m|cm|mm|metres?|meters?|feet|foot|ft)\b[\s-]*(?:high\s+|tall\s+)?(?:drop|fall|height|release)s?)|(?:(?:drop|fall|height|release)s?|dropping|falling|starting)\s+(?:from|of|at)\s+(?:about\s+)?\d+(?:\.\d+)?\s*(?:m|cm|metres?|meters?|feet|ft)\b)/i
+function dropHeightMissing(list, path, warnings) {
+	for (let i = list.length - 1; i >= 0; i--)
+		if (isObj(list[i]) && HEIGHT_ASKED_RE.test(String(list[i].asked ?? ""))) {
+			warnings.push(`${path}[${i}] dropped: "${String(list[i].asked).slice(0, 60)}" is a height, not a thing the library lacks`)
+			list.splice(i, 1)
+		}
+}
+
+/**
+ * A change or a fix whose request asks for an outcome in its own words ("make the 100 g spring squash more than the 300 g spring", "make the
+ * boat float", "so the ice melts first") with no set_goals: the outcome is checked by a goal, as a new scene's are (vfy-sbfr SB2: the fix
+ * search then hunted for the scene's old goal, which the request had made untrue). Soft: the repair turn when there is time for it.
+ */
+function outcomeGoalSoft(v, ctx) {
+	if (v?.mode !== "patch" || !["change", "fix"].includes(v?.kind) || !statesNewOutcome(ctx?.text)) return []
+	if ((Array.isArray(v.patches) ? v.patches : []).some((p) => isObj(p) && p.op === "set_goals")) return []
+	return [
+		`The request asks for an outcome of its own ("${String(ctx.text).trim().slice(0, 160)}"), but the answer sets no goal for it: add set_goals with every goal the scene keeps plus one for that outcome, of the goal kind that checks it (the core kinds or a physics module's: deforms_more {a, b} for "squashes more than", melts_first, floats, lights, farther, faster…). Leave out a goal of the scene that the new outcome makes untrue, and say so in the reply. If no goal kind can check it, or the scene already has that goal, keep the answer as it is`
+	]
 }
 
 // ---------------------------------------------------------------- per step

@@ -18,6 +18,8 @@ import { checkGoals, goalItems, goalKind } from "./goals.js"
 import { kindNoun, aKindOf, weightOf, fmtMass, clipLabel, solidMass, tidyBrackets } from "./words.js"
 import { catalog as simCatalog } from "../sim/index.js"
 import { KEYS as EVERYDAY_KEYS } from "../sim/catalog-everyday.js"
+import { knobsFor, knobOf, knobApplies, goalKind as moduleGoalKind, checkModuleGoal, properName } from "../sim/plugins.js"
+import { TYPES as SIM_TYPES } from "../sim/items.js"
 
 export const FIX_MS = 12000 // the search's time budget
 export const FIX_RUNS = 320 // and its most engine runs (the page runs about 30 a second on four workers)
@@ -57,6 +59,9 @@ const nameOf = (it) => it?.name ?? typeName(it?.type) ?? it?.id
 /** "Ball 2", "the box", "the tennis ball" (a name with a number, or two capitalised words, is a proper name). */
 export const theName = (it) => {
 	const n = nameOf(it) ?? "it"
+	// (a module's proper noun: "the Earth", "Mars", never "the earth": web/sim/plugins.js properName)
+	const pn = properName(n)
+	if (pn) return pn
 	// (a number of its own, "Ball 2", or two capitalised words make a proper name; a number that is part of a word, "the 8-ball", does not)
 	// ("Newton's cradle" keeps its capital: "the Newton's cradle")
 	if (/^[A-Z][a-z]+['’]s\b/.test(n)) return `the ${n}`
@@ -699,11 +704,25 @@ function widenTable(s, base) {
 	const L = Number(table.x) - w / 2
 	const R = Number(table.x) + w / 2
 	const was = new Map(base.items.map((i) => [i.id, JSON.stringify(i)]))
+	let ins0 // (the scene before the change, looked at only when a changed thing is out past an end)
 	let over = 0
 	for (const it of s.items) {
 		if (it.type === "table" || it.type === "wall" || was.get(it.id) === JSON.stringify(it)) continue
 		const b = ins.box(it.id)
-		if (b) over = Math.max(over, L - b.x0, b.x1 - R)
+		if (!b) continue
+		const o = Math.max(L - b.x0, b.x1 - R)
+		if (o <= 0.002) continue
+		// (a thing the change takes no further out past an end than it already was, a car or a stopwatch on a 10 m lane given more speed: no
+		// reason to)
+		if (ins0 === undefined)
+			try {
+				ins0 = inspect(base)
+			} catch {
+				ins0 = null
+			}
+		const b0 = ins0?.box?.(it.id)
+		if (b0 && o <= Math.max(0, L - b0.x0, b0.x1 - R) + 0.002) continue
+		over = Math.max(over, o)
 	}
 	if (over <= 0.002) return
 	const grow = Math.ceil((over + 0.03) / 0.05) * 0.05
@@ -1044,10 +1063,21 @@ function fits(cand, base, baseOverlaps) {
 			return false
 		}
 		const was = new Map(base.items.map((i) => [i.id, JSON.stringify(i)]))
+		let ins0 = null
+		const out = (q) => Math.max(0, L - q.x0, q.x1 - Rr)
 		for (const it of cand.items) {
 			if (it.type === "table" || it.type === "wall" || was.get(it.id) === JSON.stringify(it)) continue
 			const b = ins.box(it.id)
-			if (b && (b.x0 < L - 0.002 || b.x1 > Rr + 0.002)) return false
+			if (!b || out(b) <= 0.002) continue
+			// (no further out past an end than it was before the change: a car or a stopwatch on a 10 m lane is not on the table at all)
+			if (ins0 === null)
+				try {
+					ins0 = inspect(base)
+				} catch {
+					ins0 = false
+				}
+			const b0 = ins0 ? ins0.box(it.id) : null
+			if (out(b) > (b0 ? out(b0) : 0) + 0.002) return false
 		}
 	}
 	return true
@@ -1072,8 +1102,9 @@ const moveCost = (dx, dy) => (Math.abs(dx) + Math.abs(dy)) / 0.01 + (Math.abs(dx
  * The obvious knobs of the things in the run's chain (nearest the goal first). -> [{id, label, gen: () => [{changes, cost}]}]
  * touched: Map id -> Set of what the edit set ("place" and prop keys) or "all"; swapped: Set of ids whose kind the edit changed.
  */
-function knobCandidates({ scene, order, containers, touched, swapped, inAir, riders, restsOn, resolved = null, flex = false, before = null, locks = null, soft = null }) {
+function knobCandidates({ scene, order, containers, touched, swapped, inAir, riders, restsOn, resolved = null, flex = false, before = null, locks = null, soft = null, beforeResolved = null }) {
 	const out = []
+	kbBlocked = []
 	const setBy = (id) => touched?.get?.(id) ?? null
 	// (flex: a request that only states an outcome, "make it land in cup 3": what the edit set on the way may be adjusted further, never more
 	// than a quarter of the way back)
@@ -1089,7 +1120,12 @@ function knobCandidates({ scene, order, containers, touched, swapped, inAir, rid
 	const softOn = (id, key) => {
 		const s = soft?.get?.(id)
 		if (!s) return false
-		return key === "x" || key === "y" || key === "angle" ? [...s].some((k) => /^place/.test(k)) : s.has(key)
+		if (key === "x" || key === "y" || key === "angle") return [...s].some((k) => /^place/.test(k))
+		if (s.has(key)) return true
+		// (a number that follows a setting the person named: a sail's area follows its size, "use a bigger sail" holds the area's way too)
+		const it = scene.items.find((i) => i.id === id)
+		const auto = it ? propSpec(it.type, key)?.auto : null
+		return Array.isArray(auto) && auto.some((k) => s.has(k))
 	}
 	const was = (id) => before?.items?.find?.((i) => i.id === id) ?? null
 	/** May a knob move this much on what the edit set (key: "x", "y", "angle" or a prop)? Not back more than a quarter of the edit's own change. */
@@ -1099,12 +1135,37 @@ function knobCandidates({ scene, order, containers, touched, swapped, inAir, rid
 		const a = was(id)
 		const b = scene.items.find((i) => i.id === id)
 		if (!a || !b) return true
-		const e = key === "x" || key === "y" ? (Number(b[key]) || 0) - (Number(a[key]) || 0) : key === "angle" ? (Number(b.angle) || 0) - (Number(a.angle) || 0) : (num(propValue(b, key)) ?? 0) - (num(propValue(a, key)) ?? 0)
+		let e = key === "x" || key === "y" ? (Number(b[key]) || 0) - (Number(a[key]) || 0) : key === "angle" ? (Number(b.angle) || 0) - (Number(a.angle) || 0) : (num(propValue(b, key)) ?? 0) - (num(propValue(a, key)) ?? 0)
+		// (neither scene sets it: the number built from what they set, a sail's area from its size choice, says which way the person went)
+		if (Math.abs(e) < 1e-9 && key !== "x" && key !== "y" && key !== "angle" && b.props?.[key] === undefined && a.props?.[key] === undefined) {
+			const rb = num(resolved?.[id]?.[key])
+			const ra = num(beforeResolved?.[id]?.[key])
+			if (rb !== null && ra !== null) e = rb - ra
+		}
 		return Math.abs(e) < 1e-9 || Math.sign(d) === Math.sign(e) || Math.abs(d) <= 0.25 * Math.abs(e)
 	}
 	const mult = (id) => (setBy(id) ? 2 : 1)
-	const push = (changes, cost, why) => out.push({ changes, cost, why })
+	// (a fair test: when the goals compare two things (a goal with a and b) or keep a control (expect: false), a setting the two things of one kind
+	// in those goals share is what the test holds equal: never changed on just one of them (A8, 20 Oct: "boil the can in hot water shorter"
+	// made the two cans differ in two things); when the physics says the expected result is wrong, the card says so instead)
+	const goalsNow = Array.isArray(scene.goals) ? scene.goals : []
+	// (a goal kind whose a and b act on each other, two carts' magnets that repel, says `compares: false` (web/sim/plugins.js): that is no
+	// comparison, so a setting they share is no control held equal: turning one cart's magnet around is the plain fix)
+	const fairTest = goalsNow.some((g) => g && ((typeof g.a === "string" && typeof g.b === "string" && moduleGoalKind(g.kind)?.compares !== false) || g.expect === false))
+	const inGoals = new Set(goalsNow.flatMap((g) => [g?.item, g?.a, g?.b, ...(Array.isArray(g?.items) ? g.items : [])].filter((v) => typeof v === "string")))
+	const heldEqual = (id, key) => {
+		if (!fairTest || !inGoals.has(id)) return false
+		const it = scene.items.find((i) => i.id === id)
+		if (!it) return false
+		const v = JSON.stringify(propValue(it, key) ?? null)
+		return scene.items.some((o) => o.id !== id && o.type === it.type && inGoals.has(o.id) && JSON.stringify(propValue(o, key) ?? null) === v)
+	}
+	const push = (changes, cost, why) => {
+		if (fairTest && changes.some((c) => c.kind === "prop" && heldEqual(c.id, c.key))) return
+		out.push({ changes, cost, why })
+	}
 	const isRider = (id) => [...riders.values()].some((l) => l.includes(id))
+	kbScene = scene
 	for (const id of order) {
 		const it = scene.items.find((i) => i.id === id)
 		if (!it || it.type === "table" || it.type === "wall") continue
@@ -1165,6 +1226,8 @@ function knobCandidates({ scene, order, containers, touched, swapped, inAir, rid
 					push([{ kind: "prop", id, key: k, from: v0, to: r5(to) }], cost, k)
 				}
 		}
+		// a physics module's knobs (web/sim/plugins.js: a lamp's distance, a battery's voltage, a sail's size, which pad a cube is linked to)
+		for (const kb of knobsFor(it.type)) moduleKnob(kb, it, id, m, { propSet, forward, push, lock, softOn })
 		// the weight of a thing whose kind the edit swapped (a tennis ball is 9× the plastic ball it replaced): it stays that kind
 		if (swapped?.has?.(id) && propSpec(it.type, "mass") && !it.props?.mass) {
 			// (a weight that follows the size has no number in the scene: the engine's own figure for it)
@@ -1181,6 +1244,96 @@ function knobCandidates({ scene, order, containers, touched, swapped, inAir, rid
 	}
 	return out
 }
+
+/** One module knob's candidates (knobCandidates): a number by relative steps (5 %…40 %), metres, degrees or the knob's own `steps` (abs: in the
+ *  prop's unit), another item for a link (of the link's types), another choice, a flip; key "x" or "y": a move by its `steps` (m); each costs
+ *  as a setting or a move does (× the knob's cost). */
+function moduleKnob(kb, it, id, m, { propSet, forward, push, lock, softOn = null }) {
+	// (a knob offered only in some scenes: its `when`, web/sim/plugins.js knobApplies)
+	if (!knobApplies(kb, it, kbScene)) return
+	if (kb.key === "x" || kb.key === "y") {
+		// (a knob on the item's place: moved along or up and down by the knob's own steps in metres, default 2-6 mm: a balloon on its thread
+		// lowered a few millimetres over paper scraps, where the search's own moves start at 1 cm and go up and down only for what it knows is in
+		// the air; never back over what the person moved)
+		if (lock?.(id)?.[kb.key]) return
+		const k = Number.isFinite(kb.cost) && kb.cost > 0 ? kb.cost : 1
+		const steps = Array.isArray(kb.steps) && kb.steps.length ? kb.steps : [0.002, 0.004, 0.006]
+		for (const d of steps)
+			for (const sgn of [1, -1]) {
+				if (!(d > 0) || !forward(id, kb.key, sgn * d)) continue
+				const dx = kb.key === "x" ? r5(sgn * d) : 0
+				const dy = kb.key === "y" ? r5(sgn * d) : 0
+				push([{ kind: "move", ids: [id], dx, dy }], moveCost(dx, dy) * k * m, kb.key)
+			}
+		return
+	}
+	if (propSet(id, kb.key)) return
+	const how = kb.how ?? "rel"
+	const k = Number.isFinite(kb.cost) && kb.cost > 0 ? kb.cost : 1
+	if (how === "link") {
+		const spec = (SIM_TYPES[it.type]?.links ?? []).find((l) => l.key === kb.key)
+		const cur = typeof it.props?.[kb.key] === "string" ? it.props[kb.key] : null
+		return void kbScene.items
+			?.filter((o) => o.id !== id && o.id !== cur && o.type !== "table" && (!spec?.types?.length || spec.types.includes(o.type)))
+			.forEach((o) => push([{ kind: "prop", id, key: kb.key, from: cur, to: o.id }], 10 * k * m, kb.key))
+	}
+	const sp = propSpec(it.type, kb.key)
+	if (!sp) return
+	const v0 = propValue(it, kb.key)
+	// (an on/off or a pick-from-list setting the person named without an amount, "put the cap on", "fill it with fine sand", is their choice
+	// as much as a number they typed: never flipped back, never swapped (kept aside, so the card can say honestly when only that would do))
+	const theirs = !!softOn?.(id, kb.key)
+	if (how === "bool" || sp.kind === "bool") {
+		const c = { changes: [{ kind: "prop", id, key: kb.key, from: !!v0, to: !v0 }], cost: 10 * k * m, why: kb.key, knob: kb }
+		return void (theirs ? kbBlocked.push(c) : push(c.changes, c.cost, c.why))
+	}
+	if (how === "choice" || sp.kind === "choice") {
+		for (const v of sp.choices ?? []) {
+			if (v === v0) continue
+			const c = { changes: [{ kind: "prop", id, key: kb.key, from: v0, to: v }], cost: 10 * k * m, why: kb.key, knob: kb }
+			if (theirs) kbBlocked.push(c)
+			else push(c.changes, c.cost, c.why)
+		}
+		return
+	}
+	const x0 = num(v0)
+	if (x0 === null) return
+	// (a knob's own range, inside the prop's: a real egg's breaking force 30-40 N of the prop's 5-200)
+	const lo = Math.max(num(sp.min) ?? -Infinity, num(kb.min) ?? -Infinity)
+	const hi = Math.min(num(sp.max) ?? Infinity, num(kb.max) ?? Infinity)
+	const steps = Array.isArray(kb.steps) && kb.steps.length ? kb.steps : how === "deg" ? DEG_STEPS : how === "m" ? [0.005, 0.01, 0.02, 0.03, 0.05, 0.08, 0.12] : how === "abs" ? [1, 2, 3, 5, 8].map((n) => n * (num(sp.step) ?? 1)) : REL_STEPS
+	for (const d of steps)
+		for (const sgn of [1, -1]) {
+			const raw = how === "rel" ? x0 * (1 + sgn * d) : x0 + sgn * d
+			const to = how === "deg" ? Math.round(raw * 2) / 2 : how === "m" ? Math.round(raw * 1000) / 1000 : Number(raw.toPrecision(Math.abs(raw) < 1 ? 2 : 3))
+			if (to < lo || to > hi || Math.abs(to - x0) < 1e-9 || !forward(id, kb.key, to - x0)) continue
+			const cost = (how === "deg" ? d : how === "m" ? d / 0.01 : how === "abs" ? d / (num(sp.step) ?? 1) : d / 0.05) * 2 * k * m
+			// (a module knob's coupled settings, `also(props, to, {goals, item})` -> {key: value}: what must change with it to keep the goal's own
+			// measure, a sand timer's wider neck with the sand that keeps its time; the person's own settings are never among them; none: no candidate)
+			const more = []
+			if (typeof kb.also === "function") {
+				let extra = null
+				try {
+					const P = {}
+					for (const p of SIM_TYPES[it.type]?.props ?? []) P[p.key] = propValue(it, p.key)
+					extra = kb.also(P, r5(to), { goals: Array.isArray(kbScene.goals) ? kbScene.goals : [], item: it })
+				} catch {}
+				for (const [k2, v2] of Object.entries(extra && typeof extra === "object" ? extra : {})) {
+					const sp2 = propSpec(it.type, k2)
+					const f2 = num(propValue(it, k2))
+					if (!sp2 || k2 === kb.key || propSet(id, k2) || typeof v2 !== "number" || !Number.isFinite(v2) || f2 === null) continue
+					const t2 = Math.max(num(sp2.min) ?? -Infinity, Math.min(num(sp2.max) ?? Infinity, Number(v2.toPrecision(3))))
+					if (Math.abs(t2 - f2) > 1e-9) more.push({ kind: "prop", id, key: k2, from: f2, to: r5(t2) })
+				}
+				if (!more.length) continue
+			}
+			push([{ kind: "prop", id, key: kb.key, from: x0, to: r5(to) }, ...more], cost, kb.key)
+		}
+}
+let kbScene = { items: [] } // (the scene knobCandidates is working on, for a link knob's other items)
+/** The flips and choices knobCandidates left out because they undo what the person asked for without an amount ("put the cap on"): never
+ *  offered; findFix runs the cheapest once when nothing else works, to say honestly that only undoing their change would. */
+let kbBlocked = []
 
 // ================================================================ a stand-in for a lost hit
 let TIPPERS = null
@@ -2037,6 +2190,33 @@ export async function findFix(ctx, opts = {}) {
 		const near = walls.map((w) => ({ w, d: Math.abs((Number(w.x) || 0) - end.x) })).sort((p, q) => p.d - q.d)[0]
 		if (near && near.d < 0.6) firstCands.push({ changes: [{ kind: "remove", ids: [near.w.id] }], cost: 5, why: "wall" })
 	}
+	// a module goal kind's own aim (web/sim/plugins.js GOAL KINDS aim): the settings that put a missed number right, worked out from what the
+	// run read (a stopwatch at 3.15 s for 3 s: the car's speed × 3.15 / 3); tried first and checked like any other; never what the person set
+	for (const [i, t] of live.entries()) {
+		if (liveRes[i]?.ok !== false) continue
+		const spec = moduleGoalKind(t.goal?.kind)
+		if (typeof spec?.aim !== "function") continue
+		let cands = []
+		try {
+			const { entry } = checkModuleGoal(t.goal, { ...sim, scene })
+			cands = entry ? spec.aim(t.goal, entry, scene, { ...sim, scene }) ?? [] : []
+		} catch {}
+		for (const c of Array.isArray(cands) ? cands : []) {
+			const ch = Array.isArray(c?.changes) ? c.changes : []
+			const set = (x) => {
+				const s = locks?.get?.(x.id)
+				return !ctx.flex && (s === "all" || !!s?.has?.(x.key))
+			}
+			// (a move: a pitcher or a tap re-aimed at the container the person moved; never a thing they placed themselves, that way)
+			const moved = (x) => {
+				if (x?.kind !== "move" || !Array.isArray(x.ids) || !x.ids.length || !x.ids.every((id) => has.has(id))) return false
+				if (!(Number.isFinite(x.dx) && Number.isFinite(x.dy)) || (x.dx === 0 && x.dy === 0)) return false
+				return ctx.flex || x.ids.every((id) => !((x.dx !== 0 && lockOf(locks, id).x) || (x.dy !== 0 && lockOf(locks, id).y)))
+			}
+			if (!ch.length || ch.some((x) => !(moved(x) || (x?.kind === "prop" && has.has(x.id) && !set(x))))) continue
+			firstCands.push({ changes: ch, cost: Number.isFinite(c.cost) ? c.cost : 0.5, why: "aim" })
+		}
+	}
 	// a thing hung from a pivot made shorter or longer (a pendulum's string): hung that much lower or higher, so it swings as low as before
 	for (const [id, keys] of ctx.touched ?? []) {
 		if (keys === "all" || !keys?.has?.("length") || lockOf(ctx.touched, id).y) continue
@@ -2065,8 +2245,10 @@ export async function findFix(ctx, opts = {}) {
 		counted.add(key)
 		window.push(id)
 	}
+	const knobbed = knobCandidates({ scene, order: window, containers, touched: ctx.touched, swapped: ctx.swapped, inAir, riders, restsOn, resolved: sim?.resolved, flex: !!ctx.flex, before: ctx.before?.scene, locks: relaxed ? ctx.hard : null, soft, beforeResolved: ctx.before?.sim?.resolved ?? null })
+	const undos = kbBlocked.slice()
 	const blind = [
-		...knobCandidates({ scene, order: window, containers, touched: ctx.touched, swapped: ctx.swapped, inAir, riders, restsOn, resolved: sim?.resolved, flex: !!ctx.flex, before: ctx.before?.scene, locks: relaxed ? ctx.hard : null, soft }),
+		...knobbed,
 		...groupCandidates({ scene, before: ctx.before?.scene, locks: relaxed ? ctx.hard : null }),
 		// (sizes of the person's new things, a row grown with what follows it carried along: only after a plain edit, where what is theirs is known)
 		...(relaxed ? sizeCandidates({ scene, before: ctx.before?.scene, order, locks, targets: live }) : [])
@@ -2291,6 +2473,17 @@ export async function findFix(ctx, opts = {}) {
 			}
 		const vr = vs ? judge(live, vs) : null
 		if (!verify || (vr && vr.every((r) => r.ok === true) && (vs.warnings?.length ?? 0) <= (sim?.warnings?.length ?? 0) && !chainBreak(ctx, fallback.cand, vs, live))) best = { ...fallback, scene: fallback.cand, sim: vs, results: vr ?? live.map((t) => ({ label: t.label, ok: true })) }
+	}
+	if (!best && undos.length && !signal?.aborted) {
+		const u = undos.sort(byCost)[0]
+		try {
+			const cand = applyChanges(scene, u.changes, riders)
+			out.runs++
+			const e = await evaluate(cand, live, signal)
+			if (e?.ok && (e.warn ?? 0) <= baseWarn) out.undoOnly = { changes: u.changes, words: fixWords(u.changes, scene, ctx.before?.scene), why: u.knob?.why ?? null }
+		} catch (err) {
+			if (err?.name === "AbortError" || signal?.aborted) throw aborted()
+		}
 	}
 	if (best) {
 		out.status = "found"
@@ -3120,6 +3313,24 @@ function changeWords(c, scene, before) {
 		const verb = c.key === "growth" ? ["make", "made"] : ["make", "made"]
 		return { say: `${verb[0]} ${theName(it)} ${what}${carried}`, did: `${verb[1]} ${theName(it)} ${what}${carried}`, label: c.key === "growth" ? `Make ${theName(it)} grow faster` : `Make ${theName(it)} bigger` }
 	}
+	if (c.kind === "prop" && knobOf(item(c.id)?.type, c.key)) {
+		// (a physics module's knob, said its own way: "turn the heater up (20 → 30 W)", "link the cube to Pad 2")
+		const it = item(c.id)
+		const kb = knobOf(it?.type, c.key)
+		const sp = propSpec(it?.type, c.key)
+		const a = c.from ?? propValue(it, c.key)
+		const b = c.to
+		const unit = (x) => (kb.how === "link" ? (item(x) ? theName(item(x)) : "nothing") : typeof x === "number" ? (sp?.unit === "m" ? fmtLen(x) : `${sig(x)}${sp?.unit ? (sp.unit === "°" ? "°" : ` ${sp.unit}`) : ""}`) : String(x))
+		// (an on/off knob: its own words say which way, "switch the electromagnet off", with no "(true → false)" after them)
+		const onOff = typeof b === "boolean"
+		const tmpl = kb.how === "link" ? (kb.more ?? "link {it} to {to}") : typeof a === "number" && typeof b === "number" ? (b > a ? kb.more : kb.less) : onOff ? (b ? kb.more : (kb.less ?? kb.more)) : kb.more
+		// (from nothing, or down to nothing, in the knob's own words when it has them: "give the box a 20 cm parachute", never "(0 mm → 20 cm)")
+		const zero = typeof a === "number" && typeof b === "number" ? (a === 0 && b > 0 ? kb.from_zero : b === 0 && a > 0 ? kb.to_zero : undefined) : undefined
+		const lead = String(zero ?? tmpl ?? `set {it}'s ${lc(sp?.label ?? c.key)}`).replace("{it}", theName(it)).replace("{to}", unit(b))
+		const w = typeof zero === "string" ? lead : kb.how === "link" ? (/\{to\}/.test(String(tmpl ?? "")) ? lead : `${lead} (${unit(a)} → ${unit(b)})`) : onOff && tmpl ? lead : `${lead} (${unit(a)} → ${unit(b)})`
+		const did = w.replace(/^(\w+)/, pastOf)
+		return { say: w, did }
+	}
 	if (c.kind === "prop") {
 		const it = item(c.id)
 		const sp = propSpec(it?.type, c.key)
@@ -3150,6 +3361,17 @@ function changeWords(c, scene, before) {
 		return { say: `set ${theName(it)}'s ${label} to ${unit(b)} (from ${unit(a)})`, did: `set ${theName(it)}'s ${label} to ${unit(b)} (from ${unit(a)})` }
 	}
 	return { say: "adjust it", did: "adjusted it" }
+}
+/** The past tense of a module knob's leading verb ("turn the heater up" -> "turned the heater up"); others get -ed. */
+const PAST = { set: "set", put: "put", move: "moved", turn: "turned", link: "linked", make: "made", raise: "raised", lower: "lowered", tilt: "tilted", fill: "filled", empty: "emptied", add: "added", use: "used", bring: "brought", give: "gave", swap: "swapped", connect: "connected", open: "opened", close: "closed", shorten: "shortened", lengthen: "lengthened", tighten: "tightened", loosen: "loosened", pull: "pulled", push: "pushed", slide: "slid", aim: "aimed", point: "pointed", warm: "warmed", cool: "cooled", heat: "heated", widen: "widened", narrow: "narrowed", strengthen: "strengthened", weaken: "weakened", bend: "bent", blow: "blew", build: "built", do: "did", draw: "drew", drive: "drove", hang: "hung", hit: "hit", keep: "kept", lead: "led", leave: "left", let: "let", shake: "shook", speed: "sped", stand: "stood", stick: "stuck", strike: "struck", take: "took", throw: "threw", cut: "cut", spin: "spun", hold: "held", wind: "wound", get: "got", run: "ran", lay: "laid", feed: "fed", sink: "sank", swing: "swung", fly: "flew", grow: "grew", break: "broke", sit: "sat", send: "sent", shut: "shut", spread: "spread", split: "split", sweep: "swept", find: "found", choose: "chose", fall: "fell", freeze: "froze", begin: "began", ring: "rang" }
+/** The past of a knob's first word: the table's (irregular and the ones said already), else the regular spelling: "zero" -> "zeroed",
+ *  "change" -> "changed", "empty" -> "emptied", "stop" -> "stopped", "rub" -> "rubbed" (one short vowel before one last consonant). */
+function pastOf(v) {
+	if (Object.hasOwn(PAST, v)) return PAST[v]
+	if (/e$/.test(v)) return `${v}d`
+	if (/[^aeiou]y$/.test(v)) return `${v.slice(0, -1)}ied`
+	if (/^[^aeiou]*[aeiou][^aeiouwxy]$/.test(v)) return `${v}${v.at(-1)}ed`
+	return `${v}ed`
 }
 /**
  * A fix's changes in words: {say: "lower the box 4 cm" (the offer: "Want me to …?"), did: "lowered the box 4 cm" (the reply once done),
