@@ -879,11 +879,15 @@ of 2026-10-19 16:43, in Python and in web/sim). How to write one: the guide and 
   fn(ctx, goal))` in Python, `plugin.goals[i].summarize(ctx, goal)` in JS; `ctx` = `GoalCtx`: scene, doc, track, items, name, known, num, short_m,
   state(item, key), first_time(item, key, test), solids(item, dynamic)); the summary gains `readings: {item: {key: end value}}` and `happenings` (the
   track's events) only when the run has them.
-- **View** (`web/view-plugins.js`; models3d.js hands `addViewPlugin`, `addFrameHook`, `ownMaterial` to every model file): a model part marked
+- **View** (`web/view-plugins.js`; models3d.js hands `addViewPlugin`, `addFrameHook`, `ownMaterial` and `addThumb` to every model file): a model part marked
   `userData.frame = {hook, ...args}` is called at every drawn moment with the item's readings and its scale (`ownMaterial(obj)` before changing a colour:
   models share materials); `addViewPlugin({name, load(ctx)})` adds per-run objects (beams, field lines, glows, labels: `ctx.label()` makes a camera-facing
   text sprite on `HUD_LAYER` = PANE_LAYER, drawn by the canvas and the MP4 export, never by the table's mirror or the chrome balls). A resized body's model
   is scaled (and hidden at 0) by updateParts; `placementsAt` carries `scale`. A run with hooks, plugins or readings redraws every frame while it plays.
+  A type whose picture in a scene a view plug-in draws, so no part of it has a model (a wire, the circuit board, a motion trail, the sunlight),
+  registers its catalog photo's model with `addThumb(type, ({props, preview, looks, THREE}) => Object3D)` (web/thumbs3d.js uses it only when none
+  of the preview's parts draws anything; without one those parts' plain stand-ins are photographed); a photo's props are the type's defaults with
+  its automatic props at their listed defaults (a water tank's size and fill, a beaker's 300 mL).
 - **Inspector** (`web/inspector-plugins.js`): a link is a select of the scene's items of the link's types (and "none"); a type's readouts show the last
   run's values at its end (`render(scene, selected, resolved, readings)`; app.js passes `S.sim.summary.readings`); the Scene group has Gravity, Air,
   Air density (kg/m³; greyed out with the air off), Room temperature and Time-lapse (only non-standard values are stored in `scene.settings`).

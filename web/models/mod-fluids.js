@@ -384,10 +384,11 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const D = ctx.d
 		const sol = ctx.solid
 		void sol
-		// the boat's size from its props (the floor's solid is its bottom)
-		const L = kind === "clay" ? P.length : P.length
-		const H = kind === "clay" ? 0.4 * P.length : P.height
+		// the boat's size from its props (the floor's solid is its bottom); a clay boat's length is worked out from its clay (its resolved
+		// `length`), and where only the type's defaults are at hand (its catalog photo) from its bottom: L = Lb + 2 × 0.5 × 0.4 L, L = Lb / 0.6
 		const flare = kind === "clay" ? 0.5 : 0
+		const L = Number.isFinite(P.length) ? P.length : kind === "clay" ? Lb / (1 - 2 * flare * 0.4) : Lb
+		const H = kind === "clay" ? 0.4 * L : P.height
 		const mat = kind === "clay"
 			? M("fl-clay", { color: "#5a9b4a", roughness: 0.78, metalness: 0, normalMap: L_clayNormal(), normalScale: V2(0.35) })
 			: M("fl-foil", { color: "#dfe3e7", roughness: 0.28, metalness: 1, normalMap: L_foilNormal(), normalScale: V2(0.6) })

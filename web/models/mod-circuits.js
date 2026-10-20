@@ -47,7 +47,7 @@ function bandsFor(ohms) {
 	return [BANDS[d1], BANDS[d2], mult, "#c9a640"] // (gold: ±5 %)
 }
 
-export default function register({ addModel, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
+export default function register({ addModel, addThumb, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
 	const T = THREE
 	const put = (o, x = 0, y = 0, z = 0) => (o.position.set(x, y, z), o)
 	const mesh = (g, m, opt) => kit.mesh(g, m, opt)
@@ -766,6 +766,90 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 
 	// ------------------------------------------------------------------ the wires and the circuit board (one view plugin for the run)
 	const WIRE_HEX = { red: "#c8241c", black: "#1d1f23", blue: "#2a5bd6", yellow: "#e8c13a", green: "#2c9a3a", white: "#eeeeee" }
+	/** The upright pegboard, its middle at the origin: the panel, its frame and, standing `feet` m above what it stands on, two feet (behind it). */
+	function pegboard(T3, W, H, feet) {
+		const board = new T3.Group()
+		const map = kit.tex("circ-pegboard", 512, 512, (g, w, h) => {
+			g.fillStyle = "#c7a77c"
+			g.fillRect(0, 0, w, h)
+			g.fillStyle = "rgba(60,40,20,0.85)"
+			for (let y = 16; y < h; y += 32) for (let x = 16; x < w; x += 32) {
+				g.beginPath()
+				g.arc(x, y, 4.2, 0, Math.PI * 2)
+				g.fill()
+			}
+		})
+		const m = new T3.MeshPhysicalMaterial({ map, roughness: 0.75, metalness: 0 })
+		m.map = map.clone()
+		m.map.needsUpdate = true
+		m.map.wrapS = m.map.wrapT = T3.RepeatWrapping
+		m.map.repeat.set(W / 0.4, H / 0.4)
+		const panel = new T3.Mesh(new T3.BoxGeometry(W, H, 0.006), m)
+		panel.castShadow = panel.receiveShadow = true
+		board.add(panel)
+		const frameM = new T3.MeshPhysicalMaterial({ color: 0x8a6239, roughness: 0.55, clearcoat: 0.4 })
+		for (const [w2, h2, x2, y2] of [[W + 0.03, 0.015, 0, H / 2 + 0.0075], [W + 0.03, 0.015, 0, -H / 2 - 0.0075], [0.015, H, -W / 2 - 0.0075, 0], [0.015, H, W / 2 + 0.0075, 0]]) {
+			const f = new T3.Mesh(new T3.BoxGeometry(w2, h2, 0.012), frameM)
+			f.position.set(x2, y2, 0)
+			f.castShadow = f.receiveShadow = true
+			board.add(f)
+		}
+		if (feet > 0.005)
+			for (const sx of [-1, 1]) {
+				const leg = new T3.Mesh(new T3.BoxGeometry(0.03, feet, 0.03), frameM)
+				leg.position.set(sx * (W / 2 - 0.05), -H / 2 - 0.015 - feet / 2, -0.01)
+				leg.castShadow = leg.receiveShadow = true
+				board.add(leg)
+			}
+		return board
+	}
+	/** A crocodile clip standing on its jaws' end at the origin: the steel jaws, then its rubber boot, up +y (the boot's tip 2.05 cm up). */
+	function crocClip(T3, clipMat) {
+		const c = new T3.Group()
+		const jaw = new T3.Mesh(new T3.BoxGeometry(0.0032, 0.009, 0.0045), new T3.MeshPhysicalMaterial({ color: 0xc3c8ce, roughness: 0.28, metalness: 1 }))
+		jaw.position.y = 0.0045
+		const boot = new T3.Mesh(new T3.CylinderGeometry(0.0017, 0.0026, 0.012, 14), clipMat)
+		boot.position.y = 0.0145
+		c.add(jaw, boot)
+		c.traverse((o) => o.isMesh && ((o.castShadow = true), (o.receiveShadow = true)))
+		return c
+	}
+	// the catalog photos of the two the plug-in draws: a lead of its length lying in a loose curve, its clips at the ends; the board on its feet
+	addThumb?.("wire", ({ props }) => {
+		const hex = WIRE_HEX[props.color] ?? WIRE_HEX.red
+		const R = 0.0011
+		const len = Math.max(0.1, Number(props.length) || 0.3)
+		const half = Math.min(0.14, len / 2.4)
+		const lead = M(`lead|${hex}`, { color: hex, roughness: 0.45, metalness: 0, clearcoat: 0.5, clearcoatRoughness: 0.3 })
+		const clipMat = M(`boot|${hex}`, { color: hex, roughness: 0.4, clearcoat: 0.3 })
+		const g = new T.Group()
+		// each clip on its side on the table, jaws out, the lead leaving its boot toward the middle
+		const yc = 0.0026
+		for (const sx of [-1, 1]) {
+			const c = crocClip(T, clipMat)
+			c.rotation.z = (sx * Math.PI) / 2
+			c.position.set(sx * half, yc, 0)
+			g.add(c)
+		}
+		const tip = half - 0.0205
+		const pts = []
+		const N = 24
+		for (let i = 0; i <= N; i++) {
+			const u = i / N
+			pts.push(new T.Vector3(-tip + 2 * tip * u, R, 0.05 * Math.sin(2 * Math.PI * u) * Math.min(1, 4 * u * (1 - u) * 2)))
+		}
+		const tube = mesh(kit.geo(`circ-thumb-lead|${f5(tip)}`, () => new T.TubeGeometry(new T.CatmullRomCurve3(pts), 96, R, 7, false)), lead)
+		g.add(tube)
+		return g
+	})
+	addThumb?.("circuit-board", ({ props }) => {
+		const W = Number(props.width) || 0.6
+		const H = Number(props.height) || 0.4
+		const feet = 0.06
+		const board = pegboard(T, W, H, feet)
+		board.position.y = feet + 0.015 + H / 2
+		return board
+	})
 	addViewPlugin({
 		name: "circuits",
 		load(ctx) {
@@ -788,46 +872,11 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				if (!s) return 0.05
 				return s.body.kind === "ball" ? (s.depth3d ?? 2 * s.body.radius) : (s.body.depth ?? 0.05)
 			}
-			// ---- the upright boards
+			// ---- the upright boards (two feet on the table, behind)
 			for (const b of rec.boards ?? []) {
-				const W = b.width
-				const H = b.height
-				const z = -0.06
-				const map = kit.tex("circ-pegboard", 512, 512, (g, w, h) => {
-					g.fillStyle = "#c7a77c"
-					g.fillRect(0, 0, w, h)
-					g.fillStyle = "rgba(60,40,20,0.85)"
-					for (let y = 16; y < h; y += 32) for (let x = 16; x < w; x += 32) {
-						g.beginPath()
-						g.arc(x, y, 4.2, 0, Math.PI * 2)
-						g.fill()
-					}
-				})
-				const m = new T3.MeshPhysicalMaterial({ map, roughness: 0.75, metalness: 0 })
-				m.map = map.clone()
-				m.map.needsUpdate = true
-				m.map.wrapS = m.map.wrapT = T3.RepeatWrapping
-				m.map.repeat.set(W / 0.4, H / 0.4)
-				const panel = new T3.Mesh(new T3.BoxGeometry(W, H, 0.006), m)
-				panel.position.set(b.x, b.y, z)
-				panel.castShadow = panel.receiveShadow = true
-				G.add(panel)
-				const frameM = new T3.MeshPhysicalMaterial({ color: 0x8a6239, roughness: 0.55, clearcoat: 0.4 })
-				for (const [w2, h2, x2, y2] of [[W + 0.03, 0.015, 0, H / 2 + 0.0075], [W + 0.03, 0.015, 0, -H / 2 - 0.0075], [0.015, H, -W / 2 - 0.0075, 0], [0.015, H, W / 2 + 0.0075, 0]]) {
-					const f = new T3.Mesh(new T3.BoxGeometry(w2, h2, 0.012), frameM)
-					f.position.set(b.x + x2, b.y + y2, z)
-					f.castShadow = f.receiveShadow = true
-					G.add(f)
-				}
-				// two feet on the table, behind
-				const bottom = b.y - H / 2 - 0.015
-				if (bottom > 0.005)
-					for (const sx of [-1, 1]) {
-						const leg = new T3.Mesh(new T3.BoxGeometry(0.03, bottom, 0.03), frameM)
-						leg.position.set(b.x + sx * (W / 2 - 0.05), bottom / 2, z - 0.01)
-						leg.castShadow = leg.receiveShadow = true
-						G.add(leg)
-					}
+				const board = pegboard(T3, b.width, b.height, b.y - b.height / 2 - 0.015)
+				board.position.set(b.x, b.y, -0.06)
+				G.add(board)
 			}
 			// ---- the wires
 			const wires = rec.parts.filter((p) => p.kind === "wire")
@@ -840,16 +889,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				tube.receiveShadow = true
 				const clipMat = new T3.MeshPhysicalMaterial({ color: new T3.Color(WIRE_HEX[w.color] ?? "#c8241c"), roughness: 0.4, clearcoat: 0.3 })
 				// a crocodile clip at each end: its steel jaws on the terminal, its rubber boot leaning out along the lead
-				const clips = [0, 1].map(() => {
-					const c = new T3.Group()
-					const jaw = new T3.Mesh(new T3.BoxGeometry(0.0032, 0.009, 0.0045), new T3.MeshPhysicalMaterial({ color: 0xc3c8ce, roughness: 0.28, metalness: 1 }))
-					jaw.position.y = 0.0045
-					const boot = new T3.Mesh(new T3.CylinderGeometry(0.0017, 0.0026, 0.012, 14), clipMat)
-					boot.position.y = 0.0145
-					c.add(jaw, boot)
-					c.traverse((o) => o.isMesh && ((o.castShadow = true), (o.receiveShadow = true)))
-					return c
-				})
+				const clips = [0, 1].map(() => crocClip(T3, clipMat))
 				G.add(tube, ...clips)
 				live.push({ w, k, tube, clips, key: "" })
 			})

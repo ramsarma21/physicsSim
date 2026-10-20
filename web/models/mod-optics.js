@@ -79,7 +79,7 @@ const TORCH_RGB = { white: "#fff6e6", red: "#ff3020", green: "#30ff4a", blue: "#
 const FILTER_COLOR = { red: "#d81e1e", orange: "#f07818", yellow: "#f2d21b", green: "#1fa83a", cyan: "#1cb8c8", blue: "#2348d8", violet: "#7a2bd0", magenta: "#d42aa8" }
 const LASER_RGB = { red: "#ff2a1a", green: "#3dff3a", violet: "#9a4dff" }
 
-export default function register({ addModel, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
+export default function register({ addModel, addThumb, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
 	const T = THREE
 	const { mesh, group } = kit
 	const f5 = (v) => Number(v).toFixed(5)
@@ -427,6 +427,30 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		s.castShadow = false
 		const g = group(s)
 		g.userData.frame = { hook: "optics:glow", strength: 2.2 }
+		return g
+	})
+	// its catalog photo (in a scene the plug-in lights everything with it, and its disc is hidden in the sky): the glowing disc, and three of
+	// its parallel rays coming down at its elevation from its side to the table
+	addThumb?.("sunlight", ({ props }) => {
+		const el = (Math.min(89, Math.max(5, Number(props.elevation) || 45)) * Math.PI) / 180
+		const sx = props.comes_from === "right" ? -1 : 1 // (the way its light travels along x)
+		// (a warm disc that reads as the sun on a light card too: the scene's own glow, 2.2 over white, photographs nearly white)
+		const sun = mesh(kit.sphere(0.05, 32, 16), kit.mat("optics-sunthumb", { color: "#ffb21f", emissive: new T.Color("#ff9d00"), emissiveIntensity: 0.55, roughness: 0.55, metalness: 0 }))
+		sun.castShadow = false
+		const top = 0.3
+		const start = { x: -sx * (top / Math.tan(el)) * 0.5, y: top }
+		sun.position.set(start.x - sx * 0.07 * Math.cos(el), start.y + 0.07 * Math.sin(el), 0)
+		const ray = kit.mat("optics-sunray", { color: "#ffc22e", emissive: new T.Color("#ffab00"), emissiveIntensity: 0.45, roughness: 0.5, metalness: 0 })
+		const g = group(sun)
+		for (const off of [-0.035, 0, 0.035]) {
+			const ox = start.x + off * Math.sin(el)
+			const oy = start.y + sx * off * Math.cos(el)
+			const len = oy / Math.sin(el)
+			const r = mesh(kit.box(len, 0.005, 0.005, 0.0008), ray, { cast: false })
+			r.position.set(ox + (sx * len * Math.cos(el)) / 2, oy / 2, 0)
+			r.rotation.z = sx > 0 ? -el : el
+			g.add(r)
+		}
 		return g
 	})
 

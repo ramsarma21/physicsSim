@@ -121,7 +121,7 @@ function lessonText(s) {
 	return { big: `${h}:${m < 10 ? "0" : ""}${m}`, unit: "h:min" }
 }
 
-export default function register({ addModel, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
+export default function register({ addModel, addThumb, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
 	const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif"
 	const black = kit.plastic("#1d2024", { gloss: 0.5, key: "measure" })
 	const darkGray = kit.plastic("#3a3f46", { gloss: 0.4, key: "measure" })
@@ -711,6 +711,26 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 
 	// ============================================================== motion trail, boards (their pictures are the plug-ins')
 	addModel("motion-trail", "tag", () => kit.group())
+	// the catalog photo of a motion trail (in a scene the plug-in draws the path of what it watches): a thrown ball's arc in its colour, a line
+	// with its strobe marks along it (dots alone for its "dots" style)
+	addThumb?.("motion-trail", ({ props }) => {
+		const hex = TRAIL[props.color] ?? TRAIL.red
+		const m = kit.mat(`measure|trailthumb|${hex}`, { color: hex, roughness: 0.55, metalness: 0, emissive: new THREE.Color(hex), emissiveIntensity: 0.35 })
+		const at = (u) => new THREE.Vector3(-0.22 + 0.44 * u, 0.025 + 0.96 * u * (1 - u), 0)
+		const g = kit.group()
+		const dots = props.style === "dots"
+		if (!dots) {
+			const pts = []
+			for (let i = 0; i <= 40; i++) pts.push(at(i / 40))
+			g.add(kit.mesh(kit.geo("measure|trailthumb-line", () => new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 80, 0.0035, 8, false)), m))
+		}
+		for (let k = 0; k <= 8; k++) {
+			const dot = kit.mesh(kit.sphere(dots ? 0.012 : 0.007, 20, 10), m)
+			dot.position.copy(at(k / 8))
+			g.add(dot)
+		}
+		return g
+	})
 	// (the frame inside the board's own outline: its feet on what it stands on, never below it)
 	const boardModel = ({ w, h }) => {
 		const g = kit.group()
