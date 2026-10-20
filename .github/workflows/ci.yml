@@ -38,7 +38,8 @@ jobs:
   checks:
     name: Checks (Linux, Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # (60: with the physics modules' validators and tests the job takes 35-41 min on the 4-core runner; 40 cut Node 24 off at 40 m 17 s)
+    timeout-minutes: 60
     env:
       # the fix-search tests' time budgets were measured on an 18-core Mac; a CI runner gets 4x the time for the same runs (web/ai/fixer.js TIME_SCALE)
       AI_FIX_TIME_SCALE: "4"
