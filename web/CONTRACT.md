@@ -823,3 +823,55 @@ with another copy of machines/), p3's sprung rows, and the new fixtures tools/pa
   step 0 mismatches), node tools/parity-engine.mjs --catalog (ALL IDENTICAL: 131 scenes × 3 runs in node and Chromium, 4 extra rates, 4 error
   messages), node --no-warnings tools/parity/fuzz-live.mjs --n 2000 in 4 shards (4154 cases, 0 mismatches, the `hung` group included); engine-fuzz
   seed 99991 × 10,000 (above).
+
+## Engine repair (2026-10-19): stacks placed touching stand (tooling/src/sim/physics.ts)
+The document format and the track are unchanged. Every scene runs as before except where moving solids start inside the time-of-impact pass's target
+of one another (below): of the 12 scenarios and 10 gallery scenes only wrecking-ball, whose bricks are built 0.5 mm apart; the other 21 and the catalog
+are identical byte for byte (document, resolved, warnings, summary and track; Python and web/sim).
+- Cause: every moving body is a bullet, so planck's time-of-impact pass checks its contacts after each step, and its TimeOfImpact counts two solids as
+  striking at the very start of their paths when their outlines (the cores inside Box2D's 1 mm skins) are nearer than its target: 0.5 mm between
+  polygons, 0.625 mm with its tolerance. A resting pair sits 1.5 mm apart (both skins less the 0.5 mm slop), so only solids placed nearer than
+  0.625 mm (exactly touching, or 0.5 mm apart) start inside it. For such a strike the pass moves every body of its island back to where the step began, losing
+  what the step's solve did to part them, and parts only those two while it holds every other moving body where it is: a block between the table and
+  the block on it cannot get clear, so the same strike comes back up to nine times a step (planck's `maxSubSteps`), each time sliding the block about
+  0.06 mm sideways, and the stack walks over. Measured before: 10 wooden blocks stacked touching spread 1.22 m within 6 s (0.25 / 0.5 / 0.6 / 0.7 mm
+  apart: 0.92 / 0.93 / 1.50 / 0.63 m; at 0.7 mm the first steps' solve brings some of the gaps inside the target), a bottom block set exactly on the table under blocks
+  1 mm or 1.5 mm apart 421 mm and 34 mm, 1 and 2 mm apart 0.0 mm; 10 bricks 1.01 m, a 3-2-1 pyramid 55 mm, five blocks under a tennis ball 1.02 m.
+  Restitution plays no part (these pairs close at no speed, so `compensated` gives none), nor does the solve's own position correction: with the
+  pass off, the touching stack stands (0.1 mm).
+- Repair (`held`, `stuck`, `before`, `inside` in `simulate`): a strike on a contact the step's solve already holds (touching as the step began) that
+  leaves its two solids still inside the target is undone: its island goes back to where the pass found it (each body's path before the pass moved it
+  back, and its motion; its contacts' pushes and the impacts it listed), the contact sits out the rest of the pass, and later strikes on it are refused
+  while the solve holds it (planck then puts its two bodies back); the solve parts the pair over the next steps, as it parts a pair placed 1 mm apart.
+  A strike that gets its pair clear is kept (a domino set exactly on the table is lifted out of its skin at once, as before), and so is every strike
+  on a contact the step began without (a real one, which the pass is there to catch). In the 22 scenes no strike is undone but wrecking-ball's.
+- Measured after: 10 blocks stacked touching 0.1 mm sideways, at most 0.23° of tilt, still to the micrometre from 1.5 s on (the solve lifts them out
+  of each other's skins within about a second, about 1 mm a contact: 10 mm at the top of ten; a stack built 1 mm apart rises 0.2 mm a contact the
+  same way); 0.25 / 0.5 / 0.7 mm apart and the two towers on a touching bottom block 0.0-0.1 mm, 6-block stacks 0.0-0.1 mm, 1 and 2 mm apart unchanged;
+  10 bricks 0.0 mm, 20 blocks 0.2 mm, the pyramid 2.8 mm and a 2 × 4 brick wall in offset rows 1.1 mm (blocks set side by side are parted by their
+  skins, 2.4 mm before as now), five blocks under a tennis ball 0.2 mm; a tower whose blocks overhang their balance point still falls. A touching
+  10-block stack runs in 0.4 s (9-11 s before: thousands of strikes; now one a contact, undone), the pyramid and the wall in 0.5-0.7 s (12-23 s).
+- What changed in the scenes: wrecking-ball only. Before, its bricks walked 2-3 mm sideways and tilted up to 0.6° before the ball came; now they rise
+  1.4-4.8 mm out of each other's skins and do not move sideways (0.01 mm). The ball strikes bricks 3, 2 and 4 at the same moments (1.05, 1.05,
+  1.07 s); the tumble after differs: the stories' top speeds of bricks 4 and 5 go 1.7 → 1.8 and 1.2 → 1.3 m/s (every story's `ok` the same; no
+  goals), the events gain "Brick 3 hits Brick 4", "Brick 5 hits Brick 4", "Brick 2 hits Brick 3" and "Brick 5 hits Table", "Brick 4 hits Brick 5"
+  and "Brick 1 hits Brick 4" become "Brick 4 hits Brick 1", and end positions move up to 73 mm (bricks 4 and 5 end leaning on each other, −21° and
+  −32°, instead of flat).
+- Known limits: a pair placed inside the skin is still parted by the solve's position correction, over about a second for a tall stack and with a
+  small tilt (0.1-0.3°), as a stack built 1 mm apart always was; built 1.5 mm apart (where the engine rests a pair) ten blocks barely move (the top
+  0.2 mm down, 0.01°). The
+  fracture module's towers are unchanged: glued blocks (planck welds) sit the pass out as every jointed body does, and loose ones are built 1 mm apart
+  (`BLOCK_GAP`; a loose tower built touching now stands as well).
+- Checked (on a copy of the tree, against the same copy before the repair): `research/rw-validate-stack.ts` (new, 7 checks: the five stack and
+  wrecking-ball checks fail before the repair and pass; a steel ball let fall on a touching stack and on a 5 mm board is still stopped on top); the
+  12 scenarios and 10 gallery scenes (web/sim with the bundle, and Python's documents, resolved, warnings and summaries): 21 identical byte for byte,
+  the catalog too, wrecking-ball as above; every `research/rw-validate*.ts`: the same PASS and FAIL lines before and after but p4's 8970 fixture,
+  which now runs in its 30 s (p2, p3, poly, slop, plugins, mechanics, softbody, space, thermal, waves and the other module checks pass; those of
+  flow, granular, optics and matter that fail, and p4's other wall-clock limit, fail the same way without the repair), three values moving within
+  their tolerances where solids end wedged in one another's skins (p3's bowling ball on the default trampoline, which bottoms its mat out on the
+  table, rebounds 0.72277 m, 0.72398 m before, 0.72236 m at 4800 Hz; matter's chocolate bar 99.9983 g, 99.9982 before; thermal T1 0.430, 0.431
+  before), and p4's crash fuzz (5000 scenes, seed 20261015) throws in the same two scenes at the same moments as before the repair (813: a bumper's back at
+  0.081 s; 2506: a ring at 0.502 s), 0 non-finite; tools/parity: core 21,995 cases and 0 mismatches, heat, softbody and matter (the node engine
+  == the bundle) 0, `tools/parity-engine.mjs --catalog` ALL IDENTICAL (317 scenes × 3 runs in node and Chromium, 4 rates, 4 error messages),
+  fuzz-live --n 300 every track byte for byte (its other differences are in files this repair does not touch: module catalogs' materials, a
+  builder's division by zero, a scene over the server's 120 s that ran 188 s before the repair and 186 s after, its track unchanged).
