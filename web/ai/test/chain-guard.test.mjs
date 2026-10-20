@@ -47,8 +47,15 @@ async function judged(name) {
 }
 
 // ---- 1. a fix must work through the machine
-test("chainBreak: the review's four fixes that met the goals while skipping the machine are refused, each for what really happened", async () => {
-	assert.match(await judged("h2-no-seesaw"), /^the dominoes would start moving on their own \(at 0\.\d+ s\), with nothing in the machine setting them off$/)
+test("chainBreak: the review's fixes that met the goals while skipping the machine are refused, each for what really happened", async () => {
+	// (h2's, Ball 2 set on the last domino, skipped the machine only through the engine: its row started on its own at 0.51 s from the
+	// time-of-impact pass's strikes on solids placed inside its target. Since the engine repair of 19 Oct (web/CONTRACT.md) the row stands
+	// until Ball 1 knocks it at 1.95 s, and the dominoes then push Ball 2 into the box: a fix that works through the machine)
+	assert.equal(await judged("h2-no-seesaw"), null)
+	const h2 = fixture("h2-no-seesaw")
+	const chain = chainOf(await simulate(h2.fix), h2.fix)
+	assert.equal(chain.get("dominoes")?.by, "ball1", "Ball 1 knocks the row")
+	assert.equal(chain.get("ball2")?.by, "dominoes", "the row pushes Ball 2 off")
 	assert.match(await judged("h3-no-red-ball"), /^the dominoes would start moving on their own/)
 	assert.match(await judged("h5-catapult-bowling"), /^the bowling ball would bounce off the invisible wall at the table's end$/)
 	assert.match(await judged("c08-orange-lift"), /^the orange would start moving on its own|^the orange would go|^the orange wouldn't stay/)

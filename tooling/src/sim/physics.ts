@@ -5,6 +5,9 @@ import {
 	CircleShape,
 	CollidePolygonCircle,
 	CollidePolygons,
+	Distance,
+	DistanceInput,
+	DistanceOutput,
 	Fixture,
 	Manifold,
 	Joint as PlanckJoint,
@@ -13,6 +16,8 @@ import {
 	RopeJoint,
 	Contact as Touch,
 	Settings,
+	SimplexCache,
+	Sweep,
 	type TimeStep,
 	Transform,
 	Vec2,
@@ -830,10 +835,150 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	const spent = (c: Touch) => {
 		;(c as unknown as { m_toiCount: number }).m_toiCount = Settings.maxSubSteps + 1
 	}
+	/**
+	 * Impacts solved for nothing. The time-of-impact pass counts two solids as striking at the very start of their paths when they are
+	 * nearer than its own target (0.5 mm between polygons' outlines, 0.625 with its tolerance): solids placed exactly touching, or 0.5 mm
+	 * apart (Box2D's skin rests a pair 1.5 mm apart). For such a strike it moves every body of the island back to where the step began,
+	 * losing what the step's solve did to part them, and parts only those two, holding every other moving body where it is: a block
+	 * between the table and the block on it cannot get clear, so the same strike comes back up to nine times a step, each time moving
+	 * the block sideways (a 10-block stack placed touching fell over within 6 s; the wrecking-ball scenario's bricks, 0.5 mm apart,
+	 * walked 3 mm before the ball came). So a strike that gets nowhere on a pair at rest inside the target is undone (`undoable`): the solve
+	 * held the contact as the step began (`held`), its two solids were inside the target where the step began (`began`) and are at rest
+	 * where they touch (`still`: slower than VELOCITY_THRESHOLD), and the strike leaves them still inside the target. Its island goes back
+	 * to where the pass found it (each body's path before the pass moved it back, `before`, and its motion; what its contacts recorded), the
+	 * contact sits out the rest of the pass, and from then on, while the pair stays so, the pass leaves it to the solve (`stuck`); the solve
+	 * parts them over the next steps, as it parts a pair placed 1 mm apart. A strike that gets its pair clear (a domino set exactly on the
+	 * table, lifted out of its skin at once) is kept, and so is every strike on a pair that moves or began the step apart: a real one, which
+	 * the pass is there to catch, and those an impact drives through a stack (squeezed, a stack's pairs stay inside the target, as the pass
+	 * parts only two bodies at a time, so the strikes of the next steps begin inside as well: undone too, a heavy ball sank deeper into a
+	 * struck stack and a phone passed down through another).
+	 */
+	const held = new Set<Touch>()
+	const stuck = new Set<Touch>()
+	/** Each body's path before the pass last moved it back along it (planck's `advance`), stamped with the strike it was moved for. */
+	const before = new Map<Body, { sweep: Sweep; stamp: number }>()
+	/** Where each moving body stood as the step began (before its solve). */
+	const began = new Map<Body, Transform>()
+	let stamp = 0
+	for (let b = world.getBodyList(); b !== null; b = b.getNext()) {
+		const body = b
+		const was = { sweep: new Sweep(), stamp: -1 }
+		before.set(body, was)
+		if (!body.isStatic()) began.set(body, Transform.clone(body.getTransform()))
+		const advance = body.advance.bind(body)
+		body.advance = (alpha: number) => {
+			was.sweep.set(sweepOf(body))
+			was.stamp = stamp
+			advance(alpha)
+		}
+	}
+	const distanceInput = new DistanceInput()
+	const distanceOutput = new DistanceOutput()
+	const startA = new Transform()
+	const startB = new Transform()
+	/** Whether a contact's two solids are nearer than the pass's target (TimeOfImpact's own test) where their paths now begin, or where the step began. */
+	const inside = (c: Touch, asBegun = false) => {
+		const fA = c.getFixtureA()
+		const fB = c.getFixtureB()
+		distanceInput.proxyA.set(fA.getShape(), c.getChildIndexA())
+		distanceInput.proxyB.set(fB.getShape(), c.getChildIndexB())
+		if (asBegun) {
+			startA.set(began.get(fA.getBody()) ?? fA.getBody().getTransform())
+			startB.set(began.get(fB.getBody()) ?? fB.getBody().getTransform())
+		} else {
+			sweepOf(fA.getBody()).getTransform(startA, 0)
+			sweepOf(fB.getBody()).getTransform(startB, 0)
+		}
+		distanceInput.transformA = startA
+		distanceInput.transformB = startB
+		distanceInput.useRadii = false
+		Distance(distanceOutput, new SimplexCache(), distanceInput)
+		const radii = (distanceInput.proxyA as unknown as { m_radius: number }).m_radius + (distanceInput.proxyB as unknown as { m_radius: number }).m_radius
+		return distanceOutput.distance < Math.max(Settings.linearSlop, radii - 3 * Settings.linearSlop) + 0.25 * Settings.linearSlop
+	}
+	/** Whether a contact's two solids are at rest where they touch: both slower than VELOCITY_THRESHOLD (an impact's speed) at each of its points. */
+	const still = (c: Touch) => {
+		const wm = c.getWorldManifold(null)
+		const fast = VELOCITY_THRESHOLD * LENGTH_SCALE
+		for (let i = 0; wm !== null && wm !== undefined && i < wm.pointCount; i++) {
+			const point = wm.points[i]
+			if (point === undefined) continue
+			for (const body of [c.getFixtureA().getBody(), c.getFixtureB().getBody()]) {
+				const v = body.getLinearVelocityFromWorldPoint(point)
+				if (v.x * v.x + v.y * v.y >= fast * fast) return false
+			}
+		}
+		return true
+	}
+	/** A strike the pass would solve for nothing: on a contact the solve held, its pair at rest inside the target where the step began. */
+	const undoable = (c: Touch) => held.has(c) && inside(c, true) && still(c)
 	const solveIslandTOI = solver.solveIslandTOI.bind(solver)
 	solver.solveIslandTOI = (...args: unknown[]) => {
-		propagate(solver as unknown as Island)
+		const island = solver as unknown as Island
+		const contact = island.m_contacts[0]
+		// (a strike that may get nowhere: the island as the pass found it, to put back if it does)
+		let kept: { body: Body; sweep: Sweep; v: Vec2; w: number }[] | undefined
+		if (contact !== undefined && undoable(contact)) {
+			kept = []
+			for (const body of island.m_bodies) {
+				const was = before.get(body)
+				if (was === undefined || was.stamp !== stamp) {
+					kept = undefined
+					break
+				}
+				kept.push({ body, sweep: was.sweep, v: Vec2.clone(motion(body).m_linearVelocity), w: motion(body).m_angularVelocity })
+			}
+		}
+		// (and what its contacts would record: their pushes, the strikes passed on through them, a Garwin spring's impulses, the impulses
+		// kept for warm starting (post-solve drops an over-large one); and the impacts it lists)
+		const records =
+			kept === undefined
+				? []
+				: island.m_contacts.map((c) => {
+						const spring = springs.get(c)
+						const m = c.getManifold()
+						return {
+							push: pressed.get(c),
+							pass: passed.get(c),
+							spring: spring === undefined ? undefined : ([spring.normalImpulse, spring.tangentImpulse] as const),
+							stored: Array.from({ length: m.pointCount }, (_, k) => [m.points[k]?.normalImpulse ?? 0, m.points[k]?.tangentImpulse ?? 0] as const)
+						}
+					})
+		const listed = hits.length
+		const loudest = impacts.get(stepIndex)
+		propagate(island)
 		solveIslandTOI(...args)
+		if (kept !== undefined && contact !== undefined && inside(contact)) {
+			for (const { body, sweep, v, w } of kept) {
+				sweepOf(body).set(sweep)
+				body.synchronizeTransform()
+				motion(body).m_linearVelocity.set(v)
+				motion(body).m_angularVelocity = w
+			}
+			island.m_contacts.forEach((c, i) => {
+				const was = records[i]
+				if (was === undefined) return
+				if (was.push === undefined) pressed.delete(c)
+				else pressed.set(c, was.push)
+				if (was.pass === undefined) passed.delete(c)
+				else passed.set(c, was.pass)
+				const spring = springs.get(c)
+				if (spring !== undefined && was.spring !== undefined) [spring.normalImpulse, spring.tangentImpulse] = was.spring
+				const m = c.getManifold()
+				was.stored.forEach(([normal, tangent], k) => {
+					const p = m.points[k]
+					if (p === undefined) return
+					p.normalImpulse = normal
+					p.tangentImpulse = tangent
+				})
+			})
+			hits.length = listed
+			if (loudest === undefined) impacts.delete(stepIndex)
+			else impacts.set(stepIndex, loudest)
+			contact.setEnabled(false)
+			stuck.add(contact)
+		}
+		stamp++
 		for (const body of [args[1], args[2]] as Body[]) {
 			if (!body.isDynamic()) continue
 			const n = (toiOf.get(body) ?? 0) + 1
@@ -1043,6 +1188,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	})
 	world.on("end-contact", (touch) => {
 		pressed.delete(touch)
+		stuck.delete(touch)
 	})
 
 	/**
@@ -1233,8 +1379,16 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			touch.setEnabled(false)
 			return
 		}
+		// (touching as the step's solve begins: the solve holds it, `held`)
+		if (!continuous) held.add(touch)
 		// (the time-of-impact pass re-enables a contact it updates: one of a hinged body's stays out of it)
 		if (continuous && (hinged(touch.getFixtureA().getBody()) || hinged(touch.getFixtureB().getBody()))) {
+			touch.setEnabled(false)
+			return
+		}
+		// (a strike the pass could not get clear before, on a pair still at rest inside the target: left to the solve, `stuck`; planck then
+		// puts its two bodies back. Only as the pass picks it as a strike, before any island is made: neither body is in one yet)
+		if (continuous && stuck.has(touch) && !islanded(touch.getFixtureA().getBody()) && !islanded(touch.getFixtureB().getBody()) && undoable(touch)) {
 			touch.setEnabled(false)
 			return
 		}
@@ -1966,6 +2120,8 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				Settings.maxTranslation = SANE_SPEED * LENGTH_SCALE * h
 				struck.clear()
 				passed.clear()
+				held.clear()
+				for (const [body, at] of began) at.set(body.getTransform())
 				world.step(h)
 				springBack()
 				unsound("ending")
@@ -3348,6 +3504,12 @@ class ChainTouch extends PlanckJoint {
 		return 0
 	}
 }
+
+/** planck's path of a body through the step: where it was as the step began (or as the time-of-impact pass last moved it) and where it ends. */
+const sweepOf = (body: Body) => (body as unknown as { m_sweep: Sweep }).m_sweep
+
+/** Whether the time-of-impact pass has put a body into the island it is building. */
+const islanded = (body: Body) => (body as unknown as { m_islandFlag: boolean }).m_islandFlag
 
 /** Whether a body hangs on a joint other than a spring: the time-of-impact pass would solve its impacts as if it were loose. */
 const hinged = (body: Body) => {

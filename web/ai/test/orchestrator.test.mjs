@@ -1206,7 +1206,10 @@ test("swap lines: the person's own words with the name on screen, and before →
 
 test("a built-in scene has no plan stages: a stack of bricks knocked down less is said in the heads-up (w-add-brick-top)", async () => {
 	const scene = sceneOf("wrecking-ball")
-	const { r } = await editWith(scene, [{ op: "add", item: { id: "brick6", type: "brick", name: "Brick 6", props: {}, place: { on: "brick5" } } }], "add one more brick on top of the stack")
+	// (three more: since the engine repair of 19 Oct (web/CONTRACT.md) the scenario's bricks no longer walk before the ball comes, and with one
+	// more on top 4 of 5 still fall, as without it)
+	const more = [6, 7, 8].map((n) => ({ op: "add", item: { id: `brick${n}`, type: "brick", name: `Brick ${n}`, props: {}, place: { on: `brick${n - 1}` } } }))
+	const { r } = await editWith(scene, more, "add three more bricks on top of the stack")
 	assert.ok(r.edit.headsUp.includes("Bricks: 3 of 5 fall (was 4 of 5)"), JSON.stringify(r.edit.headsUp))
 	const before = await simulate(scene)
 	assert.deepEqual(lostGroups(before, before, scene, scene), [], "nothing lost against itself")
