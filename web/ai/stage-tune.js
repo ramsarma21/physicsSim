@@ -12,8 +12,12 @@
 //   st.verified(ev), st.lostChecks(a, b), st.stageFacts(ev, k, logEntry)
 // The engine is deterministic: the same plan gives the same run. evalRun (optional, ./fix-pool.js workers) runs a candidate off the page's thread
 // and sends back only its judgement ({goals, checks: [{res, d}], warnings}); the version kept is always run again on the app's own engine.
-// stageTune ends within its maxMs even when a run never comes back (a fix worker's lost job hung every balanced-forces Build with AI of the video
-// pipeline's batch, 19 Oct): each run it waits for is raced with the deadline, and at the deadline the runs still out are stopped (their signal).
+// stageTune always ends, even when a run never comes back (a fix worker's lost job hung every balanced-forces Build with AI of the video
+// pipeline's batch, 19 Oct): each run it waits for is raced with a deadline, and at the deadline the runs still out are stopped (their signal).
+// The stage search stops at maxMs; the joint tuner, when it starts before then, has jointMs of its own (as before that fix). So a stage tune
+// takes about maxMs, or, when the joint tuner runs, about jointMs and a run or two from its start when that ends later (never more than
+// maxMs + jointMs + 16 s), plus however late the page's thread is: the candidates are solved there, and the deadlines are its timers (at load
+// 100–290, 12 of the 33 stored plans that needed tuning ran 0.5–10 s past a 30 s stage search, 20 Oct).
 // Pure apart from the injected deps (no DOM), so ./fix-worker.js and node tests import it as is.
 import { checkGoals, goalKind, goalItems, goalRefs } from "./goals.js"
 
@@ -36,17 +40,23 @@ const halton = (i, b) => {
 }
 const abortError = () => (typeof DOMException !== "undefined" ? new DOMException("Cancelled", "AbortError") : Object.assign(new Error("Cancelled"), { name: "AbortError" }))
 const CUT = Symbol("cut") // (a run the tuner stopped waiting for: its time was up)
-const JOINT_SLACK_MS = 2000 // (the joint tuner stops starting runs this long before the deadline, so the ones it has out can come back in time)
+const JOINT_MS = 20000 // (the joint tuner's own time once it starts: the orchestrator's TUNE_MS, which it passes)
+// (the joint tuner starts no run in the last JOINT_SLACK_MS of its time, so the ones it has out can come back: on a busy machine one of the
+// app's runs can take seconds, and on origin/dev they were waited for however long they took)
+const JOINT_SLACK_MS = 5000
+const GRACE_MS = 500 // (the joint tuner, stopped at the end of its time, hands back what it found at once: this long, or it is left out)
+const RUN_MS = 5000 // (one run the joint tuner's work needs (the whole run it starts from, the re-check of its answer) when its time is over by then)
 
 /**
  * The tuner's time on top of the caller's signal. signal: aborts at the deadline, or with the caller's (a fix worker busy with that run is then
- * replaced). wait(promise): the promise's value, or CUT once the deadline has passed, even when the promise never settles; the caller's own
- * abort still throws (AbortError). end(): stops the clock.
+ * replaced). wait(promise, graceMs = 0): the promise's value, or CUT once the deadline has passed (and graceMs more, for a promise that settles
+ * soon after its signal stops it: the joint tuner handing back its best), even when the promise never settles; the caller's own abort still
+ * throws (AbortError). end(): stops the clock.
  */
 function timeLimit(outer, deadline) {
 	const ctl = new AbortController()
 	let expire
-	const expired = new Promise((r) => (expire = r)).then(() => CUT)
+	const expired = new Promise((r) => (expire = r))
 	const stop = () => (expire(), ctl.abort())
 	if (outer?.aborted) stop()
 	else outer?.addEventListener?.("abort", stop, { once: true })
@@ -54,13 +64,19 @@ function timeLimit(outer, deadline) {
 	const timer = ms < 2 ** 31 - 1 ? setTimeout(stop, Math.max(0, ms)) : 0
 	return {
 		signal: ctl.signal,
-		async wait(p) {
+		async wait(p, graceMs = 0) {
 			let r
+			let late = 0
+			let over = false
+			const cut = expired.then(() => (graceMs > 0 && !over && !outer?.aborted ? new Promise((res) => (late = setTimeout(res, graceMs, CUT))) : CUT))
 			try {
-				r = await Promise.race([p, expired])
+				r = await Promise.race([p, cut])
 			} catch (e) {
 				if (outer?.aborted || e?.name !== "AbortError" || !ctl.signal.aborted) throw e
 				r = CUT // (stopped by the deadline)
+			} finally {
+				over = true
+				clearTimeout(late)
 			}
 			if (outer?.aborted) throw abortError()
 			return r
@@ -69,6 +85,15 @@ function timeLimit(outer, deadline) {
 			clearTimeout(timer)
 			outer?.removeEventListener?.("abort", stop)
 		}
+	}
+}
+/** f(signal)'s value in a time of its own (timeLimit(outer, deadline).wait), or CUT. */
+async function within(outer, deadline, f, graceMs = 0) {
+	const limit = timeLimit(outer, deadline)
+	try {
+		return await limit.wait(f(limit.signal), graceMs)
+	} finally {
+		limit.end()
 	}
 }
 
@@ -315,10 +340,11 @@ export function createStageTuner(deps) {
 	 * Stage by stage: for the first failing stage, search its knobs (its own + auto) so its check passes without breaking an earlier one; keep the
 	 * best; go on. Then the app's joint tuner (deps.tune) on what still fails, kept only when it loses no passing check.
 	 * onProgress({runs, stage, of, label, passed}) after each engine run. -> {ev, failStage (1-based or null), runs, ms, log}
-	 * Ends within maxMs: a run still out at the deadline is stopped and left out (not counted), and the best found so far is kept; the joint
-	 * tuner gets the time that is left. The caller's signal still cancels it (AbortError).
+	 * The stage search ends at maxMs: a run still out then is stopped and left out (not counted), and the best found so far is kept. The joint
+	 * tuner, when it starts before then, has jointMs of its own (or what is left of maxMs when that is more; the module's head says how long the
+	 * whole may take). The caller's signal still cancels it (AbortError).
 	 */
-	async function stageTune(plan, { from = null, maxRuns = 150, perStage = 30, maxMs = 90000, fromStage = 1, joint = true, signal, onProgress } = {}) {
+	async function stageTune(plan, { from = null, maxRuns = 150, perStage = 30, maxMs = 90000, jointMs = JOINT_MS, fromStage = 1, joint = true, signal, onProgress } = {}) {
 		const t0 = now()
 		const deadline = t0 + maxMs
 		const limit = timeLimit(signal, deadline)
@@ -351,23 +377,27 @@ export function createStageTuner(deps) {
 					break
 				}
 			}
-			if (joint && tune && cur.ok && (cur.f.goalsOk < cur.f.goals || cur.f.stagesOk < cur.f.stages) && (cur.plan.tune?.length ?? 0) > 0 && now() < deadline - JOINT_SLACK_MS && !signal?.aborted) {
-				// (the joint tuner needs the whole run of the version it starts from; it gets the time that is left, and what comes back after the
-				// deadline is left out)
-				const whole = cur.sim ? cur : await limit.wait(evaluate(cur.plan, { stages: cur.stages.map(({ res, d, ...s }) => s), signal: limit.signal, full: true }))
+			if (joint && tune && cur.ok && (cur.f.goalsOk < cur.f.goals || cur.f.stagesOk < cur.f.stages) && (cur.plan.tune?.length ?? 0) > 0 && now() < deadline && !signal?.aborted) {
+				// (the joint tuner has a time of its own, as before the hang fix: jointMs from its start (+ the slack for its last runs), or what is
+				// left of maxMs when that is more. 20 Oct: given only what was left of maxMs, it ran in 1 of 33 stored plans that needed tuning
+				// against 9 on origin/dev, and the chains lost what it found there. First the whole run of the version it starts from: in the stage
+				// tuner's time, or RUN_MS when that is over)
+				const whole = cur.sim ? cur : await within(signal, Math.max(deadline, now() + RUN_MS), (sg) => evaluate(cur.plan, { stages: cur.stages.map(({ res, d, ...s }) => s), signal: sg, full: true }))
 				if (whole !== CUT && whole.ok) {
 					cur = whole
-					const tr = await limit.wait(tune({ plan: cur.plan, scene: cur.scene, sim: cur.sim, goals: cur.goalDefs, simulate, signal: limit.signal, maxMs: Math.max(0, deadline - now() - JOINT_SLACK_MS) }))
-					if (tr !== CUT) {
-						runs += tr.runs ?? 0
-						const b = tr.changed?.length ? await limit.wait(evaluate(tr.plan, { signal: limit.signal })) : CUT
-						if (b !== CUT) {
-							const kept = b.ok && b.f.goalsOk + b.f.stagesOk > cur.f.goalsOk + cur.f.stagesOk && !lostChecks(cur, b).length && b.f.errors + b.f.through <= cur.f.errors + cur.f.through
-							log.push({ joint: true, runs: tr.runs, kept, changed: tr.changed })
-							if (kept) {
-								cur = b
-								failStage = cur.stages.find((s) => s.check && s.res?.ok !== true)?.stage ?? null
-							}
+					// (it starts no run in the last JOINT_SLACK_MS, so the ones out can come back; at the end those still out are stopped, and it hands
+					// back the best it found (keep): a version that passes, found before the end, is not lost)
+					const jEnd = Math.max(deadline, now() + jointMs + JOINT_SLACK_MS)
+					const tr = await within(signal, jEnd, (sg) => tune({ plan: cur.plan, scene: cur.scene, sim: cur.sim, goals: cur.goalDefs, simulate, signal: sg, keep: true, maxMs: Math.max(0, Math.min(jointMs, jEnd - now() - JOINT_SLACK_MS)) }), GRACE_MS)
+					if (tr !== CUT) runs += tr.runs ?? 0
+					// (its answer run once more, judged as the stage search's were: in the joint tuner's time, or RUN_MS when that is over)
+					const b = tr !== CUT && tr.changed?.length ? await within(signal, Math.max(jEnd, now() + RUN_MS), (sg) => evaluate(tr.plan, { signal: sg })) : CUT
+					if (b !== CUT) {
+						const kept = b.ok && b.f.goalsOk + b.f.stagesOk > cur.f.goalsOk + cur.f.stagesOk && !lostChecks(cur, b).length && b.f.errors + b.f.through <= cur.f.errors + cur.f.through
+						log.push({ joint: true, runs: tr.runs, kept, changed: tr.changed })
+						if (kept) {
+							cur = b
+							failStage = cur.stages.find((s) => s.check && s.res?.ok !== true)?.stage ?? null
 						}
 					}
 				}

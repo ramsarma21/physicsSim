@@ -805,9 +805,11 @@ const allOk = (sim, goals = null) => {
 /**
  * Tune: plan.tune knobs (made safe by safeKnobs; ≤ 4 used), ≤ maxRuns engine runs and ≤ maxMs. Coarse samples first, then a pattern search around
  * the best; once the goals pass, a one-knob tune looks for the middle of the passing range (a sturdier answer).
+ * keep: the signal stopping it ends it as maxMs does, with the best found so far (the runs still out are left out, not counted), instead of an
+ * AbortError: the stage tuner's joint tuner, whose signal stops at the end of its time (the stage tuner tells the caller's cancel apart).
  * -> {plan, scene, sim, changed: [{id, param, from, to}], runs, ms, before, after, passed, knobs, skipped: [words]}
  */
-export async function tune({ plan, scene, sim, goals = null, exclude = null, simulate, signal, maxRuns = TUNE_RUNS, maxMs = TUNE_MS, onProgress, solver = solve }) {
+export async function tune({ plan, scene, sim, goals = null, exclude = null, simulate, signal, keep = false, maxRuns = TUNE_RUNS, maxMs = TUNE_MS, onProgress, solver = solve }) {
 	const t0 = now()
 	const safe = safeKnobs(plan, scene)
 	// (exclude: what the person just changed on purpose, which an edit's tuning never undoes. A Map: item id -> the knobs the edit set itself, "place"
@@ -865,6 +867,8 @@ export async function tune({ plan, scene, sim, goals = null, exclude = null, sim
 			const g = goals ? r.goals : null
 			e = { v, f: goalDistance(r.scene, s, g) + (r.ok ? 0 : 0.5), plan: p, scene: r.scene, sim: s, goals: g, ok: allOk(s, g) && r.ok }
 		} catch (err) {
+			// (stopped, with keep: not a run, and nothing is known of that version; the search ends with what it has)
+			if (err?.name === "AbortError" && keep && signal?.aborted) return (result.runs--, null)
 			if (err?.name === "AbortError") throw err
 			e = { v, f: Infinity, plan: p, ok: false }
 		}
@@ -3805,7 +3809,7 @@ export function createOrchestrator(deps) {
 				: null,
 			goalDistance,
 			setKnob,
-			// (inside the stage tuner: its signal, which stops at its deadline, and no more than the time it has left)
+			// (inside the stage tuner: its joint tuner's signal, which stops at the end of its time (keep: it then hands back its best), and that time)
 			tune: (o) => tune({ ...o, solver: solveV, signal: o.signal ?? signal, maxMs: Math.min(TUNE_MS, o.maxMs ?? TUNE_MS) }),
 			// (a height knob on a static thing that can't hold itself up turns what it stands on instead, or is left out: nothing is tuned into mid-air)
 			safe: (knobs, ev) => safeKnobs({ items: ev.plan.items, tune: knobs }, ev.scene).knobs,
@@ -4843,7 +4847,7 @@ export function createOrchestrator(deps) {
 				onEvent({ type: "step", step: "stagetune", state: "skipped", label: `every ${ev0.f.stages > ev0.f.goals ? "stage" : "goal"} works in the first run` })
 			} else {
 				const t = await timed("stagetune", `${ev0.f.stages - ev0.f.stagesOk} of ${ev0.f.stages} failing`, () =>
-					ST.stageTune(v0.plan, { from: ev0, signal, maxRuns: STAGE_RUNS, perStage: STAGE_RUNS_PER, maxMs: stageMs, onProgress: (p) => onEvent({ type: "progress", step: "stagetune", ...p }) })
+					ST.stageTune(v0.plan, { from: ev0, signal, maxRuns: STAGE_RUNS, perStage: STAGE_RUNS_PER, maxMs: stageMs, jointMs: TUNE_MS, onProgress: (p) => onEvent({ type: "progress", step: "stagetune", ...p }) })
 				)
 				stageLog = t.log
 				const st = { runs: t.runs, ms: Math.round(t.ms), before: counts(ev0), after: counts(ev0), kept: false, changes: [], stages: t.log.filter((l) => !l.joint).map((l) => ({ stage: l.stage, label: l.label, runs: l.runs, passed: l.passed, knobs: (l.knobs ?? []).length })), joint: t.log.find((l) => l.joint) ? { runs: t.log.find((l) => l.joint).runs, kept: t.log.find((l) => l.joint).kept } : null }
@@ -5263,7 +5267,7 @@ export function createOrchestrator(deps) {
 		const runStageTune = async (v) => {
 			const ev = await evOf(v, true)
 			const max = STAGE_RUNS_PER * 3
-			const t = await timed("tune", "stage by stage", () => ST.stageTune(v.plan, { from: ev, signal, maxRuns: max, perStage: STAGE_RUNS_PER, maxMs: TUNE_MS, onProgress: (p) => onEvent({ type: "progress", step: "tune", runs: p.runs, max, passed: p.passed }) }))
+			const t = await timed("tune", "stage by stage", () => ST.stageTune(v.plan, { from: ev, signal, maxRuns: max, perStage: STAGE_RUNS_PER, maxMs: TUNE_MS, jointMs: TUNE_MS, onProgress: (p) => onEvent({ type: "progress", step: "tune", runs: p.runs, max, passed: p.passed }) }))
 			const r4 = (x) => Math.round(x * 1e4) / 1e4
 			const changed = t.log.flatMap((l) => (l.changed ?? []).filter((c) => num(c.from) !== null && num(c.to) !== null).map((c) => ({ id: c.id, param: c.param, from: r4(c.from), to: r4(c.to) })))
 			const ok0 = goalsOk(v.sim, G(v))

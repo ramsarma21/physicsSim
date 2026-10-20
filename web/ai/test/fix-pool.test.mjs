@@ -124,23 +124,60 @@ test("a job that doesn't come back fails after jobMs (an Error, not an abort: th
 	})
 })
 
-test("workers that never say they are ready: after loadMs the pool is broken and the jobs waiting fail (an Error: the app's own runs are used)", { timeout: 10000 }, async () => {
-	class Silent {
-		constructor() {
-			this.l = { message: [], error: [] }
-		}
-		addEventListener(t, f) {
-			this.l[t].push(f)
-		}
-		postMessage() {}
-		terminate() {}
+/** A worker that never says it is ready (nor answers): one whose start takes longer than the pool waits. */
+class Silent {
+	constructor() {
+		this.l = { message: [], error: [] }
 	}
-	await withWorker(Silent, async () => {
-		const pool = createFixPool({ size: 2, loadMs: 120 })
-		try {
+	addEventListener(t, f) {
+		this.l[t].push(f)
+	}
+	postMessage() {}
+	terminate() {}
+}
+
+test("workers that never say they are ready: after loadMs the pool is broken for restMs and the jobs waiting fail (an Error: the app's own runs are used); then workers are tried again", { timeout: 10000 }, async () => {
+	const pool = createFixPool({ size: 2, loadMs: 120, restMs: 400 })
+	try {
+		await withWorker(Silent, async () => {
 			await assert.rejects(Promise.all([pool.stage({ items: [] }, [], CHECK), pool.evaluate({ items: [] }, [])]), (e) => e.name !== "AbortError" && /not available/.test(e.message))
 			assert.equal(pool.broken, true)
 			await assert.rejects(pool.stage({ items: [] }, [], CHECK), /not available/)
+		})
+		// (a slow start on a busy machine is not for good: before, the pool stayed broken for the page's whole life. Workers that start from here)
+		await sleep(500)
+		assert.equal(pool.broken, false, "tried again after restMs")
+		const r = await pool.stage({ items: [] }, [], CHECK)
+		assert.equal(r.checks.length, 1)
+	} finally {
+		pool.terminate()
+	}
+})
+
+test("a job waiting for a worker fails after loadMs when each new one is slow to start (one was ready before): it never waits for ever", { timeout: 10000 }, async () => {
+	let made = 0
+	// (the first worker starts and answers; every one made after it is slow to start)
+	class FirstOnly extends FakeWorker {
+		constructor() {
+			super()
+			if (++made > 1) this.emit = () => {}
+		}
+	}
+	await withWorker(FirstOnly, async () => {
+		const pool = createFixPool({ size: 1, loadMs: 150 })
+		try {
+			assert.equal((await pool.stage({ items: [] }, [], CHECK)).checks.length, 1, "the first worker answers")
+			// (its job cancelled while it runs: that worker is let go, and the next job waits for a new one)
+			const ctl = new AbortController()
+			const p = pool.stage({ items: [] }, [], CHECK, ctl.signal)
+			ctl.abort()
+			await assert.rejects(p, (e) => e.name === "AbortError")
+			const t0 = performance.now()
+			await assert.rejects(pool.stage({ items: [] }, [], CHECK), (e) => e.name !== "AbortError" && /no fix worker was ready/.test(e.message))
+			const ms = performance.now() - t0
+			assert.ok(ms >= 140 && ms < 1500, `${Math.round(ms)} ms`)
+			assert.equal(pool.broken, false, "one was ready before: the pool is not broken, the slow one is only replaced")
+			assert.ok(made >= 2)
 		} finally {
 			pool.terminate()
 		}
