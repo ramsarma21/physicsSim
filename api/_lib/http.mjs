@@ -4,10 +4,15 @@
 // Files in api/_lib/ are not functions (Vercel skips paths that start with "_").
 
 /** The secrets that exist in a function's environment (each is replaced wherever it appears in an answer or a log line). */
-const SECRET_VARS = ["CLERK_SECRET_KEY", "DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "POSTGRES_PASSWORD", "PGPASSWORD", "TRUEFOUNDRY_API_KEY", "AI_SESSION_SECRET", "AI_ACCESS_TOKEN"]
+const SECRET_VARS = ["CLERK_SECRET_KEY", "DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "POSTGRES_PASSWORD", "PGPASSWORD", "TRUEFOUNDRY_API_KEY", "AI_SESSION_SECRET", "AI_ACCESS_TOKEN", "AI_AGENT_KEY", "BLOB_READ_WRITE_TOKEN"]
 
 /** text with every secret value of the environment, any connection string and any bearer token replaced. */
 export function scrubSecrets(text, env = process.env) {
+	return scrubServerSecrets(text, env).replace(/Bearer\s+[A-Za-z0-9._~+/=-]{12,}/g, "Bearer [redacted]")
+}
+/** scrubSecrets() without the bearer-token rule: for an answer that hands its caller a token made for it (api/videos/upload.mjs: the
+ *  Blob client tokens, each in an "authorization: Bearer ..." header to send). The server's own secrets are still replaced. */
+export function scrubServerSecrets(text, env = process.env) {
 	let t = String(text ?? "")
 	for (const k of SECRET_VARS) {
 		const v = env[k]
@@ -15,8 +20,8 @@ export function scrubSecrets(text, env = process.env) {
 	}
 	return t
 		.replace(/\b(postgres(?:ql)?|mysql|redis|rediss):\/\/[^\s"'`]+/gi, "[database]")
-		.replace(/Bearer\s+[A-Za-z0-9._~+/=-]{12,}/g, "Bearer [redacted]")
 		.replace(/\bsk_(?:test|live)_[A-Za-z0-9]{8,}/g, "[redacted]")
+		.replace(/\bvercel_blob_rw_[A-Za-z0-9_]{8,}/g, "[redacted]")
 }
 
 export const header = (req, k) => {
@@ -35,8 +40,8 @@ export class HttpError extends Error {
 	}
 }
 
-export function send(res, status, obj, headers = {}) {
-	const text = scrubSecrets(JSON.stringify(obj))
+export function send(res, status, obj, headers = {}, { scrub = scrubSecrets } = {}) {
+	const text = scrub(JSON.stringify(obj))
 	res.statusCode = status
 	res.setHeader("Content-Type", "application/json; charset=utf-8")
 	res.setHeader("Cache-Control", "no-store")

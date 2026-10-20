@@ -11,10 +11,16 @@
 //      reservation is given back). A cap can be passed only by what steps already running cost beyond their estimates. A request the step
 //      refused as bad input (400) before any model call is not counted as a step either.
 // Without accounts configured (no publishable key, or no database) this is exactly the function's old access check.
+// Robot keys (api/_lib/agent-keys.mjs, docs/DEPLOY.md "Robot keys"): a request with the header x-agent-key is the video pipeline's agent. A
+// live key -> caller "agent:<name>" (no sign-in, no invite cookie, no Origin needed) with that key's own caps: its dollars per day (the key's
+// usd_per_day; the master key AI_AGENT_KEY: AI_AGENT_USD_PER_DAY, 25) and steps per hour (steps_per_hour; AI_AGENT_STEPS_PER_HOUR, 120),
+// reserved and settled the same way, but NOT counted in the site-wide AI_SITE_USD_PER_DAY (so a batch of videos never shuts Build with AI
+// for people, nor people's use a batch). A wrong, unknown or revoked key -> 403 forbidden. Requests without the header: unchanged.
 import { HttpError, logLine } from "./http.mjs"
 import { bearerToken, clerkSettings, verifySessionToken } from "./auth.mjs"
 import { dbConfigured, getDb } from "./db.mjs"
 import { accountFor } from "./accounts.mjs"
+import { agentKeyOf, verifyAgentKey } from "./agent-keys.mjs"
 
 const num = (v, d, lo = 0) => {
 	const x = Number(v)
@@ -83,6 +89,8 @@ const NO_LIMITS = { ok: true, who: null, charge: async () => null, run: (fn) => 
  * opts: {accessProblem (the function's own check), env, now, fetch}
  */
 export async function aiGate(req, step, { accessProblem, env = process.env, now = () => new Date(), fetch: fetchImpl } = {}) {
+	const agentKey = agentKeyOf(req)
+	if (agentKey !== null) return agentGate(agentKey, step, { env, now })
 	const deps = { env, ...(fetchImpl ? { fetch: fetchImpl } : {}) }
 	const token = accountsOn(env) ? bearerToken(req) : null
 	let key = null
@@ -117,6 +125,30 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 
 	const lim = aiLimits(env)
 	const userUsd = account?.aiUsdPerDay ?? lim.userUsdPerDay
+	const { charge, run } = limiter({ key, step, env, now, caps: { stepsPerHour: lim.stepsPerHour, stepsPerDay: lim.stepsPerDay, usdPerDay: userUsd, siteUsdPerDay: lim.siteUsdPerDay } })
+	return { ok: true, who: { key, account: account ? { id: account.id } : null }, charge, run }
+}
+
+/** A robot key's gate: the key decides who (api/_lib/agent-keys.mjs), its own caps how much; never the site's cap. */
+async function agentGate(given, step, { env, now }) {
+	const v = await verifyAgentKey(given, { env })
+	if (!v.ok) {
+		logLine({ event: "ai_agent_refused", code: v.code })
+		return { ok: false, status: v.status, code: v.code, error: v.error, extra: v.extra ?? {} }
+	}
+	const a = v.agent
+	const who = { key: a.id, account: null, agent: { name: a.name } }
+	if (!dbConfigured(env)) return { ...NO_LIMITS, who } // (the master key off Vercel with no database: local runs; nothing can be counted)
+	const { charge, run } = limiter({ key: a.id, step, env, now, caps: { stepsPerHour: a.stepsPerHour, stepsPerDay: a.stepsPerHour * 24, usdPerDay: a.usdPerDay, siteUsdPerDay: null }, agent: a.name })
+	return { ok: true, who, charge, run }
+}
+
+/**
+ * The counting for one step of one caller: charge() reserves the step's estimate against the caps (null: it may run, else the refusal),
+ * run(fn) runs it and settles the reservation to its real cost. caps.siteUsdPerDay null: the site's row ('*') is neither checked nor touched.
+ */
+function limiter({ key, step, env, now, caps, agent = null }) {
+	const site = caps.siteUsdPerDay !== null && caps.siteUsdPerDay !== undefined
 	const est = STEP_USD[step] ?? DEFAULT_STEP_USD
 	let charged = null // {key, day, hour, est}: what this step reserved
 	/** Counts this step against the limits and reserves its estimated cost; null when it may run, else the refusal. */
@@ -130,10 +162,11 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 			db = await getDb(env)
 			// one statement, three guarded upserts, each only if the one before it went through: the site's dollars, then this caller's steps
 			// and dollars today, then this caller's steps this hour. A row is returned only for a guard that held (the row lock of the upsert
-			// makes each check-and-add atomic, so parallel steps line up instead of all reading the same old total).
+			// makes each check-and-add atomic, so parallel steps line up instead of all reading the same old total). An agent: no site guard.
 			const r = (
-				await db.query(
-					`with site as (
+				site
+					? await db.query(
+							`with site as (
 						insert into counters (key, bucket, n, usd) select '*', $3, 0, $4::numeric where $4::numeric <= $7::numeric
 						on conflict (key, bucket) do update set usd = counters.usd + excluded.usd where counters.usd + excluded.usd <= $7::numeric
 						returning 1 as ok
@@ -148,21 +181,36 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 						returning 1 as ok
 					)
 					select (select count(*) from site)::int as site_ok, (select count(*) from usr)::int as user_ok, (select count(*) from hr)::int as hour_ok`,
-					[key, hour, dayB, est, lim.stepsPerHour, userUsd, lim.siteUsdPerDay, lim.stepsPerDay]
-				)
+							[key, hour, dayB, est, caps.stepsPerHour, caps.usdPerDay, caps.siteUsdPerDay, caps.stepsPerDay]
+						)
+					: await db.query(
+							`with usr as (
+						insert into counters (key, bucket, n, usd) select $1, $3, 1, $4::numeric where $4::numeric <= $6::numeric
+						on conflict (key, bucket) do update set n = counters.n + 1, usd = counters.usd + excluded.usd
+							where counters.usd + excluded.usd <= $6::numeric and counters.n < $7::int
+						returning 1 as ok
+					), hr as (
+						insert into counters (key, bucket, n) select $1, $2, 1 where exists (select 1 from usr)
+						on conflict (key, bucket) do update set n = counters.n + 1 where counters.n < $5::int
+						returning 1 as ok
+					)
+					select 1 as site_ok, (select count(*) from usr)::int as user_ok, (select count(*) from hr)::int as hour_ok`,
+							[key, hour, dayB, est, caps.stepsPerHour, caps.usdPerDay, caps.stepsPerDay]
+						)
 			)[0]
 			let refusal = null
+			const whose = agent ? `The agent key "${agent}" has used` : "You've used"
 			if (!r.site_ok) refusal = { code: "site_quota", error: `Build with AI has reached today's limit for this site. It resets at 00:00 UTC.` }
-			else if (!r.user_ok) refusal = { code: "quota", error: `You've used today's Build with AI allowance. It resets at 00:00 UTC.` }
-			else if (!r.hour_ok) refusal = { code: "quota", error: `You've used this hour's Build with AI allowance. Try again after the hour.`, hourly: true }
+			else if (!r.user_ok) refusal = { code: "quota", error: `${whose} today's Build with AI allowance. It resets at 00:00 UTC.` }
+			else if (!r.hour_ok) refusal = { code: "quota", error: `${whose} this hour's Build with AI allowance. Try again after the hour.`, hourly: true }
 			if (!refusal) {
 				charged = { key, day: dayB, hour, est }
 				return null
 			}
 			// (a refused step doesn't count: what the guards before the refusing one added is given back)
 			if (r.user_ok) await db.query("update counters set n = greatest(0, n - 1), usd = greatest(0, usd - $3::numeric) where key = $1 and bucket = $2", [key, dayB, est])
-			if (r.site_ok) await db.query("update counters set usd = greatest(0, usd - $2::numeric) where key = '*' and bucket = $1", [dayB, est])
-			logLine({ event: "ai_quota", code: refusal.code, who: String(key).slice(0, 6) })
+			if (site && r.site_ok) await db.query("update counters set usd = greatest(0, usd - $2::numeric) where key = '*' and bucket = $1", [dayB, est])
+			logLine({ event: "ai_quota", code: refusal.code, who: agent ? `agent:${agent}` : String(key).slice(0, 6) })
 			const resets = refusal.hourly ? new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate(), t.getUTCHours() + 1)).toISOString() : resetsAt(t)
 			return { status: 403, code: refusal.code, error: refusal.error, extra: { resetsAt: resets } }
 		} catch (e) {
@@ -186,7 +234,10 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 		if (!delta && !uncount) return
 		try {
 			const db = await getDb(env)
-			if (delta) await db.query("update counters set usd = greatest(0, usd + $3::numeric) where bucket = $2 and key in ($1, '*')", [c.key, c.day, delta])
+			if (delta) {
+				if (site) await db.query("update counters set usd = greatest(0, usd + $3::numeric) where bucket = $2 and key in ($1, '*')", [c.key, c.day, delta])
+				else await db.query("update counters set usd = greatest(0, usd + $3::numeric) where bucket = $2 and key = $1", [c.key, c.day, delta])
+			}
 			if (uncount) await db.query("update counters set n = greatest(0, n - 1) where key = $1 and bucket in ($2, $3)", [c.key, c.day, c.hour])
 		} catch {
 			logLine({ event: "ai_usage_lost", usd: actual })
@@ -204,5 +255,5 @@ export async function aiGate(req, step, { accessProblem, env = process.env, now 
 		await record(out?.usage)
 		return out
 	}
-	return { ok: true, who: { key, account: account ? { id: account.id } : null }, charge, run }
+	return { charge, run }
 }

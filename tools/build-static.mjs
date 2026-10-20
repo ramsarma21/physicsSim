@@ -39,7 +39,8 @@
 //   no .env/key files, and (when TRUEFOUNDRY_API_KEY is set in this process, as it may be in Vercel's build) no shipped file containing its value;
 //   the same for the accounts' server secrets (CLERK_SECRET_KEY, DATABASE_URL, ...: docs/ACCOUNTS.md), and no Clerk secret key or database URL
 //   with a password in any shipped text file. --vercel-check also checks the scenes function (api/scenes/index.mjs: its rewrites, its files, the
-//   Neon driver in it) and calls it with no keys (/api/scenes/me -> {accounts: null, storage: false}).
+//   Neon driver in it) and calls it with no keys (/api/scenes/me -> {accounts: null, storage: false}), and the video functions (api/videos/upload,
+//   publish, gallery: their rewrites and files, called with no key 401, a wrong key 403, the right key but no gallery set up 503 not_configured).
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import fs from "node:fs"
@@ -284,8 +285,8 @@ console.log("RESULT " + JSON.stringify(out))
 async function scenesCheck({ output, cfg, up, files, tmp, problems, say, run, posix, chmodTree }) {
 	const fnRoot = path.join(output, "functions")
 	const made = listFiles(fnRoot).filter((f) => path.basename(f) === ".vc-config.json").map((f) => posix(path.relative(fnRoot, path.dirname(f))))
-	const extra = made.filter((f) => !["api/ai/[step].func", "api/scenes/index.func"].includes(f))
-	if (extra.length) problems.push(`vercel build made functions that should not exist: ${extra.join(", ")} (only api/ai/[step] and api/scenes/index; api/_lib/ holds modules, not functions)`)
+	const extra = made.filter((f) => !["api/ai/[step].func", "api/scenes/index.func", ...VIDEO_FUNCTIONS.map((n) => `api/videos/${n}.func`)].includes(f))
+	if (extra.length) problems.push(`vercel build made functions that should not exist: ${extra.join(", ")} (only api/ai/[step], api/scenes/index and api/videos/${VIDEO_FUNCTIONS.join("|")}; api/_lib/ holds modules, not functions)`)
 	const rewrites = (cfg.routes ?? []).filter((r) => typeof r.src === "string" && r.src.startsWith("^/api/scenes(") && /^\/api\/scenes\?id=\$1(&part=\$2)?$/.test(String(r.dest ?? "")))
 	if (rewrites.length < 2) problems.push(".vercel/output/config.json lacks the rewrites of /api/scenes/:id and /api/scenes/:id/:part to the scenes function (vercel.json rewrites)")
 	const funcDir = path.join(fnRoot, "api", "scenes", "index.func")
@@ -333,6 +334,139 @@ async function scenesCheck({ output, cfg, up, files, tmp, problems, say, run, po
 	}
 }
 
+// The video functions (docs/DEPLOY.md "Video gallery"), called as deployed with no gallery set up: no x-agent-key 401, a wrong key 403 (no
+// master key and no database: nothing can match), the master key but no VIDEO_GALLERY_ID / Blob store / database 503 not_configured, and the
+// gallery page and a job's report page 404 for any id. The built routes must send the gallery, batch and job-file addresses to the gallery
+// function, also /videos/<id>/index.html and .../report.html (a report's own links) through cleanUrls' 308s. Each module they load (api/_lib/videos.mjs, blob.mjs, agent-keys.mjs, gallery.mjs) must be in the function.
+const VIDEO_FUNCTIONS = ["upload", "publish", "gallery"]
+const CALL_VIDEOS = `import { Readable } from "node:stream"
+import { join } from "node:path"
+import { pathToFileURL } from "node:url"
+const [dirs] = process.argv.slice(2)
+const fns = JSON.parse(dirs)
+const KEY = "fake-master-key-of-the-vercel-check-0123456789abcdef"
+function call(name, { method = "POST", url, body, headers = {} }) {
+	const raw = body === undefined ? "" : JSON.stringify(body)
+	const req = Readable.from(raw ? [Buffer.from(raw)] : [])
+	const u = new URL(url, "http://x")
+	Object.assign(req, { method, url: u.pathname + u.search, query: Object.fromEntries(u.searchParams), headers: { ...(raw ? { "content-type": "application/json", "content-length": String(Buffer.byteLength(raw)) } : {}), ...headers } })
+	return new Promise(async (resolve, reject) => {
+		const res = { statusCode: 200, headers: {}, writableEnded: false, setHeader(k, v) { this.headers[k.toLowerCase()] = v }, end(t) { this.writableEnded = true; let json = null; try { json = JSON.parse(String(t)) } catch {} resolve({ status: this.statusCode, json, text: String(t ?? ""), ctype: this.headers["content-type"] ?? null }) } }
+		try {
+			const h = (await import(pathToFileURL(join(fns[name], "api", "videos", name + ".mjs")).href)).default
+			await h(req, res)
+		} catch (e) { reject(e) }
+	})
+}
+const job = { job: "check-1", files: [{ name: "video.mp4", type: "video/mp4", size: 1000 }] }
+const out = {}
+out.noKey = (await call("upload", { url: "/api/videos/upload", body: job })).status
+out.wrongKey = (await call("upload", { url: "/api/videos/upload", body: job, headers: { "x-agent-key": "not-a-key" } })).status
+process.env.AI_AGENT_KEY = KEY
+const up = await call("upload", { url: "/api/videos/upload", body: job, headers: { "x-agent-key": KEY } })
+out.upload = { status: up.status, code: up.json?.code ?? null }
+const pub = await call("publish", { url: "/api/videos/publish", body: { job: "check-1" }, headers: { "x-agent-key": KEY } })
+out.publish = { status: pub.status, code: pub.json?.code ?? null }
+const gal = await call("gallery", { method: "GET", url: "/api/videos/gallery?gallery=0123456789abcdef0123" })
+out.gallery = { status: gal.status, ctype: gal.ctype }
+const rep = await call("gallery", { method: "GET", url: "/api/videos/gallery?gallery=0123456789abcdef0123&job=job-1&file=report" })
+out.report = { status: rep.status, ctype: rep.ctype }
+out.keyInAnswers = [up, pub, gal, rep].some((r) => r.text.includes(KEY))
+console.log("RESULT " + JSON.stringify(out))
+`
+/**
+ * Where the built routes send a GET of `p` (redirects followed, at most 3): {path (the last address), dest (the rewrite it reached) | null}.
+ * Enough of Vercel's routing for the video pages: routes in order, "continue" header routes skipped, a 3xx with Location restarts.
+ */
+function resolveRoute(routes, p) {
+	const fill = (t, m) => String(t).replace(/\$(\d)/g, (_, i) => m[Number(i)] ?? "")
+	for (let hops = 0; hops < 4; hops++) {
+		let next = null
+		for (const r of routes) {
+			if (typeof r.src !== "string" || r.continue) continue
+			const m = new RegExp(r.src, "i").exec(p)
+			if (!m) continue
+			if (r.status >= 300 && r.status < 400 && r.headers?.Location) next = fill(r.headers.Location, m)
+			else if (r.dest) return { path: p, dest: fill(r.dest, m) }
+			else return { path: p, dest: null }
+			break
+		}
+		if (!next) return { path: p, dest: null }
+		p = next
+	}
+	return { path: p, dest: null }
+}
+
+async function videosCheck({ output, cfg, up, tmp, problems, say, run, posix, chmodTree }) {
+	const routes = (cfg.routes ?? []).filter((r) => typeof r.src === "string" && r.src.startsWith("^/videos(") && /^\/api\/videos\/gallery\?gallery=\$1(&batch=\$2|&job=\$2&file=\$3)?$/.test(String(r.dest ?? "")))
+	if (routes.length < 3) problems.push(".vercel/output/config.json lacks the rewrites of /videos/:gallery, /videos/:gallery/batches/:batch and /videos/:gallery/jobs/:job/:file to the gallery function (vercel.json rewrites)")
+	// a video's report page and its relative links, through the built routes (cleanUrls' 308s first): ../../index.html must reach the gallery
+	const G = "0123456789abcdef0123"
+	const want2 = {
+		[`/videos/${G}`]: `/api/videos/gallery?gallery=${G}`,
+		[`/videos/${G}/index.html`]: `/api/videos/gallery?gallery=${G}`,
+		[`/videos/${G}/batches/unit-6`]: `/api/videos/gallery?gallery=${G}&batch=unit-6`,
+		[`/videos/${G}/jobs/job-1/report`]: `/api/videos/gallery?gallery=${G}&job=job-1&file=report`,
+		[`/videos/${G}/jobs/job-1/report.html`]: `/api/videos/gallery?gallery=${G}&job=job-1&file=report`,
+		[`/videos/${G}/jobs/job-1/video.mp4`]: `/api/videos/gallery?gallery=${G}&job=job-1&file=video.mp4`,
+		[`/videos/${G}/jobs/job-1/audit.json`]: `/api/videos/gallery?gallery=${G}&job=job-1&file=audit.json`,
+	}
+	const resolved = Object.entries(want2).map(([p, dest]) => [p, dest, resolveRoute(cfg.routes ?? [], p)])
+	for (const [p, dest, got] of resolved) if (got.dest !== dest) problems.push(`the built routes send ${p} to ${got.dest ?? "nothing"} (via ${got.path}), not ${dest}`)
+	const want = JSON.parse(fs.readFileSync(path.join(up, "vercel.json"), "utf8")).functions?.["api/videos/*.mjs"] ?? {}
+	const laid = {}
+	for (const name of VIDEO_FUNCTIONS) {
+		const funcDir = path.join(output, "functions", "api", "videos", `${name}.func`)
+		if (!fs.existsSync(path.join(funcDir, ".vc-config.json"))) {
+			problems.push(`there is no function at .vercel/output/functions/api/videos/${name}.func`)
+			continue
+		}
+		const vc = JSON.parse(fs.readFileSync(path.join(funcDir, ".vc-config.json"), "utf8"))
+		if (!/^nodejs\d+\.x$/.test(vc.runtime ?? "")) problems.push(`the video ${name} function's runtime is ${vc.runtime}`)
+		if (vc.handler !== `api/videos/${name}.mjs`) problems.push(`the video ${name} function's handler is ${vc.handler}`)
+		if (want.maxDuration !== undefined && vc.maxDuration !== want.maxDuration) problems.push(`the video ${name} function's maxDuration is ${vc.maxDuration}; vercel.json says ${want.maxDuration}`)
+		const fn = path.join(tmp, `videos-${name}`)
+		fs.cpSync(funcDir, fn, { recursive: true, filter: (s) => path.basename(s) !== ".vc-config.json" })
+		for (const [dest, src] of Object.entries(vc.filePathMap ?? {})) {
+			const from = path.resolve(up, src)
+			if (!from.startsWith(up + path.sep) || !fs.existsSync(from)) {
+				problems.push(`the video ${name} function's filePathMap names ${src}, which is not in the upload`)
+				continue
+			}
+			fs.mkdirSync(path.dirname(path.join(fn, dest)), { recursive: true })
+			fs.copyFileSync(from, path.join(fn, dest))
+		}
+		const fnFiles = listFiles(fn).map((f) => posix(path.relative(fn, f)))
+		const inFn = new Set(fnFiles)
+		for (const need of ["api/_lib/videos.mjs", "api/_lib/blob.mjs", "api/_lib/agent-keys.mjs", "api/_lib/gallery.mjs", "api/_lib/db.mjs", "node_modules/@neondatabase/serverless/index.mjs"]) if (!inFn.has(need)) problems.push(`the video ${name} function lacks ${need}`)
+		const unwanted = fnFiles.filter((f) => /\.map$/.test(f) || /(^|\/)\.env/.test(f) || /\.(pem|key|p12)$/i.test(f) || f.startsWith("web/") || f.startsWith("ai/"))
+		if (unwanted.length) problems.push(`the video ${name} function holds files it must not: ${unwanted.slice(0, 6).join(", ")}`)
+		const bytes = fnFiles.reduce((n, f) => n + fs.statSync(path.join(fn, f)).size, 0)
+		say(`video ${name} function: ${vc.runtime}, maxDuration ${vc.maxDuration} s, ${fnFiles.length} files, ${(bytes / 1048576).toFixed(1)} MB`)
+		chmodTree(fn, true)
+		laid[name] = fn
+	}
+	if (Object.keys(laid).length !== VIDEO_FUNCTIONS.length) return
+	try {
+		const script = path.join(tmp, "call-videos.mjs")
+		fs.writeFileSync(script, CALL_VIDEOS)
+		const r = run(process.execPath, [script, JSON.stringify(laid)], { cwd: tmp, env: { PATH: process.env.PATH ?? "", HOME: tmp, TMPDIR: tmp, NODE_ENV: "production", VERCEL: "1" }, timeout: 60000 })
+		const line = (r.stdout ?? "").split("\n").find((l) => l.startsWith("RESULT "))
+		if (r.status !== 0 || !line) return void problems.push(`calling the built video functions failed (exit ${r.status ?? r.signal}): ${(r.stderr || r.stdout || "").trim().split("\n").slice(-4).join(" / ") || "no output"}`)
+		const got = JSON.parse(line.slice("RESULT ".length))
+		if (got.noKey !== 401) problems.push(`the upload function with no agent key answered ${got.noKey}, not 401`)
+		if (got.wrongKey !== 403) problems.push(`the upload function with a wrong agent key answered ${got.wrongKey}, not 403`)
+		if (got.upload.status !== 503 || got.upload.code !== "not_configured") problems.push(`the upload function with the key but no gallery answered ${got.upload.status} ${got.upload.code}, not 503 not_configured`)
+		if (got.publish.status !== 503 || got.publish.code !== "not_configured") problems.push(`the publish function with the key but no gallery answered ${got.publish.status} ${got.publish.code}, not 503 not_configured`)
+		if (got.gallery.status !== 404 || !/^text\/html/.test(got.gallery.ctype ?? "")) problems.push(`the gallery page with no gallery set up answered ${got.gallery.status} ${got.gallery.ctype}, not a 404 page`)
+		if (got.report.status !== 404 || !/^text\/html/.test(got.report.ctype ?? "")) problems.push(`a job's report page with no gallery set up answered ${got.report.status} ${got.report.ctype}, not a 404 page`)
+		if (got.keyInAnswers) problems.push("an answer of the video functions holds the agent key")
+		say(`video functions called: no key ${got.noKey}, a wrong key ${got.wrongKey}, the key with no gallery set up: upload ${got.upload.status} ${got.upload.code}, publish ${got.publish.status} ${got.publish.code}; gallery page ${got.gallery.status}, a job's report ${got.report.status}; rewrites: ${routes.length}; ${resolved.length} gallery and report addresses reach the function (index.html and report.html through cleanUrls' 308)`)
+	} finally {
+		for (const fn of Object.values(laid)) chmodTree(fn, false)
+	}
+}
+
 /** 0 when the upload builds with `vercel build` and its AI function answers as it should, else 1 (each problem printed). */
 async function vercelCheck() {
 	const say = (m) => console.log(`build-static: ${m}`)
@@ -375,14 +509,15 @@ async function vercelCheck() {
 			fs.copyFileSync(src, path.join(up, f))
 		}
 		say(`upload (.vercelignore): ${files.length} files, ${(bytes / 1048576).toFixed(1)} MB`)
-		for (const need of ["package.json", "package-lock.json", "vercel.json", "api/ai/[step].mjs", "api/scenes/index.mjs", "tools/build-static.mjs", "web/index.html"]) if (!files.includes(need)) problems.push(`the upload has no ${need}`)
+		for (const need of ["package.json", "package-lock.json", "vercel.json", "api/ai/[step].mjs", "api/scenes/index.mjs", ...VIDEO_FUNCTIONS.map((n) => `api/videos/${n}.mjs`), "tools/build-static.mjs", "web/index.html"]) if (!files.includes(need)) problems.push(`the upload has no ${need}`)
+		if (files.some((f) => f.startsWith("tools/video-agent/"))) problems.push("the upload would include tools/video-agent/ (the owner's local tools)")
 		if (problems.length) return 1
 
 		// 2. vercel build in the copy, with a throwaway local project id (nothing is linked or created on Vercel), without the AI key in its environment
 		fs.mkdirSync(path.join(up, ".vercel"))
 		fs.writeFileSync(path.join(up, ".vercel", "project.json"), JSON.stringify({ projectId: "prj_buildstaticvercelcheck", orgId: "team_buildstaticvercelcheck", settings: { framework: null } }))
 		const env = { ...process.env, VERCEL_TELEMETRY_DISABLED: "1" }
-		for (const k of Object.keys(env)) if (/^(TRUEFOUNDRY_|AI_|CLERK_|NEXT_PUBLIC_CLERK_|DATABASE_|POSTGRES_|PG[A-Z]+$)/.test(k)) delete env[k]
+		for (const k of Object.keys(env)) if (/^(TRUEFOUNDRY_|AI_|CLERK_|NEXT_PUBLIC_CLERK_|DATABASE_|POSTGRES_|PG[A-Z]+$|BLOB_|VIDEO_)/.test(k)) delete env[k]
 		say(`vercel build in ${up} (npm ci, then npm run build:static):`)
 		const vb = spawnSync("vercel", ["build", "--yes"], { cwd: up, stdio: "inherit", env })
 		if (vb.status !== 0) {
@@ -466,6 +601,7 @@ async function vercelCheck() {
 		if (!(got.run.frames > 0) || got.run.goal !== true) problems.push(`the function's engine ran the starter to ${got.run.frames} frames, goal ${got.run.goal}`)
 		say(`function called: GET ${got.get}, unknown step ${got.unknown}, edit of the starter ${got.edit.status} through ${got.edit.model} in ${got.edit.ms} ms, imagine ${got.imagine.status} (a ${got.imagine.mime} ${got.imagine.width} wide through ${got.imagine.model}) in ${got.imagine.ms} ms (gateway: ${got.gateway.requests} request${got.gateway.requests === 1 ? "" : "s"}), no key in any answer; its engine ran the starter: ${got.run.frames} frames, goal ${got.run.goal ? "met" : "NOT met"}`)
 		await scenesCheck({ output, cfg, up, files, tmp, problems, say, run, posix, chmodTree })
+		await videosCheck({ output, cfg, up, tmp, problems, say, run, posix, chmodTree })
 		return problems.length ? 1 : 0
 	} catch (e) {
 		problems.push(`the check itself failed: ${e?.stack ?? e}`)
@@ -875,7 +1011,8 @@ for (const f of htmlFiles()) {
 	const FORBIDDEN_PART = new Set(["research", "machines", "snapshots", "tooling", "dev", "node_modules", "__pycache__", "test", "tests", ".vercel", ".git", ".cache"])
 	const key = process.env.TRUEFOUNDRY_API_KEY && process.env.TRUEFOUNDRY_API_KEY.length >= 8 ? Buffer.from(process.env.TRUEFOUNDRY_API_KEY) : null
 	// (the accounts' server-side secrets too, when the build can see them: docs/ACCOUNTS.md; the publishable key is public by design)
-	const serverSecrets = ["CLERK_SECRET_KEY", "DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "POSTGRES_PASSWORD", "PGPASSWORD", "AI_SESSION_SECRET"].filter((k) => (process.env[k] ?? "").length >= 8).map((k) => [k, Buffer.from(process.env[k])])
+	// (and the video pipeline's: the owner's robot key and the Blob store's read-write token, docs/DEPLOY.md "Video gallery")
+	const serverSecrets = ["CLERK_SECRET_KEY", "DATABASE_URL", "DATABASE_URL_UNPOOLED", "POSTGRES_URL", "POSTGRES_PASSWORD", "PGPASSWORD", "AI_SESSION_SECRET", "AI_AGENT_KEY", "BLOB_READ_WRITE_TOKEN"].filter((k) => (process.env[k] ?? "").length >= 8).map((k) => [k, Buffer.from(process.env[k])])
 	for (const f of all) {
 		const r = path.relative(out, f).split(path.sep)
 		const name = r.at(-1)
@@ -889,6 +1026,7 @@ for (const f of htmlFiles()) {
 			if (/TRUEFOUNDRY_API_KEY\s*["']?\s*[=:]\s*["'][^"'\s]{12,}["']/.test(text)) errors.push(`${rel(f)} seems to hold an API key value (TRUEFOUNDRY_API_KEY = "...")`)
 			if (/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(text)) errors.push(`${rel(f)} holds a private key`)
 			if (/\bsk_(?:live|test)_[A-Za-z0-9]{20,}/.test(text)) errors.push(`${rel(f)} seems to hold a Clerk secret key (sk_...)`)
+			if (/\bvercel_blob_rw_[A-Za-z0-9]+_[A-Za-z0-9]{16,}/.test(text)) errors.push(`${rel(f)} seems to hold a Blob read-write token (vercel_blob_rw_...)`)
 			if (/\bpostgres(?:ql)?:\/\/[^\s"'`:@/]+:[^\s"'`@/]+@/.test(text)) errors.push(`${rel(f)} seems to hold a database connection string with a password`)
 		}
 	}

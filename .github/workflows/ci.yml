@@ -175,7 +175,7 @@ jobs:
   macos:
     name: Engine bundle, unit tests, deploy check, parity (macOS arm64)
     runs-on: macos-latest
-    timeout-minutes: 35
+    timeout-minutes: 60 # (two unit-test passes, the deploy check and the parity suite: ~40 min on a 3-core runner)
     env:
       # the fix-search tests' time budgets were measured on an 18-core Mac; a CI runner gets 4x the time for the same runs (web/ai/fixer.js TIME_SCALE)
       AI_FIX_TIME_SCALE: "4"

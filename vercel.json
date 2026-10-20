@@ -17,11 +17,17 @@
 			"maxDuration": 30,
 			"includeFiles": "{web/sim/**/*.js,web/sim/**/*.json}",
 			"excludeFiles": "web/sim/**/*.map"
+		},
+		"api/videos/*.mjs": {
+			"maxDuration": 60
 		}
 	},
 	"rewrites": [
 		{ "source": "/api/scenes/:id", "destination": "/api/scenes" },
-		{ "source": "/api/scenes/:id/:part", "destination": "/api/scenes" }
+		{ "source": "/api/scenes/:id/:part", "destination": "/api/scenes" },
+		{ "source": "/videos/:gallery", "destination": "/api/videos/gallery" },
+		{ "source": "/videos/:gallery/batches/:batch", "destination": "/api/videos/gallery" },
+		{ "source": "/videos/:gallery/jobs/:job/:file", "destination": "/api/videos/gallery" }
 	],
 	"headers": [
 		{

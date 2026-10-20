@@ -61,3 +61,4 @@ tools/apple-pow-tables.ts
 
 # generated caches
 ai/.cache/
+.env*
