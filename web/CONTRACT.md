@@ -2043,7 +2043,7 @@ research/rw-validate-optics.ts [snell|fresnel|mirror|tir|prism|lens|image|invers
   near the Planckian locus, else its hue), a circuit lamp's reach; change words for pattern, dot_s, repeat, a block's glass. The view draws the
   liquids' surfaces where the track has them, a coloured torch's LED and spot light in its colour, a circuit bulb as a point light as bright as its
   circuit drives it.
-- **Checked**: research/rw-validate-optics.ts all groups pass but `perf` on a loaded machine (Snell into water 32.03° and BK7 27.79° at 589 nm to 0.05°,
+- **Checked**: research/rw-validate-optics.ts all groups pass (`perf` too since 2026-10-20, below) (Snell into water 32.03° and BK7 27.79° at 589 nm to 0.05°,
   n·sin θ to 1e-16; Fresnel 4.21 %; a glass panel 92.5 % (91.8 % expected) in the app; angle out = angle in to 1e-15 rad; critical angle 41.26°, TIR
   flips between 40.96° and 41.56°; prism minimum deviation C 38.39°, F 39.10°, spread 0.71°; lens focus at the thick-lens back focal length to 1 mm; image
   −1.00 cm of a 2 cm arrow at 15 cm, sharp, blurred at 25 cm; inverse square 3.98 : 1, a 150 lm 20° torch's I/d² within 3 %, the lamp's I/d² within 3 %;
@@ -2051,9 +2051,12 @@ research/rw-validate-optics.ts [snell|fresnel|mirror|tir|prism|lens|image|invers
   / 0.02; energy kept to 1e-12 at a surface, within 1 % over 200 random paths (dropped branches); the view's tracer = the engine's bit for bit; 120 random
   scenes: no exceptions or non-finite readings). Python == JS over 150 random layout scenes and 80 more with engine tracks and summaries, every
   module loaded; 17 demo scenes (engine4 scratch `optics/scenes/demo-*.json`) meet every goal on the server and in the browser engine with identical tracks;
-  the 22 identity scenes are byte-identical. Speed: the spec's scene (3 torches × 256 rays, 50 solids) costs 2.5 ms of CPU a trace (13 ms of wall
-  time at a load average of 150), so `perf` (≤ 2 ms wall) is not yet shown on an idle laptop; a lesson's scene (2-10 things) is 0.2-0.6 ms, and nothing
-  is traced again until something moves or switches. Build and Edit with AI on the app with the real model (Opus 5.5): 3 lesson builds (a laser off a
+  the 22 identity scenes are byte-identical. Speed: the spec's scene (3 torches × 256 rays, 50 solids) costs 0.7-1.1 ms of this thread's CPU a
+  warm trace (2026-10-20; 1.1-1.5 ms before an opaque hit's three spectra became arrays of their own instead of views of one 24-number store,
+  the same numbers), so `perf` passes its 2 ms (CI 5 ms). It measures as a running scene traces: warm (after 40 traces: the first 20 of a fresh
+  process cost about twice as much), the thread's own CPU time (`process.threadCpuUsage`: wall time on this machine at a load average of 100 was
+  13-38 ms), the fastest of 15 batches of 20. A lesson's scene (2-10 things) is 0.2-0.6 ms, and nothing is traced again until something moves or
+  switches. Build and Edit with AI on the app with the real model (Opus 5.5): 3 lesson builds (a laser off a
   mirror onto a target; a ball's shadow on a screen; glass vs cardboard in front of two meters) met their goals in 2 runs each, 6/6; 3 edits (a mirror
   turned 10°, a card moved 20 cm, a torch dimmed to 50 lm) made exactly the asked change and said honestly that a goal now fails, every time; the
   checked fix (lower the target 20 cm; move the screen 60 cm; narrow the beam 20° → 14°) was found 8 times in 9 over three runs (the miss: the

@@ -1765,11 +1765,11 @@ const traceRoot = (root: Ray, si: number, s: number, bodies: readonly WBody[], s
 			if (!he) continue // leaving an opaque body (a source inside it): nothing to meet
 			// opaque (or a mirror's back, a meter's housing, a sensor's or panel's or screen's face): caught and absorbed here
 			const share = caught(ray.env, w.src.halfDepth)
-			// (one buffer for the three spectra)
-			const buf = new Float64Array(3 * NB)
-			const inc = buf.subarray(0, NB)
-			const absorbed = buf.subarray(NB, 2 * NB)
-			const scattered = buf.subarray(2 * NB)
+			// (three arrays of 8, not views of one of 24: an array of 64 bytes lives on the JS heap, a bigger one's store is allocated outside it,
+			// which made these the tracer's costliest line; the same numbers either way)
+			const inc = new Float64Array(NB)
+			const absorbed = new Float64Array(NB)
+			const scattered = new Float64Array(NB)
 			const A = w.src.absorb
 			for (let b = 0; b < NB; b++) {
 				const pb = (ray.p[b] as number) * share

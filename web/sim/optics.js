@@ -1253,10 +1253,9 @@ const traceRoot = (root, si, s, bodies, state, keepSegs) => {
       }
       if (!he) continue;
       const share = caught(ray.env, w.src.halfDepth);
-      const buf = new Float64Array(3 * NB);
-      const inc = buf.subarray(0, NB);
-      const absorbed = buf.subarray(NB, 2 * NB);
-      const scattered = buf.subarray(2 * NB);
+      const inc = new Float64Array(NB);
+      const absorbed = new Float64Array(NB);
+      const scattered = new Float64Array(NB);
       const A = w.src.absorb;
       for (let b = 0; b < NB; b++) {
         const pb = ray.p[b] * share;
