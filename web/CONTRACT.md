@@ -447,7 +447,8 @@ before except atwood-machine, pulley-lift, spring-gate, spring-catapult and wrec
   body or words (a document the engine would refuse).
 - Engine bundle: `npm run build:engine` (tools/build-engine.mjs, esbuild from `npm ci`) bundles tools/engine-worker-entry.ts (the engine,
   tooling/src/sim on planck.js) into `web/sim/engine-worker.js` (a module Worker, with `engine-worker.js.map`) and the math the page itself needs
-  (pow, cube) into `web/sim/engine-math.js`. In the bundle Math.sin, cos, atan2, exp, hypot and pow (and `**`) are tools/fdlibm.ts's; the
+  (pow, cube) into `web/sim/engine-math.js`. In the bundle Math.sin, cos, atan2, exp, hypot and pow (and `**`) are tools/fdlibm.ts's (its
+  hypot takes any number of arguments, as Math.hypot does: until 2026-10-20 it took two, so a `Math.hypot(x, y, z)` dropped z); the
   server's engine (research/poc/worker.ts, and research/poc/dense_track.ts for the Python tests) loads the engine through
   tools/engine-math-node.mjs, which makes the same substitution in node (the rules: tools/engine-math-transform.ts), so the server and every
   browser compute the same bits on any machine, macOS or Linux. pow is tools/crpow.ts, correctly rounded (2^(y log2 x) in double-double with

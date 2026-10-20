@@ -443,8 +443,11 @@ export const exp = (x0: number): number => {
 	return y * twopk * twom1000
 }
 
-// ---- hypot (V8's: scale by the largest, Kahan sum of squares)
-export const hypot = (a: number, b: number): number => {
+// ---- hypot (V8's: scale by the largest, Kahan sum of squares), of as many arguments as Math.hypot takes: the bundle and the node hook put
+// it in place of every Math.hypot, so a call with one, three or more (Math.hypot(x, y, z)) must not be cut to two. Two, the engine's own
+// calls, take the path below; any other count hypotOf, the same rules over all of them.
+export function hypot(a: number, b: number): number {
+	if (arguments.length !== 2) return hypotOf(arguments)
 	const x = Math.abs(a)
 	const y = Math.abs(b)
 	if (a !== a || b !== b) return x === Infinity || y === Infinity ? Infinity : NaN
@@ -456,6 +459,35 @@ export const hypot = (a: number, b: number): number => {
 	for (let i = 0; i < 2; i++) {
 		const n = (i === 0 ? x : y) / max
 		const summand = n * n - comp
+		const prelim = sum + summand
+		comp = prelim - sum - summand
+		sum = prelim
+	}
+	return Math.sqrt(sum) * max
+}
+/** Math.hypot of any number of arguments as V8 computes it (src/builtins/math.tq, MathHypot): none 0; any ±Infinity Infinity, else any NaN
+ *  NaN; all zero 0; else the largest × √(Kahan sum of (each / the largest)²), in argument order. tools/test-fdlibm.mjs checks it. */
+const hypotOf = (args: ArrayLike<unknown>): number => {
+	const n = args.length
+	if (n === 0) return 0
+	const abs: number[] = []
+	let nan = false
+	let max = 0
+	for (let i = 0; i < n; i++) {
+		const v = +(args[i] as number)
+		const a = v !== v ? 0 : Math.abs(v)
+		if (v !== v) nan = true
+		else if (a > max) max = a
+		abs.push(a)
+	}
+	if (max === Infinity) return Infinity
+	if (nan) return NaN
+	if (max === 0) return 0
+	let sum = 0
+	let comp = 0
+	for (let i = 0; i < n; i++) {
+		const q = (abs[i] as number) / max
+		const summand = q * q - comp
 		const prelim = sum + summand
 		comp = prelim - sum - summand
 		sum = prelim

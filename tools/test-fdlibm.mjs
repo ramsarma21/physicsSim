@@ -1,5 +1,6 @@
 // Checks tools/fdlibm.ts against this node's own Math, bit for bit, on millions of inputs (the engine's ranges and the awkward ones): sin, cos,
-// atan2, exp and hypot are ports of what node runs on macOS arm64, so run this there. (pow is correctly rounded, not node's: tools/test-crpow.mjs.)
+// atan2, exp and hypot are ports of what node runs on macOS arm64, so run this there (hypot with any number of arguments, as Math.hypot takes
+// them). (pow is correctly rounded, not node's: tools/test-crpow.mjs.)
 //   node tools/test-fdlibm.mjs [millions-per-function]
 import * as fd from "./fdlibm.ts"
 
@@ -33,7 +34,14 @@ const gens = {
 	},
 	exp: () => [(rnd53() * 2 - 1) * (rnd() < 0.8 ? 5 : rnd() < 0.9 ? 50 : 700)],
 	"exp (near multiples of ln2)": () => [nudge(Math.floor((rnd() * 2 - 1) * 1000) * Math.LN2 * (rnd() < 0.5 ? 1 : 0.5) + (rnd() < 0.5 ? 0 : (rnd() - 0.5) * 1e-6))],
-	hypot: () => [(rnd53() * 2 - 1) * scale(rnd()), (rnd53() * 2 - 1) * scale(rnd())]
+	hypot: () => [(rnd53() * 2 - 1) * scale(rnd()), (rnd53() * 2 - 1) * scale(rnd())],
+	// (Math.hypot takes any number of arguments, and the engine's hypot stands in for every Math.hypot: none, one, three to five)
+	"hypot (0, 1, 3, 4 or 5 arguments)": () => {
+		const n = [0, 1, 3, 3, 4, 5][Math.floor(rnd() * 6)]
+		const out = []
+		for (let i = 0; i < n; i++) out.push(rnd() < 0.05 ? special[Math.floor(rnd() * special.length)] : (rnd53() * 2 - 1) * scale(rnd()))
+		return out
+	}
 }
 const special = [0, -0, 1, -1, 0.5, Math.PI, Math.PI / 2, Math.PI / 4, 3 * Math.PI / 4, 1e-300, 5e-324, 1e300, 823549.6, 823550, 2e6, -2e6, Infinity, -Infinity, NaN, 2 ** -27, 2 ** -28, 709.78, 709.79, -745, -746, 1e-9]
 let bad = 0
@@ -55,7 +63,12 @@ for (const label of Object.keys(gens)) {
 	if (label === name) for (const x of special) {
 		if (name === "atan2" || name === "hypot") for (const y of special) check([x, y])
 		else check([x])
+		if (name === "hypot") {
+			check([x])
+			for (const y of special) for (const z of special) check([x, y, z])
+		}
 	}
+	if (label === name && name === "hypot") check([])
 	for (let i = 0; i < N; i++) check(gens[label]())
 	console.log(`${label.padEnd(38)} ${mism === 0 ? "identical" : mism + " DIFFER"} on ${N} + specials${first ? "; first: " + first : ""}`)
 	bad += mism
