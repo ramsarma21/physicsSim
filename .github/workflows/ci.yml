@@ -1,11 +1,15 @@
 # CI for the physics sandbox:
 #   checks    (Linux, Node 24 = Vercel's runtime, and Node 26) syntax of every JS/TS/Python file; vercel.json's function patterns; the
 #             generated files (vendor, scenario list, web/sim's sprites.js and unicode.js); the engine bundle; every node:test file; the
-#             engine's real-world validators (research/rw-validate*.ts); the static site build
+#             static site build
+#   validators  (Linux, Node 24 and 26, two groups each in parallel) the engine's real-world validators (research/rw-validate*.ts):
+#             `p4` (rw-validate-p4.ts, its crash fuzz) and `rest` (every other one; .github/scripts/validators.sh: the two are the whole list)
 #   machines  (Linux) the Python scene builder's tests (every machines/test_*.py), which run the engine from tooling/src/sim
-#   macos     (macOS arm64) the engine bundle, every node:test file (Node 24 and 26), the static site build, the Vercel deploy check
+#   macos     (macOS arm64, Node 24) the engine bundle, every node:test file, the static site build, the Vercel deploy check
 #             (`npm run check:vercel`: vercel build on the exact upload, then the built functions are called), web/sim's trig.js against
-#             macOS libm, and the Python <-> JS parity suite (tools/parity/run.sh) against web/server.py started in the job
+#             macOS libm
+#   macos-26  (macOS arm64, Node 26) the engine bundle, every node:test file, and the Python <-> JS parity suite (tools/parity/run.sh)
+#             against web/server.py started in the job
 #   parity-linux  (Linux x64) the same parity suite on glibc's libm and V8 built without fused multiply-adds: the builders' sin/cos at
 #             multiples of 30 degrees and their powers are platform-free (machines/crmath.py), so it is expected to pass here too, except
 #             where another libm function lands exactly on a rounding tie (the hanging chain's documented case, tools/parity/mechanisms.mjs
@@ -38,8 +42,8 @@ jobs:
   checks:
     name: Checks (Linux, Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    # (60: with the physics modules' validators and tests the job takes 35-41 min on the 4-core runner; 40 cut Node 24 off at 40 m 17 s)
-    timeout-minutes: 60
+    # (the validators have their own job: with them this one took 35-41 min, and 40 cut Node 24 off at 40 m 17 s; without them about 17)
+    timeout-minutes: 40
     env:
       # the fix-search tests' time budgets were measured on an 18-core Mac; a CI runner gets 4x the time for the same runs (web/ai/fixer.js TIME_SCALE)
       AI_FIX_TIME_SCALE: "4"
@@ -95,13 +99,6 @@ jobs:
       - name: Unit tests (node --test)
         if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
         run: .github/scripts/unit-tests.sh ${{ steps.engine.outputs.built == 'true' }}
-      - name: Engine validators (research/rw-validate*.ts; rw-validate.ts is a smoke run)
-        if: ${{ !cancelled() && steps.paths.outcome == 'success' }}
-        # a smaller crash fuzz on the 4-core Linux runner (the macOS job and local runs keep p4's default 5000 scenes)
-        env:
-          FUZZ_N: "1500"
-          FUZZ_JOBS: "4"
-        run: .github/scripts/validators.sh
       - name: Static site (npm run build:static:nogen)
         if: ${{ !cancelled() && steps.engine.outputs.built == 'true' }}
         run: npm run build:static:nogen
@@ -113,6 +110,50 @@ jobs:
           path: |
             ci-logs/
             dist/
+            research/tmp/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  validators:
+    name: Engine validators (Linux, Node ${{ matrix.node }}, ${{ matrix.group }})
+    runs-on: ubuntu-latest
+    # (p4 about 9-15 min, rest about 5-8 with the module validators' own fuzz sizes)
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 26]
+        # p4: rw-validate-p4.ts (its crash fuzz is most of the time); rest: every other validator, so a new one runs here with no change
+        group: [p4, rest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: npm ci
+        run: npm ci
+      - name: Link the paths the research scripts assume
+        run: |
+          .github/scripts/ci-paths.sh
+          mkdir -p ci-logs
+      - name: Engine validators, ${{ matrix.group }} (research/rw-validate*.ts; rw-validate.ts is a smoke run)
+        # a smaller crash fuzz on the 4-core Linux runner (local runs keep p4's default 5000 scenes); validators.sh gives these to
+        # rw-validate-p4.ts only (the module validators read FUZZ_N for their own fuzz and keep their defaults)
+        env:
+          FUZZ_N: "1500"
+          FUZZ_JOBS: "4"
+        run: .github/scripts/validators.sh ${{ matrix.group }}
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: validators-node${{ matrix.node }}-${{ matrix.group }}-logs
+          path: |
+            ci-logs/
             research/tmp/
           if-no-files-found: ignore
           retention-days: 14
@@ -174,9 +215,11 @@ jobs:
           retention-days: 14
 
   macos:
-    name: Engine bundle, unit tests, deploy check, parity (macOS arm64)
+    name: Engine bundle, unit tests, deploy check (macOS arm64, Node 24)
     runs-on: macos-latest
-    timeout-minutes: 60 # (two unit-test passes, the deploy check and the parity suite: ~40 min on a 3-core runner)
+    # (one unit-test pass, the static build and the deploy check: about 25 min on a 3-core runner; with Node 26's pass and the parity suite
+    # it took 46 min, so those are in macos-26)
+    timeout-minutes: 60
     env:
       # the fix-search tests' time budgets were measured on an 18-core Mac; a CI runner gets 4x the time for the same runs (web/ai/fixer.js TIME_SCALE)
       AI_FIX_TIME_SCALE: "4"
@@ -222,12 +265,48 @@ jobs:
           # the CLI version Vercel's own builds ran (their build log: "Vercel CLI 64.0.2"); vercel build needs no login here
           npm install -g --no-audit --no-fund vercel@64.0.2
           npm run check:vercel
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-logs
+          path: ci-logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  macos-26:
+    name: Engine bundle, unit tests, parity (macOS arm64, Node 26)
+    runs-on: macos-latest
+    timeout-minutes: 60 # (one unit-test pass and the parity suite: about 30 min on a 3-core runner)
+    env:
+      # the fix-search tests' time budgets were measured on an 18-core Mac; a CI runner gets 4x the time for the same runs (web/ai/fixer.js TIME_SCALE)
+      AI_FIX_TIME_SCALE: "4"
+    steps:
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
-        if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         with:
           # Node 26, as on the development machine: under Node 24.20 fuzz-live.mjs's fetch() of web/server.py's answers dies in
           # undici's own parser (AssertionError: assert(!this.paused), in Parser.finish), before comparing anything
           node-version: 26
+          cache: npm
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Platform
+        run: |
+          sw_vers
+          uname -m
+          python3 -c 'import sys, platform; print(sys.version); print(platform.mac_ver())'
+          node --version
+      - name: npm ci
+        run: npm ci
+      - name: Link the paths the research scripts assume
+        run: |
+          .github/scripts/ci-paths.sh
+          mkdir -p ci-logs
+      - name: Engine bundle (npm run build:engine; must equal the committed one)
+        id: engine
+        run: .github/scripts/engine-bundle.sh
       - name: Unit tests, every node:test file (Node 26)
         if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         run: .github/scripts/unit-tests.sh true
@@ -238,7 +317,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: macos-logs
+          name: macos-26-logs
           path: ci-logs/
           if-no-files-found: ignore
           retention-days: 14
