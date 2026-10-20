@@ -63,6 +63,7 @@ const browser = await chromium.launch({ headless: true, ...(fs.existsSync(shell)
 let bad = 0
 try {
 	const page = await browser.newPage()
+	if (process.env.PLAYGROUND_MODULES !== undefined) await page.addInitScript((v) => { globalThis.PLAYGROUND_MODULES = v }, process.env.PLAYGROUND_MODULES) // (the physics modules the page loads: as node's)
 	const errors = []
 	page.on("pageerror", (e) => errors.push(e.message))
 	page.on("console", (m) => m.type() === "error" && errors.push(m.text()))

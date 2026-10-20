@@ -35,7 +35,8 @@ const reviveFile = (v) => {
 const data = JSON.parse(fs.readFileSync(casesFile, "utf8"))
 const cases = data.cases.map((c) => ({ ...c, py: reviveFile(c.py) }))
 // python's catalog entries of the mechanisms types, for the page's catalog() to be compared with
-const pyCatalog = JSON.parse(execFileSync("python3", ["-I", path.join(HERE, "py_dump.py"), "--mode", "server"], { input: JSON.stringify({ id: "c", op: "catalog" }) + "\n", cwd: PG, encoding: "utf8", maxBuffer: 1 << 28 }).trim()).res
+// (no physics module, machines/mod_*.py, as in mechanisms.mjs: a module's common props, e.g. mechanics' start speed and paint, are not the port's)
+const pyCatalog = JSON.parse(execFileSync("python3", ["-I", path.join(HERE, "py_dump.py"), "--mode", "server"], { input: JSON.stringify({ id: "c", op: "catalog" }) + "\n", cwd: PG, encoding: "utf8", maxBuffer: 1 << 28, env: { ...process.env, PLAYGROUND_MODULES: "" } }).trim()).res
 
 const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || "/Users/ramsarma/.bun/install/cache/playwright-core@1.60.0@@@1")
@@ -64,6 +65,7 @@ const browser = await chromium.launch({ headless: true, ...(fs.existsSync(shell)
 let bad = 0
 try {
 	const page = await browser.newPage()
+	if (process.env.PLAYGROUND_MODULES !== undefined) await page.addInitScript((v) => { globalThis.PLAYGROUND_MODULES = v }, process.env.PLAYGROUND_MODULES) // (the physics modules the page loads: as node's)
 	const errors = []
 	page.on("pageerror", (e) => errors.push(e.message))
 	page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
@@ -196,6 +198,7 @@ try {
 				want.push(r.status === 200 ? Object.fromEntries(await Promise.all(parts.map(async (k) => [k, await digestOf(sim[k])]))) : { error: sim.error })
 			}
 			const page2 = await browser.newPage()
+			if (process.env.PLAYGROUND_MODULES !== undefined) await page2.addInitScript((v) => { globalThis.PLAYGROUND_MODULES = v }, process.env.PLAYGROUND_MODULES) // (the physics modules the page loads: as node's)
 			const errors2 = []
 			page2.on("pageerror", (e) => errors2.push(e.message))
 			page2.on("console", (m) => m.type() === "error" && errors2.push(m.text()))

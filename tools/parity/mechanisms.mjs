@@ -90,7 +90,8 @@ function askPython(requests) {
 	for (let i = 0; i < requests.length; i += B) {
 		const chunk = requests.slice(i, i + B)
 		const input = chunk.map(toPython).join("\n") + "\n"
-		const res = execFileSync(PYTHON, PY_ARGS, { input, maxBuffer: 1 << 30, encoding: "utf8", cwd: PG })
+		// (no physics module, machines/mod_*.py: this side registers the catalog ports alone; the modules have parity checks of their own)
+		const res = execFileSync(PYTHON, PY_ARGS, { input, maxBuffer: 1 << 30, encoding: "utf8", cwd: PG, env: { ...process.env, PLAYGROUND_MODULES: "" } })
 		const lines = res.split("\n").filter((l) => l.trim())
 		if (lines.length !== chunk.length) throw new Error(`python answered ${lines.length} of ${chunk.length}`)
 		for (const l of lines) out.push(JSON.parse(l))

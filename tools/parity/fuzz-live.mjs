@@ -328,7 +328,56 @@ function randomScene(i) {
 		}
 	}
 	otherGoals(scene, i)
+	moduleGoals(scene, i)
+	sceneSettings(scene, i)
 	return scene
+}
+/** The scene's settings (machines/items.py settings_of: gravity presets and numbers, air, air density, room temperature, time-lapse) on 8 % of the scenes, from a
+ *  stream of their own: good values, standard ones (no doc.settings then), and odd ones both sides must refuse with the same words. */
+function sceneSettings(scene, i) {
+	const r = mulberry32((SEED ^ Math.imul(i + 13, 0x165667b1)) >>> 0)
+	const pk = (arr) => arr[Math.floor(r() * arr.length)]
+	if (r() >= 0.08) return
+	const st = {}
+	if (r() < 0.6) st.gravity = pk(["earth", "moon", "Mars", " jupiter ", "none", 9.81, 1.62, 0, 30, 3.7, "pluto", 31, -1, true, null])
+	if (r() < 0.4) st.air = pk([true, false, false, "no", 0, null])
+	if (r() < 0.3) st.room_temp = pk([20, -5, 37.5, 60, -61, "20", null])
+	if (r() < 0.3) st.time_lapse = pk([1, 60, 3600, 100000, 0.5, 1e6, null])
+	// (a world's own air, settings.air_density kg/m³: Mars's, Venus's, the limits and odd ones; a stream of its own, so the draws above stay)
+	const ra = mulberry32((SEED ^ Math.imul(i + 17, 0x2c1b3c6d)) >>> 0)
+	if (ra() < 0.35) st.air_density = [0.02, 65, 0.16, 1.2, 100, 0.001, 0, 101, "0.02", true, null][Math.floor(ra() * 11)]
+	scene.settings = r() < 0.05 ? pk([[], "moon", 3]) : st
+}
+/** The physics modules' goal kinds (web/sim/plugins.js: each kind's `sample(scene, pick)` makes one for a scene that has its items), from a
+ *  stream of their own, so a scene without module items is what it was: on half the scenes that have such items, some odd fields too. */
+function moduleGoals(scene, i) {
+	// (a module type's links, web/sim items.js Link: set to another item of the scene, often of an allowed type, sometimes not, missing or odd)
+	const rl = mulberry32((SEED ^ Math.imul(i + 11, 0x9e3779b1)) >>> 0)
+	const pl = (arr) => arr[Math.floor(rl() * arr.length)]
+	for (const it of scene.items) {
+		const links = itemsMod.TYPES[it.type]?.links ?? []
+		for (const l of links) {
+			if (rl() >= 0.7) continue
+			const fits = scene.items.filter((o) => o.id !== it.id && (!l.types.length || l.types.includes(o.type)))
+			it.props = it.props ?? {}
+			it.props[l.key] = fits.length && rl() < 0.8 ? pl(fits).id : pl([...scene.items.map((o) => o.id), "missing", it.id, "x".repeat(70), 3, null])
+		}
+	}
+	const kinds = sim.plugins.goalKindNames().map((k) => sim.plugins.goalKind(k)).filter((k) => typeof k?.sample === "function")
+	if (!kinds.length) return
+	const r = mulberry32((SEED ^ Math.imul(i + 7, 0x27d4eb2f)) >>> 0)
+	const pk = (arr) => arr[Math.floor(r() * arr.length)]
+	for (const k of kinds) {
+		if (r() >= 0.5) continue
+		let g = null
+		try {
+			g = k.sample(scene, pk)
+		} catch {}
+		if (!g) continue
+		if (r() < 0.1) g.item = pk(["missing", 3, null])
+		if (r() < 0.2) g.label = pk(["Melt it", "", "ünïcode ✓"])
+		scene.goals.push(g)
+	}
 }
 /** The goal kinds besides "in" (machines/items.py summarize: "falls", "hits", "moves"), on 35% of the scenes, from a random stream of their own
  *  (so every scene's items, and so its run, are what they were before these were added): good ones, and odd fields the server keeps as they are. */

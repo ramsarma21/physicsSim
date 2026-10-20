@@ -1,0 +1,2555 @@
+[
+ {
+  "version": 2,
+  "id": "board-switch-bulb",
+  "name": "On the circuit board: a battery, a switch and a bulb in one loop",
+  "seconds": 2.5,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "board",
+    "type": "circuit-board",
+    "name": "Circuit board",
+    "x": 1,
+    "y": 0.27,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 1,
+    "y": 0.12,
+    "props": {
+     "mount": "board"
+    }
+   },
+   {
+    "id": "sw",
+    "type": "switch",
+    "name": "Switch",
+    "x": 0.8,
+    "y": 0.27,
+    "props": {
+     "mount": "board"
+    }
+   },
+   {
+    "id": "bulb",
+    "type": "bulb",
+    "name": "Bulb",
+    "x": 1,
+    "y": 0.42,
+    "props": {
+     "mount": "board"
+    }
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat",
+     "a_end": "-",
+     "b": "sw",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "sw",
+     "a_end": "+",
+     "b": "bulb",
+     "b_end": "-"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb",
+     "a_end": "+",
+     "b": "bat",
+     "b_end": "+"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "lights",
+    "item": "bulb",
+    "label": "The switch closes at 1 s and the bulb lights"
+   }
+  ],
+  "expect": [
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c1-complete-loop",
+  "name": "C1 A complete loop lights the bulb; an open one does not",
+  "seconds": 2,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat1",
+    "type": "battery",
+    "name": "Battery 1",
+    "x": 0.5,
+    "y": 0.01025,
+    "props": {
+     "cells": 1
+    }
+   },
+   {
+    "id": "bulb1",
+    "type": "bulb",
+    "name": "Bulb 1",
+    "x": 0.7,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat1",
+     "a_end": "+",
+     "b": "bulb1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb1",
+     "a_end": "-",
+     "b": "bat1",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat2",
+    "type": "battery",
+    "name": "Battery 2",
+    "x": 1.4,
+    "y": 0.01025,
+    "props": {
+     "cells": 1
+    }
+   },
+   {
+    "id": "bulb2",
+    "type": "bulb",
+    "name": "Bulb 2",
+    "x": 1.6,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "bulb2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb2",
+     "a_end": "-",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "lights",
+    "item": "bulb1",
+    "label": "A complete loop: Bulb 1 lights"
+   },
+   {
+    "kind": "stays_dark",
+    "item": "bulb2",
+    "label": "An open loop: Bulb 2 stays dark"
+   },
+   {
+    "kind": "current",
+    "item": "bulb2",
+    "at_most_a": 0,
+    "label": "No current at all in the open loop"
+   }
+  ],
+  "expect": [
+   true,
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c11-led",
+  "name": "C11 An LED needs a resistor and goes one way only",
+  "seconds": 2,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat1",
+    "type": "battery",
+    "name": "Battery 1",
+    "x": 0.3,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "r1",
+    "type": "resistor",
+    "name": "68 ohm resistor",
+    "x": 0.5,
+    "y": 0.006,
+    "props": {
+     "ohms": 68
+    }
+   },
+   {
+    "id": "led1",
+    "type": "led",
+    "name": "LED with resistor",
+    "x": 0.7,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat1",
+     "a_end": "+",
+     "b": "r1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "r1",
+     "a_end": "-",
+     "b": "led1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "led1",
+     "a_end": "-",
+     "b": "bat1",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat2",
+    "type": "battery",
+    "name": "Battery 2",
+    "x": 1.1,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "led2",
+    "type": "led",
+    "name": "LED without resistor",
+    "x": 1.3,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "led2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w5",
+    "type": "wire",
+    "name": "w5",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "led2",
+     "a_end": "-",
+     "b": "bat2",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat3",
+    "type": "battery",
+    "name": "Battery 3",
+    "x": 1.8,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "r3",
+    "type": "resistor",
+    "name": "Resistor 3",
+    "x": 2,
+    "y": 0.006,
+    "props": {
+     "ohms": 68
+    }
+   },
+   {
+    "id": "led3",
+    "type": "led",
+    "name": "Reversed LED",
+    "x": 2.2,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w6",
+    "type": "wire",
+    "name": "w6",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat3",
+     "a_end": "+",
+     "b": "r3",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w7",
+    "type": "wire",
+    "name": "w7",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "r3",
+     "a_end": "-",
+     "b": "led3",
+     "b_end": "-"
+    }
+   },
+   {
+    "id": "w8",
+    "type": "wire",
+    "name": "w8",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "led3",
+     "a_end": "+",
+     "b": "bat3",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "lights",
+    "item": "led1",
+    "label": "With 68 ohms it lights"
+   },
+   {
+    "kind": "current",
+    "item": "led2",
+    "at_most_a": 0,
+    "label": "Without a resistor it burns out"
+   },
+   {
+    "kind": "stays_dark",
+    "item": "led3",
+    "label": "Reversed, it stays dark"
+   }
+  ],
+  "expect": [
+   true,
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c12-solar",
+  "name": "C12 A solar panel runs a solar motor in the sun; shaded, it stops",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "pv1",
+    "type": "solar-panel",
+    "name": "Panel in the sun",
+    "x": 0.5,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "m1",
+    "type": "motor",
+    "name": "Solar motor",
+    "x": 0.75,
+    "y": 0.006,
+    "props": {
+     "kind": "solar",
+     "drives": "disc",
+     "size": 0.06
+    }
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "pv1",
+     "a_end": "+",
+     "b": "m1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "m1",
+     "a_end": "-",
+     "b": "pv1",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "pv2",
+    "type": "solar-panel",
+    "name": "Shaded panel",
+    "x": 1.5,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "card",
+    "type": "cardboard-box",
+    "name": "Shade",
+    "x": 1.5,
+    "y": 0.3,
+    "props": {},
+    "fixed": true
+   },
+   {
+    "id": "m2",
+    "type": "motor",
+    "name": "Shaded motor",
+    "x": 1.75,
+    "y": 0.006,
+    "props": {
+     "kind": "solar",
+     "drives": "disc",
+     "size": 0.06
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "pv2",
+     "a_end": "+",
+     "b": "m2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "m2",
+     "a_end": "-",
+     "b": "pv2",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "spins",
+    "item": "m1",
+    "label": "In the sun the motor turns"
+   },
+   {
+    "kind": "current",
+    "item": "m2",
+    "at_most_a": 0.001,
+    "label": "Shaded, no current"
+   }
+  ],
+  "expect": [
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c2-one-vs-two-cells",
+  "name": "C2 One AA cell against two",
+  "seconds": 2,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat1",
+    "type": "battery",
+    "name": "One cell",
+    "x": 0.5,
+    "y": 0.01025,
+    "props": {
+     "cells": 1
+    }
+   },
+   {
+    "id": "bulb1",
+    "type": "bulb",
+    "name": "Bulb on one cell",
+    "x": 0.7,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat1",
+     "a_end": "+",
+     "b": "bulb1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb1",
+     "a_end": "-",
+     "b": "bat1",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat2",
+    "type": "battery",
+    "name": "Two cells",
+    "x": 1.4,
+    "y": 0.01025,
+    "props": {
+     "cells": 2
+    }
+   },
+   {
+    "id": "bulb2",
+    "type": "bulb",
+    "name": "Bulb on two cells",
+    "x": 1.6,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "bulb2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb2",
+     "a_end": "-",
+     "b": "bat2",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "lights",
+    "item": "bulb1",
+    "label": "One cell: a dull glow"
+   },
+   {
+    "kind": "glows_brighter",
+    "a": "bulb2",
+    "b": "bulb1",
+    "label": "Two cells light it far brighter"
+   }
+  ],
+  "expect": [
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c3-conductors",
+  "name": "C3 Conductors and insulators",
+  "seconds": 2.5,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat1",
+    "type": "battery",
+    "name": "Battery 1",
+    "x": 0.2,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "bulb1",
+    "type": "bulb",
+    "name": "Bulb (coin)",
+    "x": 0.4,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "t1",
+    "type": "tester",
+    "name": "Tester 1",
+    "x": 0.62,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "coin",
+    "type": "coin-flat",
+    "name": "Coin",
+    "x": 0.62,
+    "y": 0.04,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat1",
+     "a_end": "+",
+     "b": "bulb1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb1",
+     "a_end": "-",
+     "b": "t1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "t1",
+     "a_end": "-",
+     "b": "bat1",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat2",
+    "type": "battery",
+    "name": "Battery 2",
+    "x": 1,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "bulb2",
+    "type": "bulb",
+    "name": "Bulb (eraser)",
+    "x": 1.2,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "t2",
+    "type": "tester",
+    "name": "Tester 2",
+    "x": 1.42,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "eraser",
+    "type": "eraser",
+    "name": "Eraser",
+    "x": 1.42,
+    "y": 0.04,
+    "props": {}
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "bulb2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w5",
+    "type": "wire",
+    "name": "w5",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb2",
+     "a_end": "-",
+     "b": "t2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w6",
+    "type": "wire",
+    "name": "w6",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "t2",
+     "a_end": "-",
+     "b": "bat2",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat3",
+    "type": "battery",
+    "name": "Battery 3",
+    "x": 1.8,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "bulb3",
+    "type": "bulb",
+    "name": "Bulb (steel ball)",
+    "x": 2,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "t3",
+    "type": "tester",
+    "name": "Tester 3",
+    "x": 2.22,
+    "y": 0.006,
+    "props": {
+     "gap": 0.012
+    }
+   },
+   {
+    "id": "ball",
+    "type": "steel-ball",
+    "name": "Steel ball",
+    "x": 2.22,
+    "y": 0.04,
+    "props": {}
+   },
+   {
+    "id": "w7",
+    "type": "wire",
+    "name": "w7",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat3",
+     "a_end": "+",
+     "b": "bulb3",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w8",
+    "type": "wire",
+    "name": "w8",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb3",
+     "a_end": "-",
+     "b": "t3",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w9",
+    "type": "wire",
+    "name": "w9",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "t3",
+     "a_end": "-",
+     "b": "bat3",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "lights",
+    "item": "bulb1",
+    "label": "The coin conducts: its bulb lights"
+   },
+   {
+    "kind": "conducts",
+    "item": "t1"
+   },
+   {
+    "kind": "stays_dark",
+    "item": "bulb2",
+    "label": "The eraser insulates: its bulb stays dark"
+   },
+   {
+    "kind": "lights",
+    "item": "bulb3",
+    "label": "The steel ball conducts"
+   }
+  ],
+  "expect": [
+   true,
+   true,
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c4-series-parallel",
+  "name": "C4 Series and parallel bulbs",
+  "seconds": 2,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat1",
+    "type": "battery",
+    "name": "Series battery",
+    "x": 0.4,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "s1",
+    "type": "bulb",
+    "name": "Series bulb 1",
+    "x": 0.6,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "s2",
+    "type": "bulb",
+    "name": "Series bulb 2",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat1",
+     "a_end": "+",
+     "b": "s1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "s1",
+     "a_end": "-",
+     "b": "s2",
+     "b_end": "+",
+     "color": "yellow"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "s2",
+     "a_end": "-",
+     "b": "bat1",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat2",
+    "type": "battery",
+    "name": "Parallel battery",
+    "x": 1.5,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "p1",
+    "type": "bulb",
+    "name": "Parallel bulb 1",
+    "x": 1.7,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "p2",
+    "type": "bulb",
+    "name": "Parallel bulb 2",
+    "x": 1.9,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "p1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w5",
+    "type": "wire",
+    "name": "w5",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "p1",
+     "a_end": "-",
+     "b": "bat2",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "w6",
+    "type": "wire",
+    "name": "w6",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "p2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w7",
+    "type": "wire",
+    "name": "w7",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "p2",
+     "a_end": "-",
+     "b": "bat2",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "glows_brighter",
+    "a": "p1",
+    "b": "s1",
+    "label": "Each parallel bulb is brighter than each series bulb"
+   },
+   {
+    "kind": "lights",
+    "item": "s2",
+    "label": "The series bulbs still glow"
+   }
+  ],
+  "expect": [
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c5-ohms-law",
+  "name": "C5 Ohm's law: a 10 ohm resistor on two cells",
+  "seconds": 2,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.6,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "r",
+    "type": "resistor",
+    "name": "10 ohm resistor",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {
+     "ohms": 10
+    }
+   },
+   {
+    "id": "A",
+    "type": "meter",
+    "name": "Ammeter",
+    "x": 1,
+    "y": 0.075,
+    "props": {
+     "mode": "amps"
+    }
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat",
+     "a_end": "+",
+     "b": "r",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "r",
+     "a_end": "-",
+     "b": "A",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "A",
+     "a_end": "-",
+     "b": "bat",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "current",
+    "item": "A",
+    "at_least_a": 0.29,
+    "at_most_a": 0.31,
+    "label": "The ammeter reads 0.3 A (I = V / R)"
+   }
+  ],
+  "expect": [
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c6-doorbell",
+  "name": "C6 A ball drops on a doorbell button and the buzzer sounds",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.6,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "push",
+    "type": "switch",
+    "name": "Doorbell button",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {
+     "style": "push",
+     "force": 0.3
+    }
+   },
+   {
+    "id": "bz",
+    "type": "buzzer",
+    "name": "Buzzer",
+    "x": 1,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "ball",
+    "type": "tennis-ball",
+    "name": "Tennis ball",
+    "x": 0.8,
+    "y": 0.3,
+    "props": {},
+    "held": true
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat",
+     "a_end": "+",
+     "b": "push",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "push",
+     "a_end": "-",
+     "b": "bz",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bz",
+     "a_end": "-",
+     "b": "bat",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "buzzes",
+    "item": "bz",
+    "label": "The buzzer sounds when the ball rests on the button"
+   }
+  ],
+  "expect": [
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c7-battery-fan",
+  "name": "C7 A battery fan blows a ping-pong ball; a reversed motor turns the other way",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.5,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "fan",
+    "type": "motor",
+    "name": "Fan",
+    "x": 0.75,
+    "y": 0.006,
+    "props": {
+     "drives": "propeller"
+    }
+   },
+   {
+    "id": "ball",
+    "type": "ping-pong-ball",
+    "name": "Ping-pong ball",
+    "x": 0.9,
+    "y": 0.02,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat",
+     "a_end": "+",
+     "b": "fan",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "fan",
+     "a_end": "-",
+     "b": "bat",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat2",
+    "type": "battery",
+    "name": "Battery 2",
+    "x": 1.8,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "m2",
+    "type": "motor",
+    "name": "Paddle motor",
+    "x": 2.05,
+    "y": 0.006,
+    "props": {
+     "drives": "paddle",
+     "kind": "geared",
+     "size": 0.15
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "m2",
+     "b_end": "-"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "m2",
+     "a_end": "+",
+     "b": "bat2",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "spins",
+    "item": "fan",
+    "at_least_rpm": 2000,
+    "label": "The fan turns fast"
+   },
+   {
+    "kind": "moves",
+    "item": "ball",
+    "min_m": 0.1,
+    "label": "Its air blows the ball along"
+   },
+   {
+    "kind": "spins",
+    "item": "m2",
+    "label": "The reversed gear motor turns (clockwise)"
+   }
+  ],
+  "expect": [
+   true,
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c8-flat-battery",
+  "name": "C8 A fresh battery against a run-down one",
+  "seconds": 2,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat1",
+    "type": "battery",
+    "name": "Fresh battery",
+    "x": 0.5,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "bulb1",
+    "type": "bulb",
+    "name": "Bulb (fresh)",
+    "x": 0.7,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat1",
+     "a_end": "+",
+     "b": "bulb1",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb1",
+     "a_end": "-",
+     "b": "bat1",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "bat2",
+    "type": "battery",
+    "name": "Run-down battery",
+    "x": 1.4,
+    "y": 0.01025,
+    "props": {
+     "charge_pct": 10
+    }
+   },
+   {
+    "id": "bulb2",
+    "type": "bulb",
+    "name": "Bulb (run-down)",
+    "x": 1.6,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat2",
+     "a_end": "+",
+     "b": "bulb2",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb2",
+     "a_end": "-",
+     "b": "bat2",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "glows_brighter",
+    "a": "bulb1",
+    "b": "bulb2",
+    "label": "The fresh battery's bulb is brighter"
+   },
+   {
+    "kind": "lights",
+    "item": "bulb2",
+    "label": "The run-down battery still lights it dimly"
+   }
+  ],
+  "expect": [
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "c9-short-circuit",
+  "name": "C9 A short circuit: the bulb beside it goes dark",
+  "seconds": 1.5,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.6,
+    "y": 0.01025,
+    "props": {
+     "cells": 1
+    }
+   },
+   {
+    "id": "bulb",
+    "type": "bulb",
+    "name": "Bulb",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat",
+     "a_end": "+",
+     "b": "bulb",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb",
+     "a_end": "-",
+     "b": "bat",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "short",
+    "type": "wire",
+    "name": "short",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat",
+     "a_end": "+",
+     "b": "bat",
+     "b_end": "-",
+     "color": "yellow"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "stays_dark",
+    "item": "bulb",
+    "label": "The shorted bulb stays dark"
+   },
+   {
+    "kind": "current",
+    "item": "bat",
+    "at_least_a": 5,
+    "label": "A huge current flows through the short"
+   }
+  ],
+  "expect": [
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "dimmer",
+  "name": "A dimmer turned up dims the bulb",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.6,
+    "y": 0.01025,
+    "props": {}
+   },
+   {
+    "id": "dim",
+    "type": "dimmer",
+    "name": "Dimmer",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {
+     "knob": 0,
+     "knob_to": 1,
+     "turn_at": 1,
+     "turn_seconds": 1
+    }
+   },
+   {
+    "id": "bulb",
+    "type": "bulb",
+    "name": "Bulb",
+    "x": 1,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bat",
+     "a_end": "+",
+     "b": "dim",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "dim",
+     "a_end": "-",
+     "b": "bulb",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb",
+     "a_end": "-",
+     "b": "bat",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "lights",
+    "item": "bulb",
+    "before_s": 0.5,
+    "label": "It lights first"
+   },
+   {
+    "kind": "current",
+    "item": "bulb",
+    "at_most_a": 0.07,
+    "label": "Turned up, the current falls (the bulb dims out)"
+   }
+  ],
+  "expect": [
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "gen-lights-bulb",
+  "name": "A hand generator lights a bulb (motion to electricity to light)",
+  "seconds": 2.5,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "g",
+    "type": "hand-generator",
+    "name": "Hand generator",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "bulb",
+    "type": "bulb",
+    "name": "Bulb",
+    "x": 1.05,
+    "y": 0.006,
+    "props": {}
+   },
+   {
+    "id": "V",
+    "type": "meter",
+    "name": "Voltmeter",
+    "x": 1.3,
+    "y": 0.075,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "w1",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "g",
+     "a_end": "+",
+     "b": "bulb",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "w2",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "bulb",
+     "a_end": "-",
+     "b": "g",
+     "b_end": "-",
+     "color": "black"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "w3",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "V",
+     "a_end": "+",
+     "b": "bulb",
+     "b_end": "+"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "w4",
+    "x": 0,
+    "y": 0,
+    "props": {
+     "a": "V",
+     "a_end": "-",
+     "b": "bulb",
+     "b_end": "-",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "lights",
+    "item": "bulb",
+    "label": "Turning the crank lights the bulb"
+   },
+   {
+    "kind": "spins",
+    "item": "g",
+    "label": "The crank turns"
+   }
+  ],
+  "expect": [
+   true,
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "lamp-solar",
+  "name": "Lamp, solar panel, motor",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "lamp",
+    "type": "lamp",
+    "name": "Desk lamp",
+    "x": 0.55,
+    "y": 0,
+    "props": {
+     "bulb": "halogen",
+     "power_w": 150,
+     "head_height": 0.25,
+     "target": "panel"
+    }
+   },
+   {
+    "id": "panel",
+    "type": "solar-panel",
+    "name": "Solar panel",
+    "x": 0.85,
+    "y": 0.006,
+    "props": {
+     "sun": 0
+    }
+   },
+   {
+    "id": "motor",
+    "type": "motor",
+    "name": "Solar motor",
+    "x": 1.15,
+    "y": 0.006,
+    "props": {
+     "kind": "solar",
+     "drives": "propeller"
+    }
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "Red wire",
+    "props": {
+     "a": "panel",
+     "b": "motor"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "Black wire",
+    "props": {
+     "a": "motor",
+     "b": "panel",
+     "color": "black"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "spins",
+    "item": "motor",
+    "label": "The lamp's light runs the motor"
+   }
+  ],
+  "expect": [
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "oersted",
+  "name": "Oersted's compass",
+  "seconds": 4,
+  "release": 0.3,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.6,
+    "y": 0.01025,
+    "props": {
+     "cells": 2
+    }
+   },
+   {
+    "id": "sw",
+    "type": "switch",
+    "name": "Switch",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {
+     "flip_at": 1.5
+    }
+   },
+   {
+    "id": "res",
+    "type": "resistor",
+    "name": "Resistor",
+    "x": 1.0,
+    "y": 0.006,
+    "props": {
+     "ohms": 1
+    }
+   },
+   {
+    "id": "wire",
+    "type": "straight-wire",
+    "name": "Straight wire",
+    "x": 1.5,
+    "y": 0.06,
+    "props": {}
+   },
+   {
+    "id": "compass",
+    "type": "compass",
+    "name": "Compass",
+    "x": 1.5,
+    "y": 0.06,
+    "props": {}
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "Wire 1",
+    "props": {
+     "a": "bat",
+     "b": "sw"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "Wire 2",
+    "props": {
+     "a": "sw",
+     "b": "res"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "Wire 3",
+    "props": {
+     "a": "res",
+     "b": "wire"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "Wire 4",
+    "props": {
+     "a": "wire",
+     "b": "bat"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "deflects",
+    "compass": "compass",
+    "label": "The needle swings when the current flows"
+   }
+  ],
+  "expect": [
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "induction",
+  "name": "A magnet dropped through a coil",
+  "seconds": 1.5,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "coil",
+    "type": "coil",
+    "name": "Coil",
+    "x": 1.3,
+    "y": 0.2,
+    "props": {}
+   },
+   {
+    "id": "mag",
+    "type": "bar-magnet",
+    "name": "Bar magnet",
+    "x": 1.3,
+    "y": 0.42,
+    "angle": 90,
+    "held": true,
+    "props": {
+     "length": 0.06,
+     "material": "neodymium"
+    }
+   },
+   {
+    "id": "g",
+    "type": "meter",
+    "name": "Galvanometer",
+    "x": 1.7,
+    "y": 0.045,
+    "props": {
+     "mode": "galvanometer"
+    }
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "Wire 1",
+    "props": {
+     "a": "coil",
+     "b": "g"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "Wire 2",
+    "props": {
+     "a": "g",
+     "b": "coil"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "induces",
+    "coil": "coil",
+    "at_least_mv": 10,
+    "label": "The falling magnet induces a voltage"
+   }
+  ],
+  "expect": [
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "electromagnet-hold",
+  "name": "A wired electromagnet holds paper clips",
+  "seconds": 1.8,
+  "release": 0.3,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.6,
+    "y": 0.01025,
+    "props": {
+     "cells": 2
+    }
+   },
+   {
+    "id": "sw",
+    "type": "switch",
+    "name": "Switch",
+    "x": 0.8,
+    "y": 0.006,
+    "props": {
+     "closed": true,
+     "flip_at": 2.0
+    }
+   },
+   {
+    "id": "amm",
+    "type": "meter",
+    "name": "Ammeter",
+    "x": 1.0,
+    "y": 0.075,
+    "props": {
+     "mode": "amps"
+    }
+   },
+   {
+    "id": "em",
+    "type": "electromagnet",
+    "name": "Electromagnet",
+    "x": 1.4,
+    "y": 0.244,
+    "props": {
+     "turns": 50
+    }
+   },
+   {
+    "id": "clips",
+    "type": "paper-clip",
+    "name": "Paper clips",
+    "x": 1.4,
+    "y": 0.11425,
+    "angle": -90,
+    "held": true,
+    "props": {
+     "count": 6,
+     "spacing": 0.0345
+    }
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "Wire 1",
+    "props": {
+     "a": "bat",
+     "b": "sw"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "Wire 2",
+    "props": {
+     "a": "sw",
+     "b": "amm"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "Wire 3",
+    "props": {
+     "a": "amm",
+     "b": "em"
+    }
+   },
+   {
+    "id": "w4",
+    "type": "wire",
+    "name": "Wire 4",
+    "props": {
+     "a": "em",
+     "b": "bat"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "holds",
+    "magnet": "em",
+    "count": 1,
+    "items": [
+     "clips"
+    ],
+    "label": "Switched on, it holds the clips"
+   }
+  ],
+  "expect": [
+   true
+  ]
+ },
+ {
+  "version": 2,
+  "id": "oersted-through",
+  "name": "Compasses round a wire through the picture",
+  "seconds": 3,
+  "release": 0.3,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "bat",
+    "type": "battery",
+    "name": "Battery",
+    "x": 0.6,
+    "y": 0.01025,
+    "props": {
+     "cells": 2
+    }
+   },
+   {
+    "id": "res",
+    "type": "resistor",
+    "name": "Resistor",
+    "x": 0.85,
+    "y": 0.006,
+    "props": {
+     "ohms": 0.1
+    }
+   },
+   {
+    "id": "wire",
+    "type": "straight-wire",
+    "name": "Straight wire",
+    "x": 1.5,
+    "y": 0.25,
+    "props": {
+     "runs": "through"
+    }
+   },
+   {
+    "id": "right",
+    "type": "compass",
+    "name": "right",
+    "x": 1.545,
+    "y": 0.25,
+    "props": {
+     "size": 0.03,
+     "earth": false
+    }
+   },
+   {
+    "id": "left",
+    "type": "compass",
+    "name": "left",
+    "x": 1.455,
+    "y": 0.25,
+    "props": {
+     "size": 0.03,
+     "earth": false
+    }
+   },
+   {
+    "id": "above",
+    "type": "compass",
+    "name": "above",
+    "x": 1.5,
+    "y": 0.295,
+    "props": {
+     "size": 0.03,
+     "earth": false
+    }
+   },
+   {
+    "id": "below",
+    "type": "compass",
+    "name": "below",
+    "x": 1.5,
+    "y": 0.20500000000000002,
+    "props": {
+     "size": 0.03,
+     "earth": false
+    },
+    "angle": 30
+   },
+   {
+    "id": "w1",
+    "type": "wire",
+    "name": "Wire 1",
+    "props": {
+     "a": "bat",
+     "b": "res"
+    }
+   },
+   {
+    "id": "w2",
+    "type": "wire",
+    "name": "Wire 2",
+    "props": {
+     "a": "res",
+     "b": "wire"
+    }
+   },
+   {
+    "id": "w3",
+    "type": "wire",
+    "name": "Wire 3",
+    "props": {
+     "a": "wire",
+     "b": "bat"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "points",
+    "compass": "right",
+    "angle_deg": 270,
+    "tol_deg": 30
+   },
+   {
+    "kind": "points",
+    "compass": "left",
+    "angle_deg": 90,
+    "tol_deg": 30
+   },
+   {
+    "kind": "points",
+    "compass": "below",
+    "angle_deg": 180,
+    "tol_deg": 30
+   },
+   {
+    "kind": "points",
+    "compass": "above",
+    "angle_deg": 0,
+    "tol_deg": 30
+   }
+  ],
+  "expect": [
+   true,
+   true,
+   true,
+   true
+  ]
+ }
+]

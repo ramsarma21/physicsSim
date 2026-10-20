@@ -128,6 +128,7 @@ console.log(`chromium ${browser.version()}, node ${process.version}`)
 const consoleErrors = []
 const openPage = async (query = "") => {
 	const page = await browser.newPage()
+	if (process.env.PLAYGROUND_MODULES !== undefined) await page.addInitScript((v) => { globalThis.PLAYGROUND_MODULES = v }, process.env.PLAYGROUND_MODULES) // (the physics modules the page loads: as node's)
 	page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()))
 	page.on("pageerror", (e) => consoleErrors.push(String(e)))
 	await page.goto(`${base}/dev/engine-parity.html${query}`)

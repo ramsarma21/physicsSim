@@ -141,7 +141,9 @@ function npmRun(script) {
 }
 
 const ENGINE = ["web/sim/engine-worker.js", "web/sim/engine-math.js"] // what the parity tools check (web/CONTRACT.md, "Browser port, parity and builds")
-const GENERATED = [...ENGINE, "web/vendor", "web/scenario-list.json"]
+// everything `npm run build:engine` writes: the bundle, and the optics module's ray tracer as plain JavaScript (tools/build-optics.mjs)
+const ENGINE_BUILT = [...ENGINE, "web/sim/optics.js"]
+const GENERATED = [...ENGINE_BUILT, "web/vendor", "web/scenario-list.json"]
 function fingerprint() {
 	const m = new Map()
 	for (const g of GENERATED) {
@@ -163,7 +165,13 @@ function engineAsBuiltNow() {
 	const link = path.join(tmp, "node_modules")
 	try {
 		fs.mkdirSync(path.join(tmp, "tools"))
-		for (const f of fs.readdirSync(path.join(root, "tools"))) if (f === "build-engine.mjs" || f.endsWith(".ts")) fs.copyFileSync(path.join(root, "tools", f), path.join(tmp, "tools", f))
+		// tools/*.ts, the build script and every tools/*.mjs it imports (tools/build-optics.mjs), followed import by import
+		const scripts = new Set(["build-engine.mjs"])
+		for (const f of scripts) {
+			const text = fs.readFileSync(path.join(root, "tools", f), "utf8")
+			for (const m of text.matchAll(/(?:\bfrom\s*|\bimport\s*\(\s*)["']\.\/([\w.-]+\.mjs)["']/g)) if (fs.existsSync(path.join(root, "tools", m[1]))) scripts.add(m[1])
+		}
+		for (const f of fs.readdirSync(path.join(root, "tools"))) if (scripts.has(f) || f.endsWith(".ts")) fs.copyFileSync(path.join(root, "tools", f), path.join(tmp, "tools", f))
 		fs.copyFileSync(path.join(root, "package.json"), path.join(tmp, "package.json"))
 		fs.mkdirSync(path.join(tmp, "tooling"))
 		fs.copyFileSync(path.join(root, "tooling", "package.json"), path.join(tmp, "tooling", "package.json"))
@@ -173,7 +181,7 @@ function engineAsBuiltNow() {
 		const r = spawnSync(process.execPath, [path.join(tmp, "tools", "build-engine.mjs")], { cwd: tmp, encoding: "utf8" })
 		if (r.status !== 0) return { error: `${(r.stderr || r.stdout || "").trim().split("\n").slice(-3).join(" / ") || `exit ${r.status}`}` }
 		const diff = []
-		for (const g of ENGINE) {
+		for (const g of ENGINE_BUILT) {
 			const mine = path.join(root, g)
 			if (!fs.existsSync(mine)) diff.push(`${g} (missing)`)
 			else if (!fs.readFileSync(mine).equals(fs.readFileSync(path.join(tmp, g)))) diff.push(g)
@@ -621,7 +629,7 @@ if (opt.build && opt.regen) {
 	for (const s of ["build:engine", "vendor:three", "vendor:media", "vendor:clerk", "gen:scenarios"]) if (!npmRun(s)) fail(`npm run ${s} failed`)
 	const after = fingerprint()
 	for (const g of GENERATED) {
-		const engine = ENGINE.includes(g)
+		const engine = ENGINE_BUILT.includes(g)
 		if (before.get(g) === after.get(g)) continue
 		if (engine && !opt.allowEngineDrift)
 			errors.push(`${g} ${before.get(g) === null ? "was not in the upload" : "came out different from the copy that was uploaded"}, so this deploy would ship engine code the parity tools never checked: run npm run build:engine and the parity tools (web/CONTRACT.md, "Browser port, parity and builds") locally, then deploy again (--allow-engine-drift ships the fresh build anyway)`)
@@ -634,7 +642,7 @@ if (opt.build && opt.regen) {
 	const e = engineAsBuiltNow()
 	if (e.error) errors.push(`the engine bundle could not be rebuilt for comparison (tools/build-engine.mjs: ${e.error})`)
 	else if (e.diff.length) errors.push(`${e.diff.join(", ")} ${e.diff.length > 1 ? "are" : "is"} not what npm run build:engine makes from the current sources (tooling/src/sim, tools/*.ts): run npm run build:engine and the parity tools (web/CONTRACT.md, "Browser port, parity and builds"); a deploy would fail on it`)
-	else console.log(`build-static: ${ENGINE.join(", ")}: byte-identical to a fresh build from the current sources`)
+	else console.log(`build-static: ${ENGINE_BUILT.join(", ")}: byte-identical to a fresh build from the current sources`)
 }
 
 // ------------------------------------------------------------------ 2. copy what ships
@@ -702,6 +710,31 @@ if (opt.build) {
 		if (!m || m[1].startsWith("data:")) continue
 		if (!shippedSet.has(path.resolve(path.dirname(dest), m[1]))) fs.writeFileSync(dest, text.slice(0, m.index) + "\n")
 	}
+}
+// the physics modules' ports (sim/modules/*.js) and model files (models/mod-*.js) ship minified: 1.8 MB of source the page loaded at start
+// (V8956 page weight, 20 Oct). Whitespace and local names only, never an expression rewritten (minifySyntax off): esbuild prints every number
+// literal exactly, so the shipped port builds the very documents the parity tools checked (each file must still parse as a module)
+const MINIFIED = /^(sim\/modules\/[^/]+\.js|models\/mod-[^/]+\.js)$/
+if (opt.build) {
+	const found = [path.join(root, "node_modules"), path.join(root, "tooling", "node_modules")].find((d) => fs.existsSync(path.join(d, "esbuild", "package.json")))
+	if (!found) fail("esbuild is not installed (run `npm ci` in the project root)")
+	const esb = createRequire(path.join(found, "x.js"))("esbuild")
+	let before = 0
+	let after = 0
+	for (const [, dest] of shipped) {
+		const r = path.relative(out, dest).split(path.sep).join("/")
+		if (!MINIFIED.test(r)) continue
+		const text = fs.readFileSync(dest, "utf8")
+		try {
+			const res = esb.transformSync(text, { loader: "js", format: "esm", target: "es2022", minifyWhitespace: true, minifyIdentifiers: true, minifySyntax: false, legalComments: "none", charset: "utf8", sourcefile: r })
+			fs.writeFileSync(dest, res.code)
+			before += Buffer.byteLength(text)
+			after += Buffer.byteLength(res.code)
+		} catch (e) {
+			errors.push(`${r}: could not be minified (${String(e.message).split("\n")[0]})`)
+		}
+	}
+	if (before) console.log(`build-static: minified the physics modules' ports and model files: ${(before / 1024).toFixed(0)} KiB → ${(after / 1024).toFixed(0)} KiB`)
 }
 if (!fs.existsSync(path.join(out, "index.html"))) fail(`${rel(out)}/index.html is missing: build first (npm run build:static)`)
 

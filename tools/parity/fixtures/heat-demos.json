@@ -1,0 +1,1753 @@
+[
+ {
+  "version": 2,
+  "id": "heat-salt-ice",
+  "name": "Salt on one of two ice cubes",
+  "seconds": 15,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 600
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "plate1",
+    "type": "plate",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "plate2",
+    "type": "plate",
+    "x": 1.4,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "salted",
+    "type": "ice-cube",
+    "name": "Salted ice cube",
+    "x": 0.8,
+    "y": 0.0255,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "plain",
+    "type": "ice-cube",
+    "name": "Plain ice cube",
+    "x": 1.4,
+    "y": 0.0255,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "salt",
+    "type": "salt-pile",
+    "name": "Salt",
+    "x": 0.8,
+    "y": 0.046,
+    "props": {
+     "mass_g": 6
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "melts_first",
+    "a": "salted",
+    "b": "plain"
+   },
+   {
+    "kind": "melts",
+    "item": "salted",
+    "by_min": 150
+   }
+  ],
+  "expect": "the salted cube melts first; both melt within 2.5 h"
+ },
+ {
+  "version": 2,
+  "id": "heat-size-vs-salt",
+  "name": "Big salted cube vs small plain cube in blue bowls",
+  "seconds": 12,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 900
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "bowl1",
+    "type": "bowl",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {
+     "color": "blue"
+    }
+   },
+   {
+    "id": "bowl2",
+    "type": "bowl",
+    "x": 1.4,
+    "y": 0.0,
+    "props": {
+     "color": "blue"
+    }
+   },
+   {
+    "id": "big",
+    "type": "ice-cube",
+    "name": "Big salted cube",
+    "x": 0.8,
+    "y": 0.0305,
+    "props": {
+     "width": 0.05,
+     "height": 0.05,
+     "depth": 0.05
+    }
+   },
+   {
+    "id": "small",
+    "type": "ice-cube",
+    "name": "Small plain cube",
+    "x": 1.4,
+    "y": 0.018,
+    "props": {
+     "width": 0.025,
+     "height": 0.025,
+     "depth": 0.025
+    }
+   },
+   {
+    "id": "salt",
+    "type": "salt-pile",
+    "name": "Salt",
+    "x": 0.8,
+    "y": 0.056,
+    "props": {
+     "mass_g": 6
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "melts_first",
+    "a": "small",
+    "b": "big"
+   }
+  ],
+  "expect": "the small plain cube melts first (size beats salt: not a fair test)"
+ },
+ {
+  "version": 2,
+  "id": "heat-lamp",
+  "name": "A desk lamp shining on one of two salted ice cubes",
+  "seconds": 15,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 600
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "plate1",
+    "type": "plate",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "plate2",
+    "type": "plate",
+    "x": 1.6,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "lit",
+    "type": "ice-cube",
+    "name": "Lit cube",
+    "x": 0.8,
+    "y": 0.0255,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "unlit",
+    "type": "ice-cube",
+    "name": "Unlit cube",
+    "x": 1.6,
+    "y": 0.0255,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "salt1",
+    "type": "salt-pile",
+    "x": 0.8,
+    "y": 0.046,
+    "props": {
+     "mass_g": 3
+    }
+   },
+   {
+    "id": "salt2",
+    "type": "salt-pile",
+    "x": 1.6,
+    "y": 0.046,
+    "props": {
+     "mass_g": 3
+    }
+   },
+   {
+    "id": "lamp",
+    "type": "lamp",
+    "name": "Desk lamp",
+    "x": 0.52,
+    "y": 0.0,
+    "props": {
+     "target": "lit",
+     "head_height": 0.3
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "melts_first",
+    "a": "lit",
+    "b": "unlit"
+   }
+  ],
+  "expect": "the cube under the lamp melts first"
+ },
+ {
+  "version": 2,
+  "id": "heat-led",
+  "name": "An LED lamp versus an incandescent lamp on two ice cubes",
+  "seconds": 15,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 600
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "plate1",
+    "type": "plate",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "plate2",
+    "type": "plate",
+    "x": 1.7,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "hot",
+    "type": "ice-cube",
+    "name": "Under the old bulb",
+    "x": 0.8,
+    "y": 0.0255,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "cool",
+    "type": "ice-cube",
+    "name": "Under the LED",
+    "x": 1.7,
+    "y": 0.0255,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "lamp1",
+    "type": "lamp",
+    "x": 0.52,
+    "y": 0.0,
+    "props": {
+     "target": "hot",
+     "head_height": 0.3
+    }
+   },
+   {
+    "id": "lamp2",
+    "type": "lamp",
+    "x": 1.42,
+    "y": 0.0,
+    "props": {
+     "target": "cool",
+     "head_height": 0.3,
+     "bulb": "led",
+     "power_w": 9
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "melts_first",
+    "a": "hot",
+    "b": "cool"
+   }
+  ],
+  "expect": "the cube under the incandescent bulb melts first; the LED barely changes anything"
+ },
+ {
+  "version": 2,
+  "id": "heat-plates",
+  "name": "Ice cubes on aluminium, ceramic and foam plates",
+  "seconds": 15,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 600
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "alu",
+    "type": "plate",
+    "x": 0.6,
+    "y": 0.0,
+    "props": {
+     "material": "aluminium"
+    }
+   },
+   {
+    "id": "cer",
+    "type": "plate",
+    "x": 1.2,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "foam",
+    "type": "plate",
+    "x": 1.8,
+    "y": 0.0,
+    "props": {
+     "material": "foam"
+    }
+   },
+   {
+    "id": "on_alu",
+    "type": "ice-cube",
+    "name": "Cube on aluminium",
+    "x": 0.6,
+    "y": 0.0215,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "on_cer",
+    "type": "ice-cube",
+    "name": "Cube on ceramic",
+    "x": 1.2,
+    "y": 0.0255,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   },
+   {
+    "id": "on_foam",
+    "type": "ice-cube",
+    "name": "Cube on foam",
+    "x": 1.8,
+    "y": 0.0225,
+    "props": {
+     "width": 0.04,
+     "height": 0.04,
+     "depth": 0.04
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "melts_first",
+    "a": "on_alu",
+    "b": "on_cer"
+   },
+   {
+    "kind": "melts_first",
+    "a": "on_cer",
+    "b": "on_foam"
+   }
+  ],
+  "expect": "aluminium fastest, then ceramic, foam slowest"
+ },
+ {
+  "version": 2,
+  "id": "heat-cups",
+  "name": "Which cup keeps hot cocoa warm",
+  "seconds": 12,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 120
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "foam",
+    "type": "drink-cup",
+    "name": "Foam cup with lid",
+    "x": 0.6,
+    "y": 0.0,
+    "props": {
+     "style": "foam",
+     "lid": true
+    }
+   },
+   {
+    "id": "paper",
+    "type": "drink-cup",
+    "name": "Paper cup",
+    "x": 1.0,
+    "y": 0.0,
+    "props": {
+     "style": "paper"
+    }
+   },
+   {
+    "id": "mug",
+    "type": "drink-cup",
+    "name": "Mug",
+    "x": 1.4,
+    "y": 0.0,
+    "props": {
+     "style": "mug"
+    }
+   },
+   {
+    "id": "steel",
+    "type": "drink-cup",
+    "name": "Steel cup",
+    "x": 1.8,
+    "y": 0.0,
+    "props": {
+     "style": "steel"
+    }
+   },
+   {
+    "id": "t_mug",
+    "type": "thermometer",
+    "x": 1.4,
+    "y": 0.02,
+    "props": {
+     "style": "digital"
+    },
+    "fixed": true,
+    "name": "Thermometer in the mug"
+   },
+   {
+    "id": "t_steel",
+    "type": "thermometer",
+    "x": 1.8,
+    "y": 0.02,
+    "props": {
+     "style": "digital"
+    },
+    "fixed": true,
+    "name": "Thermometer in the steel cup"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "warmer",
+    "a": "foam",
+    "b": "steel"
+   },
+   {
+    "kind": "warmer",
+    "a": "foam",
+    "b": "paper"
+   },
+   {
+    "kind": "warmer",
+    "a": "foam",
+    "b": "mug"
+   }
+  ],
+  "expect": "the foam cup with a lid stays warmest; the open paper cup cools fastest"
+ },
+ {
+  "version": 2,
+  "id": "heat-boil",
+  "name": "Heating a pot of water to the boil",
+  "seconds": 12,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 150
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "hp",
+    "type": "hot-plate",
+    "name": "Hot plate",
+    "x": 1.2,
+    "y": 0.0,
+    "props": {
+     "power_w": 1000,
+     "setpoint_c": 400
+    }
+   },
+   {
+    "id": "pot",
+    "type": "saucepan",
+    "name": "Pot",
+    "x": 1.2,
+    "y": 0.0865,
+    "props": {
+     "water_ml": 1000
+    }
+   },
+   {
+    "id": "therm",
+    "type": "thermometer",
+    "name": "Thermometer",
+    "x": 1.2,
+    "y": 0.11,
+    "props": {
+     "style": "digital"
+    },
+    "fixed": true
+   }
+  ],
+  "goals": [
+   {
+    "kind": "reaches",
+    "item": "therm",
+    "at_least_c": 99
+   },
+   {
+    "kind": "boils",
+    "item": "pot"
+   }
+  ],
+  "expect": "the water warms to 100 °C and boils; the thermometer stops rising at 100"
+ },
+ {
+  "version": 2,
+  "id": "heat-spoons",
+  "name": "Metal spoon and wooden spoon in hot tea",
+  "seconds": 10,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 60
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "mug1",
+    "type": "drink-cup",
+    "name": "Mug 1",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {
+     "style": "mug",
+     "water_temp_c": 90
+    }
+   },
+   {
+    "id": "mug2",
+    "type": "drink-cup",
+    "name": "Mug 2",
+    "x": 1.4,
+    "y": 0.0,
+    "props": {
+     "style": "mug",
+     "water_temp_c": 90
+    }
+   },
+   {
+    "id": "metal",
+    "type": "spoon",
+    "name": "Metal spoon",
+    "x": 0.8175,
+    "y": 0.0845,
+    "angle": 60,
+    "props": {
+     "material": "aluminium"
+    },
+    "fixed": true
+   },
+   {
+    "id": "wood",
+    "type": "spoon",
+    "name": "Wooden spoon",
+    "x": 1.4175,
+    "y": 0.0845,
+    "angle": 60,
+    "props": {
+     "material": "varnished hardwood"
+    },
+    "fixed": true
+   }
+  ],
+  "goals": [
+   {
+    "kind": "warmer",
+    "a": "metal",
+    "b": "wood"
+   }
+  ],
+  "expect": "the metal spoon's handle gets warm, the wooden one's hardly"
+ },
+ {
+  "version": 2,
+  "id": "heat-puddle",
+  "name": "A puddle drying under a lamp",
+  "seconds": 8,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 3600
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "lit",
+    "type": "puddle",
+    "name": "Lit puddle",
+    "x": 0.85,
+    "y": 0.0,
+    "props": {
+     "water_ml": 10
+    }
+   },
+   {
+    "id": "shade",
+    "type": "puddle",
+    "name": "Puddle in the shade",
+    "x": 1.45,
+    "y": 0.0,
+    "props": {
+     "water_ml": 10
+    }
+   },
+   {
+    "id": "lamp",
+    "type": "lamp",
+    "x": 0.55,
+    "y": 0.0,
+    "props": {
+     "target": "lit",
+     "head_height": 0.25,
+     "power_w": 150,
+     "beam_angle": 70
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "dries",
+    "item": "lit"
+   },
+   {
+    "kind": "warmer",
+    "a": "lit",
+    "b": "shade"
+   }
+  ],
+  "expect": "the puddle under the lamp dries up first"
+ },
+ {
+  "version": 2,
+  "id": "heat-dew",
+  "name": "Water condenses on a glass of ice water",
+  "seconds": 10,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 25,
+   "time_lapse": 60
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "glass",
+    "type": "drink-cup",
+    "name": "Glass of ice water",
+    "x": 1.2,
+    "y": 0.0,
+    "props": {
+     "style": "glass",
+     "water_temp_c": 2
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "dew",
+    "item": "glass"
+   }
+  ],
+  "expect": "water condenses on the cold glass"
+ },
+ {
+  "version": 2,
+  "id": "heat-thermometer",
+  "name": "Reading the temperature of warm water",
+  "seconds": 6,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 30
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "cup",
+    "type": "drink-cup",
+    "name": "Cup of warm water",
+    "x": 1.2,
+    "y": 0.0,
+    "props": {
+     "style": "glass",
+     "water_temp_c": 40
+    }
+   },
+   {
+    "id": "therm",
+    "type": "thermometer",
+    "name": "Thermometer",
+    "x": 1.2,
+    "y": 0.02,
+    "props": {},
+    "fixed": true
+   }
+  ],
+  "goals": [
+   {
+    "kind": "reaches",
+    "item": "therm",
+    "at_least_c": 38
+   }
+  ],
+  "expect": "the thermometer rises to the water's temperature in about a minute of lesson time"
+ },
+ {
+  "version": 2,
+  "id": "heat-rods",
+  "name": "A conduction race: copper and steel rods on a hot plate",
+  "seconds": 10,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 120
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "hp",
+    "type": "hot-plate",
+    "x": 1.0,
+    "y": 0.0,
+    "props": {
+     "setpoint_c": 200
+    }
+   },
+   {
+    "id": "copper",
+    "type": "steel-rod",
+    "name": "Copper rod",
+    "x": 1.19,
+    "y": 0.09,
+    "props": {
+     "material": "copper",
+     "length": 0.3
+    },
+    "fixed": true
+   },
+   {
+    "id": "steel",
+    "type": "steel-rod",
+    "name": "Steel rod",
+    "x": 0.81,
+    "y": 0.09,
+    "props": {
+     "material": "stainless steel",
+     "length": 0.3
+    },
+    "fixed": true
+   },
+   {
+    "id": "dab1",
+    "type": "meltable",
+    "name": "Butter on copper",
+    "x": 1.27,
+    "y": 0.099,
+    "props": {
+     "width": 0.01,
+     "height": 0.006,
+     "depth": 0.01
+    }
+   },
+   {
+    "id": "dab2",
+    "type": "meltable",
+    "name": "Butter on steel",
+    "x": 0.73,
+    "y": 0.099,
+    "props": {
+     "width": 0.01,
+     "height": 0.006,
+     "depth": 0.01
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "melts_first",
+    "a": "dab1",
+    "b": "dab2"
+   },
+   {
+    "kind": "warmer",
+    "a": "copper",
+    "b": "steel"
+   }
+  ],
+  "expect": "the butter on the copper rod melts first"
+ },
+ {
+  "version": 2,
+  "id": "heat-rubbing",
+  "name": "Rubbing warms a block; a dropped weight warms a little",
+  "seconds": 12,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 20
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "sander",
+    "type": "sanding-block",
+    "name": "Sanding block",
+    "x": 1.0,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "weight",
+    "type": "steel-weight-1kg",
+    "name": "Dropped weight",
+    "x": 1.8,
+    "y": 1.026,
+    "props": {}
+   }
+  ],
+  "goals": [
+   {
+    "kind": "warms_by",
+    "item": "sander",
+    "at_least_c": 0.05
+   },
+   {
+    "kind": "warms_by",
+    "item": "weight",
+    "at_least_c": 0.005
+   }
+  ],
+  "expect": "the sanding block, rubbed 10 s at 5 N and 0.5 m/s, warms about +0.08 °C (8 J of friction's work into it); the 1 kg weight dropped 1 m about +0.01 °C (half of its 9.8 J)"
+ },
+ {
+  "version": 2,
+  "id": "heat-candle-jar",
+  "name": "A candle under a jar goes out",
+  "seconds": 20,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "c1",
+    "type": "candle",
+    "name": "Covered candle",
+    "x": 0.8,
+    "y": 0.04,
+    "props": {
+     "height": 0.08,
+     "mass": 0.027,
+     "lit": true
+    }
+   },
+   {
+    "id": "jar",
+    "type": "candle-jar",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {
+     "volume_ml": 1000
+    }
+   },
+   {
+    "id": "c2",
+    "type": "candle",
+    "name": "Open candle",
+    "x": 1.5,
+    "y": 0.04,
+    "props": {
+     "height": 0.08,
+     "mass": 0.027,
+     "lit": true
+    }
+   },
+   {
+    "id": "th",
+    "type": "thermometer",
+    "name": "Thermometer over the flame",
+    "x": 1.5,
+    "y": 0.25,
+    "fixed": true,
+    "props": {}
+   }
+  ],
+  "goals": [
+   {
+    "kind": "burns_out",
+    "item": "c1",
+    "before_s": 20
+   },
+   {
+    "kind": "reaches",
+    "item": "th",
+    "at_least_c": 40
+   }
+  ],
+  "expect": "the covered candle goes out after about 12 s (its jar's oxygen falls to 16 %); the open candle burns on"
+ },
+ {
+  "version": 2,
+  "id": "heat-burning-glass",
+  "name": "A magnifying glass scorches paper in the sun",
+  "seconds": 6,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "sun",
+    "type": "sunlight",
+    "x": 1.0,
+    "y": 0.6,
+    "props": {
+     "elevation": 90,
+     "width": 0.3
+    }
+   },
+   {
+    "id": "lens",
+    "type": "convex-lens",
+    "x": 1.0,
+    "y": 0.101,
+    "props": {
+     "focal_length": 0.1,
+     "diameter": 0.05,
+     "aim": 90
+    }
+   },
+   {
+    "id": "paper",
+    "type": "paper-sheet",
+    "name": "Paper under the lens",
+    "x": 1.0,
+    "y": 0.0006,
+    "props": {}
+   }
+  ],
+  "goals": [
+   {
+    "kind": "scorches",
+    "item": "paper",
+    "before_s": 5
+   }
+  ],
+  "expect": "sunlight through a 5 cm lens (f 10 cm) onto paper 10 cm below: its hottest spot passes 233 °C within a second; paper in plain sun does not"
+ },
+ {
+  "version": 2,
+  "id": "heat-mix-water",
+  "name": "Hot water poured into cold",
+  "seconds": 15,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 20
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "beaker",
+    "type": "beaker",
+    "x": 1.0,
+    "y": 0.0,
+    "props": {
+     "size": "600 mL",
+     "fill_ml": 200,
+     "water_temp_c": 20
+    }
+   },
+   {
+    "id": "jug",
+    "type": "pitcher",
+    "name": "Hot water",
+    "x": 0.99,
+    "y": 0.2,
+    "props": {
+     "vessel": "cup",
+     "fill_ml": 200,
+     "temp_c": 80,
+     "pour_at": 1,
+     "tilt": 120
+    }
+   },
+   {
+    "id": "th",
+    "type": "thermometer",
+    "x": 1.03,
+    "y": 0.012,
+    "fixed": true,
+    "props": {}
+   }
+  ],
+  "goals": [
+   {
+    "kind": "reaches",
+    "item": "beaker",
+    "at_least_c": 45
+   },
+   {
+    "kind": "reaches",
+    "item": "th",
+    "at_least_c": 40
+   }
+  ],
+  "expect": "200 mL at 80 °C poured into 200 mL at 20 °C in a glass beaker: the mix comes to about 48-49 °C (50 °C less the beaker's own warming)"
+ },
+ {
+  "version": 2,
+  "id": "heat-sand-water",
+  "name": "Sand or water: which warms faster under a lamp?",
+  "seconds": 10,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 60
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "bs",
+    "type": "bowl",
+    "name": "Bowl of sand",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {
+     "contents": "sand",
+     "contents_g": 200,
+     "contents_temp_c": 22
+    }
+   },
+   {
+    "id": "ls",
+    "type": "lamp",
+    "x": 0.6,
+    "y": 0.0,
+    "props": {
+     "target": "bs",
+     "power_w": 100,
+     "head_height": 0.25
+    }
+   },
+   {
+    "id": "bw",
+    "type": "bowl",
+    "name": "Bowl of water",
+    "x": 1.8,
+    "y": 0.0,
+    "props": {
+     "contents": "water",
+     "contents_g": 200,
+     "contents_temp_c": 22
+    }
+   },
+   {
+    "id": "lw",
+    "type": "lamp",
+    "x": 1.6,
+    "y": 0.0,
+    "props": {
+     "target": "bw",
+     "power_w": 100,
+     "head_height": 0.25
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "warmer",
+    "a": "bs",
+    "b": "bw"
+   }
+  ],
+  "expect": "200 g of dry sand warms about 3-4 times faster than 200 g of water under the same 100 W lamp (c 830 against 4184 J/(kg·K))"
+ },
+ {
+  "version": 2,
+  "id": "heat-oil-water",
+  "name": "Oil or water: which warms faster?",
+  "seconds": 10,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 60
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "bo",
+    "type": "beaker",
+    "name": "Beaker of oil",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {
+     "size": "250 mL",
+     "fill_ml": 200,
+     "liquid": "vegetable oil",
+     "water_temp_c": 22
+    }
+   },
+   {
+    "id": "lo",
+    "type": "lamp",
+    "x": 0.6,
+    "y": 0.0,
+    "props": {
+     "target": "bo",
+     "power_w": 100,
+     "head_height": 0.3
+    }
+   },
+   {
+    "id": "bw",
+    "type": "beaker",
+    "name": "Beaker of water",
+    "x": 1.8,
+    "y": 0.0,
+    "props": {
+     "size": "250 mL",
+     "fill_ml": 200,
+     "liquid": "water",
+     "water_temp_c": 22
+    }
+   },
+   {
+    "id": "lw",
+    "type": "lamp",
+    "x": 1.6,
+    "y": 0.0,
+    "props": {
+     "target": "bw",
+     "power_w": 100,
+     "head_height": 0.3
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "warmer",
+    "a": "bo",
+    "b": "bw"
+   }
+  ],
+  "expect": "200 mL of vegetable oil warms about 2-3 times faster than 200 mL of water under the same lamp (c 1970 against 4184 J/(kg·K)); its reading is liquid_temp"
+ },
+ {
+  "version": 2,
+  "id": "heat-ball-ring",
+  "name": "The ball and ring",
+  "seconds": 6,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 20
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "cold",
+    "type": "ball-and-ring",
+    "name": "Cold ball",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {
+     "ball_temp_c": 20
+    }
+   },
+   {
+    "id": "hot",
+    "type": "ball-and-ring",
+    "name": "Hot ball",
+    "x": 1.5,
+    "y": 0.0,
+    "props": {
+     "ball_temp_c": 300
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "passes_through",
+    "item": "cold"
+   },
+   {
+    "kind": "passes_through",
+    "item": "hot",
+    "passes": false
+   }
+  ],
+  "expect": "the cold brass ball (25.40 mm) drops through the steel ring (25.45 mm); the one heated to 300 °C (25.535 mm) sits on its ring"
+ },
+ {
+  "version": 2,
+  "id": "heat-bimetal-candle",
+  "name": "A bimetal strip over a candle",
+  "seconds": 10,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 20,
+   "time_lapse": 20
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "bim",
+    "type": "bimetal-strip",
+    "x": 1.0,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "c",
+    "type": "candle",
+    "x": 1.08,
+    "y": 0.04,
+    "props": {
+     "height": 0.08,
+     "mass": 0.027,
+     "lit": true
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "bends",
+    "item": "bim",
+    "at_least_mm": 1.5
+   }
+  ],
+  "expect": "a lit candle under the tip of a 10 cm brass-on-steel strip: it heats in the flame's plume (to about 75 °C) and curls down about 2 mm in 3 minutes"
+ },
+ {
+  "version": 2,
+  "id": "heat-foil-reflector",
+  "name": "A foil reflector melts chocolate sooner",
+  "seconds": 10,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 30
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "sun",
+    "type": "sunlight",
+    "x": 1.4,
+    "y": 0.8,
+    "props": {
+     "elevation": 60,
+     "width": 3
+    }
+   },
+   {
+    "id": "choc",
+    "type": "meltable",
+    "name": "Chocolate with foil",
+    "x": 0.8,
+    "y": 0.0105,
+    "props": {
+     "material": "chocolate"
+    }
+   },
+   {
+    "id": "foil1",
+    "type": "material-panel",
+    "x": 0.92,
+    "y": 0.1,
+    "props": {
+     "sample": "aluminium foil",
+     "size": 0.2,
+     "aim": -18
+    }
+   },
+   {
+    "id": "choc2",
+    "type": "meltable",
+    "name": "Chocolate alone",
+    "x": 2.0,
+    "y": 0.0105,
+    "props": {
+     "material": "chocolate"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "warmer",
+    "a": "choc",
+    "b": "choc2"
+   }
+  ],
+  "expect": "chocolate in the sun with an aluminium foil panel beside it takes about 60 % more light than chocolate in the sun alone, and warms faster"
+ },
+ {
+  "version": 2,
+  "id": "heat-lid-cups",
+  "name": "Lids on a foam cup and a steel tumbler, thermometers through the lids",
+  "seconds": 12,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 150
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "foam",
+    "type": "drink-cup",
+    "name": "Foam cup",
+    "x": 0.8,
+    "y": 0.0,
+    "props": {
+     "style": "foam",
+     "lid": true,
+     "water_ml": 200,
+     "water_temp_c": 80
+    }
+   },
+   {
+    "id": "steel",
+    "type": "drink-cup",
+    "name": "Steel tumbler",
+    "x": 1.5,
+    "y": 0.0,
+    "props": {
+     "style": "steel",
+     "lid": true,
+     "water_ml": 200,
+     "water_temp_c": 80
+    }
+   },
+   {
+    "id": "t1",
+    "type": "thermometer",
+    "name": "Foam cup's thermometer",
+    "x": 0.8,
+    "y": 0.02,
+    "props": {
+     "style": "digital"
+    },
+    "fixed": true
+   },
+   {
+    "id": "t2",
+    "type": "thermometer",
+    "name": "Tumbler's thermometer",
+    "x": 1.5,
+    "y": 0.02,
+    "props": {
+     "style": "digital"
+    },
+    "fixed": true
+   }
+  ],
+  "goals": [
+   {
+    "kind": "warmer",
+    "a": "t1",
+    "b": "t2"
+   },
+   {
+    "kind": "reaches",
+    "item": "t1",
+    "at_least_c": 70
+   }
+  ],
+  "expect": "both thermometers go through their lids and read the water; foam keeps it warmer than the steel tumbler"
+ },
+ {
+  "version": 2,
+  "id": "heat-ice-tank",
+  "name": "Floating ice melts: does the water level change?",
+  "seconds": 12,
+  "release": 0.05,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "settings": {
+   "room_temp": 22,
+   "time_lapse": 600
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0.0,
+    "props": {}
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "name": "Aquarium",
+    "x": 1.2,
+    "y": 0.0,
+    "props": {
+     "length": 0.2,
+     "height": 0.2,
+     "depth": 0.1,
+     "fill": 0.1,
+     "water_temp_c": 20
+    }
+   },
+   {
+    "id": "ice",
+    "type": "ice-cube",
+    "name": "Ice block",
+    "x": 1.2,
+    "y": 0.135,
+    "props": {
+     "width": 0.08,
+     "height": 0.06,
+     "depth": 0.08
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "melts",
+    "item": "ice"
+   },
+   {
+    "kind": "level",
+    "container": "tank",
+    "at_least_ml": 2105,
+    "at_most_ml": 2122
+   }
+  ],
+  "expect": "the ice floats and melts; the water's volume ends as it was with the ice floating in it (2113 mL)"
+ }
+]

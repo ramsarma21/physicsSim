@@ -365,7 +365,9 @@ const groups = {
 			return list.every((x) => (k = of.indexOf(x, k + 1)) >= 0)
 		}
 		for (const m of MODULES) note("registration", child.modules.includes(m), `index.js registers ${m}`, [`its modules: ${child.modules.join(", ")}`])
-		note("registration", sub(child.modules, pyModules), "index.js's modules are in items.py's order", [`js ${child.modules.join(", ")} vs python ${pyModules.join(", ")}`])
+		// (the physics modules, mod_*, come after the catalog files: their own order is machines/mod_*.py's, tools/gen-modules.mjs checks it)
+		const catMods = child.modules.filter((m) => !m.startsWith("mod_"))
+		note("registration", sub(catMods, pyModules), "index.js's modules are in items.py's order", [`js ${catMods.join(", ")} vs python ${pyModules.join(", ")}`])
 		const pyTypes = askPython([{ id: "tables", op: "tables" }], "all")[0].res.types
 		note("registration", sub(child.types, pyTypes), "index.js's types are a subsequence of the server's, in its order", [`js ${child.types.join(",")}`])
 		for (const t of NEW) note("registration", child.types.includes(t) && child.listed.includes(t), `index.js has type ${t}`, ["missing from TYPES or catalog()"])
@@ -750,6 +752,7 @@ const groups = {
 		const browser = await chromium.launch({ headless: true, ...(fs.existsSync(shell) ? { executablePath: shell } : {}) })
 		try {
 			const page = await browser.newPage()
+			if (process.env.PLAYGROUND_MODULES !== undefined) await page.addInitScript((v) => { globalThis.PLAYGROUND_MODULES = v }, process.env.PLAYGROUND_MODULES) // (the physics modules the page loads: as node's)
 			const errors = []
 			page.on("pageerror", (e) => errors.push(e.message))
 			page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
