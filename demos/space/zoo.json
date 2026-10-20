@@ -1,0 +1,17 @@
+{"version": 2, "id": "zoo", "name": "Planet zoo", "seconds": 2, "release": 0.5, "stage": {"x0": -0.6, "x1": 3.4, "y0": -0.2, "y1": 2.6},
+ "items": [
+  {"id": "table", "type": "table", "x": 1.3, "y": 0, "props": {}},
+  {"id": "sun", "type": "sun", "x": -0.3, "y": 1.3, "fixed": true, "props": {"pulls": false, "diameter": 0.4}},
+  {"id": "earth", "type": "planet", "x": 0.45, "y": 1.9, "fixed": true, "props": {"diameter": 0.42, "orbit_factor": 0}},
+  {"id": "moon", "type": "moon", "x": 0.95, "y": 1.9, "fixed": true, "props": {"diameter": 0.2, "orbit_factor": 0}},
+  {"id": "mars", "type": "planet", "x": 1.4, "y": 1.9, "fixed": true, "props": {"body": "mars", "diameter": 0.3, "orbit_factor": 0}},
+  {"id": "jup", "type": "planet", "x": 2.15, "y": 1.85, "fixed": true, "props": {"body": "jupiter", "diameter": 0.6, "orbit_factor": 0}},
+  {"id": "sat", "type": "planet", "x": 2.75, "y": 0.95, "fixed": true, "props": {"body": "saturn", "diameter": 0.4, "orbit_factor": 0}},
+  {"id": "ven", "type": "planet", "x": 0.4, "y": 0.9, "fixed": true, "props": {"body": "venus", "diameter": 0.3, "orbit_factor": 0}},
+  {"id": "nep", "type": "planet", "x": 0.95, "y": 0.9, "fixed": true, "props": {"body": "neptune", "diameter": 0.3, "orbit_factor": 0}},
+  {"id": "plu", "type": "planet", "x": 1.4, "y": 0.9, "fixed": true, "props": {"body": "pluto", "diameter": 0.25, "orbit_factor": 0}},
+  {"id": "io", "type": "moon", "x": 1.85, "y": 0.9, "fixed": true, "props": {"body": "io", "diameter": 0.22, "orbit_factor": 0}},
+  {"id": "s1", "type": "satellite", "x": 2.2, "y": 0.5, "fixed": true, "props": {"size": 0.3, "orbit_factor": 0}},
+  {"id": "s2", "type": "satellite", "x": 2.75, "y": 0.4, "fixed": true, "props": {"kind": "space-station", "size": 0.4, "orbit_factor": 0}},
+  {"id": "ham", "type": "rock-hammer", "x": 1.0, "y": 0.35, "fixed": true, "props": {}}
+ ], "goals": []}

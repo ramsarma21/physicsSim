@@ -1,0 +1,87 @@
+{
+ "version": 2,
+ "id": "egg-in-water",
+ "name": "Sink or float, and a soft splash",
+ "seconds": 3,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.1,
+  "x1": 2.8,
+  "y0": -0.05,
+  "y1": 0.8
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.4,
+   "y": 0,
+   "props": {
+    "width": 3.4
+   }
+  },
+  {
+   "id": "tank",
+   "type": "water-tank",
+   "name": "Fresh water",
+   "x": 0.6,
+   "y": 0
+  },
+  {
+   "id": "egg1",
+   "type": "raw-egg",
+   "name": "Egg in fresh water",
+   "x": 0.6,
+   "y": 0.6,
+   "held": true
+  },
+  {
+   "id": "tank2",
+   "type": "water-tank",
+   "name": "Salt water",
+   "x": 1.5,
+   "y": 0,
+   "props": {
+    "liquid": "salt water",
+    "salt_pct": 12
+   }
+  },
+  {
+   "id": "egg2",
+   "type": "raw-egg",
+   "name": "Egg in salt water",
+   "x": 1.5,
+   "y": 0.18
+  },
+  {
+   "id": "egg3",
+   "type": "raw-egg",
+   "name": "Egg onto the table",
+   "x": 2.4,
+   "y": 0.32381262840643266,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "sinks",
+   "item": "egg1",
+   "label": "The egg sinks in fresh water"
+  },
+  {
+   "kind": "survives",
+   "item": "egg1",
+   "label": "It survives the 30 cm drop into the water"
+  },
+  {
+   "kind": "floats",
+   "item": "egg2",
+   "label": "The egg floats in 12 % salt water"
+  },
+  {
+   "kind": "breaks",
+   "item": "egg3",
+   "label": "The egg dropped 30 cm onto the table breaks"
+  }
+ ]
+}

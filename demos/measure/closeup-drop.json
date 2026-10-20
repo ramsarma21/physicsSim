@@ -1,0 +1,8 @@
+{"version": 2, "id": "closeup-drop", "name": "Time a drop", "seconds": 2, "release": 0.5,
+ "stage": {"x0": 0.6, "x1": 1.6, "y0": -0.05, "y1": 0.8},
+ "items": [
+  {"id": "table", "type": "table", "x": 1.3, "y": 0},
+  {"id": "ball", "type": "golf-ball", "x": 1.0, "y": 0.62, "held": true, "name": "Golf ball"},
+  {"id": "sw", "type": "stopwatch", "x": 1.3, "y": 0.4, "props": {"watch": "ball", "start": "release", "stop": "hits", "face_cm": 22}, "name": "Stopwatch"},
+  {"id": "gate", "type": "speed-gate", "x": 1.0, "y": 0, "props": {"watch": "ball", "beam_height": 0.25, "face_cm": 12}, "name": "Light gate"}
+ ], "goals": [{"kind": "reads", "item": "sw", "seconds": 0.35, "tol": 0.02}]}

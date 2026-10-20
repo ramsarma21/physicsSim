@@ -1,0 +1,74 @@
+{
+ "version": 2,
+ "goals": [
+  {
+   "kind": "reads",
+   "item": "nm",
+   "newtons": 9.81,
+   "tol": 0.05,
+   "label": "1 kg pulls 9.81 N"
+  },
+  {
+   "kind": "reads",
+   "item": "nm2",
+   "grams": 182,
+   "tol": 2,
+   "label": "The apple weighs 182 g"
+  }
+ ],
+ "id": "m8-spring-scale",
+ "name": "Weigh 1 kg with a newton meter",
+ "seconds": 4,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.6,
+  "y0": -0.2,
+  "y1": 1.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "name": "Table"
+  },
+  {
+   "id": "nm",
+   "type": "spring-scale",
+   "x": 1,
+   "y": 1.55,
+   "props": {
+    "range": "20 N",
+    "hook": "kg"
+   },
+   "name": "Newton meter"
+  },
+  {
+   "id": "kg",
+   "type": "steel-weight-1kg",
+   "x": 1,
+   "y": 0.98,
+   "name": "1 kg weight"
+  },
+  {
+   "id": "nm2",
+   "type": "spring-scale",
+   "x": 1.8,
+   "y": 1.55,
+   "props": {
+    "range": "5 N",
+    "hook": "apple"
+   },
+   "name": "Small newton meter"
+  },
+  {
+   "id": "apple",
+   "type": "apple",
+   "x": 1.8,
+   "y": 1.17,
+   "name": "Apple"
+  }
+ ]
+}

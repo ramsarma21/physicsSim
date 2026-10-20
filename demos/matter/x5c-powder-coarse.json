@@ -1,0 +1,62 @@
+{
+ "version": 2,
+ "id": "x5c-powder-coarse",
+ "name": "Powder and coarse salt",
+ "seconds": 8,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.1,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "fine",
+   "type": "dissolving-glass",
+   "name": "Powdered",
+   "x": 0.9,
+   "y": 0,
+   "props": {
+    "solute": "salt",
+    "grain": "powder",
+    "solute_g": 6,
+    "start_in": "glass"
+   }
+  },
+  {
+   "id": "coarse",
+   "type": "dissolving-glass",
+   "name": "Coarse",
+   "x": 1.5,
+   "y": 0,
+   "props": {
+    "solute": "salt",
+    "grain": "coarse",
+    "solute_g": 6,
+    "start_in": "glass"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "dissolves_first",
+   "a": "fine",
+   "b": "coarse"
+  }
+ ],
+ "settings": {
+  "time_lapse": 20
+ }
+}

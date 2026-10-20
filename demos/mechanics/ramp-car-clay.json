@@ -1,0 +1,105 @@
+{
+ "version": 2,
+ "id": "ramp-car-clay",
+ "name": "Clay rides on a car down a 3-block ramp",
+ "seconds": 6,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.56908,
+  "x1": 6.60092,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 3,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 7.12
+   }
+  },
+  {
+   "id": "gym-floor",
+   "type": "floor",
+   "name": "Carpet",
+   "x": 3,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "length": 7,
+    "material": "carpet"
+   }
+  },
+  {
+   "id": "ramp",
+   "type": "ramp",
+   "name": "Ramp on 3 blocks",
+   "x": 0.7,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "blocks": 3
+   }
+  },
+  {
+   "id": "car",
+   "type": "toy-car",
+   "name": "Red car",
+   "x": -0.167,
+   "y": 0.202714,
+   "angle": -9.957596738913121,
+   "props": {
+    "color": "red"
+   }
+  },
+  {
+   "id": "clay",
+   "type": "clay-lump",
+   "name": "Clay",
+   "x": -0.16258,
+   "y": 0.288966,
+   "angle": -9.957596738913116,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.53,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 6.53,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "moves",
+   "item": "car",
+   "min_m": 2,
+   "label": "The car rolls on past the ramp"
+  },
+  {
+   "kind": "sticks",
+   "item": "clay",
+   "to": "car",
+   "label": "The clay rides along on the car"
+  }
+ ]
+}

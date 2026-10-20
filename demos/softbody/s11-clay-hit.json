@@ -1,0 +1,66 @@
+{
+ "version": 2,
+ "id": "s11-clay-hit",
+ "name": "A hit dents clay; a harder hit dents it more",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "c1",
+   "type": "soft-clay",
+   "name": "Clay 1",
+   "x": 0.6,
+   "y": 0.03,
+   "props": {}
+  },
+  {
+   "id": "h1",
+   "type": "steel-ball",
+   "x": 0.6,
+   "y": 0.2,
+   "props": {}
+  },
+  {
+   "id": "c2",
+   "type": "soft-clay",
+   "name": "Clay 2",
+   "x": 1.6,
+   "y": 0.03,
+   "props": {}
+  },
+  {
+   "id": "h2",
+   "type": "steel-ball",
+   "x": 1.6,
+   "y": 0.8,
+   "props": {}
+  }
+ ],
+ "goals": [
+  {
+   "kind": "squashes",
+   "item": "c2",
+   "at_least_mm": 1,
+   "label": "The clay keeps a dent"
+  },
+  {
+   "kind": "deforms_more",
+   "a": "c2",
+   "b": "c1",
+   "label": "The higher drop dents it more"
+  }
+ ]
+}

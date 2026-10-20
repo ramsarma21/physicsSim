@@ -1,0 +1,74 @@
+{
+ "version": 2,
+ "id": "window-baseball",
+ "name": "A baseball and a window",
+ "seconds": 1.2,
+ "release": 0.1,
+ "stage": {
+  "x0": 0.3,
+  "x1": 2.9,
+  "y0": -0.05,
+  "y1": 0.8
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.4,
+   "y": 0,
+   "props": {
+    "width": 3.4
+   }
+  },
+  {
+   "id": "pane2",
+   "type": "window-pane",
+   "name": "Window 2",
+   "x": 0.8,
+   "y": 0
+  },
+  {
+   "id": "ball2",
+   "type": "baseball",
+   "name": "Baseball tossed gently",
+   "x": 0.61,
+   "y": 0.35,
+   "held": true,
+   "props": {
+    "start_speed": 2,
+    "start_dir": 0
+   }
+  },
+  {
+   "id": "pane",
+   "type": "window-pane",
+   "name": "Window",
+   "x": 2,
+   "y": 0
+  },
+  {
+   "id": "ball",
+   "type": "baseball",
+   "name": "Baseball thrown hard",
+   "x": 1.81,
+   "y": 0.35,
+   "held": true,
+   "props": {
+    "start_speed": 9,
+    "start_dir": 0
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "breaks",
+   "item": "pane",
+   "label": "The hard throw shatters the window"
+  },
+  {
+   "kind": "survives",
+   "item": "pane2",
+   "label": "The gentle toss bounces off"
+  }
+ ]
+}

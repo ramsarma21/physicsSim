@@ -1,0 +1,109 @@
+{
+ "version": 2,
+ "goals": [
+  {
+   "kind": "reads",
+   "item": "sw-red",
+   "seconds": 3,
+   "tol": 0.05,
+   "label": "Red ball: 10 m in 3 s (it slows: it starts faster)"
+  },
+  {
+   "kind": "faster",
+   "a": "ball-red",
+   "b": "ball-blue",
+   "line": "lane-top",
+   "label": "The red ball is faster"
+  }
+ ],
+ "id": "m4-balls",
+ "name": "Two balls over 10 m",
+ "seconds": 5.5,
+ "release": 0.5,
+ "stage": {
+  "x0": -1.8,
+  "x1": 12.4,
+  "y0": -0.3,
+  "y1": 2.3
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "name": "Table"
+  },
+  {
+   "id": "lane-top",
+   "type": "lane",
+   "x": 0,
+   "y": 0.82,
+   "props": {
+    "color": "pale blue",
+    "margin": 1.6,
+    "label_cm": 25
+   },
+   "name": "Top lane"
+  },
+  {
+   "id": "lane-bottom",
+   "type": "lane",
+   "x": 0,
+   "y": 0.02,
+   "props": {
+    "margin": 1.6,
+    "label_cm": 25
+   },
+   "name": "Bottom lane"
+  },
+  {
+   "id": "ball-red",
+   "type": "soccer-ball",
+   "x": -0.11,
+   "y": 0.93,
+   "held": true,
+   "name": "Red ball",
+   "props": {
+    "color": "red",
+    "start_speed": 3.74
+   }
+  },
+  {
+   "id": "ball-blue",
+   "type": "soccer-ball",
+   "x": -0.11,
+   "y": 0.13,
+   "held": true,
+   "name": "Blue ball",
+   "props": {
+    "color": "blue",
+    "start_speed": 2.7
+   }
+  },
+  {
+   "id": "sw-red",
+   "type": "stopwatch",
+   "x": 10.6,
+   "y": 1.6,
+   "name": "Red stopwatch",
+   "props": {
+    "watch": "ball-red",
+    "finish_line": "lane-top",
+    "face_cm": 40
+   }
+  },
+  {
+   "id": "sw-blue",
+   "type": "stopwatch",
+   "x": 10.6,
+   "y": 0.7,
+   "name": "Blue stopwatch",
+   "props": {
+    "watch": "ball-blue",
+    "finish_line": "lane-bottom",
+    "face_cm": 40
+   }
+  }
+ ]
+}

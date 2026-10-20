@@ -39,7 +39,7 @@ for (const t of jsTypes) {
 }
 
 // ---- documents
-const lane = JSON.parse(readFileSync(join(PG, "..", "lesson-regen", "fairtest", "scenes", "ramps_lane_3b_truck.json"), "utf8"))
+const lane = JSON.parse(readFileSync(join(PG, "tools", "staging", "fixtures", "ramps_lane_3b_truck.json"), "utf8"))
 const ball = {
 	version: 2, id: "gate-ball", name: "Gate ball", seconds: 3, release: 0.6, stage: { x0: -0.56, x1: 3.19, y0: -0.16, y1: 2.34 },
 	items: [

@@ -1,0 +1,48 @@
+{
+ "version": 2,
+ "id": "w06b-standing",
+ "name": "Standing waves: two loops",
+ "seconds": 8,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.9,
+  "x1": 4.3,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.7,
+   "y": 0,
+   "props": {
+    "width": 5
+   }
+  },
+  {
+   "id": "rope",
+   "type": "wave-rope",
+   "name": "Rope",
+   "x": -0.4,
+   "y": 0,
+   "props": {
+    "length": 4,
+    "tension": 10,
+    "weight": 0.1,
+    "shake": "keep shaking",
+    "frequency": 2.5,
+    "amplitude": 0.012,
+    "shake_at": 0.2,
+    "damping": 1.0,
+    "ribbon": 0
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "wave_reaches",
+   "item": "rope"
+  }
+ ]
+}

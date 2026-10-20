@@ -1,0 +1,96 @@
+{
+ "version": 2,
+ "id": "x11-oscilloscope",
+ "name": "On an oscilloscope: louder is taller, higher is closer together",
+ "seconds": 1.5,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "spA",
+   "type": "speaker",
+   "name": "Speaker A (440 Hz)",
+   "x": 0.0,
+   "y": 0,
+   "props": {
+    "pitch": 440,
+    "level": 70,
+    "on_at": 0.3,
+    "on_for": 0
+   }
+  },
+  {
+   "id": "oA",
+   "type": "oscilloscope",
+   "name": "Scope A",
+   "x": 0.51,
+   "y": 0,
+   "props": {
+    "mic_side": "left",
+    "scale": "0.2 Pa a square"
+   }
+  },
+  {
+   "id": "spB",
+   "type": "speaker",
+   "name": "Speaker B (880 Hz, louder)",
+   "x": 2.6,
+   "y": 0,
+   "props": {
+    "pitch": 880,
+    "level": 76,
+    "on_at": 0.3,
+    "on_for": 0
+   }
+  },
+  {
+   "id": "oB",
+   "type": "oscilloscope",
+   "name": "Scope B",
+   "x": 2.09,
+   "y": 0,
+   "props": {
+    "mic_side": "right",
+    "scale": "0.2 Pa a square"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "hears",
+   "meter": "oA",
+   "source": "spA"
+  },
+  {
+   "kind": "hears",
+   "meter": "oB",
+   "source": "spB"
+  },
+  {
+   "kind": "louder",
+   "a": "oB",
+   "b": "oA"
+  },
+  {
+   "kind": "sounds",
+   "source": "spA",
+   "pitch_hz": 440
+  },
+  {
+   "kind": "sounds",
+   "source": "spB",
+   "pitch_hz": 880
+  }
+ ]
+}

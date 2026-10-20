@@ -1,0 +1,76 @@
+{
+ "version": 2,
+ "id": "more-strands",
+ "name": "More strands hold more",
+ "seconds": 1.6,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.6,
+  "x1": 1.8,
+  "y0": -0.03,
+  "y1": 0.45
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 2.4
+   }
+  },
+  {
+   "id": "thin",
+   "type": "snap-bridge",
+   "name": "3 strands",
+   "x": 0.9,
+   "y": 0,
+   "props": {
+    "strands": 3
+   }
+  },
+  {
+   "id": "m1",
+   "type": "gram-mass",
+   "name": "200 g on 3 strands",
+   "x": 0.9,
+   "y": 0.1035,
+   "props": {
+    "grams": "200 g"
+   }
+  },
+  {
+   "id": "thick",
+   "type": "snap-bridge",
+   "name": "12 strands",
+   "x": 1.5,
+   "y": 0,
+   "props": {
+    "strands": 12
+   }
+  },
+  {
+   "id": "m2",
+   "type": "gram-mass",
+   "name": "200 g on 12 strands",
+   "x": 1.5,
+   "y": 0.1035,
+   "props": {
+    "grams": "200 g"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "breaks",
+   "item": "thin",
+   "label": "3 strands snap under 200 g"
+  },
+  {
+   "kind": "survives",
+   "item": "thick",
+   "label": "12 strands hold 200 g"
+  }
+ ]
+}

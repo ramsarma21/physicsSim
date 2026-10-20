@@ -1,0 +1,79 @@
+{
+ "version": 2,
+ "id": "s1-ruler-load",
+ "name": "More weight, more bend",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "light",
+   "type": "flex-ruler",
+   "x": 0.3,
+   "y": 0,
+   "name": "Ruler with 20 g",
+   "props": {
+    "material": "acrylic"
+   }
+  },
+  {
+   "id": "heavy",
+   "type": "flex-ruler",
+   "x": 1.4,
+   "y": 0,
+   "name": "Ruler with 100 g",
+   "props": {
+    "material": "acrylic"
+   }
+  },
+  {
+   "id": "m20",
+   "type": "gram-mass",
+   "x": 0.485,
+   "y": 0.053200000000000004,
+   "props": {
+    "grams": "20 g"
+   }
+  },
+  {
+   "id": "m100",
+   "type": "gram-mass",
+   "x": 1.585,
+   "y": 0.053200000000000004,
+   "props": {
+    "grams": "100 g"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "deforms_more",
+   "a": "heavy",
+   "b": "light",
+   "label": "The ruler with 100 g bends more"
+  },
+  {
+   "kind": "bends",
+   "item": "heavy",
+   "at_least_mm": 10,
+   "label": "100 g bends it at least 1 cm"
+  },
+  {
+   "kind": "springs_back",
+   "item": "light",
+   "label": "It is elastic (no permanent bend)"
+  }
+ ]
+}

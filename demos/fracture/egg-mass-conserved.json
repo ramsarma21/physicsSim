@@ -1,0 +1,56 @@
+{
+ "version": 2,
+ "id": "egg-mass-conserved",
+ "name": "Does an egg weigh less once it breaks?",
+ "seconds": 2.5,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.9,
+  "x1": 1.5,
+  "y0": -0.03,
+  "y1": 0.45
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 3
+   }
+  },
+  {
+   "id": "scale",
+   "type": "kitchen-scale",
+   "name": "Kitchen scale",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "tare": false
+   }
+  },
+  {
+   "id": "egg",
+   "type": "raw-egg",
+   "name": "Egg dropped on the scale",
+   "x": 1.2,
+   "y": 0.3498126284064327,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "breaks",
+   "item": "egg",
+   "label": "The egg smashes on the scale"
+  },
+  {
+   "kind": "reads",
+   "item": "scale",
+   "grams": 57,
+   "tol": 1,
+   "label": "The scale still reads 57 g"
+  }
+ ]
+}

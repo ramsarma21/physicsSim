@@ -1,0 +1,51 @@
+{
+ "version": 2,
+ "id": "w06-rope-pulse",
+ "name": "A pulse on a rope reflects upside down",
+ "seconds": 2.0,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.9,
+  "x1": 4.3,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.7,
+   "y": 0,
+   "props": {
+    "width": 5
+   }
+  },
+  {
+   "id": "rope",
+   "type": "wave-rope",
+   "name": "Rope",
+   "x": -0.4,
+   "y": 0,
+   "props": {
+    "length": 4,
+    "tension": 10,
+    "weight": 0.1,
+    "amplitude": 0.1,
+    "frequency": 4,
+    "shake_at": 0.3
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "wave_reaches",
+   "item": "rope",
+   "before_s": 0.8
+  },
+  {
+   "kind": "reflects",
+   "item": "rope",
+   "way": "upside down"
+  }
+ ]
+}

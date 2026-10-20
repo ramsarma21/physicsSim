@@ -1,0 +1,10 @@
+{"version": 2, "id": "t-shadow", "name": "shadow", "seconds": 1.0, "release": 0.5,
+ "items": [
+  {"id": "table", "type": "table", "x": 1.3, "y": 0.0, "props": {}},
+  {"id": "torch", "type": "flashlight", "name": "Flashlight", "x": 0.1, "y": 0.2, "props": {"beam_angle": 40}},
+  {"id": "ball", "type": "tennis-ball", "name": "Ball", "x": 0.6, "y": 0.2, "fixed": true, "props": {}},
+  {"id": "screen", "type": "screen", "name": "Screen", "x": 1.4, "y": 0.3, "props": {"height": 0.6}},
+  {"id": "eye", "type": "eye", "name": "Eye", "x": 1.0, "y": 0.6, "props": {"aim": 200}},
+  {"id": "meter", "type": "light-meter", "name": "Meter", "x": 1.0, "y": 0.04, "props": {}}
+ ],
+ "goals": [{"kind": "shadow_on", "occluder": "ball", "screen": "screen"}, {"kind": "sees", "eye": "eye", "item": "ball"}, {"kind": "lit", "item": "meter"}]}

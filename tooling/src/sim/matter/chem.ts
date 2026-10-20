@@ -63,14 +63,21 @@ class Warmth {
 	private node: HeatNodeLike | undefined
 	T = 20
 	private room = 20
-	constructor(
-		private readonly at: string | undefined,
-		private readonly body: string | undefined,
-		private readonly capacity: number,
-		private readonly own: number,
-		private readonly area: number,
-		private readonly start0: number | undefined
-	) {}
+	// (plain fields, not parameter properties: Node's strip-only TypeScript, which the CI syntax check runs, has no parameter properties)
+	private readonly at: string | undefined
+	private readonly body: string | undefined
+	private readonly capacity: number
+	private readonly own: number
+	private readonly area: number
+	private readonly start0: number | undefined
+	constructor(at: string | undefined, body: string | undefined, capacity: number, own: number, area: number, start0: number | undefined) {
+		this.at = at
+		this.body = body
+		this.capacity = capacity
+		this.own = own
+		this.area = area
+		this.start0 = start0
+	}
 	start(ctx: ProcessContext) {
 		this.room = ctx.settings.roomTemperature
 		this.T = this.start0 ?? this.room

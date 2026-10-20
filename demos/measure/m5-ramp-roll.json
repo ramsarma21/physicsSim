@@ -1,0 +1,123 @@
+{
+ "version": 2,
+ "goals": [
+  {
+   "kind": "farther",
+   "a": "car-high",
+   "b": "car-low",
+   "label": "The car from the higher ramp rolls farther"
+  }
+ ],
+ "id": "m5-ramp-roll",
+ "name": "Higher ramp, farther roll",
+ "seconds": 6,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.6,
+  "x1": 7.5,
+  "y0": -0.3,
+  "y1": 1.6
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "name": "Table"
+  },
+  {
+   "id": "floor-top",
+   "type": "lane",
+   "x": 1,
+   "y": 0.62,
+   "props": {
+    "length": 6,
+    "margin": 1.2,
+    "label_cm": 15,
+    "color": "pale yellow"
+   },
+   "name": "Top floor"
+  },
+  {
+   "id": "floor-bottom",
+   "type": "lane",
+   "x": 1,
+   "y": 0.02,
+   "props": {
+    "length": 6,
+    "margin": 1.2,
+    "label_cm": 15
+   },
+   "name": "Bottom floor"
+  },
+  {
+   "id": "ramp-low",
+   "type": "ramp",
+   "x": 1,
+   "y": 0.62,
+   "props": {
+    "blocks": 1
+   },
+   "name": "1-block ramp"
+  },
+  {
+   "id": "ramp-high",
+   "type": "ramp",
+   "x": 1,
+   "y": 0.02,
+   "props": {
+    "blocks": 3
+   },
+   "name": "3-block ramp"
+  },
+  {
+   "id": "car-low",
+   "type": "toy-car",
+   "x": 0.25,
+   "y": 0.665,
+   "angle": -2.9,
+   "held": true,
+   "name": "Red car",
+   "props": {
+    "color": "red"
+   }
+  },
+  {
+   "id": "car-high",
+   "type": "toy-car",
+   "x": 0.25,
+   "y": 0.155,
+   "angle": -8.6,
+   "held": true,
+   "name": "Blue car",
+   "props": {
+    "color": "blue"
+   }
+  },
+  {
+   "id": "tape-low",
+   "type": "measuring-tape",
+   "x": 1,
+   "y": 0.62,
+   "props": {
+    "length": 6,
+    "watch": "car-low",
+    "label_cm": 6
+   },
+   "name": "Top tape"
+  },
+  {
+   "id": "tape-high",
+   "type": "measuring-tape",
+   "x": 1,
+   "y": 0.02,
+   "props": {
+    "length": 6,
+    "watch": "car-high",
+    "label_cm": 6
+   },
+   "name": "Bottom tape"
+  }
+ ]
+}

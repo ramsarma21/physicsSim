@@ -1,0 +1,100 @@
+{
+ "version": 2,
+ "id": "x7-fizz",
+ "name": "Fizz: open, capped and with a balloon",
+ "seconds": 14,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.1,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "s1",
+   "type": "kitchen-scale",
+   "name": "Scale 1",
+   "x": 0.7,
+   "y": 0
+  },
+  {
+   "id": "open",
+   "type": "reaction-bottle",
+   "name": "Open bottle",
+   "x": 0.7,
+   "y": 0.026,
+   "props": {
+    "closure": "open",
+    "react_s": 2.5
+   }
+  },
+  {
+   "id": "s2",
+   "type": "kitchen-scale",
+   "name": "Scale 2",
+   "x": 1.2,
+   "y": 0
+  },
+  {
+   "id": "capped",
+   "type": "reaction-bottle",
+   "name": "Capped bottle",
+   "x": 1.2,
+   "y": 0.026,
+   "props": {
+    "closure": "cap",
+    "soda_g": 1.5,
+    "react_s": 2.5
+   }
+  },
+  {
+   "id": "s3",
+   "type": "kitchen-scale",
+   "name": "Scale 3",
+   "x": 1.7,
+   "y": 0
+  },
+  {
+   "id": "balloon",
+   "type": "reaction-bottle",
+   "name": "Balloon bottle",
+   "x": 1.7,
+   "y": 0.026,
+   "props": {
+    "closure": "balloon",
+    "react_s": 2.5
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "mass_changes",
+   "scale": "s1",
+   "by_g": -2.62,
+   "tol_g": 0.1
+  },
+  {
+   "kind": "mass_same",
+   "scale": "s2",
+   "tol_g": 0.1
+  },
+  {
+   "kind": "mass_changes",
+   "scale": "s3",
+   "by_g": -1.63,
+   "tol_g": 0.1
+  }
+ ]
+}

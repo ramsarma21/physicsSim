@@ -1,0 +1,86 @@
+{
+ "version": 2,
+ "id": "heat-salt-ice",
+ "name": "Salt on one of two ice cubes",
+ "seconds": 15,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "settings": {
+  "room_temp": 22,
+  "time_lapse": 600
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "plate1",
+   "type": "plate",
+   "x": 0.8,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "plate2",
+   "type": "plate",
+   "x": 1.4,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "salted",
+   "type": "ice-cube",
+   "name": "Salted ice cube",
+   "x": 0.8,
+   "y": 0.0255,
+   "props": {
+    "width": 0.04,
+    "height": 0.04,
+    "depth": 0.04
+   }
+  },
+  {
+   "id": "plain",
+   "type": "ice-cube",
+   "name": "Plain ice cube",
+   "x": 1.4,
+   "y": 0.0255,
+   "props": {
+    "width": 0.04,
+    "height": 0.04,
+    "depth": 0.04
+   }
+  },
+  {
+   "id": "salt",
+   "type": "salt-pile",
+   "name": "Salt",
+   "x": 0.8,
+   "y": 0.046,
+   "props": {
+    "mass_g": 6
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "melts_first",
+   "a": "salted",
+   "b": "plain"
+  },
+  {
+   "kind": "melts",
+   "item": "salted",
+   "by_min": 150
+  }
+ ]
+}

@@ -168,7 +168,7 @@ if (which === "all" || which === "doc") {
 // ---------------------------------------------------------------- warnings in a space scene
 if (which === "all" || which === "warn") {
 	console.log("\n== warn: an ordinary moving thing in a space scene")
-	const dir = "/private/tmp/claude-501/-Users-ramsarma-Downloads-science-map-share/cb014d17-1cd6-4220-a508-cf6ce5539a35/scratchpad/engine4/space/scenes"
+	const dir = `${PG}/demos/space`
 	const base = JSON.parse(readFileSync(`${dir}/earth-moon-phases.json`, "utf8"))
 	const withBall = structuredClone(base)
 	withBall.items.push({ id: "ball", type: "steel-ball", x: 2.5, y: 0.0127, props: {} }, { id: "blk", type: "wooden-block", x: 2.8, y: 0.3, props: {} })

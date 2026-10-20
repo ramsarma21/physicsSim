@@ -1,0 +1,65 @@
+{
+ "version": 2,
+ "id": "screw-jack-lifts",
+ "name": "A screw jack lifts 50 kg with a 10 N push",
+ "seconds": 8,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "jack",
+   "type": "screw-jack",
+   "name": "Screw jack",
+   "x": 1.3,
+   "y": 0.0105,
+   "angle": 0,
+   "props": {
+    "load": 50
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "rises",
+   "item": "jack",
+   "min_m": 0.03,
+   "label": "10 N on the handle lifts 50 kg 3 cm"
+  }
+ ]
+}

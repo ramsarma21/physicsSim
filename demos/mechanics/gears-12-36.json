@@ -1,0 +1,63 @@
+{
+ "version": 2,
+ "id": "gears-12-36",
+ "name": "A 12-tooth gear drives a 36-tooth gear",
+ "seconds": 4,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "gears",
+   "type": "gear-train",
+   "name": "Gears",
+   "x": 1.3,
+   "y": 0.5,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "gear_speed",
+   "item": "gears",
+   "rpm": 10,
+   "direction": "clockwise"
+  }
+ ]
+}

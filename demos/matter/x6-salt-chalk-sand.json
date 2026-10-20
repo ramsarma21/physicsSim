@@ -1,0 +1,73 @@
+{
+ "version": 2,
+ "id": "x6-salt-chalk-sand",
+ "name": "Salt, chalk and sand in water",
+ "seconds": 8,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.1,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "salt",
+   "type": "dissolving-glass",
+   "name": "Salt",
+   "x": 0.8,
+   "y": 0,
+   "props": {
+    "solute": "salt",
+    "solute_g": 5,
+    "stir": 2
+   }
+  },
+  {
+   "id": "chalk",
+   "type": "dissolving-glass",
+   "name": "Chalk",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "solute": "chalk",
+    "grain": "powder",
+    "solute_g": 5,
+    "stir": 2
+   }
+  },
+  {
+   "id": "sand",
+   "type": "dissolving-glass",
+   "name": "Sand",
+   "x": 1.6,
+   "y": 0,
+   "props": {
+    "solute": "sand",
+    "grain": "coarse",
+    "solute_g": 5,
+    "stir": 2
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "dissolves",
+   "item": "salt"
+  }
+ ],
+ "settings": {
+  "time_lapse": 10
+ }
+}

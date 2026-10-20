@@ -1,0 +1,14 @@
+{"version": 2, "id": "mo37-lanes", "name": "Fewer seconds over 10 m", "seconds": 5, "release": 0.5,
+ "stage": {"x0": -1.5, "x1": 12, "y0": -0.3, "y1": 2.4},
+ "items": [
+  {"id": "table", "type": "table", "x": 1.3, "y": 0},
+  {"id": "lane-top", "type": "lane", "x": 0, "y": 0.82, "props": {"color": "pale blue"}, "name": "Top lane"},
+  {"id": "lane-bottom", "type": "lane", "x": 0, "y": 0.02, "name": "Bottom lane"},
+  {"id": "red", "type": "motor-car", "x": -0.1, "y": 0.82, "held": true, "props": {"speed": 3.3854, "push": 5}, "name": "Red car"},
+  {"id": "blue", "type": "motor-car", "x": -0.1, "y": 0.02, "held": true, "props": {"speed": 2.539, "push": 5}, "name": "Blue car"},
+  {"id": "sw-red", "type": "stopwatch", "x": 10.0, "y": 1.6, "props": {"watch": "red", "finish_line": "lane-top", "face_cm": 40}, "name": "Red stopwatch"},
+  {"id": "sw-blue", "type": "stopwatch", "x": 10.0, "y": 0.55, "props": {"watch": "blue", "finish_line": "lane-bottom", "face_cm": 40}, "name": "Blue stopwatch"},
+  {"id": "trail-red", "type": "motion-trail", "x": 0, "y": 2, "props": {"watch": "red", "color": "red"}},
+  {"id": "trail-blue", "type": "motion-trail", "x": 0, "y": 2, "props": {"watch": "blue", "color": "blue", "style": "dots", "strobe_s": 0.5}}
+ ],
+ "goals": [{"kind": "reads", "item": "sw-red", "seconds": 3, "tol": 0.35}, {"kind": "faster", "a": "red", "b": "blue", "line": "lane-top"}]}

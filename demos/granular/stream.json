@@ -1,0 +1,47 @@
+{
+ "version": 2,
+ "id": "stream",
+ "name": "Stream table: erosion and a delta",
+ "seconds": 16,
+ "release": 0.5,
+ "settings": {
+  "time_lapse": 20
+ },
+ "stage": {
+  "x0": 0.75,
+  "x1": 1.85,
+  "y0": -0.05,
+  "y1": 0.5
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "st",
+   "type": "stream-table",
+   "name": "Stream table",
+   "x": 1.3,
+   "y": 0.055,
+   "props": {
+    "tilt_deg": 7,
+    "flow_lpm": 1.2
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "erodes",
+   "item": "st",
+   "min_g": 50
+  },
+  {
+   "kind": "delta",
+   "item": "st",
+   "min_cm": 1
+  }
+ ]
+}

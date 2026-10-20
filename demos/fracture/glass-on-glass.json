@@ -1,0 +1,71 @@
+{
+ "version": 2,
+ "id": "glass-on-glass",
+ "name": "A glass dropped on a glass",
+ "seconds": 1.4,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.7,
+  "x1": 1.8,
+  "y0": -0.03,
+  "y1": 0.85
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 3
+   }
+  },
+  {
+   "id": "g1",
+   "type": "drinking-glass",
+   "name": "Standing glass",
+   "x": 1,
+   "y": 0
+  },
+  {
+   "id": "g2",
+   "type": "drinking-glass",
+   "name": "Glass dropped 60 cm on it",
+   "x": 1,
+   "y": 0.7,
+   "held": true
+  },
+  {
+   "id": "g3",
+   "type": "drinking-glass",
+   "name": "Standing glass 2",
+   "x": 1.5,
+   "y": 0
+  },
+  {
+   "id": "g4",
+   "type": "drinking-glass",
+   "name": "Glass dropped 20 cm on it",
+   "x": 1.5,
+   "y": 0.3,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "breaks",
+   "item": "g1",
+   "label": "From 60 cm the standing glass shatters"
+  },
+  {
+   "kind": "breaks",
+   "item": "g2",
+   "label": "and so does the falling one"
+  },
+  {
+   "kind": "survives",
+   "item": "g4",
+   "label": "From 20 cm both stay whole"
+  }
+ ]
+}

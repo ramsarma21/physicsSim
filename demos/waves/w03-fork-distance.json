@@ -1,0 +1,82 @@
+{
+ "version": 2,
+ "id": "w03-fork-distance",
+ "name": "Farther from the fork, quieter",
+ "seconds": 3,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.7,
+  "x1": 5.0,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 2.2,
+   "y": 0,
+   "props": {
+    "width": 5.5
+   }
+  },
+  {
+   "id": "fork",
+   "type": "tuning-fork",
+   "name": "Tuning fork",
+   "x": -0.4,
+   "y": 0,
+   "props": {
+    "box": false
+   }
+  },
+  {
+   "id": "m1",
+   "type": "sound-meter",
+   "name": "Meter 1 m away",
+   "x": 0.6,
+   "y": 0,
+   "props": {
+    "height": 0.15172
+   }
+  },
+  {
+   "id": "m2",
+   "type": "sound-meter",
+   "name": "Meter 2 m away",
+   "x": 1.6,
+   "y": 0,
+   "props": {
+    "height": 0.15172
+   }
+  },
+  {
+   "id": "m4",
+   "type": "sound-meter",
+   "name": "Meter 4 m away",
+   "x": 3.6,
+   "y": 0,
+   "props": {
+    "height": 0.15172
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "louder",
+   "a": "m1",
+   "b": "m2"
+  },
+  {
+   "kind": "louder",
+   "a": "m2",
+   "b": "m4"
+  },
+  {
+   "kind": "hears",
+   "meter": "m4",
+   "source": "fork",
+   "at_least_db": 20
+  }
+ ]
+}

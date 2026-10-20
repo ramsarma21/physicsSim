@@ -1,0 +1,106 @@
+{
+ "version": 2,
+ "id": "incline-force-meter",
+ "name": "Pulling a cart up a ramp with a force meter",
+ "seconds": 3.5,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.56908,
+  "x1": 3.60092,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.5,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 4.12
+   }
+  },
+  {
+   "id": "gym-floor",
+   "type": "floor",
+   "name": "Lab floor",
+   "x": 1.5,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "length": 4
+   }
+  },
+  {
+   "id": "ramp",
+   "type": "ramp",
+   "name": "Ramp on 8 blocks",
+   "x": 2,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "blocks": 8,
+    "lip": false
+   }
+  },
+  {
+   "id": "cart",
+   "type": "dynamics-cart",
+   "name": "1 kg cart",
+   "x": 1.45,
+   "y": 0.311805,
+   "angle": -25.41242773357383,
+   "props": {
+    "load": 0.75,
+    "color": "red"
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.53,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.53,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "winch",
+   "type": "puller",
+   "name": "Winch with a force meter",
+   "x": 0.64605,
+   "y": 0.05,
+   "props": {
+    "pulls": "cart",
+    "faces": "right",
+    "mode": "speed",
+    "speed": 0.1,
+    "height": 0.61344
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "pulls_with",
+   "item": "winch",
+   "newtons": 4.24,
+   "tol": 0.2,
+   "label": "The meter reads about 4.2 N, less than the 9.8 N to lift it"
+  }
+ ]
+}

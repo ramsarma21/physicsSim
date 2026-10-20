@@ -1,0 +1,74 @@
+{
+ "version": 2,
+ "id": "knock-down",
+ "name": "Knocked down or not?",
+ "seconds": 2.5,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.2,
+  "x1": 3.2,
+  "y0": -0.05,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.6,
+   "y": 0,
+   "props": {
+    "width": 4
+   }
+  },
+  {
+   "id": "t2",
+   "type": "block-tower",
+   "name": "Tower nudged at the top",
+   "x": 0.6,
+   "y": 0,
+   "props": {
+    "blocks": 2
+   }
+  },
+  {
+   "id": "tb",
+   "type": "tennis-ball",
+   "x": 0.512,
+   "y": 0.077,
+   "held": true,
+   "props": {
+    "start_speed": 1,
+    "start_dir": 0
+   }
+  },
+  {
+   "id": "t1",
+   "type": "block-tower",
+   "name": "Tower hit by a bowling ball",
+   "x": 2.2,
+   "y": 0
+  },
+  {
+   "id": "ball",
+   "type": "bowling-ball",
+   "x": 1.6,
+   "y": 0.11,
+   "props": {
+    "start_speed": 3,
+    "start_dir": 0
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "knocked_down",
+   "item": "t1",
+   "label": "The bowling ball knocks the tower down"
+  },
+  {
+   "kind": "survives",
+   "item": "t2",
+   "label": "The nudged tower still stands"
+  }
+ ]
+}

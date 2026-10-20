@@ -1,0 +1,58 @@
+{
+ "version": 2,
+ "id": "clog",
+ "name": "Gravel clogs a small funnel, pours through a big one",
+ "seconds": 5,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.6,
+  "x1": 2.0,
+  "y0": -0.1,
+  "y1": 0.6
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "small",
+   "type": "sand-funnel",
+   "name": "Small spout",
+   "x": 0.95,
+   "y": 0,
+   "props": {
+    "grain": "gravel",
+    "outlet_mm": 15,
+    "height": 0.25,
+    "sand_kg": 0.2
+   }
+  },
+  {
+   "id": "big",
+   "type": "sand-funnel",
+   "name": "Big spout",
+   "x": 1.65,
+   "y": 0,
+   "props": {
+    "grain": "gravel",
+    "outlet_mm": 45,
+    "height": 0.25,
+    "funnel_cm": 16,
+    "sand_kg": 0.2
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "clogs",
+   "item": "small"
+  },
+  {
+   "kind": "sand_runs_out",
+   "item": "big"
+  }
+ ]
+}

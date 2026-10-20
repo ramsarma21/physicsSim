@@ -1,0 +1,83 @@
+{
+ "version": 2,
+ "id": "f-equals-ma-sensor",
+ "name": "F = ma with a force sensor in the string",
+ "seconds": 2,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.316,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "cart",
+   "type": "dynamics-cart",
+   "name": "Cart",
+   "x": 0.0625,
+   "y": 0.0005,
+   "angle": 0,
+   "props": {
+    "load": 0.25,
+    "color": "blue"
+   }
+  },
+  {
+   "id": "pulley",
+   "type": "edge-pulley",
+   "name": "Edge pulley",
+   "x": 3.0525,
+   "y": 0.016,
+   "angle": 0,
+   "props": {
+    "pulls": "cart",
+    "drop": 0.3
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "accelerates",
+   "item": "cart",
+   "accel": 0.85
+  },
+  {
+   "kind": "pulls_with",
+   "item": "pulley",
+   "newtons": 0.45,
+   "label": "The string pulls the cart with 0.45 N (M·a)"
+  }
+ ]
+}

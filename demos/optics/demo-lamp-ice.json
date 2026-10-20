@@ -1,0 +1,60 @@
+{
+ "version": 2,
+ "id": "demo-lamp-ice",
+ "name": "A lamp shines on one ice cube",
+ "seconds": 1.0,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0.0,
+   "props": {}
+  },
+  {
+   "id": "cube1",
+   "type": "ice-cube",
+   "name": "Ice cube 1",
+   "x": 0.6,
+   "y": 0.0125,
+   "props": {}
+  },
+  {
+   "id": "cube2",
+   "type": "ice-cube",
+   "name": "Ice cube 2",
+   "x": 1.4,
+   "y": 0.0125,
+   "props": {}
+  },
+  {
+   "id": "lamp",
+   "type": "lamp",
+   "name": "Desk lamp",
+   "x": 1.1,
+   "y": 0.0,
+   "props": {
+    "target": "cube2"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "hits_target",
+   "light": "lamp",
+   "target": "cube2"
+  },
+  {
+   "kind": "brighter",
+   "a": "cube2",
+   "b": "cube1"
+  }
+ ]
+}

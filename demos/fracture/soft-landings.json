@@ -1,0 +1,79 @@
+{
+ "version": 2,
+ "id": "soft-landings",
+ "name": "Eggs onto soft things",
+ "seconds": 2,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.1,
+  "x1": 3.3,
+  "y0": -0.05,
+  "y1": 1.6
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.6,
+   "y": 0,
+   "props": {
+    "width": 4
+   }
+  },
+  {
+   "id": "xb",
+   "type": "exercise-ball",
+   "name": "Exercise ball",
+   "x": 0.7,
+   "y": 0.325
+  },
+  {
+   "id": "egg1",
+   "type": "raw-egg",
+   "name": "Egg onto the exercise ball",
+   "x": 0.7,
+   "y": 1.1738126284064325,
+   "held": true
+  },
+  {
+   "id": "tr",
+   "type": "trampoline",
+   "name": "Trampoline",
+   "x": 1.8,
+   "y": 0
+  },
+  {
+   "id": "egg2",
+   "type": "raw-egg",
+   "name": "Egg onto the trampoline",
+   "x": 1.8,
+   "y": 1.3738126284064327,
+   "held": true
+  },
+  {
+   "id": "egg3",
+   "type": "raw-egg",
+   "name": "Egg onto the table",
+   "x": 2.8,
+   "y": 0.5238126284064326,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "survives",
+   "item": "egg1",
+   "label": "The egg dropped 50 cm onto the exercise ball survives"
+  },
+  {
+   "kind": "survives",
+   "item": "egg2",
+   "label": "The egg dropped 1 m onto the trampoline survives"
+  },
+  {
+   "kind": "breaks",
+   "item": "egg3",
+   "label": "The egg dropped 50 cm onto the table breaks"
+  }
+ ]
+}

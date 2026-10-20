@@ -1,0 +1,94 @@
+{
+ "version": 2,
+ "goals": [
+  {
+   "kind": "reads",
+   "item": "sw",
+   "seconds": 2.5,
+   "tol": 0.01,
+   "label": "5 m at 2 m/s: 2.50 s"
+  },
+  {
+   "kind": "crosses",
+   "item": "car",
+   "line": "b",
+   "before_s": 3.6
+  }
+ ],
+ "id": "m6-stopwatch-lines",
+ "name": "Timing between two lines",
+ "seconds": 5,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.8,
+  "x1": 8.5,
+  "y0": -0.3,
+  "y1": 1.8
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "name": "Table"
+  },
+  {
+   "id": "lane",
+   "type": "lane",
+   "x": 0,
+   "y": 0.02,
+   "props": {
+    "length": 7
+   },
+   "name": "Lane"
+  },
+  {
+   "id": "car",
+   "type": "motor-car",
+   "x": -0.1,
+   "y": 0.02,
+   "held": true,
+   "name": "Car",
+   "props": {
+    "speed": 2.032,
+    "start_speed": 2.032,
+    "push": 6
+   }
+  },
+  {
+   "id": "a",
+   "type": "start-line",
+   "x": 1,
+   "y": 0.02,
+   "props": {
+    "gate": true
+   },
+   "name": "Start line"
+  },
+  {
+   "id": "b",
+   "type": "finish-line",
+   "x": 6,
+   "y": 0.02,
+   "props": {
+    "gate": true
+   },
+   "name": "Finish line"
+  },
+  {
+   "id": "sw",
+   "type": "stopwatch",
+   "x": 3.5,
+   "y": 0.8,
+   "props": {
+    "watch": "car",
+    "start": "crosses",
+    "start_line": "a",
+    "finish_line": "b",
+    "face_cm": 35
+   },
+   "name": "Stopwatch"
+  }
+ ]
+}

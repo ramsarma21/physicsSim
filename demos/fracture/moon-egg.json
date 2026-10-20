@@ -1,0 +1,43 @@
+{
+ "version": 2,
+ "id": "moon-egg",
+ "name": "An egg dropped on the Moon",
+ "seconds": 1.4,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.8,
+  "x1": 1.6,
+  "y0": -0.03,
+  "y1": 0.4
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 3
+   }
+  },
+  {
+   "id": "egg",
+   "type": "raw-egg",
+   "name": "Egg dropped 20 cm on the Moon",
+   "x": 1.2,
+   "y": 0.22381262840643268,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "survives",
+   "item": "egg",
+   "label": "On the Moon a 20 cm drop leaves the egg whole"
+  }
+ ],
+ "settings": {
+  "gravity": "moon",
+  "air": false
+ }
+}
