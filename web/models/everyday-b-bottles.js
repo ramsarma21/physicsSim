@@ -245,10 +245,10 @@ export default function register(addModel, L) {
 		const corner = (a, b) => [cx + a * (Lw / 2) * u[0] + b * (t / 2) * n[0], H / 2 + a * (Lw / 2) * u[1] + b * (t / 2) * n[1]]
 		return { W, H, t, Wb, outerBottom: corner(-1, 1), outerTop: corner(1, 1), innerBottom: corner(-1, -1), innerTop: corner(1, -1), phi }
 	}
-	addModel("plastic-cup", "floor", ({ props, color }) => {
+	addModel("plastic-cup", "floor", ({ props, solid }) => {
 		const c = cupParts(props)
 		const { H, t, Wb, outerBottom, outerTop, innerBottom, innerTop } = c
-		const red = "#bd2218"
+		const red = solid?.color ?? "#bd2218" // (painted: the item's colour prop)
 		const g = kit.group()
 		// exterior: from the floor's underside up the outside of the wall, then a rolled lip
 		const lipR = 0.0017

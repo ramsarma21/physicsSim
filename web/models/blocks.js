@@ -664,7 +664,8 @@ export default function register({ addModel, kit, THREE }) {
 		// long grain on the two big faces, straight (edge) grain on top and bottom, end grain on the two ends (x = +-w/2). The flat-sawn tile is 12 cm tall and
 		// repeats, so a face taller than that would stack the same band of arches: a tall face is rift-sawn instead (straight grain, which repeats without showing it)
 		const face = h > LONG_T[1] ? M.straight : M.long
-		const geo = softBox(w + 2 * SKIN_M, h + 2 * SKIN_M, d, Math.min(0.0016, 0.1 * Math.min(w, h, d)), { k: 4, tile: sixTiles(h > LONG_T[1] ? STRAIGHT_T : LONG_T, END_T, STRAIGHT_T) })
+		// sanded edges as a real toy block's (3.5 mm on a 5 cm block): stacked blocks show their seams, so a stack of three reads as three
+		const geo = softBox(w + 2 * SKIN_M, h + 2 * SKIN_M, d, Math.min(0.0035, 0.07 * Math.min(w, h, d)), { k: 4, tile: sixTiles(h > LONG_T[1] ? STRAIGHT_T : LONG_T, END_T, STRAIGHT_T) })
 		const proto = kit.group(mesh(geo, [M.end, M.end, M.straight, M.straight, face, face]))
 		// each block is cut from a different place in the board: the long-grain tiles are periodic in u, so shift and mirror them per block
 		return perInstance(proto, (mesh, hsh) => {

@@ -55,7 +55,8 @@ export default function register(addModel, L, kit) {
 		// ---- two thick side beams (the full outline's height), planks between them
 		const beamW = 0.0125 * Math.min(1, s)
 		const bo = 0.0009 // the beams stand 0.9 mm inside the bed's depth: the iron straps and bolts on them are flush with it
-		for (const sz of [1, -1]) g.add(put(kit.box(w, h, beamW, 0.0012, 2), woodMat("#a8723f", 0.6, 0.35, 11), 0, 0, sz * (hz - bo - beamW / 2)))
+		// (painted, the item's colour prop: the side beams, what a side view sees, take the paint as a stain; the deck stays bare wood)
+		for (const sz of [1, -1]) g.add(put(kit.box(w, h, beamW, 0.0012, 2), woodMat(ctx.solid.color ?? "#a8723f", 0.6, 0.35, 11), 0, 0, sz * (hz - bo - beamW / 2)))
 		const planks = 5
 		const inner = d - 2 * beamW - 2 * bo + 0.0004
 		const pw = inner / planks
