@@ -12,8 +12,10 @@ import { judgeRun, probeRun } from "./fixer.js"
 import { judgeRun as judgeStages } from "./stage-tune.js"
 import { goalDistance } from "./orchestrator.js"
 
-// (the engine bundle answers every message of its own worker: this worker's messages are this worker's, so its listener is skipped. A capture
-// listener runs first at the target.)
+// (the engine bundle answers every message of its own worker too, and first: at a worker's global scope listeners run in the order they were
+// added, capture or not, so stopping the event here doesn't keep it from a job. Its answer has no fix: 1, and ./fix-pool.js ignores it. Nor is
+// this listener there until this module's imports have loaded (they may wait at a top-level await: web/sim's module index), so the pool sends a
+// job only after the ready message below.)
 self.addEventListener(
 	"message",
 	(e) => {
