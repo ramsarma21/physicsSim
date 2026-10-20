@@ -1,6 +1,6 @@
 // The parts of machines/rube.py that machines/items.py uses: where each solid starts in the world, and how deep two solids overlap
 // at the start (balls and slabs). Plain ES module.
-import { ZeroDivisionError, cos, hypot, maxOf, minOf, pymax, pymin, sin } from "./pymath.js"
+import { cos, hypot, maxOf, minOf, pymax, pymin, sin } from "./pymath.js"
 
 export const CORD = 2.6 // m, long enough to leave the top of the picture
 
@@ -58,6 +58,7 @@ export function _overlap_depth(sa, pa, sb, pb) {
 	const A = _corners(sa, pa)
 	const B = _corners(sb, pb)
 	let depth = Infinity
+	let axes = 0
 	for (const poly of [A, B]) {
 		for (let i = 0; i < 4; i++) {
 			const [x1, y1] = poly[i]
@@ -65,7 +66,8 @@ export function _overlap_depth(sa, pa, sb, pb) {
 			let ax = -(y2 - y1)
 			let ay = x2 - x1
 			const m = hypot(ax, ay)
-			if (m === 0) throw new ZeroDivisionError()
+			if (m === 0) continue // (a side of no length, a slab 0 m wide or high, has no direction to test; rube.py the same)
+			axes++
 			ax = ax / m
 			ay = ay / m
 			const pA = A.map(([px, py]) => px * ax + py * ay)
@@ -75,5 +77,5 @@ export function _overlap_depth(sa, pa, sb, pb) {
 			depth = pymin(depth, o)
 		}
 	}
-	return depth
+	return axes ? depth : 0.0 // (no side with a length: two points, which hold nothing between them)
 }

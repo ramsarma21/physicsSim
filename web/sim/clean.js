@@ -77,6 +77,9 @@ function _prop(v, spec, what) {
 	return kind === "int" ? pyRoundInt(x) : x
 }
 
+/** A value an open choice (a colour: its names listed, any "#rrggbb" too) does not list: kept or left out as an unlisted prop is, never an error. */
+const _openOther = (v, spec) => spec.kind === "choice" && spec.open === true && !(typeof v === "string" && spec.choices.includes(v))
+
 function _item(i, n, seen) {
 	if (!isDict(i)) throw new BadScene(`item ${n + 1} is not an object`)
 	const t = i.type
@@ -96,8 +99,8 @@ function _item(i, n, seen) {
 	for (const k of Object.keys(props ?? {})) {
 		const v = props[k]
 		if (isNone(v)) continue
-		if (specs.has(k)) setOwn(clean_props, k, _prop(v, specs.get(k), `${iid}: ${specs.get(k).label}`))
-		else if ((typeof v === "boolean" || typeof v === "number" || typeof v === "string") && (typeof v !== "number" || Number.isFinite(v)) && pyLen(pyStr(v)) <= 64) setOwn(clean_props, k, v) // an optional prop the type reads but doesn't list (a ball's colour)
+		if (specs.has(k) && !_openOther(v, specs.get(k))) setOwn(clean_props, k, _prop(v, specs.get(k), `${iid}: ${specs.get(k).label}`))
+		else if ((typeof v === "boolean" || typeof v === "number" || typeof v === "string") && (typeof v !== "number" || Number.isFinite(v)) && pyLen(pyStr(v)) <= 64) setOwn(clean_props, k, v) // an optional prop the type reads but doesn't list (a ball's colour), or an open choice's other value
 	}
 	out.props = clean_props
 	return out

@@ -2,6 +2,7 @@
 // render() updates the controls in place, so a slider being dragged or a box being typed in is never rebuilt or overwritten.
 // Plain ES module; the styles are in panels.css.
 import { ensurePanelCss, placeholderPreview } from "./catalog-ui.js"
+import { linkField, readoutsField, settingsRows } from "./inspector-plugins.js"
 
 const ICON_W = 40 // list icon size, css px
 const ICON_H = 30
@@ -107,7 +108,8 @@ function builtFor(type, p, keys, it, built) {
 	return built
 }
 
-/** createInspector(host, {catalog, onSelect, onChange, onScene, onDelete, onDuplicate, drawPreview?, onNotice?(text)}) → {render(scene, selectedId, resolved)}
+/** createInspector(host, {catalog, onSelect, onChange, onScene, onDelete, onDuplicate, drawPreview?, onNotice?(text)}) → {render(scene, selectedId, resolved, readings?)}
+ *  (readings: the last run's summary.readings, {item id: {key: value}}, shown for a module's items)
  *  onNotice says when a typed number was cut to what the scene allows. */
 export function createInspector(host, { catalog, onSelect, onChange, onScene, onDelete, onDuplicate, drawPreview, onNotice }) {
 	ensurePanelCss()
@@ -166,6 +168,8 @@ export function createInspector(host, { catalog, onSelect, onChange, onScene, on
 	sceneRow("Name", sceneName)
 	sceneRow("Run length", seconds.input, "s")
 	sceneRow("Release time", release.input, "s")
+	const settings = settingsRows(sceneRow, onScene) // (gravity, air, room temperature, time-lapse: web/inspector-plugins.js)
+	let lastReadings = null // the last run's readings at its end (summary.readings), for the modules' items
 
 	// ---- Items: one keyed row per item, with a small preview icon
 	const draw = drawPreview ?? placeholderPreview
@@ -337,6 +341,15 @@ export function createInspector(host, { catalog, onSelect, onChange, onScene, on
 			const f = propField(p, (v, commit) => emit({ props: { [p.key]: v } }, commit), view)
 			add(f.row, f.update)
 		}
+		// a physics module's links to other items, and what its runs read of it (web/inspector-plugins.js)
+		for (const l of type?.links ?? []) {
+			const f = linkField(l, () => curScene, (v) => emit({ props: { [l.key]: v } }, true))
+			add(f.row, f.update)
+		}
+		if (type?.readouts?.length) {
+			const f = readoutsField(type)
+			add(f.row, (it) => f.update(it, lastReadings))
+		}
 
 		const about = h("details", "group", `<summary><span>About this item</span></summary><div class="group-body insp-about"></div>`)
 		trackOpen(about, "about")
@@ -455,11 +468,22 @@ export function createInspector(host, { catalog, onSelect, onChange, onScene, on
 			const reset = resetBtn()
 			top(p.label, select, reset)
 			help()
+			let own = null // an open choice's value it does not list (a colour's "#c62828"): shown as one more option, so it is seen and kept
 			return {
 				row,
 				update(it, resolved) {
 					row.classList.toggle("changed", changedOf(it))
-					select.value = String(valueOf(it, resolved))
+					const v = String(valueOf(it, resolved))
+					const listed = [...select.options].some((o) => o !== own && o.value === v)
+					if (p.open && !listed) {
+						if (!own) select.append((own = h("option")))
+						own.value = v
+						own.textContent = /^#[0-9a-f]{6}$/i.test(v) ? `${v} (its own colour)` : v
+					} else if (own) {
+						own.remove()
+						own = null
+					}
+					select.value = v
 				},
 			}
 		}
@@ -565,7 +589,8 @@ export function createInspector(host, { catalog, onSelect, onChange, onScene, on
 		sel.update(item, resolved)
 	}
 
-	function render(scene, selectedId, resolved) {
+	function render(scene, selectedId, resolved, readings = null) {
+		lastReadings = readings
 		const next = new Map()
 		let changed = false
 		for (const it of scene.items ?? []) {
@@ -583,6 +608,7 @@ export function createInspector(host, { catalog, onSelect, onChange, onScene, on
 		if (!sceneTyping.on && sceneName.value !== sceneName.dataset.was) sceneName.value = sceneName.dataset.was
 		seconds.set(scene.seconds ?? 4.5)
 		release.set(scene.release ?? 0.5)
+		settings.update(scene)
 		renderItems(scene, selectedId)
 		renderSelected(scene, selectedId, resolved)
 	}

@@ -663,7 +663,7 @@ function togglePanel() {
 }
 
 function renderInspector() {
-	S.inspector?.render(S.scene, S.selected, S.layout?.resolved ?? S.sim?.resolved ?? {})
+	S.inspector?.render(S.scene, S.selected, S.layout?.resolved ?? S.sim?.resolved ?? {}, S.sim?.summary?.readings ?? null)
 }
 
 /** A catalog card's picture: the item's 3D model, photographed (thumbs3d.js, loaded on first use); the flat drawing until then. */

@@ -116,9 +116,11 @@ def contact(a, b):
 class Prop:
     """One setting an item shows on the left: a number (with range), an int, a yes/no, or a choice."""
 
-    def __init__(self, key, label, default, lo=None, hi=None, step=None, unit="", help="", kind="number", choices=None, auto=False, slider_max=None):
+    def __init__(self, key, label, default, lo=None, hi=None, step=None, unit="", help="", kind="number", choices=None, auto=False, slider_max=None,
+                 open=False):
         self.key, self.label, self.default, self.lo, self.hi, self.step = key, label, default, lo, hi, step
         self.unit, self.help, self.kind, self.choices, self.auto, self.slider_max = unit, help, kind, choices, auto, slider_max
+        self.open = open   # a choice that also takes any other text of up to 64 characters (a colour's "#rrggbb", as a ball's colour always could)
 
     def json(self):
         d = {"key": self.key, "label": self.label, "default": self.default, "kind": self.kind, "unit": self.unit, "help": self.help}
@@ -130,18 +132,76 @@ class Prop:
                 d["slider_max"] = self.slider_max
         if self.choices:
             d["choices"] = self.choices
+        if self.open:
+            d["open"] = True
         return d
+
+
+class Link:
+    """A link from an item to another item of the scene (a stopwatch's watched car, a wire's ends, a lamp's switch): the other item's id,
+    stored in the item's props under `key` like any prop (a string; an unlinked one has none). `types`: the catalog keys it may name (empty:
+    any). The builder reads it with c.link(key): the id when it names an item of the scene (of one of those types), else None. Listed in the
+    type's catalog entry as `links` (only types that have some), never in `props`, so a scene's checks (web/server.py clean) keep it as an
+    optional prop of up to 64 characters, as they keep a ball's colour."""
+
+    def __init__(self, key, label, types=(), help=""):
+        self.key, self.label, self.types, self.help = key, label, list(types), help
+
+    def json(self):
+        return {"key": self.key, "label": self.label, "kind": "link", "types": list(self.types), "help": self.help}
+
+
+class Readout:
+    """A reading the run makes of an item (a module's process sets it: tooling/src/sim/plugins.ts ctx.set(item, key, value)): what the
+    track's state[item][key] means, for the inspector, the view's labels and the AI. digits: decimals to show. words: what a state code
+    means, {0: "whole", 1: "cracked", 2: "in pieces"} (whole numbers only): the inspector and the edit step's digest show the word, never
+    "Broken 1"; listed in the entry as {"0": "whole", ...}, in number order (web/sim/items.js Readout the same)."""
+
+    def __init__(self, key, label, unit="", digits=1, help="", words=None):
+        self.key, self.label, self.unit, self.digits, self.help = key, label, unit, digits, help
+        self.words = readout_words(words, key)
+
+    def json(self):
+        d = {"key": self.key, "label": self.label, "unit": self.unit, "digits": self.digits, "help": self.help}
+        if self.words:
+            d["words"] = self.words
+        return d
+
+
+def readout_words(words, key="?"):
+    """A readout's value words: {code (a whole number): word} -> {"<code>": word} in number order, or None."""
+    if not words:
+        return None
+    out = []
+    for k, w in dict(words).items():
+        if isinstance(k, bool) or not isinstance(k, (int, float)) or k != int(k) or not isinstance(w, str) or not w:
+            raise ValueError(f"readout {key}: words need whole-number codes and words ({k!r}: {w!r})")
+        out.append((int(k), w))
+    return {str(k): w for k, w in sorted(out)}
+
+
+# Props every matching type lists in its catalog entry, given by a module (the mechanics module's colour, start speed, glow): (Prop, applies)
+# with applies(ItemType) -> bool. Each is listed in the entry's `props` (marked "common": true) and its default in the entry's `defaults`, but
+# never in ItemType.defaults(), so an item that does not set one builds and resolves exactly as before; the module's build hook reads what an
+# item sets (web/server.py clean() keeps such props as it keeps a ball's colour). web/sim/items.js COMMON_PROPS is the same list.
+COMMON_PROPS = []
+
+
+def register_common_prop(prop, applies=None):
+    COMMON_PROPS.append((prop, applies or (lambda t: True)))
+    return prop
 
 
 class ItemType:
     """A catalog entry. build(ctx, P) adds its solids in its own frame (its anchor at the origin)."""
 
     def __init__(self, key, name, category, build, props=(), tags=(), description="", source="", dynamic=True, material=None,
-                 materials=(), anchor="its centre", edit=(), facts="", hidden_3d=False, color=None):
+                 materials=(), anchor="its centre", edit=(), facts="", hidden_3d=False, color=None, links=(), readouts=(), module=None):
         self.key, self.name, self.category, self.build_fn = key, name, category, build
         self.props, self.tags, self.description, self.source = list(props), list(tags), description, source
         self.dynamic, self.material, self.materials, self.anchor = dynamic, material, list(materials), anchor
         self.edit, self.facts, self.hidden_3d, self.color = list(edit), facts, hidden_3d, color
+        self.links, self.readouts, self.module = list(links), list(readouts), module
 
     def auto_keys(self):
         """Every `auto` prop of this type and the props each follows: what a built value of an auto prop depends on."""
@@ -171,10 +231,25 @@ class ItemType:
                       Prop("rolling", "Rolling resistance", m["rolling"], 0, 0.5, 0.001).json(),
                       Prop("side", "Side spring-back", m["side"], 0, 1, 0.01, "", "How a grippy, springy ball kicks back sideways").json()]
         autos = {p.key for p in self.props if p.auto}
+        # (a module's common props this type takes (COMMON_PROPS), after its own: listed and defaulted here only, never built by default)
+        own = {q["key"] for q in props}
+        common = [p for p, ok in COMMON_PROPS if p.key not in own and ok(self)]
+        props += [dict(p.json(), common=True) for p in common]
         # (an auto prop has no default of its own: its value at any other size is built, so a value the item sets is always kept)
-        return {"key": self.key, "name": self.name, "category": self.category, "tags": self.tags, "description": self.description,
-                "source": self.source, "dynamic": self.dynamic, "anchor": self.anchor, "edit": self.edit, "props": props,
-                "defaults": {k: v for k, v in self.defaults().items() if k not in autos}, "facts": self.facts}
+        defaults = {k: v for k, v in self.defaults().items() if k not in autos}
+        for p in common:
+            defaults[p.key] = p.default
+        d = {"key": self.key, "name": self.name, "category": self.category, "tags": self.tags, "description": self.description,
+             "source": self.source, "dynamic": self.dynamic, "anchor": self.anchor, "edit": self.edit, "props": props,
+             "defaults": defaults, "facts": self.facts}
+        # (a module's types: their links to other items, their readings, and their module; nothing for the others, whose entries stay as they were)
+        if self.links:
+            d["links"] = [k.json() for k in self.links]
+        if self.readouts:
+            d["readouts"] = [r.json() for r in self.readouts]
+        if self.module:
+            d["module"] = self.module
+        return d
 
 
 TYPES = {}
@@ -319,6 +394,35 @@ class Ctx:
         self.sb.joints.append(j)
         return j["id"]
 
+    def sid(self, part):
+        """This item's solid "<item id>/<part>"."""
+        return f"{self.item['id']}/{part}"
+
+    def link(self, key):
+        """The item a link prop (Link) names: its id when it is an item of this scene (of one of the link's types), else None."""
+        v = self.P.get(key)
+        if not isinstance(v, str) or v == self.item["id"]:
+            return None
+        other = self.sb.scene_items.get(v)
+        if other is None:
+            return None
+        spec = next((k for k in TYPES[self.item["type"]].links if k.key == key), None)
+        if spec is not None and spec.types and other["type"] not in spec.types:
+            return None
+        return v
+
+    @property
+    def settings(self):
+        """The scene's settings, resolved: {"gravity": m/s², "air": bool, "room_temp": °C, "time_lapse": ×} (settings_of)."""
+        return self.sb.settings
+
+    def process(self, kind, part, **fields):
+        """A module process "<item id>/<part>" (tooling/src/sim/plugins.ts runs it, the engine module registers `kind`): {kind, id, item,
+        **fields} in doc.processes, in build order. Fields are the module's own (numbers rounded as the module's port rounds them)."""
+        rec = {"kind": kind, "id": f"{self.item['id']}/{part}", "item": self.item["id"], **fields}
+        self.sb.processes.append(rec)
+        return rec["id"]
+
     def cord(self, part, lx, ly):
         x, y = self.world(lx, ly)
         self.sb.use_sprite("cord")
@@ -349,6 +453,7 @@ class SceneBuilder:
     def __init__(self):
         self.solids, self.animated, self.materials, self.instances, self.sprites_used = [], [], {}, {}, set()
         self.joints = []
+        self.processes, self.scene_items, self.settings = [], {}, dict(STANDARD_SETTINGS)
 
     def material(self, base, props):
         key = json.dumps([base, {k: props[k] for k in sorted(props) if k in ("density", "bounce", "friction", "rolling", "side", "grip")}], sort_keys=True)
@@ -425,9 +530,97 @@ def camera_of(stage):
     return {"canvas": {"width": W, "height": H}, "origin": {"x": 0, "y": 0}, "pixel": {"x": px, "y": py}, "pixelsPerMeter": round(ppm, 3)}
 
 
+# ---------------------------------------------------------------- the scene's settings (gravity, air, room temperature, time-lapse)
+# scene.settings = {"gravity": "earth" | "moon" | "mars" | "jupiter" | "none" | m/s², "air": bool, "air_density": kg/m³, "room_temp": °C,
+# "time_lapse": ×}, all optional. air_density (with air on) is the air's density for the engine's drag and buoyancy: 1.2 a room's (the standard),
+# a world's own (NASA planetary fact sheets, nssdc.gsfc.nasa.gov/planetary/factsheet: Mars's surface ~0.020, Venus's ~65, Jupiter's and
+# Saturn's at the 1-bar level 0.16 and 0.19, Neptune's 0.45, Earth's 1.217).
+# The engine's are doc.settings (tooling/src/sim/plugins.ts RunSettings), written only where they differ from the standard ones, so a scene that
+# says nothing (or the standard values) builds the very document it did before.
+GRAVITY_PRESETS = {"earth": 9.81, "moon": 1.62, "mars": 3.71, "jupiter": 24.79, "none": 0.0}   # m/s²: NASA planetary fact sheets
+# (nssdc.gsfc.nasa.gov/planetary/factsheet: Moon 1.62, Mars 3.71, Jupiter 24.79; Earth's standard 9.80665, the engine's 9.81)
+STANDARD_SETTINGS = {"gravity": 9.81, "air": True, "room_temp": 20.0, "time_lapse": 1.0, "air_density": 1.2}
+SETTING_LIMITS = {"gravity": (0.0, 30.0), "room_temp": (-60.0, 60.0), "time_lapse": (1.0, 100000.0), "air_density": (0.001, 100.0)}
+SETTING_RANGE_TEXT = {"room_temp": "-60 to 60", "time_lapse": "1 to 100000", "air_density": "0.001 to 100 kg/m³"}
+
+
+def settings_of(scene):
+    """The scene's settings resolved (STANDARD_SETTINGS where it says nothing); ValueError for one the engine cannot take."""
+    raw = scene.get("settings")
+    out = dict(STANDARD_SETTINGS)
+    if raw is None:
+        return out
+    if not isinstance(raw, dict):
+        raise ValueError("settings must be an object {gravity, air, room_temp, time_lapse}")
+    gv = raw.get("gravity")
+    if gv is not None:
+        if isinstance(gv, str):
+            if gv.strip().lower() not in GRAVITY_PRESETS:
+                raise ValueError(f"settings.gravity must be one of {', '.join(GRAVITY_PRESETS)} or m/s², not {gv[:30]!r}")
+            out["gravity"] = GRAVITY_PRESETS[gv.strip().lower()]
+        elif isinstance(gv, bool) or not isinstance(gv, (int, float)) or not math.isfinite(gv) or not SETTING_LIMITS["gravity"][0] <= gv <= SETTING_LIMITS["gravity"][1]:
+            raise ValueError("settings.gravity must be a preset or a number of m/s² from 0 to 30")
+        else:
+            out["gravity"] = float(gv)
+    air = raw.get("air")
+    if air is not None:
+        if not isinstance(air, bool):
+            raise ValueError("settings.air must be true or false")
+        out["air"] = air
+    for key in ("room_temp", "time_lapse", "air_density"):
+        v = raw.get(key)
+        if v is None:
+            continue
+        lo, hi = SETTING_LIMITS[key]
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(v) or not lo <= v <= hi:
+            raise ValueError(f"settings.{key} must be a number from {SETTING_RANGE_TEXT[key]}")
+        out[key] = float(v)
+    return out
+
+
+def doc_settings(st):
+    """doc.settings for resolved settings: only what differs from the standard (None when nothing does)."""
+    out = {}
+    if st["gravity"] != STANDARD_SETTINGS["gravity"]:
+        out["gravity"] = st["gravity"]
+    if st["air"] is not True:
+        out["air"] = False
+    elif st["air_density"] != STANDARD_SETTINGS["air_density"]:    # (a world's own air: only with air on; a vacuum has none)
+        out["airDensity"] = st["air_density"]
+    if st["room_temp"] != STANDARD_SETTINGS["room_temp"]:
+        out["roomTemperature"] = st["room_temp"]
+    if st["time_lapse"] != STANDARD_SETTINGS["time_lapse"]:
+        out["timeLapse"] = st["time_lapse"]
+    return out or None
+
+
+# Build hooks (a module's register_all adds one): fn(sb, scene) after every item is built, before the document is put together (a circuit
+# module gathers its parts into one network's process; a light module lists what its beams may meet). Run in registration order.
+BUILD_HOOKS = []
+
+
+def register_build_hook(fn):
+    BUILD_HOOKS.append(fn)
+    return fn
+
+
+# Warning hooks (a module's register_all adds one): fn(scene, doc) -> [{"items": [ids], "text": plain words}], after the overlaps (overlaps
+# below: the layout's and the run's warnings), for a start that will not do what it looks like (the space module: an ordinary ball in a space
+# scene, with no gravity but the bodies', drifts toward the planet). None, or nothing to say: [] (a scene without the module's items gets
+# exactly the warnings it got before). Run in registration order.
+WARNING_HOOKS = []
+
+
+def register_warning_hook(fn):
+    WARNING_HOOKS.append(fn)
+    return fn
+
+
 def build(scene):
     """scene -> (engine document, {item id: resolved props})."""
     sb = SceneBuilder()
+    sb.settings = settings_of(scene)
+    sb.scene_items = {i["id"]: i for i in scene.get("items", []) if isinstance(i, dict) and isinstance(i.get("id"), str)}
     resolved = {}
     for item in scene.get("items", []):
         if item.get("type") not in TYPES:
@@ -440,6 +633,8 @@ def build(scene):
         if auto:    # what an auto prop's built value was made for, so the inspector can tell it from another state's: the item's type, and which of
             P["_type"] = item["type"]                                  # the auto props and what they follow the item sets itself (a typed weight
             P["_own"] = sorted(k for k in (item.get("props") or {}) if k in auto)   # is not "automatic" any more once the item drops it)
+    for hook in BUILD_HOOKS:     # (a module's: after every item is built; what it adds is tagged and placed like any item's)
+        hook(sb, scene)
     # every solid says which item type and which of its parts it is: the 3D view picks its model by (itemType, part)
     type_of = {i["id"]: i["type"] for i in scene.get("items", [])}
     for s in sb.solids:
@@ -460,6 +655,13 @@ def build(scene):
            "seconds": float(scene.get("seconds", 4.5)), "sprites": sprite_records(sb.sprites_used)}
     if sb.joints:
         doc["joints"] = sb.joints
+    ds = doc_settings(sb.settings)
+    if ds is not None:
+        doc["settings"] = ds
+    if sb.processes:
+        doc["processes"] = sb.processes
+    if getattr(sb, "view", None):     # render-only settings a module's build hook gave (machines/mod_staging.py: a fixed camera, starting gates)
+        doc["view"] = sb.view
     return doc, resolved
 
 
@@ -655,6 +857,36 @@ for _mod in CATALOG_MODULES:
     if importlib.util.find_spec(_mod) is not None:
         importlib.import_module(_mod).register_all(globals())
 
+# Physics modules (heat, liquids, circuits, light, sound, magnets...): one file each, machines/mod_<name>.py, found here in name order (the
+# JavaScript port registers web/sim/modules/<name>.js in the same order: web/sim/modules/index.js, written by tools/gen-modules.mjs). Each
+# has register_all(g) like a catalog file (its types say module="<name>"), and may register goal kinds (register_goal_kind) and build hooks
+# (register_build_hook). A module already loaded is reloaded with items.py (GET /api/catalog?reload=1 picks up its edits too).
+# PLAYGROUND_MODULES="a,b" (names without mod_) loads only those; "" none (tests).
+import sys as _sys  # noqa: E402
+
+GOAL_KINDS = {}     # kind -> fn(ctx: GoalCtx, goal) -> the result entry {label, ok, kind, ...} or None (left out); see summarize
+_only = os.environ.get("PLAYGROUND_MODULES")
+MODULES = tuple(sorted(f[:-3] for f in os.listdir(HERE) if f.startswith("mod_") and f.endswith(".py")
+                       and (_only is None or f[4:-3] in [n.strip() for n in _only.split(",") if n.strip()])))
+
+
+def register_goal_kind(kind, fn):
+    """A module's goal kind for summarize: fn(ctx, goal) -> {label, ok, kind, ...} (or None to leave the goal out), the same, number for number,
+    as its web/sim/modules port's goal kind (registerGoalKind there)."""
+    GOAL_KINDS[kind] = fn
+    return fn
+
+
+MODULE_ERRORS = {}   # module -> why it could not be loaded (a module being written must not stop the catalog: it is left out, and said on stderr)
+for _mod in MODULES:
+    try:
+        _m = importlib.reload(_sys.modules[_mod]) if _mod in _sys.modules else importlib.import_module(_mod)
+        _m.register_all(globals())
+    except Exception as _e:  # noqa: BLE001
+        import traceback as _tb
+        MODULE_ERRORS[_mod] = f"{type(_e).__name__}: {_e}"
+        print(f"items.py: module {_mod} could not be loaded and is left out: {MODULE_ERRORS[_mod]}\n{_tb.format_exc(limit=3)}", file=_sys.stderr)
+
 
 # ---------------------------------------------------------------- what happened
 def _world_poses(doc):
@@ -776,6 +1008,47 @@ class _Fall:
         return turned > self.tip(b) or (not b["wheeled"] and dropped >= max(0.02, min(b["w"], b["h"]) / 2))
 
 
+class GoalCtx:
+    """What a module's goal kind reads (register_goal_kind): the scene, its document and track, and helpers. web/sim/items.js has the same."""
+
+    def __init__(self, scene, doc, track, items, name):
+        self.scene, self.doc, self.track, self.items, self.name = scene, doc, track, items, name
+        self.frames = track["frames"]
+        self.times = [f["t"] for f in self.frames]
+
+    def known(self, v):
+        """v is the id of an item of the scene."""
+        return isinstance(v, str) and v in self.items
+
+    @staticmethod
+    def num(v):
+        """A goal field that is a finite number, else None."""
+        return _num(v)
+
+    @staticmethod
+    def short_m(m):
+        return _short_m(m)
+
+    def state(self, iid, key):
+        """The reading key of item iid at every frame (a module's process set it), or None."""
+        st = self.track.get("state") or {}
+        v = (st.get(iid) or {}).get(key)
+        return v if isinstance(v, list) else None
+
+    def solids(self, iid, dynamic=False):
+        return [x for x in self.doc["solids"] if x["item"] == iid and (not dynamic or x["kind"] == "dynamic")]
+
+    def first_time(self, iid, key, test):
+        """The first frame's time at which test(reading) holds, or None."""
+        v = self.state(iid, key)
+        if v is None:
+            return None
+        for t, x in zip(self.times, v):
+            if x is not None and test(x):
+                return t
+        return None
+
+
 def summarize(scene, doc, track):
     """Plain-language results: the goals, each moving item's story, and the first hits between items in order. A goal is
     {kind: "in", item, container} (it ends between the container's walls), {kind: "falls", item | items: [id]} (every rigid body of them ends
@@ -852,6 +1125,7 @@ def summarize(scene, doc, track):
             story["ok"] = moved_at is not None
         stories.append(story)
     goals = []
+    gctx = None
     poses = {sid: (p["x"], p["y"]) for sid, p in fr[-1]["placements"].items()}
     known = lambda v: isinstance(v, str) and v in items
     for g in scene.get("goals", []):
@@ -909,7 +1183,20 @@ def summarize(scene, doc, track):
             ok = walls_inside(doc, fr[-1]["placements"], g["item"], g["container"])
             goals.append({"label": g.get("label") or f"{name(g['item'])} ends in the {name(g['container']).lower()}", "ok": ok, "kind": "walls",
                           "item": g["item"], "container": g["container"]})
-    return {"goals": goals, "stories": stories, "events": first[:16]}
+        elif kind in GOAL_KINDS:
+            # (a module's goal kind: register_goal_kind; its web/sim port reports the same)
+            gctx = gctx or GoalCtx(scene, doc, track, items, name)
+            r = GOAL_KINDS[kind](gctx, g)
+            if r is not None:
+                goals.append(r)
+    out = {"goals": goals, "stories": stories, "events": first[:16]}
+    # (a module's readings at the run's end, {item: {key: value}}, and what its processes said happened: only when the run has any)
+    state = track.get("state")
+    if isinstance(state, dict) and state:
+        out["readings"] = {iid: {k: (v[-1] if isinstance(v, list) and v else None) for k, v in keys.items()} for iid, keys in state.items()}
+    if track.get("events"):
+        out["happenings"] = [dict(e) for e in track["events"]]
+    return out
 
 
 def walls_inside(doc, last, iid, cid):
@@ -970,24 +1257,32 @@ def _overlap_depth(sa, pa, sb, pb):
     if ka == "ball" or kb == "ball":
         (sc, pc), (so, po) = ((sa, pa), (sb, pb)) if ka == "ball" else ((sb, pb), (sa, pa))
         r, (cx, cy), P = sc["body"]["radius"], pc[:2], _corners(so, po)
-        inside, near = float("inf"), float("inf")
+        inside, near, sides = float("inf"), float("inf"), 0
         for i in range(len(P)):
             (x1, y1), (x2, y2) = P[i], P[(i + 1) % len(P)]
             ex, ey = x2 - x1, y2 - y1
             m = math.hypot(ex, ey)
+            if m == 0:
+                continue    # (a side of no length, two corners at one point: no line to be inside of; its ends are the next side's)
+            sides += 1
             inside = min(inside, (ex * (cy - y1) - ey * (cx - x1)) / m)  # distance inside this side's line (negative: outside)
             u = max(0.0, min(1.0, ((cx - x1) * ex + (cy - y1) * ey) / (m * m)))
             near = min(near, math.hypot(cx - x1 - u * ex, cy - y1 - u * ey))
+        if not sides:
+            return 0.0    # (an outline that is a single point holds nothing)
         if inside >= 0:
             return r + inside
         return r - near if near < r else 0.0
     A, B = _corners(sa, pa), _corners(sb, pb)
-    depth = float("inf")
+    depth, axes = float("inf"), 0
     for poly in (A, B):
         for i in range(len(poly)):
             (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % len(poly)]
             ax, ay = -(y2 - y1), x2 - x1
             m = math.hypot(ax, ay)
+            if m == 0:
+                continue    # (a side of no length, as a slab 0 m wide has, or two corners at one point: no direction to test; items.js the same)
+            axes += 1
             ax, ay = ax / m, ay / m
             pA = [px * ax + py * ay for px, py in A]
             pB = [px * ax + py * ay for px, py in B]
@@ -995,7 +1290,7 @@ def _overlap_depth(sa, pa, sb, pb):
             if o <= 0:
                 return 0.0
             depth = min(depth, o)
-    return depth
+    return depth if axes else 0.0    # (no side with a length: two points, which hold nothing between them)
 
 
 def overlaps(scene, doc, tol=0.003):
@@ -1006,7 +1301,7 @@ def overlaps(scene, doc, tol=0.003):
     items = {i["id"]: i for i in scene.get("items", [])}
     name = lambda iid: (items[iid].get("name") or TYPES[items[iid]["type"]].name) if iid in items else iid
     world = rube._world(doc)
-    solids = doc["solids"]
+    solids = [s for s in doc["solids"] if s.get("ghost") is not True]   # (a ghost solid, an instrument's face or a painted line, touches nothing)
     seen, out = set(), []
     for i, a in enumerate(solids):
         for b in solids[i + 1:]:
@@ -1026,6 +1321,8 @@ def overlaps(scene, doc, tol=0.003):
                 out.append({"items": [a["item"], b["item"]], "text": f"{na} start{'' if many else 's'} inside {nb}: {'they' if many else 'it'}'ll be shoved out at the start"})
             else:
                 out.append({"items": [a["item"], b["item"]], "text": f"{na} and {nb} overlap"})
+    for hook in WARNING_HOOKS:     # (a module's: WARNING_HOOKS above)
+        out.extend(hook(scene, doc) or [])
     return out
 
 

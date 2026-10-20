@@ -11,7 +11,7 @@ import {
 	PolygonShape,
 	RevoluteJoint,
 	RopeJoint,
-	type Contact as Touch,
+	Contact as Touch,
 	Settings,
 	type TimeStep,
 	Transform,
@@ -40,6 +40,7 @@ import {
 	volume,
 	worldPose
 } from "#sim/part.ts"
+import { ProcessRunner, resolveSettings, type SolidHandle } from "#sim/plugins.ts"
 
 /**
  * The simulation, with the corrections the Prism mechanics lab
@@ -54,6 +55,11 @@ import {
 
 /** Standard gravity, m/s². */
 const GRAVITY = 9.81
+/**
+ * This run's gravity, m/s² (doc.settings.gravity: a Moon or Mars preset), GRAVITY unless the document says otherwise; set at the start
+ * of every `simulate` (one run at a time in a worker), so a document without settings computes the very same bits as before.
+ */
+let runGravity = GRAVITY
 
 /**
  * Internal planck length units per meter: Box2D's solver constants (5 mm linear slop, sleep and
@@ -78,6 +84,8 @@ const VELOCITY_THRESHOLD = 0.2
 
 /** Air density at room temperature, kg/m³. */
 const AIR_DENSITY = 1.2
+/** This run's air density, kg/m³: AIR_DENSITY (or doc.settings.airDensity, a world's own air), or 0 in a vacuum (doc.settings.air false: no buoyancy, no drag, no streams). */
+let airDensity = AIR_DENSITY
 
 /** Drag coefficient of a sphere at the speeds of a classroom drop (Reynolds number 10³ to 10⁵). */
 const SPHERE_DRAG = 0.47
@@ -199,6 +207,49 @@ const applySettings = () => {
 	Settings.maxRotation = 4 * Math.PI
 }
 
+/**
+ * planck keeps a destroyed contact in a pool shared by every world in the process and hands that same object to the next pair that starts
+ * to touch. State kept by contact (a module's set of contacts a striker passes through, its contacts' ages) then passes to an unrelated pair,
+ * and which object a pair gets depends on what ran before in the same process: a long-lived engine (the server's workers, the app's engine
+ * worker) gave a scene a track it never gives in a fresh one (fuzz-845 after fuzz-3: another top speed, other hit times). A destroyed contact
+ * is never handed out again: planck 1.5's own Contact.destroy (unlinked from its bodies, endContact while touching, both bodies woken) without
+ * the release into the pool, so a run's track depends on its document alone. Nothing else changes: the 12 scenarios and 10 gallery scenes
+ * are byte-identical either way (the engine itself keys nothing by contact across a destroy).
+ */
+interface PooledContact {
+	m_fixtureA: { m_body: Body | null; m_isSensor: boolean } | null
+	m_fixtureB: { m_body: Body | null; m_isSensor: boolean } | null
+	m_nodeA: ContactLink
+	m_nodeB: ContactLink
+	m_manifold: { pointCount: number }
+	isTouching(): boolean
+}
+interface ContactLink {
+	prev: ContactLink | null
+	next: ContactLink | null
+}
+;(Touch as unknown as { destroy: (contact: PooledContact, listener: { endContact(c: PooledContact): void }) => void }).destroy = (contact, listener) => {
+	const fixtureA = contact.m_fixtureA
+	const fixtureB = contact.m_fixtureB
+	if (fixtureA === null || fixtureB === null) return
+	const bodyA = fixtureA.m_body as unknown as { m_contactList: ContactLink | null; setAwake(flag: boolean): void } | null
+	const bodyB = fixtureB.m_body as unknown as { m_contactList: ContactLink | null; setAwake(flag: boolean): void } | null
+	if (bodyA === null || bodyB === null) return
+	if (contact.isTouching()) listener.endContact(contact)
+	for (const [node, body] of [
+		[contact.m_nodeA, bodyA],
+		[contact.m_nodeB, bodyB]
+	] as const) {
+		if (node.prev) node.prev.next = node.next
+		if (node.next) node.next.prev = node.prev
+		if (node === body.m_contactList) body.m_contactList = node.next
+	}
+	if (contact.m_manifold.pointCount > 0 && !fixtureA.m_isSensor && !fixtureB.m_isSensor) {
+		bodyA.setAwake(true)
+		bodyB.setAwake(true)
+	}
+}
+
 /** A part's position and angle (radians, counterclockwise) at one moment, in meters. */
 export interface Placement {
 	readonly x: number
@@ -209,6 +260,8 @@ export interface Placement {
 	 * from where it touches down.
 	 */
 	readonly squash?: number
+	/** A resized body's size against its document body (plugins.ts `resize`: ice melting, a balloon filling); 1 without it. */
+	readonly scale?: number
 }
 
 /**
@@ -221,6 +274,10 @@ export interface Track {
 	readonly frames: readonly { readonly t: number; readonly placements: Readonly<Record<string, Placement>> }[]
 	/** Each impact: when, the two solids' ids, and the speed they met at (m/s). */
 	readonly impacts?: readonly { readonly t: number; readonly a: string; readonly b: string; readonly speed: number }[]
+	/** Module readings per frame (plugins.ts): {item id: {key: [value at each frame]}}; only when a process set any. */
+	readonly state?: Readonly<Record<string, Readonly<Record<string, readonly number[]>>>>
+	/** Module events (plugins.ts): what happened, when; only when a process said any. */
+	readonly events?: readonly { readonly t: number; readonly items: readonly string[]; readonly text: string; readonly kind?: string }[]
 }
 
 interface Tag {
@@ -243,7 +300,12 @@ const contactOf = (scene: SimScene<string>, a: Material, b: Material): Contact |
  */
 export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	applySettings()
-	const world = new World({ gravity: new Vec2(0, -GRAVITY * LENGTH_SCALE) })
+	// (plugins.ts: the document's settings; without them g and the air are the standard ones, as they always were)
+	const settings = resolveSettings(scene.settings)
+	runGravity = settings.gravity
+	// (doc.settings.airDensity: a world's own air, Mars's thin or Venus's thick; the standard 1.2 is AIR_DENSITY itself, bit for bit)
+	airDensity = settings.air ? (settings.airDensity ?? AIR_DENSITY) : 0
+	const world = new World({ gravity: new Vec2(0, -runGravity * LENGTH_SCALE) })
 	const start = (id: string) => worldPose(scene, id, 0)
 
 	/**
@@ -482,7 +544,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			for (const s of springs) {
 				const share = (inertia * s.mass) / total
 				addMass(body, s.anchor, share)
-				springWeights.push({ body, anchor: s.anchor, force: (s.mass / 2 - share) * GRAVITY })
+				springWeights.push({ body, anchor: s.anchor, force: (s.mass / 2 - share) * runGravity })
 			}
 		}
 		for (const s of bothEnds) {
@@ -511,7 +573,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		return scene.solids.filter((s) => members.has(s.id) && s.kind === "dynamic")
 	}
 	/** The weight of every dynamic solid linked to a part through these links, N. */
-	const weightJoined = (part: SolidPart, links: readonly (readonly [string, string])[]) => joined(part, links).reduce((sum, s) => sum + massOf(s), 0) * GRAVITY
+	const weightJoined = (part: SolidPart, links: readonly (readonly [string, string])[]) => joined(part, links).reduce((sum, s) => sum + massOf(s), 0) * runGravity
 	/**
 	 * The static load each wheel of a moving chassis carries on level ground, kg, by its joint's id: the weight of what the chassis
 	 * carries (its assembly, wheels apart) shared so that the wheels hold it level, as springs of the same sag would. x is a place
@@ -781,7 +843,10 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		if (++toiEvents < toiCap) return
 		for (let c = world.getContactList(); c !== null; c = c.getNext()) spent(c)
 	}
+	/** Modules' calls right after the main solve (EngineInternals.afterSolve: force arrows read the step's contact impulses there); none in a plain run. */
+	const solvedHooks: (() => void)[] = []
 	solver.solveWorldTOI = (step) => {
+		for (const f of solvedHooks) f()
 		// The time-of-impact pass ignores joints, so it would solve a hinged part's impacts as if it were
 		// loose. Its contacts sit this pass out (each step re-enables them before the main solve, which
 		// keeps the hinge); at 480 Hz nothing jointed moves far enough in one step to pass through anything.
@@ -846,7 +911,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		if (approach < VELOCITY_THRESHOLD * LENGTH_SCALE) return 0
 		const injection = continuous
 			? 0
-			: GRAVITY * LENGTH_SCALE * h * wm.normal.y * ((bodyB.isDynamic() ? 1 : 0) - (bodyA.isDynamic() ? 1 : 0))
+			: runGravity * LENGTH_SCALE * h * wm.normal.y * ((bodyB.isDynamic() ? 1 : 0) - (bodyA.isDynamic() ? 1 : 0))
 		if (injection < 0 && approach < VELOCITY_THRESHOLD * LENGTH_SCALE - injection) return 0
 		if (approach + injection <= 0) return e
 		return Math.max(0, Math.min(1, (e * approach) / (approach + injection)))
@@ -908,6 +973,8 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	 */
 	const dents = new Map<string, number>()
 	world.on("begin-contact", (touch) => {
+		// (a module's contact hook first: plugins.ts Process.contact; none without processes)
+		if (runner?.contact(touch, "begin") === true) return
 		const pair = pairOf(touch)
 		if (pair === undefined || (!touch.getFixtureA().getBody().isDynamic() && !touch.getFixtureB().getBody().isDynamic())) return
 		const wm = touch.getWorldManifold(null)
@@ -1121,7 +1188,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			if (a === undefined || b === undefined || !(a.inverse + b.inverse > 0)) continue
 			const fresh = struck.has(c)
 			// (in the main solve, the gravity the step is about to add to a struck contact's approach, which `compensated` has reckoned with)
-			const lift = fresh && !continuous ? GRAVITY * LENGTH_SCALE * h * n.y * ((B.isDynamic() ? 1 : 0) - (A.isDynamic() ? 1 : 0)) : 0
+			const lift = fresh && !continuous ? runGravity * LENGTH_SCALE * h * n.y * ((B.isDynamic() ? 1 : 0) - (A.isDynamic() ? 1 : 0)) : 0
 			points.push({ c, a, b, point, n, k: a.inverse + b.inverse, e: fresh ? c.getRestitution() : pair.contact.restitution, fresh, lift, hit: false })
 		}
 		const closing = (q: (typeof points)[number]) => {
@@ -1162,6 +1229,10 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		solveIsland(step)
 	}
 	world.on("pre-solve", (touch, oldManifold) => {
+		if (runner?.contact(touch, "pre") === true) {
+			touch.setEnabled(false)
+			return
+		}
 		// (the time-of-impact pass re-enables a contact it updates: one of a hinged body's stays out of it)
 		if (continuous && (hinged(touch.getFixtureA().getBody()) || hinged(touch.getFixtureB().getBody()))) {
 			touch.setEnabled(false)
@@ -1495,7 +1566,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				const support = (ballIsA ? edge.contact.getFixtureB() : edge.contact.getFixtureA()).getBody()
 				const turning = body.getAngularVelocity() - support.getAngularVelocity()
 				if (Math.abs(turning) < ROLLING_OMEGA_FLOOR) continue
-				const load = Math.min(pressed.get(edge.contact) ?? massOf(part) * GRAVITY, assemblyWeight(part))
+				const load = Math.min(pressed.get(edge.contact) ?? massOf(part) * runGravity, assemblyWeight(part))
 				const magnitude = pair.contact.rollingResistance * load * part.body.radius
 				// The turning each unit of torque removes, per step: the ball's spin and the support's (planck's units).
 				const stops = Math.abs(turning) / ((inverseInertia(body) + inverseInertia(support)) * h * LENGTH_SCALE * LENGTH_SCALE)
@@ -1513,13 +1584,22 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	 * weighs all of its mass, so that weight is lifted off again. Never wakes a body that is asleep.
 	 */
 	const lifts = bodies.flatMap((m) =>
-		m.part.kind === "dynamic" && m.body.isDynamic() ? [{ m, lift: (airCarried(m.part) + AIR_DENSITY * solidVolume(m.part)) * GRAVITY * LENGTH_SCALE }] : []
+		m.part.kind === "dynamic" && m.body.isDynamic() ? [{ m, lift: (airCarried(m.part) + airDensity * solidVolume(m.part)) * runGravity * LENGTH_SCALE }] : []
 	)
+	/** A module's share of the room's air round a part (SolidHandle.setAirShare: inside a pumped jar); none in a plain run, so nothing changes. */
+	const airShares = new Map<Member, number>()
+	/** The air's density round a part, kg/m³: the run's, times its share where a module set one. */
+	const airRound = (m: Member) => {
+		const k = airShares.get(m)
+		return k === undefined ? airDensity : airDensity * k
+	}
 	const airLift = () => {
 		// (A part of a weld group is lifted where its own volume is, so a group of a dense part and a light one turns as it would.)
 		for (const { m, lift } of lifts) {
-			if (m.lone) m.body.applyForceToCenter(new Vec2(0, lift), false)
-			else m.body.applyForce(new Vec2(0, lift), m.body.getWorldPoint(m.center), false)
+			const k = airShares.get(m)
+			const up = k === undefined ? lift : lift * k
+			if (m.lone) m.body.applyForceToCenter(new Vec2(0, up), false)
+			else m.body.applyForce(new Vec2(0, up), m.body.getWorldPoint(m.center), false)
 		}
 	}
 
@@ -1541,7 +1621,11 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	/** Each moving part's drag this step (before it is applied), and the share of its body's motion the drags on its body take together. */
 	const drags: ({ m: Member; fx: number; fy: number; torque: number } | { m: Member; ball: Vec2; at: Vec2 })[] = []
 	const takes = new Map<Body, number>()
+	/** Which airDrag the drags are of (EngineInternals.airOn's index of them: read only, made only when a module asks). */
+	let airStamp = 0
+	const airIndex: { stamp: number; drag: Map<Member, { x: number; y: number }>; lift: Map<Member, { m: Member; lift: number }> | undefined } = { stamp: -1, drag: new Map(), lift: undefined }
 	const airDrag = () => {
+		airStamp++
 		const blowing = streams(scene, stepIndex * STEP, placements())
 		drags.length = 0
 		takes.clear()
@@ -1553,7 +1637,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				// (the air at the part's middle, its stream taken as even across it)
 				const mid = m.lone ? body.getWorldCenter() : body.getWorldPoint(m.center)
 				const air = airAt(blowing, { x: mid.x / LENGTH_SCALE, y: mid.y / LENGTH_SCALE })
-				const drag = outlineDrag(body, m.local, outline, 0.5 * AIR_DENSITY * BOX_DRAG * part.body.depth, air, h)
+				const drag = outlineDrag(body, m.local, outline, 0.5 * airRound(m) * BOX_DRAG * part.body.depth, air, h)
 				if (drag === undefined) continue
 				drags.push({ m, fx: drag.fx, fy: drag.fy, torque: drag.torque })
 				takes.set(body, (takes.get(body) ?? 0) + drag.share)
@@ -1569,7 +1653,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			if (speed === 0) continue
 			const length = cylinderLength(part)
 			const facing = length === undefined ? SPHERE_DRAG * Math.PI * part.body.radius ** 2 : CYLINDER_DRAG * 2 * part.body.radius * length
-			const k = 0.5 * AIR_DENSITY * facing * speed
+			const k = 0.5 * airRound(m) * facing * speed
 			drags.push({ m, ball: new Vec2(-k * vx * LENGTH_SCALE, -k * vy * LENGTH_SCALE), at: p })
 			// its share of its body's motion: the work it does on the point it acts at over the step, against the body's motion
 			const moving = motionOf(body, air)
@@ -1598,30 +1682,268 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		}
 	}
 
+	/** Resized solids' scale against their document bodies (a module's `resize`); none in a plain run. */
+	const scales = new Map<string, number>()
 	const placements = (): Record<string, Placement> =>
 		Object.fromEntries(
 			bodies.map(({ part, body, local: pose }) => {
 				// A group's part: its body's pose composed with its own pose in the group (the root's is the body's).
 				const p = pose === IDENTITY ? body.getPosition() : body.getWorldPoint(new Vec2(pose.at.x * LENGTH_SCALE, pose.at.y * LENGTH_SCALE))
 				const squash = dents.get(part.id)
+				const scale = scales.get(part.id)
 				return [
 					part.id,
 					{
 						x: p.x / LENGTH_SCALE,
 						y: p.y / LENGTH_SCALE,
 						angle: pose === IDENTITY ? body.getAngle() : body.getAngle() + pose.angle,
-						...(squash === undefined ? {} : { squash })
+						...(squash === undefined ? {} : { squash }),
+						...(scale === undefined ? {} : { scale })
 					}
 				]
 			})
 		)
 
+	/**
+	 * The processes of a document's modules (plugins.ts), with handles on the solids: their poses, velocities and masses, forces and
+	 * torques on their bodies, the solids they touch, the air where they are, and resizing (a body rebuilt at `scale` × its document
+	 * body: its fixture made anew, its group's mass, its air's lift and its outline's drag with it; below 1 % it is gone: it touches
+	 * nothing and, alone, no longer falls). Made only when the document has processes.
+	 */
+	const processRunner = () => {
+		const itemOf = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id)
+		const base = new Map<Member, SolidPart>()
+		const middle = (m: Member) => (m.lone ? m.body.getWorldCenter() : m.body.getWorldPoint(m.center))
+		const resize = (m: Member, wanted: number) => {
+			const scale = Number.isFinite(wanted) ? Math.max(0, wanted) : 1
+			const doc = base.get(m) ?? m.part
+			base.set(m, doc)
+			const k = Math.max(0.01, scale)
+			const b = doc.body
+			const body: SolidPart["body"] =
+				b.kind === "ball"
+					? { ...b, radius: b.radius * k, ...(b.wall === undefined ? {} : { wall: b.wall * k }) }
+					: b.kind === "slab"
+						? { ...b, width: b.width * k, height: b.height * k, depth: b.depth * k }
+						: { ...b, points: b.points.map((q) => ({ x: q.x * k, y: q.y * k })), depth: b.depth * k }
+			const part: SolidPart = { ...doc, body, ...(doc.length === undefined ? {} : { length: doc.length * k }) }
+			const dynamic = m.part.kind === "dynamic" && m.body.isDynamic()
+			m.body.destroyFixture(m.fixture)
+			m.fixture = addFixture(m.body, part, m.local, dynamic, m.lone)
+			m.part = part
+			m.center = memberCenter(part, m.local)
+			const gone = scale < 0.01
+			if (gone) m.fixture.setSensor(true)
+			if (dynamic && !m.lone) m.body.setMassData(groupMass(members.filter((x) => x.body === m.body)))
+			if (dynamic && m.lone && gone) {
+				m.body.setGravityScale(0)
+				m.body.setLinearVelocity(new Vec2(0, 0))
+				m.body.setAngularVelocity(0)
+			}
+			const lift = lifts.find((l) => l.m === m)
+			if (lift !== undefined) lift.lift = gone && m.lone ? 0 : (airCarried(part) + airDensity * solidVolume(part)) * runGravity * LENGTH_SCALE
+			if (part.body.kind !== "ball") outlines.set(m, outlineOf(part.body))
+			scales.set(part.id, scale)
+		}
+		const handles = new Map<string, SolidHandle>()
+		const handleOf = (m: Member): SolidHandle => {
+			const id = m.part.id
+			const made = handles.get(id)
+			if (made !== undefined) return made
+			const pose = () => {
+				const p = m.local === IDENTITY ? m.body.getPosition() : m.body.getWorldPoint(new Vec2(m.local.at.x * LENGTH_SCALE, m.local.at.y * LENGTH_SCALE))
+				return { x: p.x / LENGTH_SCALE, y: p.y / LENGTH_SCALE, angle: m.local === IDENTITY ? m.body.getAngle() : m.body.getAngle() + m.local.angle }
+			}
+			// (the mass it holds besides its own: SolidHandle.carry; 0 unless a module says so)
+			let carried = 0
+			const h: SolidHandle = {
+				id,
+				item: itemOf(id),
+				get part() {
+					return m.part
+				},
+				get dynamic() {
+					return m.part.kind === "dynamic" && m.body.isDynamic()
+				},
+				pose,
+				velocity: () => {
+					const v = m.body.getLinearVelocityFromWorldPoint(middle(m))
+					return { x: v.x / LENGTH_SCALE, y: v.y / LENGTH_SCALE }
+				},
+				spin: () => m.body.getAngularVelocity(),
+				mass: () => (carried > 0 ? massOf(m.part) + carried : massOf(m.part)),
+				carry: (kg) => {
+					carried = Number.isFinite(kg) && kg > 0 ? kg : 0
+				},
+				outline: () => {
+					const q = pose()
+					if (m.part.body.kind === "ball") return { circle: { x: q.x, y: q.y, r: m.part.body.radius } }
+					const c = Math.cos(q.angle)
+					const sn = Math.sin(q.angle)
+					return { points: outlineOf(m.part.body).map((v) => ({ x: q.x + v.x * c - v.y * sn, y: q.y + v.x * sn + v.y * c })) }
+				},
+				push: (fx, fy, at) => {
+					if (!(m.part.kind === "dynamic" && m.body.isDynamic())) return
+					const p = at === undefined ? middle(m) : new Vec2(at.x * LENGTH_SCALE, at.y * LENGTH_SCALE)
+					m.body.applyForce(new Vec2(fx * LENGTH_SCALE, fy * LENGTH_SCALE), p, true)
+				},
+				twist: (torque) => {
+					if (m.part.kind === "dynamic" && m.body.isDynamic()) m.body.applyTorque(torque * LENGTH_SCALE * LENGTH_SCALE, true)
+				},
+				scale: () => scales.get(id) ?? 1,
+				resize: (k) => resize(m, k),
+				setVelocity: (vx, vy, spin) => {
+					if (!(m.part.kind === "dynamic" && m.body.isDynamic())) return
+					m.body.setLinearVelocity(new Vec2(vx * LENGTH_SCALE, vy * LENGTH_SCALE))
+					if (spin !== undefined) m.body.setAngularVelocity(spin)
+					m.body.setAwake(true)
+				},
+				setAirShare: (share) => {
+					// (plugins.ts SolidHandle.setAirShare: its buoyancy and drag scale with it; 1 = the room's again)
+					if (!Number.isFinite(share)) return
+					const k = Math.max(0, share)
+					if (k === 1) airShares.delete(m)
+					else airShares.set(m, k)
+				},
+				body: () => {
+					// (plugins.ts BodyView: planck's mass and inertia about its origin, its centre of mass, and what is applied so far this step)
+					const b = m.body
+					const mass = b.getMass()
+					const lc = b.getLocalCenter()
+					const c = b.getWorldCenter()
+					const v = b.getLinearVelocity()
+					const applied = b as unknown as { m_force: Vec2; m_torque: number }
+					let key = bodyKeys.get(b)
+					if (key === undefined) {
+						key = scene.solids.findIndex((s) => memberOf.get(s.id)?.body === b)
+						bodyKeys.set(b, key)
+					}
+					return {
+						key,
+						mass,
+						inertia: Math.max(0, b.getInertia() - mass * (lc.x * lc.x + lc.y * lc.y)) / (LENGTH_SCALE * LENGTH_SCALE),
+						center: { x: c.x / LENGTH_SCALE, y: c.y / LENGTH_SCALE },
+						velocity: { x: v.x / LENGTH_SCALE, y: v.y / LENGTH_SCALE },
+						spin: b.getAngularVelocity(),
+						force: { x: applied.m_force.x / LENGTH_SCALE, y: applied.m_force.y / LENGTH_SCALE },
+						torque: applied.m_torque / (LENGTH_SCALE * LENGTH_SCALE),
+						jointed: b.getJointList() !== null
+					}
+				}
+			}
+			handles.set(id, h)
+			return h
+		}
+		const bodyKeys = new Map<Body, number>()
+		let blownAt = -1
+		let blowing: readonly Stream[] = []
+		return new ProcessRunner(scene, settings, scene.processes ?? [], {
+			step: STEP,
+			solid: (id) => {
+				const m = memberOf.get(id)
+				return m === undefined ? undefined : handleOf(m)
+			},
+			solidsOf: (item) => bodies.filter((m) => itemOf(m.part.id) === item).map(handleOf),
+			all: () => bodies.map(handleOf),
+			touching: (id) => {
+				const m = memberOf.get(id)
+				if (m === undefined) return []
+				const out: string[] = []
+				for (let edge = m.body.getContactList(); edge !== null; edge = edge.next) {
+					const c = edge.contact
+					if (!c.isTouching()) continue
+					const a = c.getFixtureA()
+					const b = c.getFixtureB()
+					if (a !== m.fixture && b !== m.fixture) continue
+					const other = (a === m.fixture ? b : a).getUserData()
+					if (isTag(other) && !out.includes(other.part.id)) out.push(other.part.id)
+				}
+				return out
+			},
+			air: (p) => {
+				if (blownAt !== stepIndex) {
+					blowing = streams(scene, stepIndex * STEP, placements())
+					blownAt = stepIndex
+				}
+				return airAt(blowing, p)
+			},
+			time: () => stepIndex * STEP,
+			released: () => stepIndex > releaseStep,
+			// (plugins.ts EngineInternals: for modules whose physics are constraints planck solves with the rest)
+			engine: {
+				world,
+				lengthScale: LENGTH_SCALE,
+				bodyOf: (id) => (id === null ? world0 : memberOf.get(id)?.body),
+				anchorOn: (id, p) => anchorOn(id, p),
+				directionOn: (id, d) => directionOn(id, d),
+				solidOf: (tag) => (isTag(tag) ? { id: tag.part.id, item: itemOf(tag.part.id), kind: tag.part.kind } : undefined),
+				startPose: (id) => start(id),
+				meeting: (a, b) => {
+					const pa = solidById.get(a)
+					const pb = solidById.get(b)
+					const c = pa === undefined || pb === undefined ? undefined : contactOf(scene, pa.material, pb.material)
+					return { friction: c?.friction ?? 0, restitution: c?.restitution ?? 0, rolling: c?.rollingResistance ?? 0 }
+				},
+				hit: (a, b, speed) => {
+					hits.push({ t: stepIndex * STEP, a, b, speed })
+					if (speed > (impacts.get(stepIndex) ?? 0)) impacts.set(stepIndex, speed)
+				},
+				// (read-only views for force arrows and energy bars: nothing here changes the run)
+				afterSolve: (fn) => {
+					solvedHooks.push(fn)
+				},
+				airOn: (id) => {
+					const m = memberOf.get(id)
+					if (m === undefined || m.part.kind !== "dynamic" || !m.body.isDynamic()) return undefined
+					// (this (sub-)step's drags by part, indexed once per airDrag: `drags` is refilled each time, the same array)
+					if (airIndex.stamp !== airStamp) {
+						airIndex.stamp = airStamp
+						airIndex.drag.clear()
+						for (const d of drags) {
+							const share = takes.get(d.m.body) ?? 0
+							const scale = share > 0.5 ? 1 / (share + 0.5) : 1
+							const o = airIndex.drag.get(d.m) ?? { x: 0, y: 0 }
+							if ("ball" in d) {
+								o.x += (d.ball.x / LENGTH_SCALE) * scale
+								o.y += (d.ball.y / LENGTH_SCALE) * scale
+							} else {
+								o.x += d.fx * scale
+								o.y += d.fy * scale
+							}
+							airIndex.drag.set(d.m, o)
+						}
+					}
+					const dm = airIndex.drag.get(m)
+					const x = dm?.x ?? 0
+					const y = dm?.y ?? 0
+					if (airIndex.lift === undefined) airIndex.lift = new Map(lifts.map((q) => [q.m, q]))
+					const l = airIndex.lift.get(m)
+					// (its lift less the carried air's weight it gives back: the buoyancy of the air its volume displaces)
+					const lift = l === undefined ? 0 : Math.max(0, l.lift / LENGTH_SCALE - airCarried(m.part) * runGravity)
+					return { x, y, lift }
+				},
+				jointForce: (joint, body, inv_dt) => jointForceOn(joint as PlanckJoint, body as Body, inv_dt),
+				spring: (joint) => (joint instanceof SpringLink ? joint.stretchNow() : undefined),
+				springWeights: (body) => springWeights.filter((w) => w.body === body).map((w) => {
+					const p = w.body.getWorldPoint(w.anchor)
+					return { force: w.force, at: { x: p.x / LENGTH_SCALE, y: p.y / LENGTH_SCALE } }
+				})
+			}
+		})
+	}
+
 	const stepsPerFrame = Math.round(1 / fps / STEP)
 	const releaseStep = Math.round(scene.release.at / STEP)
 	const lastStep = Math.round(scene.seconds / STEP)
 	const states: Record<string, Placement>[] = []
+	// Module processes (tooling/src/sim/plugins.ts): none in a plain document, which then runs exactly as before. (Made inside the try, so a
+	// module that cannot start is said like any failure: "the simulation failed at 0.000 s (...)".)
+	let runner: ProcessRunner | undefined
 	try {
+	runner = scene.processes === undefined || scene.processes.length === 0 ? undefined : processRunner()
+	runner?.start()
 	for (stepIndex = 0; stepIndex <= lastStep; stepIndex++) {
+		runner?.step(stepIndex)
 		if (stepIndex > releaseStep) {
 			steerHitboxes(stepIndex * STEP)
 			dampPivots()
@@ -1640,6 +1962,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				airLift()
 				if (springWeights.length > 0) springWeight()
 				airDrag()
+				runner?.force(h)
 				Settings.maxTranslation = SANE_SPEED * LENGTH_SCALE * h
 				struck.clear()
 				passed.clear()
@@ -1647,10 +1970,13 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				springBack()
 				unsound("ending")
 				keepSane()
+				runner?.after(h)
 			}
 		}
 		states.push(touching.get(stepIndex) ?? placements())
+		runner?.record()
 	}
+	runner?.end()
 	} catch (e) {
 		// any other failure inside a step: said in one line, with when (never planck's own words alone, which say nothing of the scene)
 		if (e instanceof SimulationError) throw e
@@ -1672,10 +1998,10 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			shown.set(k, step)
 		}
 	}
-	const frames = [...shown.entries()]
-		.sort(([a], [b]) => a - b)
-		.map(([, step]) => ({ t: step * STEP, placements: states[step] ?? {} }))
-	return { fps, frames, impacts: hits }
+	const order = [...shown.entries()].sort(([a], [b]) => a - b)
+	const frames = order.map(([, step]) => ({ t: step * STEP, placements: states[step] ?? {} }))
+	if (runner === undefined) return { fps, frames, impacts: hits }
+	return { fps, frames, impacts: hits, ...runner.extras(order.map(([, step]) => step)) }
 }
 
 const massOf = (part: SolidPart) => mass(part)
@@ -1685,15 +2011,16 @@ const IDENTITY: Pose = { at: { x: 0, y: 0 }, angle: 0 }
 
 /** A solid in the simulation: its part, the body of its weld group, and where it sits on that body. */
 interface Member {
-	readonly part: SolidPart
+	/** (replaced, with `fixture` and `center`, when a module resizes it: plugins.ts) */
+	part: SolidPart
 	readonly body: Body
 	/** Its pose in its group root's frame (meters, radians); `IDENTITY` for the root. */
 	readonly local: Pose
-	readonly fixture: Fixture
+	fixture: Fixture
 	/** Alone in its group: its body is exactly the part, as every body was before weld groups. */
 	readonly lone: boolean
 	/** Where its own mass is centred, in its body's frame (planck units). */
-	readonly center: Vec2
+	center: Vec2
 }
 
 /** A point of a part's own frame in its body's frame (planck units), given its pose in the group. */
@@ -1710,13 +2037,17 @@ const placeIn = (local: Pose, x: number, y: number) => {
  * sphere's or shell's inertia here); a part of a weld group is the same shape carried to its pose in the
  * group, and its group's mass is set from all of them afterwards (`groupMass`).
  */
+/** A ghost solid's fixture collides with nothing (its mask is 0); every other fixture keeps planck's defaults (nothing added to its def). */
+const ghostFilter = (part: SolidPart) => (part.ghost === true ? { filterMaskBits: 0 } : {})
+
 const addFixture = (body: Body, part: SolidPart, local: Pose, dynamic: boolean, lone: boolean) => {
 	const tag: Tag = { part }
 	if (part.body.kind === "ball") {
 		const r = part.body.radius * LENGTH_SCALE
 		const fixture = body.createFixture(local === IDENTITY ? new CircleShape(r) : new CircleShape(placeIn(local, 0, 0), r), {
 			density: dynamic ? massOf(part) / (Math.PI * r * r) : 0,
-			userData: tag
+			userData: tag,
+			...ghostFilter(part)
 		})
 		if (dynamic && lone) {
 			// Box2D gives a circle a disk's rotational inertia; a ball is a sphere (2/5 m r²) or,
@@ -1735,7 +2066,8 @@ const addFixture = (body: Body, part: SolidPart, local: Pose, dynamic: boolean, 
 		const points = outlineOf(part.body).map((p) => placeIn(local, p.x, p.y))
 		return body.createFixture(new PolygonShape(points), {
 			density: dynamic ? massOf(part) / polygonArea(points) : 0,
-			userData: tag
+			userData: tag,
+			...ghostFilter(part)
 		})
 	}
 	// Not shrunk by Box2D's 1 mm skin: the skin rounds a slab's corners about its true corners,
@@ -1749,7 +2081,8 @@ const addFixture = (body: Body, part: SolidPart, local: Pose, dynamic: boolean, 
 			: new PolygonShape([new Vec2(-hw * taper, -hh), new Vec2(hw * taper, -hh), new Vec2(hw, hh), new Vec2(-hw, hh)])
 	return body.createFixture(shape, {
 		density: dynamic ? massOf(part) / (2 * (1 + taper) * hw * hh) : 0,
-		userData: tag
+		userData: tag,
+		...ghostFilter(part)
 	})
 }
 
@@ -1829,6 +2162,24 @@ const impulseAlong = (A: Solving, B: Solving, rA: Vec2, rB: Vec2, u: Vec2, j: nu
 	B.c_velocity.v.x += B.m_invMass * px
 	B.c_velocity.v.y += B.m_invMass * py
 	B.c_velocity.w += B.m_invI * (rB.x * py - rB.y * px)
+}
+
+/**
+ * The force (N, world) a joint's last solve put on one of its bodies, or undefined (not one of its bodies, or a joint whose way of acting is
+ * not known here: a module's own). planck's joints (and the hinge and cord made from them) give their reaction on body B; on A it is the
+ * opposite. A pulley's rope pulls each end along its own run, a chain's touch its touching body and its two ends (`forceOn`). Read only.
+ */
+const jointForceOn = (joint: PlanckJoint, body: Body, inv_dt: number): { x: number; y: number } | undefined => {
+	if (joint instanceof RopePulley || joint instanceof ChainTouch) {
+		const f = joint.forceOn(body, inv_dt)
+		return f === undefined ? undefined : { x: f.x / LENGTH_SCALE, y: f.y / LENGTH_SCALE }
+	}
+	const builtIn = joint instanceof SpringLink || ["revolute-joint", "rope-joint", "weld-joint", "wheel-joint", "prismatic-joint", "distance-joint", "pulley-joint", "friction-joint", "motor-joint", "mouse-joint"].includes(joint.getType())
+	if (!builtIn) return undefined
+	const sign = body === joint.getBodyB() ? 1 : body === joint.getBodyA() ? -1 : 0
+	if (sign === 0) return undefined
+	const f = joint.getReactionForce(inv_dt)
+	return { x: (sign * f.x) / LENGTH_SCALE, y: (sign * f.y) / LENGTH_SCALE }
 }
 
 /**
@@ -1982,6 +2333,14 @@ class SpringLink extends PlanckJoint {
 	getReactionForce(inv_dt: number) {
 		return Vec2.mul((this.hooke + this.damper) * inv_dt, this.u)
 	}
+	/** Its stiffness (N/m) and its stretch now (m: d − rest; − squeezed; 0 for a compress-only spring stretched past its rest, which pulls nothing). Read only. */
+	stretchNow() {
+		const pa = this.m_bodyA.getWorldPoint(this.la)
+		const pb = this.m_bodyB.getWorldPoint(this.lb)
+		const d = Math.sqrt((pb.x - pa.x) * (pb.x - pa.x) + (pb.y - pa.y) * (pb.y - pa.y)) / LENGTH_SCALE
+		const x = d - this.rest
+		return { k: this.k, x: this.pushOnly && x >= 0 ? 0 : x }
+	}
 	/** How much this step's impulses of this spring changed a body's velocity (planck units: linear and angular), once the step's solve is done. */
 	pushOn(body: Body) {
 		if (!this.active || this.invMass === 0 || (body !== this.m_bodyA && body !== this.m_bodyB)) return undefined
@@ -2054,7 +2413,7 @@ class SpringMass extends PlanckJoint {
 		const va = A.getLinearVelocityFromWorldPoint(pa)
 		const vb = B.getLinearVelocityFromWorldPoint(pb)
 		this.w.x = (va.x + vb.x) / 2
-		this.w.y = (vb.y + va.y) / 2 - GRAVITY * LENGTH_SCALE * step.dt
+		this.w.y = (vb.y + va.y) / 2 - runGravity * LENGTH_SCALE * step.dt
 		const sa = solving(A)
 		const sb = solving(B)
 		const k11 = (sa.m_invMass + sa.m_invI * this.rA.y * this.rA.y + sb.m_invMass + sb.m_invI * this.rB.y * this.rB.y) / 4 + 1 / this.mass
@@ -2354,6 +2713,13 @@ class RopePulley extends PlanckJoint {
 	}
 	getReactionForce(inv_dt: number) {
 		return Vec2.mul(this.rope * inv_dt, this.arms.uB)
+	}
+	/** The force its last solve put on one of its bodies (planck units: N × LENGTH_SCALE), along its run: the rope's pull, its stop's and cap's. */
+	forceOn(body: Body, inv_dt: number) {
+		const g = this.arms
+		if (body === this.m_bodyA) return Vec2.mul((this.stopA - this.capA - this.rope) * inv_dt, g.uA)
+		if (body === this.m_bodyB) return Vec2.mul((this.stopB - this.capB - this.ratio * this.rope) * inv_dt, g.uB)
+		return undefined
 	}
 	getReactionTorque(_inv_dt: number) {
 		return 0
@@ -2966,6 +3332,18 @@ class ChainTouch extends PlanckJoint {
 		}
 		return new Vec2(x, y)
 	}
+	/** The force its last solve put on one of its three bodies (planck units): the touching body's push, and the chain's ends' shares of it. */
+	forceOn(body: Body, inv_dt: number) {
+		if (body !== this.x && body !== this.chain.A && body !== this.chain.B) return undefined
+		let x = 0
+		let y = 0
+		for (const p of this.points) {
+			const k = (body === this.x ? 1 : 0) - (body === this.chain.A ? 1 - p.t : 0) - (body === this.chain.B ? p.t : 0)
+			x += k * (p.normal * p.n.x + p.rub * p.tangent.x) * inv_dt
+			y += k * (p.normal * p.n.y + p.rub * p.tangent.y) * inv_dt
+		}
+		return new Vec2(x, y)
+	}
 	getReactionTorque(_inv_dt: number) {
 		return 0
 	}
@@ -2973,7 +3351,8 @@ class ChainTouch extends PlanckJoint {
 
 /** Whether a body hangs on a joint other than a spring: the time-of-impact pass would solve its impacts as if it were loose. */
 const hinged = (body: Body) => {
-	for (let edge = body.getJointList(); edge !== null; edge = edge.next) if (!(edge.joint instanceof SpringLink) && !(edge.joint instanceof ChainTouch) && !(edge.joint instanceof SpringMass)) return true
+	for (let edge = body.getJointList(); edge !== null; edge = edge.next)
+		if (!(edge.joint instanceof SpringLink) && !(edge.joint instanceof ChainTouch) && !(edge.joint instanceof SpringMass) && (edge.joint as unknown as { notHinge?: boolean }).notHinge !== true) return true
 	return false
 }
 
@@ -3009,7 +3388,7 @@ const airCarried = (part: SolidPart) => {
 	if (part.body.kind !== "ball" || part.shape === "cylinder") return 0
 	const r = part.body.radius
 	const inner = Math.max(0, r - (part.body.wall ?? r))
-	return AIR_DENSITY * (4 / 3) * Math.PI * (inner ** 3 + 0.5 * r ** 3)
+	return airDensity * (4 / 3) * Math.PI * (inner ** 3 + 0.5 * r ** 3)
 }
 
 /**

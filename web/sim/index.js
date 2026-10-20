@@ -23,3 +23,13 @@ use_catalog_module_everyday("catalog_everyday", register_catalog_everyday)
 import { use_catalog_module as use_catalog_module_mechanisms } from "./items.js"
 import { register_all as register_catalog_mechanisms } from "./catalog-mechanisms.js"
 use_catalog_module_mechanisms("catalog_mechanisms", register_catalog_mechanisms)
+
+// the physics modules (web/sim/modules/<name>.js, machines/mod_<name>.py), after the catalog files, in name order: web/sim/modules/index.js
+// (written by tools/gen-modules.mjs) registers their types, goal kinds and plug-ins (./plugins.js)
+// (imported here, after the catalog registrations above have run: a static import would be evaluated before this module's body, so the
+// modules' types, looks and materials would come before the catalog files' ones, unlike machines/items.py)
+const modulesIndex = await import("./modules/index.js")
+export const MODULES = modulesIndex.MODULES
+export const MODULE_ERRORS = modulesIndex.MODULE_ERRORS
+export * as plugins from "./plugins.js"
+export { settings_of, doc_settings, STANDARD_SETTINGS, GRAVITY_PRESETS, GOAL_KINDS, GoalCtx, Link, Readout } from "./items.js"

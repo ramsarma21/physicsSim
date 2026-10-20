@@ -14,6 +14,8 @@
 import * as THREE from "three"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { addFrameHook, addViewPlugin, ownMaterial } from "./view-plugins.js"
+import { MODULE_GROUPS } from "./models/modules.js"
 
 const models = new Map()
 export function addModel(itemType, part, build) {
@@ -773,12 +775,13 @@ export const prebakeReady = () => pool.off || pool.list.some((e) => e.ready)
 export const prebakeStats = () => ({ off: pool.off, workers: pool.list.length, ready: pool.list.filter((e) => e.ready).length, queued: pool.queue.length, running: pool.list.reduce((n, e) => n + e.jobs.length, 0), records: prebaked.size, models: pool.byModel.size, noBake: noBake.size })
 
 // ---------------------------------------------------------------- the model files
-const GROUPS = ["balls", "blocks", "surfaces", "containers", "rods", "everyday-a", "everyday-b", "vehicles", "mechanisms"]
+// (and the physics modules' model files, web/models/mod-<name>.js: web/models/modules.js lists them; they get the view hooks too, web/view-plugins.js)
+const GROUPS = ["balls", "blocks", "surfaces", "containers", "rods", "everyday-a", "everyday-b", "vehicles", "mechanisms", ...MODULE_GROUPS]
 const loaded = await Promise.allSettled(GROUPS.map((g) => import(`./models/${g}.js`)))
 loaded.forEach((r, i) => {
 	if (r.status === "fulfilled" && typeof r.value.default === "function") {
 		try {
-			r.value.default({ addModel, kit, THREE })
+			r.value.default({ addModel, kit, THREE, addViewPlugin, addFrameHook, ownMaterial })
 		} catch (e) {
 			console.warn(`models/${GROUPS[i]}.js failed to register:`, e)
 		}
