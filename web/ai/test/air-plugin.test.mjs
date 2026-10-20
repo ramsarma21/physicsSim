@@ -5,6 +5,7 @@
 //   node --test web/ai/test/air-plugin.test.mjs
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
+import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -14,8 +15,10 @@ const PG = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..")
 process.env.PLAYGROUND_MODULES = process.env.PLAYGROUND_MODULES ?? "air,fluids,measure,mechanics,space,heat,waves"
 const sim = await import(pathToFileURL(join(PG, "web/sim/index.js")).href)
 const plugins = await import(pathToFileURL(join(PG, "web/sim/plugins.js")).href)
-const { solve } = await import(pathToFileURL(join(PG, "web/ai/solver.js")).href)
+const { solve, planFromScene } = await import(pathToFileURL(join(PG, "web/ai/solver.js")).href)
+const { goalLabel, checkGoals } = await import(pathToFileURL(join(PG, "web/ai/goals.js")).href)
 const { findFix } = await import(pathToFileURL(join(PG, "web/ai/fixer.js")).href)
+const { describeDiff } = await import(pathToFileURL(join(PG, "web/ai/orchestrator.js")).href)
 const bundle = await import(pathToFileURL(join(PG, "web/sim/engine-worker.js")).href)
 const mod = plugins.modules().find((m) => m.name === "mod_air")
 
@@ -175,6 +178,54 @@ print(json.dumps(items.summarize(d["scene"], d["doc"], d["track"])))
 	assert.equal(plugins.checkModuleGoal({ kind: "balloon_rises", item: "he" }, { scene: R.scene, doc: R.doc, track: R.track }).ok, true)
 	assert.equal(plugins.checkModuleGoal({ kind: "can_crushes", item: "hot" }, { scene: R.scene, doc: R.doc, track: R.track }).ok, true)
 	assert.equal(plugins.checkModuleGoal({ kind: "card_holds", item: "cup" }, { scene: R.scene, doc: R.doc, track: R.track }).ok, false)
+})
+
+test("an unlabelled expect:false control carried through an edit stays unlabelled, and is said as it is checked (the hot-air balloon demo)", () => {
+	// (the app's Edit with AI, "Turn the heater on the hot-air balloon down to half its power", stored "Unheated balloon rises" on the control
+	// {lifts_off, at_least_m 0.05, expect false} and the card said "Unheated balloon rises · yes" while it sat on its stand)
+	const demo = JSON.parse(readFileSync(join(PG, "demos", "air", "hot-air-balloon.json"), "utf8"))
+	const control = demo.goals.find((g) => g.expect === false)
+	assert.deepEqual(control, { kind: "lifts_off", item: "cold", at_least_m: 0.05, expect: false }, "the demo's control, without a label")
+	const plan = planFromScene(demo)
+	const hab = plan.items.find((i) => i.id === "hab")
+	const full = sim.catalog().types.find((t) => t.key === "hot-air-balloon").props.find((p) => p.key === "heater_w").default
+	hab.props = { ...(hab.props ?? {}), heater_w: full / 2 }
+	const r = solve(plan)
+	assert.ok(r.ok, JSON.stringify(r.errors))
+	assert.deepEqual(r.scene.goals.find((g) => g.item === "cold"), control, "the goal the edit did not touch is as it was: no label of the AI's")
+	assert.deepEqual(r.scene.goals.find((g) => g.item === "hab"), demo.goals.find((g) => g.item === "hab"))
+	const words = "Unheated balloon does not rise 5 cm"
+	assert.equal(r.goals.find((g) => g.item === "cold").label, words, "the AI's own list says it with its not and its number")
+	assert.equal(goalLabel(control, { cold: "Unheated balloon" }), words)
+	assert.equal(goalLabel({ kind: "lifts_off", item: "hab", at_least_m: 0.5 }, { hab: "Hot-air balloon" }), "Hot-air balloon rises at least 50 cm")
+	const R = run(r.scene)
+	const entry = R.summary.goals.find((g) => g.item === "cold")
+	assert.equal(entry.label, words, "the run's summary")
+	assert.equal(entry.ok, true, "the unheated balloon stays on its stand")
+	const card = checkGoals(r.goals, { scene: R.scene, doc: R.doc, track: R.track, summary: R.summary }).find((g) => g.item === "cold")
+	assert.equal(card.label, words, "the card")
+	assert.equal(card.ok, true)
+	// every kind that takes expect: a label made for expect false says its not, as its summary does, and keeps its numbers
+	for (const k of mod.goals.filter((g) => g.fields?.expect)) {
+		for (const extra of [{}, { at_least_m: 1.25 }, { before_s: 2 }]) {
+			const g = { kind: k.kind, item: "b", expect: false, ...extra }
+			const said = goalLabel(g, { b: "Balloon" })
+			assert.match(said, /\bnot\b/, `${k.kind} ${JSON.stringify(extra)}: ${said}`)
+			assert.equal(k.label(g, (id) => ({ b: "Balloon" })[id] ?? id), said, `${k.kind}: its own label() says the same`)
+			if (extra.at_least_m && k.fields.at_least_m) assert.match(said, /1\.25 m/, said)
+			if (extra.before_s && k.fields.before_s) assert.match(said, /by 2 s/, said)
+		}
+	}
+	// the card's list of what an edit changed says such a goal in the same words (it said "Goal “lifts_off”: …", "Goal dropped: lifts_off")
+	const edited = (f) => {
+		const s2 = JSON.parse(JSON.stringify(demo))
+		f(s2)
+		return describeDiff(demo, s2)
+	}
+	assert.deepEqual(edited((s2) => (s2.goals.find((g) => g.item === "cold").at_least_m = 0.1)), [`Goal “${words}”: at least 5 cm → 10 cm`])
+	assert.deepEqual(edited((s2) => (s2.goals.find((g) => g.item === "cold").expect = true)), [`Goal “${words}”: now it must happen`])
+	assert.deepEqual(edited((s2) => (s2.goals = s2.goals.filter((g) => g.item !== "cold"))), [`Goal dropped: ${words}`])
+	assert.deepEqual(edited((s2) => s2.goals.push({ kind: "lifts_off", item: "cold", at_least_m: 0.5 })), ["New goal: Unheated balloon rises at least 50 cm"])
 })
 
 test("the edit digest's lines: a helium balloon, a crushed can, a cup that let go, a kite with no wind, a plane in flight", () => {

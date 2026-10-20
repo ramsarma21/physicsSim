@@ -1038,8 +1038,10 @@ export function solve(plan, opts = {}) {
 				say("warn", "goal_ref", `The goal “${label ?? kind}” names something that isn't in the scene: left out`)
 				continue
 			}
+			// (the scene keeps the plan's own label or none: an unlabelled goal, as an edit carries one through, stays unlabelled, so the run's
+			// summary says it in its own words from its fields, "does not rise 5 cm"; the AI's own list gets a label to say on the card)
+			goals.push(label ? { ...out, label } : { ...out })
 			out.label = label ?? goalLabel(out, names)
-			goals.push({ ...out })
 			allGoals.push(out)
 			continue
 		}

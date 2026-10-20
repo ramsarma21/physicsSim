@@ -1143,20 +1143,27 @@ export function describeDiff(a, b) {
 	})
 	if (setBits.length) lines.push(`Settings: ${setBits.join(", ")}`)
 	// goals by what they are about (a renamed goal is the same goal; one that now covers more things is the same goal, grown)
-	lines.push(...goalDiffLines(a.goals, b.goals, B))
+	lines.push(...goalDiffLines(a.goals, b.goals, B, A))
 	return lines.map((l) => (typeof l === "string" ? l : `${andList(l.names)} moved ${l.text}`))
 }
 /**
  * Goals added, dropped or changed between two lists, paired by what they are about: the same kind and refs is the same goal (a new label is a
  * rename, not news); the same kind with the same label, or sharing an item, is one goal that changed ("“The whole tower falls” now covers 10
- * wooden blocks (was 6)"), never a "New goal" and a "Goal dropped" with one name. items: Map id -> scene item (for the words).
+ * wooden blocks (was 6)"), never a "New goal" and a "Goal dropped" with one name. items: Map id -> scene item (for the words); itemsA: the
+ * first list's, when its things are not all in the second's.
  */
-function goalDiffLines(listA, listB, items = new Map()) {
+function goalDiffLines(listA, listB, items = new Map(), itemsA = items) {
 	const norm = (g) => ({ ...g, kind: g.kind ?? "in" })
 	const A = (Array.isArray(listA) ? listA : []).filter(isObj).map(norm)
 	const B = (Array.isArray(listB) ? listB : []).filter(isObj).map(norm)
 	const key = (g) => `${g.kind}|${goalRefs(g).join(",")}`
 	const lbl = (g) => String(g.label ?? "").trim().toLowerCase()
+	// (a goal without a label of its own, a module's goal as a scene keeps it (./solver.js) or a demo's, is said in its own words, as its run's
+	// summary says it (./goals.js goalLabel: "Unheated balloon does not rise 5 cm"), never by its kind or as “undefined”)
+	const namesIn = (m) => Object.fromEntries([...(m?.entries?.() ?? [])].map(([id, it]) => [id, nameOfItem(it)]))
+	const nowNames = namesIn(items)
+	const wasNames = itemsA === items ? nowNames : { ...nowNames, ...namesIn(itemsA) }
+	const said = (g, names) => (typeof g.label === "string" && g.label.trim() ? g.label : goalLabel(g, names))
 	// (one to one: goals of one kind about the same things, the Moon's phases, are each a goal of their own, paired by label, then by what else
 	// they say ("name": "last quarter"), then in order (vfy-ai5 R4-S6, 20 Oct: "It reaches last quarter" dropped went unsaid))
 	const rest = (g) => JSON.stringify(Object.entries(g).filter(([k, v]) => k !== "label" && typeof v === "string" && !goalRefs(g).includes(v)).sort())
@@ -1174,7 +1181,7 @@ function goalDiffLines(listA, listB, items = new Map()) {
 	for (const g of added) {
 		const i = dropped.findIndex((x) => x.kind === g.kind && ((lbl(x) && lbl(x) === lbl(g)) || goalItems(x).some((id) => goalItems(g).includes(id))))
 		if (i < 0) {
-			out.push(`New goal: ${g.label ?? g.kind}`)
+			out.push(`New goal: ${said(g, nowNames)}`)
 			continue
 		}
 		const was = dropped.splice(i, 1)[0]
@@ -1182,13 +1189,19 @@ function goalDiffLines(listA, listB, items = new Map()) {
 		const nb = goalItems(g).length
 		const types = new Set(goalItems(g).map((id) => items.get?.(id)?.type).filter(Boolean))
 		const what = (n) => (types.size === 1 ? `${n} ${pluralWord(String(typeName([...types][0]) ?? "thing").toLowerCase(), n)}` : `${n} ${n === 1 ? "thing" : "things"}`)
-		if (na !== nb) out.push(`Goal “${g.label ?? was.label}” now covers ${what(nb)} (was ${na})`)
-		else if (lbl(was) !== lbl(g)) out.push(`Goal “${was.label}” is now “${g.label}”`)
-		else out.push(`Goal “${g.label}” now about ${andList(goalRefs(g).map((id) => items.get?.(id)?.name ?? id))}`)
+		const wasSaid = said(was, wasNames)
+		const nowSaid = said(g, nowNames)
+		if (na !== nb) out.push(`Goal “${g.label ?? was.label ?? wasSaid}” now covers ${what(nb)} (was ${na})`)
+		else if (lbl(was) !== lbl(g) && String(wasSaid).trim().toLowerCase() !== String(nowSaid).trim().toLowerCase()) out.push(`Goal “${wasSaid}” is now “${nowSaid}”`)
+		else out.push(`Goal “${nowSaid}” now about ${andList(goalRefs(g).map((id) => items.get?.(id)?.name ?? id))}`)
 	}
-	for (const g of dropped) out.push(`Goal dropped: ${g.label ?? g.kind}`)
-	// (the same goal asking for another number: "Goal “The hose carries at least 4 L”: at least 4 L → 200 mL")
-	for (const t of targetChanges(A, B)) out.push(`Goal “${t.label}”: ${t.changes.map(targetChangeWords).join("; ")}`)
+	for (const g of dropped) out.push(`Goal dropped: ${said(g, wasNames)}`)
+	// (the same goal asking for another number: "Goal “The hose carries at least 4 L”: at least 4 L → 200 mL"; one without a label by its words
+	// as it was, "Goal “Unheated balloon does not rise 5 cm”: at least 5 cm → 10 cm")
+	for (const t of targetChanges(A, B)) {
+		const name = t.was.label ?? t.now.label ? t.label : String(said(t.was, wasNames)).replace(/[.!]+$/, "")
+		out.push(`Goal “${name}”: ${t.changes.map(targetChangeWords).join("; ")}`)
+	}
 	return out
 }
 /** "wooden block" -> "wooden blocks" (n ≠ 1), "box" -> "boxes". */
@@ -3176,10 +3189,13 @@ const passIn = (v) => v.solved.issues.filter((i) => i.level !== "info" && PASS_C
 const PASS_RE = /\b(legs?|poles?|posts?|rods?|stands?|dowels?|supports?|brackets?|frames?|pins?|uprights?)\b[^.;:]{0,50}\bthrough\b|\b(stick(s|ing)?|poke(s|d|ing)?|clip(s|ping)?) (up |down |out |straight |right )?(through|into)\b|\b(intersect(s|ing)?|interpenetrat\w*|embedded in|inside each other|through each other)\b|\boverlap(s|ping)? (with )?(the|each|one)\b|\bstray (parts?|posts?|dowels?|pieces?|rods?|legs?)\b/i
 const PASS_NOT_RE = /\b(no|nothing|none|never|not|without|doesn['’]t|don['’]t|isn['’]t|aren['’]t|no longer)\b[^.;]{0,40}\b(through|overlap|intersect|inside each other|stray)/i
 const passSaid = (issues) => issues.filter((t) => PASS_RE.test(t) && !PASS_NOT_RE.test(t))
-/** Goals of a kind the scene does not carry itself (falls, hits, moves) that an edit added or dropped (the "in" ones show in describeDiff). */
-function goalChanges(a, b, scene = null) {
+/** Goals of a kind the scene does not carry itself (falls, hits, moves) that an edit added or dropped (the "in" ones show in describeDiff).
+ *  scene: the scene after the edit; sceneA: the one before it (the names of what a dropped goal was about). */
+function goalChanges(a, b, scene = null, sceneA = scene) {
 	const other = (p) => (Array.isArray(p?.goals) ? p.goals : []).filter((g) => isObj(g) && g.kind && g.kind !== "in")
-	return goalDiffLines(other(a), other(b), new Map((scene?.items ?? []).map((i) => [i.id, i])))
+	const itemsOf = (sc) => new Map((sc?.items ?? []).map((i) => [i.id, i]))
+	const now = itemsOf(scene)
+	return goalDiffLines(other(a), other(b), now, sceneA === scene ? now : itemsOf(sceneA))
 }
 /** Where each moving item ends (the mean of its moving parts in the last frame): the critic is told, so it need not guess from impact times. */
 function finalPositions(sim) {
@@ -5064,7 +5080,7 @@ export function createOrchestrator(deps) {
 		if (mode === "edit") {
 			// what the edit did to the scene on screen, as the scene shows it (a plan change with no effect is not a change)
 			const seen = describeDiff(request.scene, cur.scene)
-			const goalsSaid = goalChanges(basePlan, plan, cur.scene)
+			const goalsSaid = goalChanges(basePlan, plan, cur.scene, request.scene)
 			report.edit.changes = [...seen, ...unseenChanges(report.edit.planChanges), ...goalsSaid.filter((g) => !seen.includes(g))]
 			if (!report.edit.changes.length && report.edit.planChanges.length) report.edit.noChange = true
 			report.edit.firstScene = cur.scene
@@ -5916,7 +5932,7 @@ export function createOrchestrator(deps) {
 		// included: their own lists say which were theirs)
 		if (mode === "edit" && cur.scene !== report.edit.firstScene) {
 			const net = describeDiff(request.scene, cur.scene)
-			report.edit.changes = [...net, ...unseenChanges(report.edit.planChanges), ...goalChanges(basePlan, cur.plan, cur.scene).filter((g) => !net.includes(g))]
+			report.edit.changes = [...net, ...unseenChanges(report.edit.planChanges), ...goalChanges(basePlan, cur.plan, cur.scene, request.scene).filter((g) => !net.includes(g))]
 			report.edit.noChange = !report.edit.changes.length && report.edit.planChanges.length > 0
 		}
 		if (report.edit) delete report.edit.firstScene
@@ -5931,13 +5947,15 @@ export function createOrchestrator(deps) {
 			// (a goal that followed what replaced its things counts only while the version on the table still has it: a later turn's answer may
 			// have dropped it again, V8820 n2: "All 24 dominoes of the run fall" went with the repair turn and nothing said so)
 			const gone = basePlan.goals.filter((g) => isObj(g) && !(followed.has(g.label) && now1.some((x) => x.label === followed.get(g.label))) && !now1.some((x) => same(x, g) || (x.label && x.label === g.label)))
+			// (a goal without a label of its own, a module's goal as the scene keeps it, by its words with the names of its things)
+			const namesWas = Object.fromEntries((request.scene?.items ?? []).map((i) => [i.id, nameOfItem(i)]))
 			if (gone.length)
 				report.edit.goalsDropped = gone.map((g) => {
 					const missing = goalRefs(g).map((id) => request.scene.items.find((i) => i.id === id)).filter((it) => it && !cur.scene.items.some((x) => x.id === it.id))
 					// ("the dominoes were taken away": a row is many, never "the dominoes was")
 					const many = missing.length > 1 || MULTI_UNIT[missing[0]?.type] || (/[^s]s$/i.test(theName(missing[0] ?? {})) && !/\d/.test(theName(missing[0] ?? {})))
 					const why = missing.length ? `${andList(missing.map(theName))} ${many ? "were" : "was"} taken away` : overriddenBy(g, now1) ? "the new outcome makes it untrue" : "the change left it out"
-					return `“${String(g.label ?? goalLabel(g)).replace(/[.!]+$/, "")}” (${why})`
+					return `“${String(g.label ?? goalLabel(g, namesWas)).replace(/[.!]+$/, "")}” (${why})`
 				})
 		}
 

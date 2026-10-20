@@ -102,12 +102,15 @@ export const goalRefs = (g) => {
 	return [...goalItems(g), ...(g?.container ? [g.container] : []), ...(g?.target ? [g.target] : [])]
 }
 
-/** A plain label for a goal that has none. names: id -> what the user calls it. */
+/** A plain label for a goal that has none. names: id -> what the user calls it. A module's goal is said as its run's summary says it
+ *  (summaryWords: its thresholds, deadlines and an `expect: false`, "Unheated balloon does not rise 5 cm"), else by the module's label(). */
 export function goalLabel(g, names = {}) {
 	const n = (id) => names[id] ?? id
 	const k = goalKind(g)
 	const mod = GOAL_KINDS.includes(k) ? undefined : moduleGoal(k)
 	if (mod) {
+		const said = summaryWords(mod, g, n)
+		if (said) return said
 		try {
 			if (typeof mod.label === "function") return String(mod.label(g, n))
 		} catch {}
@@ -122,6 +125,29 @@ export function goalLabel(g, names = {}) {
 	return `${who} moves at least ${fmtM(g.min_m)}`
 }
 const fmtM = (m) => (Number.isFinite(m) ? (m >= 1 ? `${+m.toFixed(2)} m` : `${+(m * 100).toFixed(1)} cm`) : "?")
+/**
+ * A module goal's words as the summary of its run gives them to a goal without a label: its kind's summarize on a run with nothing in it
+ * (web/sim/items.js GoalCtx through the registry's goalCtx, every reading there but empty; that label is made from the goal's own fields),
+ * or null when the kind says nothing without a run, or nothing whole ("nan g"): a module's label() then. A label minted from the kind alone
+ * said the opposite of an `expect: false` goal ("Unheated balloon rises" for {lifts_off, expect: false}, reported "yes" while it sat on its
+ * stand) and left out its numbers ("rises" for at least 50 cm).
+ */
+function summaryWords(mod, g, n) {
+	const S = plugged()
+	if (typeof S?.goalCtx !== "function" || typeof mod.summarize !== "function") return null
+	try {
+		const goal = { ...g, kind: mod.kind }
+		delete goal.label
+		const scene = { items: goalRefs(goal).map((id) => ({ id: String(id), name: String(n(id)) })), goals: [] }
+		const ctx = S.goalCtx(scene, { solids: [], processes: [] }, { frames: [{ t: 0, placements: {} }] })
+		ctx.state = () => []
+		const entry = mod.summarize(ctx, goal)
+		const said = typeof entry?.label === "string" ? entry.label.trim() : ""
+		return said && !/\b(undefined|nan|null|infinity)\b/i.test(said) ? said : null
+	} catch {
+		return null
+	}
+}
 const wrapDeg = (rad) => {
 	let d = (rad * R2D) % 360
 	if (d > 180) d -= 360

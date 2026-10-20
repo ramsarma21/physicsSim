@@ -892,7 +892,9 @@ of 2026-10-19 16:43, in Python and in web/sim). How to write one: the guide and 
   knobs, examples and the settings (nothing changes without modules); past 160k characters the plan and edit prompts carry its core tier and the full
   sections of the modules a request uses (`promptCatalog`); plan, refine and edit prompts get each module's own lines (`moduleSnippets`); plans and edits
   validate module goals by their `fields` (and read their spellings), link props, `plan.settings` and `set_scene {settings}`; the solver resolves a link
-  named by id or by name, puts module goals into the scene's goals and keeps the settings (`place.containers`, `place.interior`, `place.float` for module
+  named by id or by name, puts module goals into the scene's goals (with the plan's own label or none: one without a label is said in its own
+  words, its kind's summary of its fields, "Unheated balloon does not rise 5 cm": by the run's summary, and by goalLabel for the AI's list, the card
+  and the change lines, never a label minted from its kind alone that drops an `expect: false` or its numbers) and keeps the settings (`place.containers`, `place.interior`, `place.float` for module
   containers; `place.held` for a fixed thing the module's view holds up, a fan on a lab stand); ai/goals.mjs checks module goals on a run or from the summary; the edit step's rich digest lists each item's readings ("temperature 20.0
   → 58.0 °C (reaches its end value at 0.90 s)") and the modules' events; the make-it-work search turns a module's `knobs` (rel, m, deg, abs, link,
   choice, bool; a knob on `x` or `y` moves the item by its own `steps` in metres, default 2-6 mm, never back over what the person moved: a balloon

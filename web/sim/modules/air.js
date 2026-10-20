@@ -748,6 +748,13 @@ function _last(ctx, iid, key) {
 	return v && v.length ? v[v.length - 1] : null
 }
 const _label = (g, text) => (truthy(g.label) ? g.label : text)
+// (for the AI's label of a goal without one, the same words as these summaries: a number or null, and a length as web/sim/items.js _short_m)
+const _fin = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null)
+function _m_text(m) {
+	let t = m >= 1 ? fmtF(m, 2) : fmtF(m * 100, 1)
+	if (t.includes(".")) t = t.replace(/0+$/, "").replace(/\.$/, "")
+	return m >= 1 ? `${t} m` : `${t} cm`
+}
 
 export function pops(ctx, g) {
 	if (!ctx.known(g.item)) return null
@@ -1155,21 +1162,21 @@ export const plugin = {
 	goals: [
 		{ kind: "pops", aliases: ["pop", "bursts", "burst", "popped", "balloon_pops"], fields: { item: "item", before_s: "number?", expect: "bool?" },
 			about: "pops {item, before_s?, expect?}: a party-balloon pops (overfilled, pricked, or in a vacuum), by before_s if given; expect false: it must NOT pop (a control)",
-			label: (g, n) => `${n(g.item)} pops${Number.isFinite(g.before_s) ? ` by ${g.before_s} s` : ""}`, summarize: pops, aim: aim_pops,
+			label: (g, n) => `${n(g.item)} ${g.expect === false ? "does not pop" : "pops"}${_when(_fin(g.before_s))}`, summarize: pops, aim: aim_pops,
 			sample: (scene, pick) => {
 				const b = pick1(scene, ["party-balloon"], pick)
 				return b ? { kind: "pops", item: b.id, ...(pick([true, false]) ? { before_s: pick([1, 3, 9]) } : {}) } : null
 			} },
 		{ kind: "lifts_off", aliases: ["rises_in_air", "floats_up", "goes_up", "ascends", "floats_away", "balloon_rises"], fields: { item: "item", at_least_m: "number?", expect: "bool?" },
 			about: "lifts_off {item, at_least_m?, expect?}: it goes UP in the air: its moving parts rise at least at_least_m (default 0.2 m) above where they started, at some time (a helium balloon, a hot-air balloon; not mechanics' rises, which is a machine lifting its load); expect false: it must NOT rise that much (an unheated or air-filled control)",
-			label: (g, n) => `${n(g.item)} rises`, summarize: rises,
+			label: (g, n) => (g.expect === false ? `${n(g.item)} does not rise ${_m_text(_fin(g.at_least_m) ?? 0.2)}` : `${n(g.item)} rises at least ${_m_text(_fin(g.at_least_m) ?? 0.2)}`), summarize: rises,
 			sample: (scene, pick) => {
 				const b = pick1(scene, ["party-balloon", "hot-air-balloon", "kite"], pick)
 				return b ? { kind: "lifts_off", item: b.id, ...(pick([true, false]) ? { at_least_m: pick([0.1, 0.5, 2]) } : {}) } : null
 			} },
 		{ kind: "crushes", aliases: ["crush", "crushed", "implodes", "is_crushed", "can_crushes"], fields: { item: "item", before_s: "number?", expect: "bool?" },
 			about: "crushes {item, before_s?, expect?}: a steam-can is crushed by the air (at least 5 % of its volume pushed in); expect false: it must NOT be (the unheated control)",
-			label: (g, n) => `${n(g.item)} is crushed`, summarize: crushes,
+			label: (g, n) => `${n(g.item)} ${g.expect === false ? "is not crushed" : "is crushed"}${_when(_fin(g.before_s))}`, summarize: crushes,
 			sample: (scene, pick) => {
 				const b = pick1(scene, ["steam-can"], pick)
 				return b ? { kind: "crushes", item: b.id } : null
@@ -1197,7 +1204,7 @@ export const plugin = {
 			} },
 		{ kind: "kite_flies", aliases: ["kite_aloft", "kite_stays_up", "flies_kite", "kite_flies_high"], fields: { item: "item", at_least_m: "number?", expect: "bool?" },
 			about: "kite_flies {item, at_least_m?, expect?}: a kite stays at least at_least_m (default 0.5 m) above its stake through the last 30 % of the run; expect false: it must NOT (no wind)",
-			label: (g, n) => `${n(g.item)} flies`, summarize: kite_flies,
+			label: (g, n) => (g.expect === false ? `${n(g.item)} does not stay up ${_m_text(_fin(g.at_least_m) ?? 0.5)} above its stake` : `${n(g.item)} stays up at least ${_m_text(_fin(g.at_least_m) ?? 0.5)} above its stake`), summarize: kite_flies,
 			sample: (scene, pick) => {
 				const b = pick1(scene, ["kite"], pick)
 				return b ? { kind: "kite_flies", item: b.id, ...(pick([true, false]) ? { at_least_m: pick([0.3, 1]) } : {}) } : null
@@ -1225,7 +1232,11 @@ export const plugin = {
 			} },
 		{ kind: "jets", aliases: ["balloon_rocket", "shoots_off", "jets_away", "rockets_away", "air_jet"], fields: { item: "item", toward: "string?", at_least_m: "number?", expect: "bool?" },
 			about: "jets {item, toward?: left|right|up|down, at_least_m?, expect?}: an UNTIED party-balloon (tied false) flies on its own air's jet at least at_least_m (default 0.5 m) toward that side (sideways either way if not given); a tied one never passes; expect false: it must NOT (the tied control)",
-			label: (g, n) => `${n(g.item)} jets ${g.toward ?? "sideways"}`, summarize: jets,
+			label: (g, n) => {
+				const where = ["left", "right", "up", "down"].includes(g.toward) ? ` ${g.toward}` : " sideways"
+				const least = _m_text(_fin(g.at_least_m) ?? 0.5)
+				return g.expect === false ? `${n(g.item)} does not jet${where} ${least}` : `${n(g.item)} jets${where} at least ${least} on its own air`
+			}, summarize: jets,
 			sample: (scene, pick) => {
 				const b = pick1(scene, ["party-balloon"], pick)
 				return b ? { kind: "jets", item: b.id, ...(pick([true, false]) ? { toward: pick(["left", "right", "up", "down"]) } : {}), ...(pick([true, false]) ? { at_least_m: pick([0.1, 0.5, 2]) } : {}) } : null
