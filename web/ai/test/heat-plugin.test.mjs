@@ -164,7 +164,9 @@ test("make it work: a lamp aimed at the wrong cube is re-aimed (the module's lin
 		{ id: "p2", type: "plate", x: 1.4, y: 0, props: {} },
 		cube("lit", 0.8, 0.02, 0.0045, "Lit cube"),
 		cube("dark", 1.4, 0.02, 0.0045, "Dark cube"),
-		{ id: "lamp", type: "lamp", x: 0.6, y: 0, props: { target: "dark", power_w: 100 } }
+		// (the lamp halfway between the cubes, so its aim decides which melts first: at x 0.6, 20 cm from the lit cube and 80 cm from the
+		// dark one, the spill outside its 40° beam warmed the near cube more than the beam warmed the far one, whatever it was aimed at)
+		{ id: "lamp", type: "lamp", x: 1.1, y: 0, props: { target: "dark", power_w: 100 } }
 	], [{ kind: "melts_first", a: "lit", b: "dark" }], 10, { room_temp: 22, time_lapse: 600 })
 	const R = run(s)
 	assert.equal(R.summary.goals[0].ok, false, "the lamp warms the other cube")
