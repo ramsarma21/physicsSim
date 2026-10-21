@@ -1049,11 +1049,28 @@ class GoalCtx:
         return None
 
 
+def _weld_groups(doc, sids):
+    """The solids sids (ids, in their order) by the rigid body each is part of: a solid with a parent and no pivot is welded to it, one
+    body with it (the engine's weld groups, CONTRACT.md "Engine batch"); each group in the order its first solid comes, its solids in theirs."""
+    by_id = {s["id"]: s for s in doc["solids"]}
+
+    def root(sid):
+        s = by_id[sid]
+        while s.get("parent") is not None and s.get("pivot") is None and s["parent"] in by_id:
+            s = by_id[s["parent"]]
+        return s["id"]
+    out = {}
+    for sid in sids:
+        out.setdefault(root(sid), []).append(sid)
+    return list(out.values())
+
+
 def summarize(scene, doc, track):
     """Plain-language results: the goals, each moving item's story, and the first hits between items in order. A goal is
     {kind: "in", item, container} (it ends between the container's walls), {kind: "falls", item | items: [id]} (every rigid body of them ends
     fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given),
-    {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), {kind: "off", item}
+    {kind: "moves", item, min_m?} (its rigid body that moved most, the mean of that weld group's parts, ends at least min_m, default 5 cm,
+    from where it started), {kind: "off", item}
     (it ends off the table) or {kind: "walls", item, container} (it ends between a cup's, a jar's or a mug's own walls: walls_inside), as
     ai/goals.mjs checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others)."""
     items = {i["id"]: i for i in scene.get("items", [])}
@@ -1157,10 +1174,15 @@ def summarize(scene, doc, track):
             least = _num(g.get("min_m"))
             least = 0.05 if least is None else least
             d = 0.0
-            if sids:
-                c0 = (sum(fr[0]["placements"][i]["x"] for i in sids) / len(sids), sum(fr[0]["placements"][i]["y"] for i in sids) / len(sids))
-                c1 = (sum(fr[-1]["placements"][i]["x"] for i in sids) / len(sids), sum(fr[-1]["placements"][i]["y"] for i in sids) / len(sids))
-                d = math.hypot(c1[0] - c0[0], c1[1] - c0[1])
+            # (how far its rigid body that moved most went: the mean of each weld group's parts, the most of those. An Atwood machine's or a
+            # pulley lift's two weights move opposite ways, and the mean of all of an item's parts stayed where it was; a one-body thing is
+            # as before, bit for bit)
+            for grp in _weld_groups(doc, sids):
+                c0 = (sum(fr[0]["placements"][i]["x"] for i in grp) / len(grp), sum(fr[0]["placements"][i]["y"] for i in grp) / len(grp))
+                c1 = (sum(fr[-1]["placements"][i]["x"] for i in grp) / len(grp), sum(fr[-1]["placements"][i]["y"] for i in grp) / len(grp))
+                h = math.hypot(c1[0] - c0[0], c1[1] - c0[1])
+                if h > d:
+                    d = h
             goals.append({"label": g.get("label") or f"{name(g['item'])} moves at least {_short_m(least)}", "ok": bool(sids) and d >= least,
                           "kind": "moves", "item": g["item"], "moved_m": round(d, 4)})
         elif kind == "off" and known(g.get("item")):

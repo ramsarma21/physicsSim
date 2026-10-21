@@ -16,7 +16,9 @@
 //                                              wheels must tip over (a car that drove down a ramp has not fallen). The count is of bodies:
 //                                              "5 of 7 fell" for a row of 7, "7 of 10 fell" for 10 pins.
 //   kind "hits"   {item, target, before_s?}    something of item touches something of target during the run (an impact), by before_s if given
-//   kind "moves"  {item, min_m}                the item ends at least min_m from where it started (the mean of its moving parts)
+//   kind "moves"  {item, min_m}                the item ends at least min_m from where it started (its rigid body that moved most: the mean
+//                                              of each weld group's parts, the most of those; an Atwood machine's two weights move opposite
+//                                              ways, and the mean of all its parts stayed put)
 //   kind "off"    {item}                       the item ends off the table: the mean of its moving parts past the table top's ends, or below
 //                                              its top (it fell off the edge: "blows the ping-pong ball off the edge", "knocks it onto the floor")
 //
@@ -299,9 +301,14 @@ function exactGoal(kind, g, T) {
 	if (kind === "moves") {
 		const sids = T.moving(g.item)
 		if (!sids.length) return { ok: false, detail: "nothing of it can move" }
-		const c0 = mid(sids.map((s) => T.start(s)))
-		const c1 = mid(sids.map((s) => T.end(s)))
-		const d = c0 && c1 ? Math.hypot(c1.x - c0.x, c1.y - c0.y) : 0
+		// (its rigid body that moved most: machines/items.py summarize does the same)
+		let d = 0
+		for (const grp of T.rigid(g.item)) {
+			const c0 = mid(grp.map((s) => T.start(s)))
+			const c1 = mid(grp.map((s) => T.end(s)))
+			const h = c0 && c1 ? Math.hypot(c1.x - c0.x, c1.y - c0.y) : 0
+			if (h > d) d = h
+		}
 		const min = Number.isFinite(g.min_m) ? g.min_m : 0.05
 		return { ok: d >= min, detail: `ends ${fmtM(d)} from where it started (needs ${fmtM(min)})`, moved_m: Math.round(d * 1e4) / 1e4 }
 	}
@@ -460,5 +467,7 @@ function trackTools(doc, track) {
 		if (!p) return null
 		return { y: p.y + (t.body.height ?? 0) / 2, x0: p.x - (t.body.width ?? 0) / 2, x1: p.x + (t.body.width ?? 0) / 2 }
 	}
-	return { solidsOf: (id) => byItem.get(id) ?? [], moving: (id) => movingBy.get(id) ?? [], start: (sid) => f0[sid] ?? null, end, impacts: track.impacts ?? [], bodies: bodiesOf, fell, tipAngle, tableTop }
+	/** An item's moving solids by the rigid body each is part of (its weld groups, in the order the document lists them): [[solid id]]. */
+	const rigid = (id) => (groupsBy.get(id) ?? []).map((gr) => gr.members.map((m) => m.id))
+	return { solidsOf: (id) => byItem.get(id) ?? [], moving: (id) => movingBy.get(id) ?? [], rigid, start: (sid) => f0[sid] ?? null, end, impacts: track.impacts ?? [], bodies: bodiesOf, fell, tipAngle, tableTop }
 }
