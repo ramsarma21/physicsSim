@@ -19,6 +19,9 @@ number of its own into the document. Sources (keys of coverage.md §7 and spec/m
              G ≈ 0.4-0.6 MPa; elongation at break 500-700 %)
   [BLEVINS]  Blevins, Formulas for Natural Frequency and Mode Shape, 1979 (a clamped-free beam's first mode: modal mass m/4 at its tip)
   [HOERNER]  Hoerner, Fluid-Dynamic Drag, 1965 (a cylinder side-on: C_d ≈ 1.2 at Re 10³-10⁵)
+  [ERNST]    Ernst, Der Bauingenieur 40, 52-55 (1965): a sagging cable's equivalent modulus E/(1 + (w·L)²·E·A/(12·T³)) (the string telephone)
+  [ANSI-S35] ANSI S3.5-1997, Table 3: speech 1 m away, normal 62.35, raised 68.34, loud 74.85, shout 82.30 dB
+  [PEARSONS] Pearsons, Bennett & Fidell, Speech levels in various noise environments, EPA-600/1-77-025 (1977): casual speech about 52-56 dB(A) at 1 m
 Levels at 1 m and decay times marked "provisional" are typical values chosen to match the cited ranges, not measurements of a
 particular object.
 """
@@ -46,6 +49,7 @@ def register_all(g):
     _listeners()
     _wave_lines()
     _tank()
+    _telephone()
     register_build_hook(_build_hook)
     for kind, fn in (("sounds", goal_sounds), ("higher", goal_higher), ("louder", goal_louder), ("hears", goal_hears), ("echo", goal_echo),
                      ("wave_reaches", goal_reaches), ("period", goal_period), ("jumps", goal_jumps), ("reflects", goal_reflects),
@@ -880,6 +884,88 @@ def _tank():
                       anchor="the middle of the bottom of its legs", facts="1 cm deep · 5 Hz → λ ≈ 5.6 cm"))
 
 
+# ---------------------------------------------------------------- string telephone (engine6 crossmod)
+# A string telephone: two paper cups whose bottoms a string joins, held level and pulled apart by two children. The engine carries a source at
+# one cup's mouth (its own voice, or a speaker or fork put there) to a meter at the other cup's mouth (an ear held to it) along the string
+# (tooling/src/sim/waves.ts telephoneOf: Ernst's sagging-string modulus [ERNST], a lumped cup-string-cup model at 1 kHz; provisional), as well
+# as through the air; slack (no pull) or pinched, the string carries nothing.
+# string -> (diameter m, density kg/m³, Young's modulus Pa, loss factor along it): cotton string (kite string, butcher's twine) 1 mm, 0.6 g/m,
+# twisted cotton about 2 GPa and 0.08 (provisional); nylon fishing line 0.5 mm, 1140 kg/m³, 3 GPa [CRC: nylon 6,6 2-4 GPa], 0.03 (provisional);
+# steel wire 0.3 mm, 7850 kg/m³, 200 GPa [CRC], 0.001 (provisional)
+PHONE_STRINGS = {"cotton string": (0.001, 764.0, 2e9, 0.08), "fishing line": (0.0005, 1140.0, 3e9, 0.03), "wire": (0.0003, 7850.0, 200e9, 0.001)}
+# a voice 1 m away (dB): a soft whisper about 40 (provisional), quiet (casual) speech 52 [PEARSONS], normal 62, loud 75, a shout 82 [ANSI-S35]
+VOICES = {"none": 0.0, "whisper": 40.0, "quiet": 52.0, "normal": 62.0, "loud": 75.0, "shout": 82.0}
+# a 9 oz (266 mL) paper cup: 9 cm tall, 7.6 cm across its mouth; its bottom 5.3 cm across, 0.66 g of 0.35 mm paperboard (about 0.3 kg/m²), its
+# first resonance as a clamped plate (Leissa, Vibration of Plates, NASA SP-160 (1969): f = 10.21/(2π·a²)·√(D/(ρ·h)), paperboard E ≈ 4 GPa,
+# provisional) about 590 Hz
+PHONE_CUP = {"h": 0.09, "mouth": 0.076, "r": 0.0265, "m": 0.00066, "f": 590.0, "v": 0.000266}
+# the voice's partials: a whisper is breath noise (most of it 1-4 kHz: as partials of a nominal 1 kHz); a voice a child's or a woman's 220 Hz
+# with its harmonics falling about 6 dB an octave over 500 Hz (provisional)
+WHISPER_PARTIALS = [(1.0, 1.0, 0.03), (1.5, 0.9, 0.03), (2.0, 0.8, 0.03), (2.5, 0.6, 0.03), (3.0, 0.45, 0.03), (4.0, 0.3, 0.03)]
+VOICE_PARTIALS = [(1.0, 1.0, 0.03), (2.0, 1.0, 0.03), (3.0, 0.8, 0.03), (4.0, 0.6, 0.03), (5.0, 0.5, 0.03), (6.0, 0.4, 0.03), (8.0, 0.25, 0.03),
+                  (10.0, 0.18, 0.03), (12.0, 0.12, 0.03), (15.0, 0.08, 0.03)]
+
+
+def build_telephone(c, P):
+    c.ca, c.sa, c.a = 1.0, 0.0, 0.0      # (always level: the two children hold it level)
+    L, T = P["length"], P["pull"]
+    d, rho, E, eta = PHONE_STRINGS[P["string"]]
+    w = rho * (math.pi * d * d / 4) * c.settings["gravity"]
+    # its sag (a parabola) under the run's gravity, at most 15 % of its length (slack: it hangs loose) and no lower than 5 mm over y = 0 (it would lie
+    # on the table there); the cups' bottoms closer than the string is long by what the sag takes up (a parabola's length: chord + 8·sag²/(3·chord))
+    sag = min(0.15 * L, max(0.005, c.oy - 0.005))
+    if T > 0:
+        sag = min(sag, w * L * L / (8 * T))
+    D = L - 8 * sag * sag / (3 * L)
+    H, M = PHONE_CUP["h"], PHONE_CUP["mouth"]
+    ghost = dict(kind="static", material=c.mat(base="hollow plastic", overrides={}), ghost=True, stand="self")
+    talk = c.slab("cup-talk", H, M, M, -D / 2 - H / 2, 0.0, look="paper cup", words="a paper cup to talk into", **ghost)
+    c.slab("cup-listen", H, M, M, D / 2 + H / 2, 0.0, look="paper cup", words="a paper cup to listen at", **ghost)
+    # (its sag rides on the string's solid for the view, which draws it hanging so: render only)
+    line = c.slab("string", max(0.01, D), 0.004, 0.004, 0.0, 0.0, look="steel" if P["string"] == "wire" else "string",
+                  words=f"a {P['string']} pulled between the cups" if T > 0 else f"a slack {P['string']} between the cups", sag=R6(sag), **ghost)
+    lp1 = VOICES[P["voice"]]
+    if lp1 > 0:
+        whisper = P["voice"] == "whisper"
+        _source(c, talk, (-H / 2, 0.0), 1000.0 if whisper else 220.0, WHISPER_PARTIALS if whisper else VOICE_PARTIALS, lp1, [[R6(P["talk_at"]), 1.0]], 0.0,
+                hold=P["talk_for"], show=P["show_waves"], part="voice")
+    c.process("sound", "line", role="telephone", solid=line, a={"x": R6(-D / 2 - H), "y": 0.0}, b={"x": R6(D / 2 + H), "y": 0.0}, length=R6(L),
+              diameter=d, rho=rho, E=E, eta=eta, tension=R6(T), pinched=bool(P["pinched"]),
+              cup={"r": PHONE_CUP["r"], "m": PHONE_CUP["m"], "f": PHONE_CUP["f"], "v": PHONE_CUP["v"]}, reach=0.5, sag=R6(sag))
+
+
+def _telephone():
+    add_look("paper cup", fill="#f3efe6", shade="#c9c2b3", roughness=0.75, metalness=0.0, clearcoat=0.0)
+    add_look("string", fill="#e9dfc6", shade="#b9ad91", roughness=0.9, metalness=0.0, clearcoat=0.0)
+    register(ItemType("string-telephone", "String telephone", CAT, build_telephone, dynamic=False, module="waves",
+                      props=[Prop("length", "String length", 3.0, 0.5, 20.0, 0.05, "m", "From one cup's bottom to the other's"),
+                             Prop("pull", "Pull on the string", 5.0, 0.0, 30.0, 0.05, "N",
+                                  "How hard the two pull the cups apart: 2-10 N keeps it taut; under about 0.2 N it droops and carries little; 0: slack, it hangs loose and carries nothing"),
+                             Prop("pinched", "Pinched", False, kind="bool", help="A finger and thumb pinch the string: it cannot vibrate past them, so nothing gets through"),
+                             Prop("string", "String", "cotton string", kind="choice", choices=list(PHONE_STRINGS),
+                                  help="cotton string 1 mm; nylon fishing line 0.5 mm; steel wire 0.3 mm (carries the most)"),
+                             Prop("voice", "Talks", "whisper", kind="choice", choices=list(VOICES),
+                                  help="How loud the child talks into the left cup (1 m away: a whisper about 40 dB, quiet 52, normal 62, loud 75, a shout 82); none: no one talks (put a speaker or a fork at the cup)"),
+                             Prop("talk_at", "Talks at", 0.5, 0.0, 20.0, 0.05, "s"), Prop("talk_for", "Talks for", 2.0, 0.2, 20.0, 0.05, "s"),
+                             Prop("show_waves", "Sound lines", True, kind="bool", help="Faint arcs spreading from the talking cup while the child talks")],
+                      readouts=SOURCE_READOUTS() + [Readout("carries", "Carries sound", "", 0, "Whether the string carries sound (taut, not pinched)", words={0: "no", 1: "yes"}),
+                                                     Readout("sag_mm", "String sag", "mm", 0, "How far its middle hangs below a straight line"),
+                                                     Readout("loss_db", "Lost cup to cup", "dB", 1, "How much quieter it is at an ear held to the far cup than at the talking cup's mouth (at 1 kHz)"),
+                                                     Readout("string_ms", "Speed along the string", "m/s", 0, "How fast the sound runs along the string")],
+                      tags=["string telephone", "tin can telephone", "cup telephone", "cup phone", "telephone", "string", "sound travels", "vibration",
+                            "medium", "solid", "cups", "talk", "whisper", "taut", "slack"],
+                      description="A string telephone: two paper cups joined by a string between their bottoms, held level and pulled apart. A child talks "
+                                  "(or whispers) into the left cup; pulled taut, the string carries the vibration along it to the right cup, where an ear (a "
+                                  "sound meter's microphone put at that cup's mouth) hears it far better than through the air. Slack or pinched, it carries "
+                                  "nothing: only the air brings the voice, much fainter.",
+                      source="A sagging string's equivalent modulus [ERNST]; a lumped cup-string-cup model at 1 kHz (provisional): 9 oz paper cups (bottom Ø 53 mm, "
+                             "0.66 g, its own resonance near 590 Hz), cotton string 1 mm (0.6 g/m, about 2 GPa, loss factor 0.08), nylon fishing line 0.5 mm "
+                             "(3 GPa [CRC], 0.03), steel wire 0.3 mm (200 GPa [CRC], 0.001); a voice 1 m away: whisper about 40 dB (provisional), quiet 52 "
+                             "[PEARSONS], normal 62, loud 75, shout 82 dB [ANSI-S35].",
+                      anchor="the middle of its string, at the cups' height", facts="3 m of cotton string, pulled with 5 N: about 24 dB down cup to cup",
+                      edit=[{"kind": "length", "prop": "length"}]))
+
+
 # ---------------------------------------------------------------- goal kinds (web/sim/modules/waves.js has the same, number for number)
 def _last(v):
     return v[-1] if isinstance(v, list) and v else None
@@ -973,8 +1059,8 @@ def goal_louder(ctx, g):
 
 
 def goal_hears(ctx, g):
-    """{kind: "hears", meter, source, at_least_db?}: the source's sound reaches the meter at least as loud as the quiet room (so the reading
-    rises 3 dB or more), or at least at_least_db."""
+    """{kind: "hears", meter, source, at_least_db?, expect?}: the source's sound reaches the meter at least as loud as the quiet room (so the reading
+    rises 3 dB or more), or at least at_least_db; expect false: it does not (a slack string telephone's far cup: engine6 crossmod)."""
     m, s = g.get("meter"), g.get("source")
     if not (ctx.known(m) and ctx.known(s)):
         return None
@@ -985,6 +1071,10 @@ def goal_hears(ctx, g):
     least = ctx.num(g.get("at_least_db"))
     need = floor if least is None else least
     ok = peak is not None and at is not None and at >= 0 and peak >= need
+    if g.get("expect") is False:
+        return {"label": g.get("label") or f"{ctx.name(m)} does not hear {ctx.name(s)}" + (f" at {_trim(least, 1)} dB or more" if least is not None else ""),
+                "ok": not ok, "kind": "hears", "meter": m, "source": s, "db": None if peak is None else round(peak, 1),
+                "t": None if at is None or at < 0 else round(at, 4)}
     return {"label": g.get("label") or f"{ctx.name(m)} hears {ctx.name(s)}" + (f" at {_trim(least, 1)} dB or more" if least is not None else ""),
             "ok": bool(ok), "kind": "hears", "meter": m, "source": s, "db": None if peak is None else round(peak, 1),
             "t": None if at is None or at < 0 else round(at, 4)}

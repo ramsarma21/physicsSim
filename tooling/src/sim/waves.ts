@@ -388,6 +388,84 @@ export interface Carrier {
 	readonly item: string
 }
 
+/**
+ * A string telephone (engine6 crossmod): two cups whose bottoms a taut string joins. Sound at one cup's mouth (a voice into it) pushes its
+ * bottom, which pulls the string along its length; the longitudinal wave runs to the other cup and drives its bottom, which presses the air in
+ * it, at the ear held to it. `a`, `b`: the cups' mouths (world); `length` of string, `speed` along it (m/s), `ratio` the pressure at the ear on
+ * the far cup per Pa at the near cup's mouth (`telephoneOf`); a source within `reach` of one mouth is carried to a meter within `reach` of the
+ * other, each way (nothing when the string is slack or pinched: `ratio` 0).
+ */
+export interface Telephone {
+	readonly a: Pt
+	readonly b: Pt
+	readonly length: number
+	readonly speed: number
+	readonly ratio: number
+	readonly reach: number
+	readonly item: string
+}
+
+/** What a string telephone's record says of it (machines/mod_waves.py build_telephone): its string's length, diameter (m), density,
+ *  Young's modulus and loss factor along it, its pull (N), whether a finger pinches it; each cup's bottom (radius, mass, its own first
+ *  resonance as a clamped plate) and the air the ear closes in it. */
+export interface TelephoneSpec {
+	readonly length: number
+	readonly diameter: number
+	readonly rho: number
+	readonly E: number
+	readonly eta: number
+	readonly tension: number
+	readonly pinched: boolean
+	readonly cupR: number
+	readonly cupM: number
+	readonly cupF: number
+	readonly cupV: number
+	/** its sag as the builder hung it (m: at most 15 % of its length, never below what is under it); the parabola's when not given */
+	readonly sag?: number
+}
+
+/** ρ₀c² of the room's air (Pa): its adiabatic bulk modulus γ·p₀ = 1.4 × 101 325 (Kinsler et al. 2000 §5.5): what the air in a closed cup pushes
+ *  back with when its bottom moves. */
+export const AIR_BULK = 1.4 * 101325
+
+/** The frequency a telephone's carrying is reckoned at (Hz): speech's middle, where the ear hears words. */
+export const TELEPHONE_F = 1000
+
+/**
+ * A string telephone's string and its carrying, a lumped two-port at TELEPHONE_F (provisional: a model with each material's typical numbers,
+ * not a measured telephone):
+ *   - a sagging string is softer along its length: Ernst's equivalent modulus E/(1 + (w·L)²·E·A/(12·T³)) (H. J. Ernst, Der Bauingenieur 40,
+ *     52-55 (1965); w its weight per metre, μ·g), so a slack string yields to the cup's push and carries little, and none at all with no pull;
+ *   - its longitudinal wave runs at √(E_eq/ρ) and its end pushes back with A·√(E_eq·ρ) (Kinsler et al. 2000 §3.5: a thin bar); its own
+ *     loss factor η takes e^(−α·L) on the way, α = η·ω/(2·√(E/ρ)) (Np/m);
+ *   - each cup's bottom is a small plate: Z_d = ω·m·|1 − (f_r/f)²| (its mass above its own first resonance f_r): the near cup's sound pushes it
+ *     with p·S (S = π·r²), driving the string end at p·S/|Z_d + Z_s|; at the far end the wave drives that bottom at 2·Z_s/|Z_s + Z_d| of its own
+ *     speed; the bottom's motion presses the air the ear closes in that cup (its volume V): p = ρ₀c²·S·ξ/V.
+ *   ratio = 2·S²·Z_s·ρ₀c² / (ω·V·(Z_d² + Z_s²)) · e^(−α·L): about 22 dB down for a short taut cotton string, 2.7 dB more each metre.
+ *   Pinched (a finger stops the string) or with no pull: nothing.
+ * The sag μ·g·L²/(8T) (a parabola), at most 15 % of its length (the builder's own, `sag`, never below what is under it, when it gives one).
+ */
+export const telephoneOf = (t: TelephoneSpec, gravity: number) => {
+	const area = (Math.PI * t.diameter * t.diameter) / 4
+	const mu = t.rho * area
+	const w = mu * gravity
+	const L = t.length
+	const T = t.tension
+	const sag = t.sag !== undefined && Number.isFinite(t.sag) && t.sag >= 0 ? t.sag : T > 0 ? Math.min(0.15 * L, (w * L * L) / (8 * T)) : 0.15 * L
+	if (!(T > 0) || t.pinched || !(L > 0) || !(area > 0)) return { carries: false, speed: 0, ratio: 0, sag, eeq: 0 }
+	const EA = t.E * area
+	const eeq = t.E / (1 + ((w * L) * (w * L) * EA) / (12 * T * T * T))
+	const c = Math.sqrt(eeq / t.rho)
+	const Zs = area * Math.sqrt(eeq * t.rho)
+	const omega = 2 * Math.PI * TELEPHONE_F
+	const S = Math.PI * t.cupR * t.cupR
+	const q = t.cupF / TELEPHONE_F
+	const Zd = omega * t.cupM * Math.abs(1 - q * q)
+	const alpha = (t.eta * omega) / (2 * Math.sqrt(t.E / t.rho))
+	const ratio = ((2 * S * S * Zs * AIR_BULK) / (omega * t.cupV * (Zd * Zd + Zs * Zs))) * Math.exp(-alpha * L)
+	return { carries: ratio > 0, speed: c, ratio, sag, eeq }
+}
+
 /** Pieces fainter than this share of the meter's room level are dropped once they have arrived and are dying away. */
 const NEGLIGIBLE = 1e-7
 
@@ -415,6 +493,8 @@ export class SoundField {
 	readonly step: number
 	/** The bodies of water a hydrophone may be in. */
 	waters: readonly Water[] = []
+	/** The string telephones (a source at one cup heard at the other). */
+	telephones: readonly Telephone[] = []
 	private readonly pieces: Piece[][]
 	private readonly w: number[]
 	private readonly B: number[]
@@ -468,6 +548,21 @@ export class SoundField {
 			}
 		}
 		const out: Path[] = this.speed > 0 ? airPaths(s, m, this.walls, this.speed) : []
+		// a string telephone: a source within reach of one cup's mouth heard by a meter within reach of the other's (each way): in at the near
+		// mouth (1/r from the source, r ≥ 5 cm), along the string, out at the ear on the far cup (5 cm from its mouth, then 1/r); its time the
+		// two air legs at the air's speed and the string at its own (none in a vacuum: no air takes the voice to the cup)
+		if (this.speed > 0)
+			for (const tl of this.telephones) {
+				if (!(tl.ratio > 0)) continue
+				for (const [near, far] of [[tl.a, tl.b], [tl.b, tl.a]] as const) {
+					const rin = Math.hypot(s.x - near.x, s.y - near.y)
+					const rout = Math.hypot(m.x - far.x, m.y - far.y)
+					if (rin > tl.reach || rout > tl.reach) continue
+					const time = (rin + rout) / this.speed + tl.length / tl.speed
+					const length = rin + tl.length + rout
+					out.push({ length, speed: length / time, gain: (tl.ratio * NEAR) / (Math.max(NEAR, rin) * Math.max(NEAR, rout)), spread: false, via: [tl.item], medium: "string" })
+				}
+			}
 		if (listen !== "touch") return out
 		for (const ci of shared) {
 			const cr = this.carriers[ci]

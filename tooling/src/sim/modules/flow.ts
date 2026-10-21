@@ -47,6 +47,9 @@
  * carried by its floor's solid (SolidHandle.carry: a kitchen scale under it reads the cup and what it holds). Liquid that lands on a slope
  * steeper than about 6° runs on down it (a ramp, a slide into a bucket); only on a near-level surface does it come to rest as a puddle.
  * A catalog container's overflow_ml reading: what has gone over its rim.
+ * Containers inside containers (engine6 crossmod): a particle inside several belongs to the innermost (the highest floor), and one over a container's
+ * opening whose rim stands above the surface round it falls into it: a tap or a pitcher fills a bowl floating in a fluids tank, a cup standing in a
+ * bucket. A puddle on a kitchen scale's platform is weighed (puddlesOn).
  */
 import { Basin, type BasinLayer, type Collider, type Dye, dyePlus, Emitter, FlowSim, type FlowLiquid, flatCentroid, clipBelowFlat, makeCollider, orificeFlow, pipeSpeed, scatterOf, seenOf, shapeCollider, tintOf, weirFlow } from "#sim/flow.ts"
 import { type FluidBody, type FluidShape, fluidPushes, type RegionState } from "#sim/fluids.ts"
@@ -643,6 +646,8 @@ interface Puddle {
 	/** the surface's slope (rad, counter-clockwise; within about 6° of level), so it is drawn along it */
 	readonly ang: number
 	vol: number
+	/** kg of liquid in it (each particle's own liquid's density: a kitchen scale's platform weighs it, puddlesOn) */
+	kg: number
 	xv: number
 	x0: number
 	x1: number
@@ -1282,14 +1287,23 @@ export class Flow {
 				this.lands.set(src, was === undefined ? x : was + (x - was) / 30)
 			}
 			let inside = false
+			// (inside two containers at once, a bowl floating in a tank, a cup standing in a bucket: it is in the inner one, the one whose floor is
+			// the higher, whose walls keep it from the outer one's liquid: only that one's surface takes it; engine6 crossmod)
+			let home = -1
 			for (let k = 0; k < this.stores.length; k++) {
 				const st = this.stores[k] as Store
 				if (st.key === src) continue
 				const bb = this.boxes[k] as number[]
 				if (x < (bb[0] as number) || x > (bb[1] as number) || y < (bb[2] as number) || y > (bb[3] as number)) continue
 				if (!st.inside(x, y)) continue
+				if (home < 0 || st.low() > (this.stores[home] as Store).low()) home = k
+			}
+			if (home >= 0) {
+				const st = this.stores[home] as Store
 				inside = true
 				if (y > st.top() + 1.2 * rc) continue
+				// (over another container's opening whose rim stands above this one's surface, a bowl floating in a tank: it falls into that one)
+				if (this.overOpening(x, y, st, src)) continue
 				const vol = sim.vol[i] as number
 				if (sim.counted[i] === 0) {
 					sim.counted[i] = 1
@@ -1307,7 +1321,6 @@ export class Flow {
 					st.jy += m * ((sim.vy[i] as number) - v.y)
 				}
 				sim.dead[i] = 1
-				break
 			}
 			if (sim.dead[i] === 1 || inside) continue
 			// come to rest on a fixed surface that is level (a table, a shelf, the floor), in no container: it joins that surface's puddle (on a
@@ -1324,10 +1337,11 @@ export class Flow {
 			const vol = sim.vol[i] as number
 			let p = this.puddles.get(c)
 			if (p === undefined) {
-				p = { key: c, item: (this.handles[c] as SolidHandle).item, ang: Math.atan2(-(sim.nx[i] as number), sim.ny[i] as number), vol: 0, xv: 0, x0: x, x1: x, y: y - rc, a: [0, 0, 0], liq: sim.liq[i] as number }
+				p = { key: c, item: (this.handles[c] as SolidHandle).item, ang: Math.atan2(-(sim.nx[i] as number), sim.ny[i] as number), vol: 0, kg: 0, xv: 0, x0: x, x1: x, y: y - rc, a: [0, 0, 0], liq: sim.liq[i] as number }
 				this.puddles.set(c, p)
 			}
 			p.vol += vol
+			p.kg += vol * (this.liquids.list[sim.liq[i] as number] as FlowLiquid).density
 			p.xv += vol * x
 			p.x0 = Math.min(p.x0, x)
 			p.x1 = Math.max(p.x1, x)
@@ -1335,6 +1349,25 @@ export class Flow {
 			if ((sim.a3[i] as number) !== 0 || p.s !== undefined) p.s = (p.s ?? 0) + vol * (sim.a3[i] as number)
 			sim.dead[i] = 1
 		}
+	}
+
+	/**
+	 * Whether (x, y) is over the opening of one of this module's containers (not `under`, not the particle's own source) whose rim stands above
+	 * `under`'s surface there: a bowl floating in a tank, its rim just over the tank's water, takes what falls on its opening (the tank's surface
+	 * is not open there). Only a container near upright (its rim within about 27° of level) has an opening facing up.
+	 */
+	overOpening(x: number, y: number, under: Store, src: number): boolean {
+		for (const b of this.basins) {
+			if (b === under || b.key === src) continue
+			const a = b.basin.rimA
+			const c = b.basin.rimB
+			const dx = c.x - a.x
+			if (!(Math.abs(dx) > 1e-9) || Math.abs(c.y - a.y) > 0.5 * Math.abs(dx)) continue
+			if (x < Math.min(a.x, c.x) || x > Math.max(a.x, c.x)) continue
+			const ry = a.y + ((x - a.x) / dx) * (c.y - a.y)
+			if (y >= ry && ry > under.top()) return true
+		}
+		return false
 	}
 
 	/**
@@ -1764,6 +1797,19 @@ const flowOf = (scene: SimScene<string>) => {
 
 /** The run's flow (for a test or another module), or undefined in a scene without any. */
 export const flowIn = (scene: SimScene<string>) => runs.get(scene)
+
+/**
+ * The liquid (kg) lying in puddles on a solid now: what came to rest on its level top outside any container (a kitchen scale's platform: the
+ * measure module adds its weight to the scale's reading). 0 in a scene without flow items or puddles. Liquid still falling or sliding is not
+ * counted (it joins a puddle once it is slow, or after a tenth of a second on the surface).
+ */
+export const puddlesOn = (scene: SimScene<string>, solid: string) => {
+	const f = runs.get(scene)
+	if (f === undefined || f.puddles.size === 0) return 0
+	let m = 0
+	for (const p of f.puddles.values()) if ((f.handles[p.key] as SolidHandle | undefined)?.id === solid) m += p.kg
+	return m
+}
 
 const create = (record: ProcessRecord, ctx: ProcessContext) => {
 	const f = flowOf(ctx.scene)

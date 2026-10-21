@@ -91,7 +91,7 @@ const types = sim.catalog().types.filter((t) => t.module === "waves")
 const P0 = py({ scenes: [], types: true })
 ok(Object.keys(P0.module_errors ?? {}).length === 0, "machines/items.py loaded every module", JSON.stringify(P0.module_errors))
 const jsTypes = P0.types.map((t) => types.find((u) => u.key === t.key)).map((t) => (t ? (({ preview, ...rest }) => rest)(t) : null))
-ok(types.length === 18 && P0.types.length === 18, "18 waves types on both sides", `${types.length} / ${P0.types.length}`)
+ok(types.length === 19 && P0.types.length === 19, "19 waves types on both sides", `${types.length} / ${P0.types.length}`)
 for (let i = 0; i < P0.types.length; i++) ok(isDeepStrictEqual(P0.types[i], jsTypes[i]), `catalog entry ${P0.types[i].key}: items.py == web/sim`)
 for (const t of types) ok(!t.preview?.error, `${t.key} builds its catalog picture`, t.preview?.error)
 
@@ -158,6 +158,18 @@ for (let k = 0; k < N; k++) scenes.push(sim.clean(makeScene(k)))
 scenes.push(sim.clean({ version: 2, id: "waves-all", name: "All", seconds: 3, release: 0.2, stage: { x0: -1, x1: 30, y0: -0.2, y1: 3 }, items: [{ id: "table", type: "table", x: 14.5, y: 0, props: { width: 31 } }, ...types.map((t, i) => ({ id: `w${i}`, type: t.key, x: t.key === "plucked-ruler" ? 30 : i * 2, y: t.key === "rice" ? 0.5 : 0 }))], goals: [] }))
 
 scenes.push(sim.clean({ version: 2, id: "waves-standing", name: "Standing", seconds: 4, release: 0.2, stage: { x0: -1, x1: 5, y0: -0.2, y1: 3 }, items: [{ id: "table", type: "table", x: 2, y: 0, props: { width: 6 } }, { id: "rope", type: "wave-rope", x: -0.4, y: 0, props: { shake: "keep shaking", frequency: 2.5, amplitude: 0.015, ribbon: 0.3 } }, { id: "tank", type: "ripple-tank", x: 4.2, y: 0, angle: 90 }, { id: "sp", type: "speaker", x: 3.4, y: 0 }, { id: "o", type: "oscilloscope", x: 3.7, y: 0 }], goals: [{ kind: "standing", item: "rope", loops: 2 }, { kind: "wavelength", item: "rope", m: 4 }, { kind: "wave_speed", item: "rope", m_s: 10 }, { kind: "stays_put", item: "rope" }, { kind: "stays_put", item: "tank" }, { kind: "trace", oscilloscope: "o", waves_across: 4.4 }] }))
+// string telephones (engine6 crossmod): taut with an ear at its far cup, slack, pinched, drooping on the Moon, in a vacuum; a speaker at a voiceless one's cup
+for (const [k, props, settings] of [[0, {}, undefined], [1, { pull: 0 }, undefined], [2, { pinched: true, string: "wire" }, undefined], [3, { pull: 0.1, string: "fishing line", length: 6 }, { gravity: "moon" }], [4, { voice: "normal" }, { air: false }], [5, { voice: "none", length: 1.5 }, undefined]])
+	scenes.push(sim.clean({
+		version: 2, id: `waves-phone-${k}`, name: `Telephone ${k}`, seconds: 3, release: 0.2, stage: { x0: -1, x1: 8, y0: -0.2, y1: 3 }, ...(settings ? { settings } : {}),
+		items: [
+			{ id: "table", type: "table", x: 3.5, y: 0, props: { width: 9 } },
+			{ id: "phone", type: "string-telephone", x: 3, y: 0.3, props },
+			{ id: "ear", type: "sound-meter", x: Number((3 + (props.length ?? 3) / 2 + 0.12).toFixed(3)), y: 0, props: { height: 0.3 } },
+			...(props.voice === "none" ? [{ id: "sp", type: "speaker", x: Number((3 - 0.75 - 0.2).toFixed(3)), y: 0.2 }] : [])
+		],
+		goals: [{ kind: "hears", meter: "ear", source: props.voice === "none" ? "sp" : "phone" }, { kind: "hears", meter: "ear", source: "phone", expect: false }, { kind: "sounds", source: "phone" }]
+	}))
 const PY = py({ scenes: scenes.map((scene) => ({ scene })) }).results
 const tracks = []
 let worst = 0

@@ -1159,6 +1159,7 @@ const traceRoot = (root, si, s, bodies, state, keepSegs) => {
         if (he && ray.inside.includes(hb)) continue;
         if (!he && !ray.inside.includes(hb)) continue;
         if (he) {
+          beside(ray, w);
           const arrived = ray.p.slice();
           if (ray.env.kind === 2) scale(arrived, 2 * w.src.halfDepth);
           deps.push(faceDeposit(hb, hp, x1, y1, ray, nx, ny, arrived, new Float64Array(NB), new Float64Array(NB), si, w));
@@ -1168,6 +1169,7 @@ const traceRoot = (root, si, s, bodies, state, keepSegs) => {
       }
       if (role === "filter") {
         if (he) {
+          beside(ray, w);
           const lost = new Float64Array(NB);
           const arrived = ray.p.slice();
           const pass = w.src.pass ?? [];
@@ -1189,6 +1191,7 @@ const traceRoot = (root, si, s, bodies, state, keepSegs) => {
       if (role === "translucent") {
         if (!he) continue;
         const tr = w.src.transmit ?? 0.5;
+        beside(ray, w);
         if (ray.env.kind === 2) scale(ray.p, 2 * w.src.halfDepth);
         const inc2 = ray.p.slice();
         const absorbed2 = new Float64Array(NB);
@@ -1225,6 +1228,7 @@ const traceRoot = (root, si, s, bodies, state, keepSegs) => {
       }
       if (role === "mirror" && active && he) {
         if (w.src.aperture !== void 0) clipTo(ray.env, chord(w, x1, y1), ray.p);
+        else if (height(ray.env) > w.src.halfDepth) clipTo(ray.env, w.src.halfDepth, ray.p);
         const R = w.src.reflect ?? [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.92];
         const inc2 = ray.p.slice();
         const absorbed2 = new Float64Array(NB);
@@ -1273,6 +1277,10 @@ const traceRoot = (root, si, s, bodies, state, keepSegs) => {
   return { segs, deps, hash };
 };
 const height = (e) => e.kind === 2 ? Infinity : e.kind === 0 ? quad(Math.abs(e.Y) * Math.min(e.tanPsi, 1e6), e.Yc) : quad(e.Y, e.Yc);
+const beside = (ray, w) => {
+  if (ray.env.kind === 2 || w.src.aperture !== void 0) return;
+  if (height(ray.env) > w.src.halfDepth) clipTo(ray.env, w.src.halfDepth, ray.p);
+};
 const chord = (w, x, y) => {
   const ap = w.src.aperture;
   if (ap === void 0) return Infinity;

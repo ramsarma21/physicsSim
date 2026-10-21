@@ -25,6 +25,7 @@ export function register_all(g) {
 	_listeners()
 	_wave_lines()
 	_tank()
+	_telephone()
 	register_build_hook(_build_hook)
 	// (the goal kinds are registered from `plugin.goals` by web/sim/modules/index.js, as items.py's register_goal_kind does them)
 }
@@ -886,6 +887,94 @@ function _tank() {
 	}))
 }
 
+// ---------------------------------------------------------------- string telephone (engine6 crossmod; machines/mod_waves.py the same)
+export const PHONE_STRINGS = { "cotton string": [0.001, 764.0, 2e9, 0.08], "fishing line": [0.0005, 1140.0, 3e9, 0.03], wire: [0.0003, 7850.0, 200e9, 0.001] }
+export const VOICES = { none: 0.0, whisper: 40.0, quiet: 52.0, normal: 62.0, loud: 75.0, shout: 82.0 }
+export const PHONE_CUP = { h: 0.09, mouth: 0.076, r: 0.0265, m: 0.00066, f: 590.0, v: 0.000266 }
+const WHISPER_PARTIALS = [[1.0, 1.0, 0.03], [1.5, 0.9, 0.03], [2.0, 0.8, 0.03], [2.5, 0.6, 0.03], [3.0, 0.45, 0.03], [4.0, 0.3, 0.03]]
+const VOICE_PARTIALS = [[1.0, 1.0, 0.03], [2.0, 1.0, 0.03], [3.0, 0.8, 0.03], [4.0, 0.6, 0.03], [5.0, 0.5, 0.03], [6.0, 0.4, 0.03], [8.0, 0.25, 0.03],
+	[10.0, 0.18, 0.03], [12.0, 0.12, 0.03], [15.0, 0.08, 0.03]]
+
+/** A string telephone's sag (m) and the distance between its cups' bottoms (m) for its props under gravity g, held at height y (the builder's). */
+export function phone_shape(L, T, string, g, y) {
+	const [d, rho] = PHONE_STRINGS[string] ?? PHONE_STRINGS["cotton string"]
+	const w = ((rho * ((Math.PI * d * d) / 4)) * g)
+	let sag = Math.min(0.15 * L, Math.max(0.005, y - 0.005))
+	if (T > 0) sag = Math.min(sag, (((w * L) * L) / (8 * T)))
+	return { sag, D: L - (((8 * sag) * sag) / (3 * L)) }
+}
+
+function build_telephone(c, P) {
+	c.ca = 1.0
+	c.sa = 0.0
+	c.a = 0.0
+	const L = P.length
+	const T = P.pull
+	const [d, rho, E, eta] = PHONE_STRINGS[P.string]
+	const { sag, D } = phone_shape(L, T, P.string, c.settings.gravity, c.oy)
+	const H = PHONE_CUP.h
+	const M = PHONE_CUP.mouth
+	const ghost = () => ({ kind: "static", material: c.mat({ base: "hollow plastic", overrides: {} }) })
+	const talk = c.slab("cup-talk", H, M, M, -D / 2 - H / 2, 0.0, { ...ghost(), look: "paper cup", words: "a paper cup to talk into", ghost: true, stand: "self" })
+	c.slab("cup-listen", H, M, M, D / 2 + H / 2, 0.0, { ...ghost(), look: "paper cup", words: "a paper cup to listen at", ghost: true, stand: "self" })
+	// (its sag rides on the string's solid for the view, which draws it hanging so: render only)
+	const line = c.slab("string", Math.max(0.01, D), 0.004, 0.004, 0.0, 0.0, {
+		...ghost(), look: P.string === "wire" ? "steel" : "string",
+		words: T > 0 ? `a ${P.string} pulled between the cups` : `a slack ${P.string} between the cups`, sag: R6(sag), ghost: true, stand: "self"
+	})
+	const lp1 = VOICES[P.voice]
+	if (lp1 > 0) {
+		const whisper = P.voice === "whisper"
+		_source(c, talk, [-H / 2, 0.0], whisper ? 1000.0 : 220.0, whisper ? WHISPER_PARTIALS : VOICE_PARTIALS, lp1, [[R6(P.talk_at), 1.0]], 0.0, { hold: P.talk_for, show: P.show_waves, part: "voice" })
+	}
+	c.process("sound", "line", {
+		role: "telephone", solid: line, a: { x: R6(-D / 2 - H), y: 0.0 }, b: { x: R6(D / 2 + H), y: 0.0 }, length: R6(L),
+		diameter: d, rho, E, eta, tension: R6(T), pinched: !!P.pinched,
+		cup: { r: PHONE_CUP.r, m: PHONE_CUP.m, f: PHONE_CUP.f, v: PHONE_CUP.v }, reach: 0.5, sag: R6(sag)
+	})
+}
+
+function _telephone() {
+	add_look("paper cup", { fill: "#f3efe6", shade: "#c9c2b3", roughness: 0.75, metalness: 0.0, clearcoat: 0.0 })
+	add_look("string", { fill: "#e9dfc6", shade: "#b9ad91", roughness: 0.9, metalness: 0.0, clearcoat: 0.0 })
+	register(new ItemType("string-telephone", "String telephone", CAT, build_telephone, {
+		dynamic: false, module: "waves",
+		props: [
+			new Prop("length", "String length", 3.0, 0.5, 20.0, 0.05, "m", "From one cup's bottom to the other's"),
+			new Prop("pull", "Pull on the string", 5.0, 0.0, 30.0, 0.05, "N",
+				"How hard the two pull the cups apart: 2-10 N keeps it taut; under about 0.2 N it droops and carries little; 0: slack, it hangs loose and carries nothing"),
+			new Prop("pinched", "Pinched", false, { kind: "bool", help: "A finger and thumb pinch the string: it cannot vibrate past them, so nothing gets through" }),
+			new Prop("string", "String", "cotton string", { kind: "choice", choices: Object.keys(PHONE_STRINGS), help: "cotton string 1 mm; nylon fishing line 0.5 mm; steel wire 0.3 mm (carries the most)" }),
+			new Prop("voice", "Talks", "whisper", {
+				kind: "choice", choices: Object.keys(VOICES),
+				help: "How loud the child talks into the left cup (1 m away: a whisper about 40 dB, quiet 52, normal 62, loud 75, a shout 82); none: no one talks (put a speaker or a fork at the cup)"
+			}),
+			new Prop("talk_at", "Talks at", 0.5, 0.0, 20.0, 0.05, "s"),
+			new Prop("talk_for", "Talks for", 2.0, 0.2, 20.0, 0.05, "s"),
+			new Prop("show_waves", "Sound lines", true, { kind: "bool", help: "Faint arcs spreading from the talking cup while the child talks" })
+		],
+		readouts: [
+			...SOURCE_READOUTS(),
+			new Readout("carries", "Carries sound", { unit: "", digits: 0, help: "Whether the string carries sound (taut, not pinched)", words: { 0: "no", 1: "yes" } }),
+			new Readout("sag_mm", "String sag", { unit: "mm", digits: 0, help: "How far its middle hangs below a straight line" }),
+			new Readout("loss_db", "Lost cup to cup", { unit: "dB", digits: 1, help: "How much quieter it is at an ear held to the far cup than at the talking cup's mouth (at 1 kHz)" }),
+			new Readout("string_ms", "Speed along the string", { unit: "m/s", digits: 0, help: "How fast the sound runs along the string" })
+		],
+		tags: ["string telephone", "tin can telephone", "cup telephone", "cup phone", "telephone", "string", "sound travels", "vibration",
+			"medium", "solid", "cups", "talk", "whisper", "taut", "slack"],
+		description: "A string telephone: two paper cups joined by a string between their bottoms, held level and pulled apart. A child talks " +
+			"(or whispers) into the left cup; pulled taut, the string carries the vibration along it to the right cup, where an ear (a " +
+			"sound meter's microphone put at that cup's mouth) hears it far better than through the air. Slack or pinched, it carries " +
+			"nothing: only the air brings the voice, much fainter.",
+		source: "A sagging string's equivalent modulus [ERNST]; a lumped cup-string-cup model at 1 kHz (provisional): 9 oz paper cups (bottom Ø 53 mm, " +
+			"0.66 g, its own resonance near 590 Hz), cotton string 1 mm (0.6 g/m, about 2 GPa, loss factor 0.08), nylon fishing line 0.5 mm " +
+			"(3 GPa [CRC], 0.03), steel wire 0.3 mm (200 GPa [CRC], 0.001); a voice 1 m away: whisper about 40 dB (provisional), quiet 52 " +
+			"[PEARSONS], normal 62, loud 75, shout 82 dB [ANSI-S35].",
+		anchor: "the middle of its string, at the cups' height", facts: "3 m of cotton string, pulled with 5 N: about 24 dB down cup to cup",
+		edit: [{ kind: "length", prop: "length" }]
+	}))
+}
+
 // ---------------------------------------------------------------- goal kinds (machines/mod_waves.py has the same, number for number)
 const isNum = (v) => typeof v === "number" && Number.isFinite(v)
 const _last = (v) => (Array.isArray(v) && v.length ? v[v.length - 1] : null)
@@ -972,6 +1061,12 @@ export function goal_hears(ctx, g) {
 	const least = ctx.num(g.at_least_db)
 	const need = least === null ? floor : least
 	const ok = peak !== null && at !== null && at >= 0 && peak >= need
+	// (expect false: it does not hear it: a slack string telephone's far cup; engine6 crossmod)
+	if (g.expect === false)
+		return {
+			label: lbl(g, `${ctx.name(m)} does not hear ${ctx.name(s)}` + (least !== null ? ` at ${_trim(least, 1)} dB or more` : "")),
+			ok: !ok, kind: "hears", meter: m, source: s, db: r(peak, 1), t: at === null || at < 0 ? null : pyRound(at, 4)
+		}
 	return {
 		label: lbl(g, `${ctx.name(m)} hears ${ctx.name(s)}` + (least !== null ? ` at ${_trim(least, 1)} dB or more` : "")),
 		ok: !!ok, kind: "hears", meter: m, source: s, db: r(peak, 1), t: at === null || at < 0 ? null : pyRound(at, 4)
@@ -1333,13 +1428,13 @@ const GOALS = [
 		}
 	},
 	{
-		kind: "hears", aliases: ["heard", "hear"], fields: { meter: "item", source: "item", at_least_db: "number?" }, subject: ["source"],
-		about: "hears {meter, source, at_least_db?}: the sound meter hears the source (its sound reaches the meter at least as loud as the quiet room, or at least at_least_db)",
-		label: (g, n) => `${n(g.meter)} hears ${n(g.source)}`, summarize: goal_hears,
+		kind: "hears", aliases: ["heard", "hear"], fields: { meter: "item", source: "item", at_least_db: "number?", expect: "bool?" }, subject: ["source"],
+		about: "hears {meter, source, at_least_db?, expect?}: the sound meter hears the source (its sound reaches the meter at least as loud as the quiet room, or at least at_least_db); expect false: it does not (a slack or pinched string-telephone)",
+		label: (g, n) => `${n(g.meter)} ${g.expect === false ? "does not hear" : "hears"} ${n(g.source)}`, summarize: goal_hears,
 		sample: (scene, pick) => {
 			const m = scene.items.filter((i) => LISTENERS.includes(i.type))
-			const s = scene.items.filter((i) => SOURCES.includes(i.type))
-			return m.length && s.length ? { kind: "hears", meter: pick(m).id, source: pick(s).id } : null
+			const s = scene.items.filter((i) => SOURCES.includes(i.type) || i.type === "string-telephone")
+			return m.length && s.length ? { kind: "hears", meter: pick(m).id, source: pick(s).id, ...(pick([0, 1, 2, 3]) === 0 ? { expect: false } : {}) } : null
 		}
 	},
 	{
@@ -1515,7 +1610,13 @@ export const plugin = {
 		"Rice on a drum (or a ball on a fork) is thrown only by the drum's own strikes (strike_at, hits), never by landing on it; strike it AFTER the scene's release (release + 0.3 s): the head rings only ≈ 0.2 s, so a strike before the grains are let go throws them little. " +
 		"Every drum hit moves its head at the same speed for the same strength (loose or tight: rice jumps alike); harder (strength) throws higher (× strength²); a heavy thing on a drum barely moves. " +
 		"A ripple-tank's dipper makes water waves (wavelength from frequency, depth and the scene's gravity); its duck or cork bobs in place (goal stays_put); a ripple tank always stays level. Goals for waves: wave_reaches, reflects, standing, wavelength {item, m}, wave_speed {item, m_s}, stays_put; for an oscilloscope's picture: trace {oscilloscope, waves_across, squares_high}. Pendulum timing: a pendulum's " +
-		"period is 2π√(L/g) (the `period` goal measures it).",
+		"period is 2π√(L/g) (the `period` goal measures it). " +
+		"A string-telephone is two paper cups with a string between their bottoms, held level (no stand: place it on: air, y_m 0.2-0.5 over the table; its anchor is the string's middle, " +
+		"so its cups reach length/2 + 0.09 m either side: give the stage room). Its own child talks into its LEFT cup (voice: whisper by default, quiet, normal, loud, shout, or none for a speaker or fork put at that cup; talk_at, talk_for). " +
+		"Pulled taut (pull 2-10 N, 5 by default) the string carries the sound to its RIGHT cup: about 24 dB under what goes into the left cup for 3 m of cotton string (3 dB more a metre; steel wire about 16 dB; fishing line 29 but only 0.5 dB more a metre). " +
+		"The ear is a sound-meter with its microphone at the right cup's mouth: meter x = phone.x + length/2 + 0.12, its height = the phone's height over what the meter stands on (within 50 cm of a cup's mouth it hears the string; the voice goes either way). " +
+		"A whisper reaches it through the string (about 39 dB(A)) but not through the air (about 30 dB 3 m away, under a quiet room's 35). Slack (pull 0), drooping (under about 0.2 N) or pinched (pinched true) it carries nothing or little: only the air is left. " +
+		"Its readings: carries (0/1), loss_db, sag_mm, string_ms (≈ 1600 m/s along cotton: faster than the air). Goals: hears {meter, source: the telephone} and, for a slack or pinched one, hears {meter, source, expect: false}.",
 	prompt: {
 		plan:
 			"Sound lessons: use the sound items (tuning-fork, plucked-ruler, drum, monochord, rubber-band, xylophone-bar, speaker, clapper, bell-jar) and a sound-meter as " +
@@ -1524,7 +1625,8 @@ export const plugin = {
 			"set the stage wide enough to hold the wall). Rice ON a drum's head (place: on the drum). Waves: wave-rope / slinky / ripple-tank items, goal wave_reaches. To SHOW a sound wave's shape (amplitude, frequency) use an oscilloscope, its microphone near the source (goals hears / louder name the oscilloscope as the meter). " +
 			"Standing waves: wave-rope keep shaking at f = n·v/(2L), amplitude ≤ 0.02, damping ≥ 1, seconds ≥ 5; goal standing {item, loops: n}. A wave's length or speed: goals wavelength {item, m} / wave_speed {item, m_s}; a duck or ribbon that bobs in place: stays_put {item}; an oscilloscope's picture: trace {oscilloscope, waves_across?, squares_high?}. " +
 			"Rice on a drum: strike_at at least 0.3 s after the scene's release (the grains must lie on the head when it is struck). " +
-			"Give `seconds` long enough for the sound or wave to happen (a fork rings ≈ 2 s; a rope wave crosses in length ÷ speed).",
+			"Give `seconds` long enough for the sound or wave to happen (a fork rings ≈ 2 s; a rope wave crosses in length ÷ speed). " +
+			"String telephone: a string-telephone on: air (y_m 0.3) with a sound-meter at its RIGHT cup (meter x = phone.x + length/2 + 0.12, meter height = 0.3 on the table), voice whisper so the air alone does not reach the meter; taut against slack or pinched: two telephones one above the other (y_m 0.3 and 0.9) or one changed in an edit, each with its own meter; goals hears {meter, source: phone} and hears {meter, source: the slack phone, expect: false}.",
 		edit:
 			"Sound items' pitch follows their size and tightness (ruler overhang, string length/tension/gauge, drum tension, bar length, fork pitch); loudness follows `strength` " +
 			"and the meter's distance (−6 dB per doubling). Readings: sources `sounding` (dB 1 m away), `pitch`; meters (sound-meter, hydrophone, oscilloscope) `peak`, `level`, `heard`, `echo` (an oscilloscope's screen: waves across = pitch × 10 × time_base, height = its pressure ÷ scale); ropes/slinkies " +
@@ -1548,6 +1650,20 @@ export const plugin = {
 		{ ask: "A pendulum's swing time depends on its length", how: "pendulums of different length; goal period {item, seconds} (T = 2π√(L/g): 1 m → 2.0 s)" },
 		{ ask: "A bottle xylophone: more water, lower note", how: "four glass-bottles (fill 0.1, 0.35, 0.6, 0.85, play tap) tapped one after another (strike_at 0.4, 0.9, 1.4, 1.9); goals higher {a: emptier, b: fuller}" },
 		{ ask: "On an oscilloscope, a louder sound makes taller waves and a higher sound makes the waves closer together", how: "two speakers far apart (3 m: 440 Hz at 70 dB and 880 Hz at 70 dB, or the same pitch at 60 and 72 dB), an oscilloscope with its microphone 30 cm from each (time_base 1 ms a square: 4.4 and 8.8 waves across); goals hears {meter: scope, source: its speaker}, louder {a: the louder speaker's scope, b: the other}" },
+		{
+			ask: "A string telephone carries a whisper when the string is pulled tight, and nothing when it is slack",
+			how: "two string-telephones of 3 m cotton string, one above the other (y_m 0.3 and 0.9 over the table, x 1.3), each with its own child whispering; the top one pull 5 N (taut), the bottom one pull 0 (slack); a sound-meter at each right cup (x 2.97, height 0.3 on the table; the top one on: air with height 0.12 at y_m 0.78); goals hears {meter: top meter, source: taut phone}, hears {meter: bottom meter, source: slack phone, expect: false}",
+			plan: {
+				seconds: 3,
+				items: [
+					{ id: "taut", type: "string-telephone", name: "Taut telephone", props: { pull: 5 }, place: { on: "air", x: 1.3, y_m: 0.9 } },
+					{ id: "slack", type: "string-telephone", name: "Slack telephone", props: { pull: 0 }, place: { on: "air", x: 1.3, y_m: 0.3 } },
+					{ id: "ear1", type: "sound-meter", name: "Ear at the taut one", props: { height: 0.12 }, place: { on: "air", x: 2.97, y_m: 0.78 } },
+					{ id: "ear2", type: "sound-meter", name: "Ear at the slack one", props: { height: 0.3 }, place: { on: "table", x: 2.97 } }
+				],
+				goals: [{ kind: "hears", meter: "ear1", source: "taut" }, { kind: "hears", meter: "ear2", source: "slack", expect: false }]
+			}
+		},
 		{ ask: "Sound travels faster through water than through air", how: "a water-tank (Liquids), a tuning-fork (box false) standing in its water, a hydrophone beside the tank with its probe under the water (reach over the wall), a sound-meter in the air; the hydrophone's at:fork reading is distance ÷ 1481 m/s" }
 	],
 	goals: GOALS,
@@ -1582,7 +1698,11 @@ export const plugin = {
 		{ type: "oscilloscope", key: "scale", how: "choice", more: "change {it}'s pressure a square", less: "change {it}'s pressure a square", why: "a smaller Pa a square draws the same sound taller" },
 		{ type: "oscilloscope", key: "time_base", how: "choice", more: "change {it}'s time a square", less: "change {it}'s time a square", why: "a longer time a square shows more waves across" },
 		{ type: "glass-bottle", key: "fill", how: "abs", steps: [-0.2, -0.1, -0.05, 0.05, 0.1, 0.2], more: "pour more water into {it}", less: "pour some water out of {it}", why: "tapped, more water lowers the note; blown, more water (less air) raises it" },
-		{ type: "bell-jar", key: "air_left", how: "abs", steps: [-50, -20, 20, 50], more: "leave more air in {it}", less: "pump {it} emptier", why: "the bell's sound reaching the room falls with the air in the jar" }
+		{ type: "bell-jar", key: "air_left", how: "abs", steps: [-50, -20, 20, 50], more: "leave more air in {it}", less: "pump {it} emptier", why: "the bell's sound reaching the room falls with the air in the jar" },
+		{ type: "string-telephone", key: "pull", how: "abs", steps: [-4, -2, 2, 4, 8], more: "pull {it}'s string tighter", less: "let {it}'s string go slacker", why: "a taut string carries the voice (2-10 N); under about 0.2 N it droops and carries little, at 0 nothing" },
+		{ type: "string-telephone", key: "pinched", how: "bool", cost: 2, more: "pinch {it}'s string", less: "let go of {it}'s string", why: "a pinched string cannot vibrate past the fingers: nothing gets through" },
+		{ type: "string-telephone", key: "voice", how: "choice", cost: 2, more: "talk louder into {it}", less: "talk more quietly into {it}", why: "a louder voice into the near cup is louder at the far one, and through the air too" },
+		{ type: "string-telephone", key: "length", how: "rel", cost: 2, more: "lengthen {it}'s string", less: "shorten {it}'s string", why: "cotton string loses about 3 dB a metre (fishing line 0.5, wire almost none)" }
 	],
 	digest(item, run, h) {
 		const out = []
@@ -1673,6 +1793,19 @@ export const plugin = {
 			if (refl !== null && refl !== -2) out.push(refl === -1 ? "the pulse came back upside down" : refl === 1 ? "the pulse came back the same way up" : "nothing came back from the far end")
 			if (last("loops") > 0) out.push(`standing wave: ${last("loops")} loop${last("loops") === 1 ? "" : "s"}`)
 			if (isNum(last("ribbon_across_mm"))) out.push(`the ribbon moved ${fmt(last("ribbon_across_mm"), 0)} mm across and ${fmt(last("ribbon_along_mm"), 0)} mm along`)
+		}
+		if (item.type === "string-telephone") {
+			// (engine6 crossmod: what its string carries, and where an ear must be to hear it)
+			const tp = TYPES[item.type]
+			const full = tp ? { ...tp.defaults(), ...P } : P
+			const g = isNum(run?.doc?.settings?.gravity) ? run.doc.settings.gravity : 9.81
+			const { sag, D } = phone_shape(full.length, full.pull, full.string, g, isNum(item.y) ? item.y : 1)
+			const carries = last("carries")
+			if (carries === 1) out.push(`its ${full.string} carries sound: ${fmt(last("loss_db"), 1)} dB lost cup to cup (${fmt(full.length, 2)} m pulled with ${fmt(full.pull, 2)} N, sagging ${fmt(sag * 1000, 0)} mm); the sound runs along it at ${fmt(last("string_ms"), 0)} m/s`)
+			else if (carries === 0 || !st)
+				out.push(`its string carries NOTHING: ${full.pinched ? "it is pinched" : !(full.pull > 0) ? "it is slack (no pull: it hangs " + fmt(sag * 100, 0) + " cm)" : "it cannot carry"}; only the air brings the voice`)
+			if (isNum(item.x)) out.push(`an ear (a sound-meter's microphone) hears it within 50 cm of its right cup's mouth, at x ${fmt(item.x + D / 2 + 0.09, 2)} m (and the left cup's, at x ${fmt(item.x - D / 2 - 0.09, 2)} m, for a sound at the right cup)`)
+			if (st && isNum(last("struck")) && last("struck") > 0) out.push(`its child ${full.voice === "whisper" ? "whispered" : "talked"} into the left cup at ${fmt(full.talk_at, 2)} s for ${fmt(full.talk_for, 2)} s (${full.voice}, ${fmt(VOICES[full.voice], 0)} dB 1 m away)`)
 		}
 		if (item.type === "ripple-tank" && st) {
 			out.push(`water waves: wavelength ${fmt(last("wavelength") * 100, 2)} cm, speed ${fmt(last("speed"), 3)} m/s at ${fmt(last("frequency"), 1)} Hz`)

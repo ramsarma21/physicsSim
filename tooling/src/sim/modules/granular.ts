@@ -265,6 +265,13 @@ class Grains {
 	readonly told = new Set<string>()
 	/** Each bed's columns' floor: the item of the fixed solid it is the top of ("" where none: an edge, a tray's wall). */
 	readonly floorItem = new Map<Bed, string[]>()
+	/** The same, the fixed solid's own id (a kitchen scale's platform, not its base); and, per solid asked for, its columns (grainsOn: floors
+	 *  never move, so they are found once) */
+	readonly floorSolid = new Map<Bed, string[]>()
+	readonly cellsOn = new Map<string, { bed: Bed; cells: Int32Array }[]>()
+	/** The containers among the holders that stand by their own weight (a bowl or a mug: dynamic, not fixed): what lies in one lies on what
+	 *  it stands on (a kitchen scale's platform weighs it, grainsOn); a fixed cup or jar holds its grains itself. */
+	readonly loose = new Set<string>()
 	private airShown = false
 	private lastAir = -1
 	private steps = 0
@@ -334,6 +341,7 @@ class Grains {
 			const all = ctx.all().filter((h) => h.item === item && h.part.ghost !== true).map((h) => h.outline())
 			const H = fl === undefined ? null : holderOf({ item, round: spec.round === true, floor: fl, left, right, all, depth: spec.depth as number })
 			holderCache.set(item, H)
+			if (H !== null && ctx.all().some((h) => h.item === item && h.dynamic)) this.loose.add(item)
 			return H
 		}
 		groups.forEach((gr, gi) => {
@@ -392,12 +400,14 @@ class Grains {
 			const floor = new Float64Array(nx * nz)
 			const kind = new Uint8Array(nx * nz)
 			const by: string[] = new Array(nx * nz).fill("")
-			this.scanFloor(statics, gr, x0, z0, cell, nx, nz, base, top, floor, kind, by, hs)
+			const sids: string[] = new Array(nx * nz).fill("")
+			this.scanFloor(statics, gr, x0, z0, cell, nx, nz, base, top, floor, kind, by, sids, hs)
 			const first = gr[0] as ProcessRecord
 			const bed = new Bed({ id: `bed${gi}`, owner: first.item as string, x0, z0, dx: cell, nx, nz, floor, kind, classes: this.classes, ceiling: top, gravity: g })
 			this.world.addBed(bed)
 			this.floorItem.set(bed, by)
 			if (hs.length) this.holders.set(bed, hs)
+			this.floorSolid.set(bed, sids)
 			this.shown.push({ bed, item: first.item as string, cls: -2, last: new Float64Array(bed.n), lastT: -1, lastW: undefined, lastWT: -1 })
 			for (const r of gr) {
 				const cells: number[] = []
@@ -556,6 +566,7 @@ class Grains {
 		floor: Float64Array,
 		kind: Uint8Array,
 		by: string[],
+		sids: string[],
 		holders: readonly Holder[] = []
 	) {
 		const NONE = Number.NEGATIVE_INFINITY
@@ -568,19 +579,19 @@ class Grains {
 			.map((h) => {
 				const o = h.outline()
 				const depth = h.part.body.kind === "ball" ? 2 * (o.circle?.r ?? 0) : (h.part.body as { depth: number }).depth
-				return { o, half: depth / 2, item: h.item }
+				return { o, half: depth / 2, item: h.item, id: h.id }
 			})
 		for (let i = 0; i < nx; i++) {
 			const x = x0 + (i + 0.5) * dx
 			// each solid's span at this x: [lo, hi]
-			const spans: { lo: number; hi: number; half: number; item: string }[] = []
+			const spans: { lo: number; hi: number; half: number; item: string; id: string }[] = []
 			for (const s of shapes) {
 				if (s.o.circle !== undefined) {
 					const c = s.o.circle
 					const ex = x - c.x
 					if (Math.abs(ex) >= c.r) continue
 					const dy = Math.sqrt(c.r * c.r - ex * ex)
-					spans.push({ lo: c.y - dy, hi: c.y + dy, half: s.half, item: s.item })
+					spans.push({ lo: c.y - dy, hi: c.y + dy, half: s.half, item: s.item, id: s.id })
 					continue
 				}
 				const pts = s.o.points ?? []
@@ -595,19 +606,22 @@ class Grains {
 					if (y > hi) hi = y
 					if (y2 < lo) lo = y2
 				}
-				if (hi > lo) spans.push({ lo, hi, half: s.half, item: s.item })
+				if (hi > lo) spans.push({ lo, hi, half: s.half, item: s.item, id: s.id })
 			}
 			for (let j = 0; j < nz; j++) {
 				const z = z0 + (j + 0.5) * dx
 				let f = NONE
 				let who = ""
+				let sid = ""
 				for (const s of spans)
 					if (Math.abs(z) <= s.half && s.lo <= top && s.hi > f) {
 						f = s.hi
 						who = s.item
+						sid = s.id
 					}
 				floor[j * nx + i] = f
 				by[j * nx + i] = who
+				sids[j * nx + i] = sid
 			}
 		}
 		const barrier = new Set<number>()
@@ -1232,12 +1246,38 @@ export const grainsIn = (scene: SimScene<string>) => runs.get(scene)
 
 /**
  * The grains (kg) resting on an item's fixed solids now: every column whose floor is one of its solids' tops (a kitchen scale's platform: what a
- * measuring module adds to its reading, ×g, for sand poured or heaped on it). 0 in a scene without grains. Falling grains are not counted.
+ * measuring module adds to its reading, ×g, for sand poured or heaped on it); with `solid`, only that solid's (the platform, not the scale's
+ * base). 0 in a scene without grains. Falling grains are not counted.
  */
-export const grainsOn = (scene: SimScene<string>, item: string) => {
+export const grainsOn = (scene: SimScene<string>, item: string, solid?: string) => {
 	const g = runs.get(scene)
 	if (g === undefined) return 0
 	let m = 0
+	if (solid !== undefined) {
+		// (the solid's columns, found once: a floor never moves)
+		let list = g.cellsOn.get(solid)
+		if (list === undefined) {
+			list = []
+			for (const [b, ids] of g.floorSolid) {
+				const cells: number[] = []
+				for (let c = 0; c < b.n; c++) {
+					// (on the solid itself, or in a container standing on it by its own weight)
+					const on = g.floorItem.get(b)?.[c] ?? ""
+					if (ids[c] === solid && (on === item || g.loose.has(on))) cells.push(c)
+				}
+				if (cells.length > 0) list.push({ bed: b, cells: Int32Array.from(cells) })
+			}
+			g.cellsOn.set(solid, list)
+		}
+		for (const { bed: b, cells } of list) {
+			const A = b.dx * b.dx
+			for (const c of cells) {
+				if ((b.kind[c] as number) !== 0) continue
+				for (let k = 0; k < b.classes.length; k++) m += ((b.hk[k] as Float64Array)[c] as number) * A * (b.classes[k] as ClassInfo).rhoB
+			}
+		}
+		return m
+	}
 	for (const [b, by] of g.floorItem) {
 		const A = b.dx * b.dx
 		for (let c = 0; c < b.n; c++) {

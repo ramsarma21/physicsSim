@@ -8,6 +8,9 @@
 //                 waves:tank         a ripple tank's water surface (the module's linear wave field, recomputed here for the picture), its
 //                                    dipper and its floater (moved by its readings floater_x / floater_y)
 //                 waves:labels       a big reading over each sound meter, legible in a wide shot (drawn in exports too)
+//   string telephone (engine6 crossmod): two paper cups lying along the picture, their mouths outward, the string between their bottoms
+//                 hanging in its sag (the string solid's `sag`), a clothes peg on it when pinched; the sound lines also spread from
+//                 the far cup while the string carries the voice (0.7 as strong as the talking cup's: a picture, not its level)
 export default function register({ addModel, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
 	const T = THREE
 	const MAT = (key, p) => {
@@ -858,6 +861,70 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	addModel("ripple-tank", "leg-left", tankLeg)
 	addModel("ripple-tank", "leg-right", tankLeg)
 
+	// ============================================================== string telephone (engine6 crossmod)
+	// a 9 oz paper cup lying along x, its bottom at -H/2 and its mouth at +H/2 (the right, listening cup; the left one turned round): a thin
+	// paper shell (up the outside, over the rolled rim, down the inside to the recessed bottom) and a printed band (red: talk, blue: listen)
+	const CUP_H = 0.09
+	const CUP_RB = 0.0265
+	const CUP_RM = 0.038
+	const cupShell = () =>
+		kit.latheX(
+			[[0, 0], [CUP_RB - 0.0004, 0], [CUP_RB, 0.0025], [CUP_RM, CUP_H - 0.0015], [CUP_RM + 0.0012, CUP_H - 0.0004], [CUP_RM + 0.0008, CUP_H + 0.0008],
+				[CUP_RM - 0.0006, CUP_H + 0.0006], [CUP_RM - 0.0008, CUP_H - 0.0016], [CUP_RB - 0.0008, 0.0048], [0, 0.0048]],
+			48,
+			"waves-paper-cup"
+		)
+	const cupBand = () => {
+		const r = (y) => CUP_RB + ((CUP_RM - CUP_RB) * y) / CUP_H + 0.0004
+		return kit.latheX([[r(0.5 * CUP_H), 0.5 * CUP_H], [r(0.78 * CUP_H), 0.78 * CUP_H]], 48, "waves-paper-cup-band")
+	}
+	const paperCup = () => kit.mat("waves-paper-cup", { color: "#f3efe6", roughness: 0.82, metalness: 0 })
+	const cupModel = (mouthRight, band) => () => {
+		const g = kit.group(mesh(cupShell(), paperCup()), mesh(cupBand(), kit.plastic(band, { gloss: 0.2, key: "waves-cup-band" })))
+		g.position.x = -CUP_H / 2
+		const o = new T.Group()
+		o.add(g)
+		if (!mouthRight) o.rotation.y = Math.PI
+		return o
+	}
+	addModel("string-telephone", "cup-talk", cupModel(false, "#c8443a"))
+	addModel("string-telephone", "cup-listen", cupModel(true, "#3f7fd0"))
+	addModel("string-telephone", "string", ({ w, solid, props }) => {
+		// the string from bottom to bottom, hanging in its parabola (render only; the physics is the module's), thicker than life to be seen
+		const sag = Number.isFinite(solid?.sag) ? Math.max(0, solid.sag) : 0
+		const kind = props?.string ?? "cotton string"
+		const r = kind === "wire" ? 0.0012 : kind === "fishing line" ? 0.0012 : 0.0016
+		const key = `waves-phone-string|${w.toFixed(4)}|${sag.toFixed(4)}|${r}`
+		const geo = kit.geo(key, () => {
+			const pts = []
+			for (let i = 0; i <= 48; i++) {
+				const u = i / 48
+				const x = -w / 2 + u * w
+				pts.push(new T.Vector3(x, -sag * (1 - (2 * x / w) * (2 * x / w)), 0))
+			}
+			return new T.TubeGeometry(new T.CatmullRomCurve3(pts), 96, r, 6, false)
+		})
+		const mat = kind === "wire" ? kit.steel() : kind === "fishing line" ? kit.plastic("#dfe6ea", { gloss: 0.8, key: "waves-line" }) : kit.fabric("#e9dfc6")
+		const g = kit.group(mesh(geo, mat))
+		if (props?.pinched) {
+			// a wooden clothes peg clamped on the string at its middle (what pinches it), its jaws on the string and its legs up
+			const wood = lightWood()
+			const peg = new T.Group()
+			for (const side of [-1, 1]) {
+				const jaw = mesh(box(0.008, 0.07, 0.01, 0.002), wood)
+				jaw.position.set(side * 0.0045, 0.03, 0)
+				jaw.rotation.z = side * -0.06
+				peg.add(jaw)
+			}
+			const spring = mesh(kit.torus(0.006, 0.0012, 8, 20), darkSteel())
+			spring.position.set(0, 0.035, 0)
+			peg.add(spring)
+			peg.position.set(0, -sag, 0)
+			g.add(peg)
+		}
+		return g
+	})
+
 	// ============================================================== view plugins
 	const recordsOf = (doc, kind) => (doc.processes ?? []).filter((p) => p.kind === kind)
 	const poseOf = (ctx, solid, t) => ctx.placementAt(solid, t)
@@ -890,6 +957,11 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		name: "waves:sound-lines",
 		load(ctx) {
 			const srcs = recordsOf(ctx.doc, "sound").filter((p) => (p.role === "source" || p.role === "buzzer") && p.show !== false)
+			// (a string telephone that carries its own voice: the same arcs from its far cup's mouth, as loud as the voice there: its loss_db fainter)
+			for (const tl of recordsOf(ctx.doc, "sound").filter((p) => p.role === "telephone")) {
+				const voice = srcs.find((p) => p.role === "source" && p.item === tl.item)
+				if (voice && ctx.stateAt(tl.item, "carries", 0) === 1) srcs.push({ ...voice, solid: tl.solid, at: tl.b, far: tl.item })
+			}
 			if (!srcs.length || !ctx.track?.state) return null
 			const C = 343.2
 			const arcs = srcs.map((p) => {
@@ -913,7 +985,8 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				frame(t) {
 					for (const a of arcs) {
 						const db = a.p.role === "buzzer" ? ctx.stateAt(a.p.item, "sound_db", t) : ctx.stateAt(a.p.item, "sounding", t)
-						const on = Number.isFinite(db) ? Math.max(0, Math.min(1, (db - 25) / 60)) : 0
+						// (the far cup's arcs: 0.7 of the talking cup's while the voice sounds, a picture of the sound coming out there, not its level)
+						const on = (Number.isFinite(db) ? Math.max(0, Math.min(1, (db - 25) / 60)) : 0) * (a.p.far ? 0.7 : 1)
 						a.quad.visible = on > 0.01
 						if (!a.quad.visible) continue
 						const at = worldOf(poseOf(ctx, a.p.solid, t), a.p.at ?? { x: 0, y: 0 })
