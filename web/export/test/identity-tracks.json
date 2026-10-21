@@ -1,7 +1,7 @@
 {
  "about": "sha256 of JSON.stringify of each built-in scenario's and gallery scene's run (doc, track, summary) as the engine made them at integrate/engine-waves 19947da, before the directed cameras, and the fingerprint of web/sim then (every .js/.mjs/.json under it). web/export/test/identity.test.mjs compares today's runs with these while web/sim is unchanged (the filming module is view-only); once the engine changes, regenerate them (node web/export/test/identity.test.mjs --write). Re-armed on release 2 (2026-10-21: engine6 and the resized-body repair changed web/sim): the 22 runs are byte for byte these 19947da hashes, so only the web/sim fingerprint was renewed. Re-armed again (2026-10-21, release 2 round 2: a container read for a stream that lands beside it, its grains_g, the piles goal's in, the AI's grain words): the 22 runs are still byte for byte these hashes; only the web/sim fingerprint was renewed.",
  "base": "19947da",
- "engine": "61f7802819f53481098158a7b40b133041654456db6d23f9f4655d99094fdc64",
+ "engine": "7975ff81a5debacd612cc1ba12f9447e9de2e5b73489f6bf85f71552907b6bb0",
  "scenes": {
   "web/scenarios/rube-goldberg.json": {
    "track": "302d69002820a830810d8d949cfda196fa7aef2d2fa17117dfb7933ee396db51",

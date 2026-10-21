@@ -30,6 +30,9 @@
 //   no height given); a plank's legs count where they would show through, and a leg is never "cleared" by raising (it stands on the floor).
 //   Items are placed in dependency order (supports first); a cycle is an error.
 // - Static (and fixed) things left in mid-air with nothing under them and no legs, cords or stand are warned about (checkHeldUp: "floats").
+// - A thing a module builds on another item wherever its own item is placed (web/sim/plugins.js place.rides: a battery car's motor rides over its
+//   car's rear axle) is placed as the plan says but has no outline there: it starts inside nothing, nothing is moved for it, nothing rests on it
+//   or holds it up (what the plan sets on it, beside it or leaning on it goes on the item it rides on instead), and inspect() gives it none either.
 // - Geometry comes from web/sim's builder at angle 0 and is turned with the item, except for types whose builder does not turn rigidly (a
 //   pendulum's hanger stays level): those are built again at the angle they are placed at.
 // - Finally the content is kept on the table (shifted, or the table widened), safety walls stand at the table's ends, and web/sim's own overlap
@@ -37,7 +40,7 @@
 import { TYPES, build, layout, MAX_ITEMS } from "../sim/index.js"
 import { _world_poses } from "../sim/items.js"
 import { goalKind, goalItems, goalLabel, GOAL_KINDS, moduleGoal } from "./goals.js"
-import { containerInterior, floatHeight, heldByModule, hoversByModule, placeRules } from "../sim/plugins.js"
+import { containerInterior, floatHeight, heldByModule, hoversByModule, placeRules, ridesOn } from "../sim/plugins.js"
 
 export const DEFAULT_STAGE = Object.freeze({ x0: -0.55908203125, x1: 3.19091796875, y0: -0.15625, y1: 2.34375 })
 export const DEFAULT_TABLE = Object.freeze({ x: 1.3, y: 0, width: 3.7, thickness: 0.15 })
@@ -723,6 +726,31 @@ export function solve(plan, opts = {}) {
 		}
 	}
 
+	// ---- 1c. what a module builds on another item wherever its own item is placed (a battery car's motor rides over its car's rear axle, a ghost:
+	// web/sim/plugins.js place.rides): placed as the plan says, with no outline (put): it takes no room where its item is, so nothing is moved for it
+	// and it is moved for nothing (V2 release round 3: "There's no room for Geared motor where it was asked to be: it goes through Battery", the
+	// motor and its battery both put on the car, capped a working battery car at 6/10). What the plan sets on it, beside it or leaning on it goes on
+	// the item it rides on instead.
+	for (const s of specs) {
+		const host = ridesOn({ id: s.id, type: s.type, props: s.props }, (id) => byId.get(id)?.type)
+		if (host && byId.has(host)) s.rides = host
+	}
+	for (const s of specs) {
+		if (s.rides) continue
+		const p = s.place
+		const hostOf = (ref) => (typeof ref === "string" && byId.get(ref)?.rides) || null
+		const redirect = (ref, what) => {
+			const host = hostOf(ref)
+			if (!host) return ref
+			say("info", "rides", `${s.name} was meant to be ${what} ${byId.get(ref).name}, which rides on ${byId.get(host).name} (it has no outline of its own): ${what} ${byId.get(host).name} instead`, s.id)
+			return host
+		}
+		p.on = redirect(p.on, "on")
+		p.inside = redirect(p.inside, "inside")
+		if (p.rel !== undefined) p.rel = redirect(p.rel, p.side === "left" ? "left of" : "right of")
+		if (p.lean) for (const e of [p.lean.from, p.lean.to]) if (e) e.on = redirect(e.on, "leaning on")
+	}
+
 	// ---- 2. the table (always: "on the table" needs one) and what each item depends on
 	let table = specs.find((s) => s.type === "table")
 	if (!table) {
@@ -852,8 +880,9 @@ export function solve(plan, opts = {}) {
 		}
 	}
 	const put = (s, geo, x, y, angle) => {
-		const shapes = shapesAt(geo, x, y, angle)
-		const P = { spec: s, geo, x, y, angle, shapes, box: boxOf(shapes), legs: legShapes(geo, x, y, angle) }
+		// (a thing that rides on another item has no outline where its own item is: 1c)
+		const shapes = s.rides ? [] : shapesAt(geo, x, y, angle)
+		const P = { spec: s, geo, x, y, angle, shapes, box: boxOf(shapes), legs: s.rides ? [] : legShapes(geo, x, y, angle) }
 		placed.set(s.id, P)
 		return P
 	}
@@ -865,6 +894,7 @@ export function solve(plan, opts = {}) {
 		const s = byId.get(id)
 		const p = s.place
 		const report = { id, type: s.type, name: s.name }
+		if (s.rides) report.rides = s.rides // (no outline where it is placed: 1c)
 		placements.push(report)
 		if (s === table) {
 			const geo = geometryOf(s)
@@ -1236,7 +1266,7 @@ export function solve(plan, opts = {}) {
 			const inner = containerInterior(byId.get(sup).type, byId.get(sup).props)
 			const rim = C.y + (inner ? inner.rim : (num(byId.get(sup).props.wall) ?? schemaOf(byId.get(sup).type).defaults.wall ?? 0.1))
 			const bottom = placed.get(s.id).box.y0
-			if (bottom > rim - 0.002) say("error", "too_big", `${s.name} doesn't fit inside ${byId.get(sup).name}: it rests on the rim`, s.id)
+			if (bottom > rim - 0.002 && !s.rides) say("error", "too_big", `${s.name} doesn't fit inside ${byId.get(sup).name}: it rests on the rim`, s.id)
 			// (a thing that floats on the container's liquid starts at its own floating height, not on the floor: web/sim/plugins.js place.float)
 			const fy = floatHeight({ type: s.type, props: s.props, x, angle }, { type: byId.get(sup).type, props: byId.get(sup).props, x: C.x, y: C.y })
 			if (fy !== null && fy > y + 1e-4) {
@@ -1541,7 +1571,8 @@ export function solve(plan, opts = {}) {
 	function mustBeHeld(P) {
 		const s = P.spec
 		// (a module's view may hold it up itself in this scene: a fan raised to a sailboat's sail on a lab stand, web/sim/plugins.js place.held)
-		return !(s === table || s.safety || (TYPES[s.type].dynamic && !s.fixed) || P.geo.mounted || heldByModule(s.type, specs.map((q) => q.type)))
+		// (and a thing that rides on another item has nothing of it where its own item is: 1c)
+		return !(s === table || s.safety || s.rides || (TYPES[s.type].dynamic && !s.fixed) || P.geo.mounted || heldByModule(s.type, specs.map((q) => q.type)))
 	}
 	/** Where along its underside something holds P up (its own legs, or the top of another thing within HOLD_GAP): the x positions, or [] when it floats. */
 	function heldXs(P) {
@@ -1896,6 +1927,7 @@ export const slug = (t) => String(t).toLowerCase().normalize("NFKD").replace(/[^
  */
 export function planFromScene(scene) {
 	const items = (scene?.items ?? []).filter((i) => isObj(i) && TYPES[i.type])
+	const types = new Map(items.map((i) => [i.id, i.type]))
 	const geo = new Map()
 	const sh = new Map()
 	for (const it of items) {
@@ -1906,7 +1938,9 @@ export function planFromScene(scene) {
 			continue
 		}
 		geo.set(it.id, g)
-		sh.set(it.id, shapesAt(g, Number(it.x) || 0, Number(it.y) || 0, Number(it.angle) || 0))
+		// (a thing that rides on another item has no outline where its own item is, as solve() gives it none: it rests on nothing and holds nothing
+		// up, so it is kept at its exact pose, and what stands on its car rests on the car)
+		sh.set(it.id, ridesOn(it, (id) => types.get(id)) ? [] : shapesAt(g, Number(it.x) || 0, Number(it.y) || 0, Number(it.angle) || 0))
 	}
 	const table = items.find((i) => i.type === "table")
 	const top = Number(table?.y) || 0
@@ -2016,7 +2050,9 @@ function flatSlopeOf(shapes, x0, x1) {
  *  deepest overlap. -> {contacts: [{id, on, gap}], overlaps: [{a, b, depth}]} */
 export function inspect(scene) {
 	const items = scene.items.filter((i) => TYPES[i.type])
-	const sh = new Map(items.map((i) => [i.id, shapesAt(itemGeometry(i.type, i.props ?? {}, i.fixed === true), i.x, i.y, i.angle ?? 0)]))
+	const types = new Map(items.map((i) => [i.id, i.type]))
+	// (a thing that rides on another item, a battery car's motor, has no outline where its own item is: solve() gives it none)
+	const sh = new Map(items.map((i) => [i.id, ridesOn(i, (id) => types.get(id)) ? [] : shapesAt(itemGeometry(i.type, i.props ?? {}, i.fixed === true), i.x, i.y, i.angle ?? 0)]))
 	const overlaps = []
 	for (let i = 0; i < items.length; i++)
 		for (let j = i + 1; j < items.length; j++) {

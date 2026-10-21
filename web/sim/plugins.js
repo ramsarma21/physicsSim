@@ -23,8 +23,13 @@
 //                                                                     // riders = [{type, props}]: what rests on it (a boat's cargo) weighs it down
 //           hover?(type) -> bool,                                     // a thing a hand holds in the air over others (a pitcher): the solver places
 //                                                                     // it after the rest and raises it clear of what it starts inside, however far
-//           held?(type, types) -> bool},                              // the module's view holds a fixed item of this type up in a scene of these
+//           held?(type, types) -> bool,                               // the module's view holds a fixed item of this type up in a scene of these
 //                                                                     // types (a stand it draws), so the solver does not call it floating
+//           rides?(thing, typeOf) -> id | null},                       // the item the engine builds this thing on, wherever its own item is placed
+//                                                                     // (a battery car's motor rides over its car's rear axle, touching nothing):
+//                                                                     // the solver gives it no outline where its item is (nothing is moved or
+//                                                                     // warned about for it); thing = {type, props} (links as ids), typeOf(id) =
+//                                                                     // that item's type in the plan or scene (ridesOn)
 //   words: {change?(type, key, a, b, nameOf, items?) -> text | null,   // a change line in real units ("lamp 30 → 20 cm from the ice"); items =
 //                                                                     // {before, after} (the item as it was and is) when the caller has them
 //           added?(item) -> text | null,                              // what one added thing is called on the card ("a stack of 20 pennies")
@@ -249,6 +254,21 @@ export function hoversByModule(type) {
 		} catch {}
 	}
 	return false
+}
+
+/** The item a module builds this thing on, not where its own item is placed (place.rides: a battery car's motor, which the circuits module mounts
+ *  over its car's rear axle wherever the motor item stands, touching nothing), or null. thing = {type, props} with its links as item ids; typeOf(id)
+ *  gives the type of the plan's or scene's item of that id (undefined when there is none). The solver and its inspect() give such a thing no outline
+ *  at its own place: nothing there holds it or is held by it, nothing is moved for it, it starts inside nothing. */
+export function ridesOn(thing, typeOf = () => undefined) {
+	for (const m of modules()) {
+		if (typeof m.place?.rides !== "function") continue
+		try {
+			const id = m.place.rides(thing, typeOf)
+			if (typeof id === "string" && id && id !== thing?.id) return id
+		} catch {}
+	}
+	return null
 }
 
 /** A module's words for a prop's change ("distance 30 → 20 cm from the ice"), or null. `items` (optional): {before, after}, the item as it was and

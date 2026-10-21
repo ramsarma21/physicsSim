@@ -1710,6 +1710,11 @@ LAYOUT: put the parts on the table in a row, about 12-20 cm apart, each "on": "t
 	],
 	digest: (item, run) => circuitDigest(item, run),
 	// (a wire and a circuit board have no body of their own to stand: a wire runs between its terminals, a board is drawn behind the parts)
-	place: { held: (type) => type === "wire" || type === "circuit-board" },
+	place: {
+		held: (type) => type === "wire" || type === "circuit-board",
+		/** A battery car's motor (drives "wheels", its `car` link naming a toy car, cart, truck or dynamics cart of the scene) is built on that car
+		 *  over its rear axle (_mount_on_cars), a ghost that touches nothing, wherever its own item is placed: no outline of its own there. */
+		rides: (thing, typeOf) => (thing?.type === "motor" && thing.props?.drives === "wheels" && typeof thing.props?.car === "string" && CARS.includes(typeOf(thing.props.car)) ? thing.props.car : null)
+	},
 	words: { change: (type, key, a, b, nameOf) => changeWords(type, key, a, b, nameOf) }
 }

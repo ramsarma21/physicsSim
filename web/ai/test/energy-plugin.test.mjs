@@ -15,7 +15,7 @@ const MODS = "energy,circuits,flow,fluids,mechanics"
 process.env.PLAYGROUND_MODULES = process.env.PLAYGROUND_MODULES ?? MODS
 const sim = await import(pathToFileURL(join(PG, "web/sim/index.js")).href)
 const plugins = await import(pathToFileURL(join(PG, "web/sim/plugins.js")).href)
-const { solve } = await import(pathToFileURL(join(PG, "web/ai/solver.js")).href)
+const { solve, inspect, planFromScene } = await import(pathToFileURL(join(PG, "web/ai/solver.js")).href)
 const { checkGoals } = await import(pathToFileURL(join(PG, "web/ai/goals.js")).href)
 const { findFix } = await import(pathToFileURL(join(PG, "web/ai/fixer.js")).href)
 const bundle = await import(pathToFileURL(join(PG, "web/sim/engine-worker.js")).href)
@@ -135,6 +135,57 @@ test("the edit digest: the wind on a rotor and its speed, no wind at all, a gene
 	assert.match(lines(car, "m"), /drives the rear wheels of c/)
 	const lost = run(scene([{ id: "m", type: "motor", x: 0.4, y: 0.006, props: { kind: "geared", drives: "wheels", car: "nobody" } }], [], 1))
 	assert.match(lines(lost, "m"), /names no car/)
+})
+
+test("a battery car's motor rides on its car: wherever the plan puts its item, it has no outline there, so nothing is moved or warned about for it (V2 release round 3: 'There's no room for Geared motor where it was asked to be: it goes through Battery' capped a working battery car at 6/10)", () => {
+	const typeOf = (id) => ({ c: "cart", car: "toy-car", bat: "battery" })[id]
+	assert.equal(plugins.ridesOn({ type: "motor", props: { kind: "geared", drives: "wheels", car: "c" } }, typeOf), "c")
+	assert.equal(plugins.ridesOn({ type: "motor", props: { kind: "geared", drives: "wheels", car: "bat" } }, typeOf), null, "a link to no car: a motor on its stand")
+	assert.equal(plugins.ridesOn({ type: "motor", props: { kind: "geared", drives: "propeller", car: "c" } }, typeOf), null)
+	assert.equal(plugins.ridesOn({ type: "motor", props: { kind: "geared", drives: "wheels" } }, typeOf), null)
+	const wired = [
+		{ id: "w1", type: "wire", props: { a: "battery", a_end: "+", b: "motor", b_end: "+" }, place: { on: "air", x: 0, y_m: 0 } },
+		{ id: "w2", type: "wire", props: { a: "motor", a_end: "-", b: "battery", b_end: "-" }, place: { on: "air", x: 0, y_m: 0 } }
+	]
+	const plan = (motorPlace, batteryPlace, { motorFirst = false, extra = [] } = {}) => {
+		const car = { id: "car", type: "toy-car", name: "Toy car", place: { on: "table", x: 1.0 } }
+		const battery = { id: "battery", type: "battery", name: "Battery (2 AA)", place: batteryPlace }
+		const motor = { id: "motor", type: "motor", name: "Geared motor", props: { kind: "geared", drives: "wheels", car: "car" }, place: motorPlace }
+		return { title: "Battery car", seconds: 4, release: 0.5, missing: [], tune: [], notes: "", items: [car, ...(motorFirst ? [motor, battery] : [battery, motor]), ...extra, ...wired], goals: [{ kind: "moves", item: "car", min_m: 0.3 }] }
+	}
+	const block = { id: "block", type: "wooden-block", name: "Block", fixed: true, place: { on: "table", x: 0.4 } }
+	const cases = [
+		["on the car beside its battery (the release's own build)", { on: "car" }, { on: "car" }, {}],
+		["on the car, put there before its battery", { on: "car" }, { on: "car" }, { motorFirst: true }],
+		["on the table where a block stands (a lane's floor over a motor left on the table)", { on: "table", x: 0.4 }, { on: "car" }, { extra: [block] }],
+		["past the table's end", { on: "table", x: 3.3 }, { on: "car" }, {}],
+		["with the battery set on the motor", { on: "car" }, { on: "motor" }, { motorFirst: true }]
+	]
+	let first = null
+	for (const [what, mp, bp, o] of cases) {
+		const r = solve(plan(mp, bp, o))
+		assert.deepEqual(r.issues.filter((i) => i.level !== "info").map((i) => i.text), [], `${what}: no warning`)
+		assert.ok(!r.issues.some((i) => /moved|raised|shifted/.test(i.code)), `${what}: nothing moved: ${r.issues.map((i) => i.text).join(" | ")}`)
+		const at = Object.fromEntries(r.scene.items.map((i) => [i.id, i]))
+		assert.equal(at.car.x, 1.0, `${what}: the car where it was asked to be (no shift)`)
+		assert.equal(at.battery.x, 1.0, `${what}: the battery on the car`)
+		assert.ok(Math.abs(at.battery.y - 0.08455) < 0.002, `${what}: the battery on the car's top (y ${at.battery.y})`)
+		if (Number.isFinite(mp.x)) assert.equal(at.motor.x, mp.x, `${what}: the motor's item where the plan put it`)
+		if (o.extra) assert.equal(at.block.x, 0.4, `${what}: the block where it was asked to be`)
+		assert.equal(sim.layout(sim.clean(r.scene)).warnings.length, 0, `${what}: nothing starts inside anything`)
+		assert.deepEqual(inspect(r.scene).overlaps.filter((v) => v.depth > 0.0005), [], `${what}: inspect() finds no overlap`)
+		// (an edit's plan of the scene solves back to it: the motor kept where its item is, the battery on the car)
+		const back = solve(planFromScene(r.scene)).scene.items
+		for (const it of r.scene.items) {
+			const b = back.find((q) => q.id === it.id)
+			assert.ok(b && Math.abs(b.x - it.x) < 1e-6 && Math.abs(b.y - it.y) < 1e-6, `${what}: ${it.id} round trip`)
+		}
+		first ??= r
+	}
+	// (and the car still drives: the engine mounts the motor on it, wherever its item stands)
+	const R = run({ ...first.scene, seconds: 4 })
+	const checked = checkGoals(first.goals, { doc: R.doc, track: R.track, summary: R.summary })
+	assert.ok(checked.length === 1 && checked[0].ok, JSON.stringify(checked))
 })
 
 test("change words in real units", () => {

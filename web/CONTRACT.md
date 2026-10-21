@@ -4625,11 +4625,17 @@ devices". A scene with none of these items (no rotor, no generator, no waterwhee
   height, load_g, generator; generator ratio, leads, kind; waterwheel load_g, axle_mm); edit-digest lines (the wind on a rotor and its speed, NO wind
   reaching it, a cup too heavy or wound to the top, a generator NOT on a shaft or turning BACKWARD, a battery car's motor and its car); change words
   in real units ("step-up 1:1 → 5:1 (a 140 → 700 rpm generator on a 140 rpm wheel: 0.413 → 2.07 V)"); request words (pennies, straw, swap leads...); a
-  generator is held up by its own base (`place.held`); six worked examples, each solved and met in the tests: a windmill lifting a cup in a fan's
-  wind, a turbine lighting an LED in front of a fan, a fair test of 20° against 45° blades (generates_more), a waterwheel lifting a cup, a waterwheel
-  lighting an LED through a 5:1 generator with its leads swapped, a battery car (moves). The circuits module's `aimLit` (make it work for lights,
-  buzzes, spins) now also offers, for a generator on a shaft, its leads swapped when its voltage is backward and a bigger step-up when it is under 2 V
-  (checked in the engine like any try).
+  generator is held up by its own base (`place.held`); a battery car's motor RIDES on its car (`place.rides(thing, typeOf)`, a new plug-in point
+  given by the circuits module, web/sim/plugins.js `ridesOn`: the motor with drives "wheels" and a `car` link to a car of the scene): web/ai/solver.js
+  places its item as the plan says but with no outline there, as the engine builds nothing there (its gearbox is a ghost on the car), so it starts
+  inside nothing, nothing is moved for it, nothing rests on it or holds it up, and what the plan sets on it, beside it or leaning on it goes on its
+  car; `inspect()` and `planFromScene()` give it none either (release 2, round 3: the release's own battery car, its motor and battery both put on
+  the car, read "There's no room for Geared motor where it was asked to be: it goes through Battery" and its card was capped at 6/10; a motor left on
+  the table under a race's lane read "Lane 1 starts inside Geared motor"); six worked examples, each solved and met in the tests: a windmill
+  lifting a cup in a fan's wind, a turbine lighting an LED in front of a fan, a fair test of 20° against 45° blades (generates_more), a waterwheel
+  lifting a cup, a waterwheel lighting an LED through a 5:1 generator with its leads swapped, a battery car (moves). The circuits module's `aimLit`
+  (make it work for lights, buzzes, spins) now also offers, for a generator on a shaft, its leads swapped when its voltage is backward and a bigger
+  step-up when it is under 2 V (checked in the engine like any try).
 - Checked (2026-10-20): `research/rw-validate-energy.ts` 34 of 34: the relaxed induction equals Ning's steady root (|Δa| 1.05e-15 over 96 annuli), no
   rotor beats Betz (best Cp 0.263 of 100 rotors), the default paper windmill peaks at Cp 0.172 at λ 1.95 (0.17 at 2 measured [JWEA]); the KidWind
   generator open 2.124 V at 720 rpm (2.13 measured [VERNIER]) and 4.248 at 1440 (4.25), 7.227 at 2450 (6.54, within its 12 %: the real EMF per rpm
