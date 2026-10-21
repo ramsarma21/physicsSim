@@ -24,7 +24,8 @@
  *   [ZURIGUEL05], and cohesive grains (damp sand, flour) arch over an outlet narrower than Jenike's B_c = 2.2·f_c/γ, f_c = 2c·tan(45° + φ/2)
  *   [JENIKE64].
  * - Falling grains are parcels (a few grams each) in free fall (a dense stream of grains falls nearly freely); they land on the first bed
- *   surface they cross.
+ *   surface they cross and settle there a layer at a time, running down the heap they strike to where its face stands no steeper than a
+ *   fresh heap's face can (Bed.rain).
  * - Bodies in sand (a ball dropped into a tray, a car on a beach): what a body's outline pushes below the surface is moved to the ring of
  *   columns around it (a crater's rim; a bulldozed heap in front), and the sand holds it up and brakes it with what it can bear: Terzaghi-
  *   Vesić bearing pressure N_q·γ·z + ½·N_γ·γ·B [VESIC73] (z its depth under the surrounding surface, B its width) plus an inertial drag
@@ -73,6 +74,8 @@
  *   [WP06] Wong M. & Parker G., Reanalysis and correction of bed-load relation of Meyer-Peter and Müller, J. Hydraul. Eng. 132, 1159 (2006).
  *   [FC04] Ferguson R.I. & Church M., A simple universal equation for grain settling velocity, J. Sediment. Res. 74, 933-937 (2004).
  *   [ROELVINK06] Roelvink J.A., Coastal morphodynamic evolution techniques, Coastal Eng. 53, 277-287 (2006).
+ *   [JNB96] Jaeger H.M., Nagel S.R., Behringer R.P., Granular solids, liquids, and gases, Rev. Mod. Phys. 68, 1259-1273 (1996): a heap's
+ *           surface stands up to its angle of maximum stability, a few degrees over the angle of repose it relaxes to after an avalanche.
  *   [JOP06] Jop P., Forterre Y., Pouliquen O., A constitutive law for dense granular flows, Nature 441, 727-730 (2006): μ(I) = μ_s +
  *           (μ_2 − μ_s)/(I₀/I + 1), μ_2 − μ_s ≈ 0.26, I₀ ≈ 0.279; depth-averaged I = 5ud/(2h√(gh)) (GDR MiDi, Eur. Phys. J. E 14, 341 (2004)).
  *   [FISCHENICH01] Fischenich C., Stability thresholds for stream restoration materials, ERDC TN-EMRRP-SR-29 (2001): bare fine soils
@@ -487,6 +490,19 @@ export interface Parcel {
 	src?: string
 }
 
+/** Columns that a layer of landing grains runs down at most (Bed.rain): more than a heap's flank has. */
+const ROLL = 64
+/** tan 3°: a freshly landed heap's face stands up to its angle of maximum stability, a few degrees over its angle of repose, before it
+ *  slides [JNB96] (Bed.rain); the bed's avalanches then bring it back to repose. */
+const TAN_STABLE = 0.052407779283041196
+/** The four steps from a column to its neighbours (Bed.rain goes round them in turn). */
+const STEPS4 = [
+	[1, 0],
+	[0, 1],
+	[-1, 0],
+	[0, -1]
+] as const
+
 /** An outlet in a bed's floor (a spout, a neck): its cells, its diameter, where its grains leave, and when it opens. */
 export interface Outlet {
 	readonly id: string
@@ -688,6 +704,60 @@ export class Bed {
 		this.wakeCell(c)
 		return taken
 	}
+	/**
+	 * Lays `vol` m³ of class k on column c as grains landing there settle: a layer at a time (a quarter of the drop its grains stand at across
+	 * one column, or a 64th of what lands, whichever is thicker), each resting where it lands unless that would stand it steeper over a
+	 * neighbouring column (not a wall or an edge) than a fresh heap's face stands (its grains' standing slope + 3°, TAN_STABLE): then it runs
+	 * on down to the lowest such neighbour, and on, until it rests (ROLL columns at most). Grains landing on a heap run down its faces in a few
+	 * hundredths of a second; the bed's own avalanches (a column sinks no faster than √(g·h)) are slower than a fast pour feeds one spot,
+	 * which then stood up as a pillar of grains under the stream: a cup of sugar tipped into a jar (whose bed has 4 mm columns) at about 180 g
+	 * a second stood a pillar 0.6 m tall in the 11 cm jar, 1.4 m when the cup was tipped past where it empties. Ties go round the four ways in
+	 * turn, so a heap fed at a point grows round. A share that rests where it lands in one layer is laid exactly as before; damp grains, whose
+	 * faces stand steep, rest where they land.
+	 */
+	rain(c: number, k: number, vol: number) {
+		if (!(vol > 0) || c < 0 || c >= this.n) return
+		const A = this.dx * this.dx
+		this.limits(c)
+		const layer = Math.max(0.25 * Math.min(this.lStand, StandTable.STEEP) * this.dx * A, vol / 64)
+		let left = vol
+		while (left > 0) {
+			const v = left <= layer ? left : layer
+			const dh = v / A
+			let cur = c
+			for (let step = 0; step < ROLL; step++) {
+				this.limits(cur)
+				// (the steepest the landed layer may stand at over a neighbour: its grains' standing slope + 3°, tan(a + b) = (tan a + tan b) /
+				// (1 − tan a tan b); a face that stands vertical, damp grains', is vertical still)
+				const L = Math.min(this.lStand, StandTable.STEEP)
+				const allow = (L * TAN_STABLE < 1 ? Math.min((L + TAN_STABLE) / (1 - L * TAN_STABLE), StandTable.STEEP) : StandTable.STEEP) * this.dx
+				const top = this.surface(cur) + dh
+				const i = cur % this.nx
+				const j = (cur - i) / this.nx
+				let next = -1
+				let low = Number.POSITIVE_INFINITY
+				this.rainTurn = (this.rainTurn + 1) & 3
+				for (let s = 0; s < 4; s++) {
+					const st = STEPS4[(this.rainTurn + s) & 3] as readonly [number, number]
+					const ii = i + st[0]
+					const jj = j + st[1]
+					if (ii < 0 || jj < 0 || ii >= this.nx || jj >= this.nz) continue
+					const nc = jj * this.nx + ii
+					if ((this.kind[nc] as number) !== 0) continue
+					const sn = this.surface(nc)
+					if (top - sn > allow + 1e-12 && sn < low) {
+						low = sn
+						next = nc
+					}
+				}
+				if (next < 0) break
+				cur = next
+			}
+			this.add(cur, k, v)
+			left = left <= layer ? 0 : left - layer
+		}
+	}
+	private rainTurn = 0
 	/** The class index of a grain (and wetness) in this bed, or -1. */
 	classOf(grain: string, wet: Wetness) {
 		let best = -1
@@ -1757,7 +1827,8 @@ export class World {
 
 	/** Where each pourer's stream comes down (x, m: a running mean over its last parcels, as the flow module's lands_x), by its item. */
 	readonly lands = new Map<string, number>()
-	/** A parcel's grains land round where it struck: half in its column, the rest in the eight round it that hold grains (a stream's spot). */
+	/** A parcel's grains land round where it struck: half in its column, the rest in the eight round it that hold grains (a stream's spot); each
+	 *  share settles there as landing grains do, running down the heap it struck to where its slope holds it (Bed.rain). */
 	private land(b: Bed, c: number, p: Parcel) {
 		if (p.src !== undefined) {
 			const was = this.lands.get(p.src)
@@ -1781,7 +1852,7 @@ export class World {
 				const jj = j + dj
 				if (ii < 0 || jj < 0 || ii >= b.nx || jj >= b.nz || (b.kind[jj * b.nx + ii] as number) !== 0) continue
 				const wgt = di === 0 && dj === 0 ? 4 : di === 0 || dj === 0 ? 1 : 0.5
-				b.add(jj * b.nx + ii, k, (p.vol * wgt) / wsum)
+				b.rain(jj * b.nx + ii, k, (p.vol * wgt) / wsum)
 			}
 		b.landed += p.vol
 	}
