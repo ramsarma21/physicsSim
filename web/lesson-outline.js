@@ -10,8 +10,9 @@
 //      glows, shadow-only proxies (no colour written) and parts shaped in their own vertex shader (springs, ropes) are in none.
 //   2. a composite pass: each pixel darkened by `dark` x the share of its ss x ss sub-pixels that lie within `width` px (at the picture's size) of
 //      another thing in pass A (on the thing's side: the background gets no line), then tinted toward `glass` where a see-through vessel meets
-//      anything else in pass B (the vessel's side: its outline), and toward `water` where a liquid does in pass C (the liquid's side: its surface,
-//      and the waterline under a thing floating in it): anti-aliased lines of that width.
+//      anything else in pass B (the vessel's side: its outline), and toward `water` on a liquid's side in pass C where its front meets its surface
+//      (the waterline across the vessel; pass C tells a liquid's up-looking faces apart) and where it covers part of a thing (pass A has that thing
+//      behind it: the waterline round a floating thing), but not round its own outline: anti-aliased lines of that width.
 // Export frames draw it after the main pass of each (sub-)frame (draw); the canvas draws its picture into a target of its own and outlines it the
 // same way, with one sub-pixel (present).
 import * as THREE from "three"
@@ -21,6 +22,7 @@ import * as THREE from "three"
 export const OUTLINE = { width: 1 / 400, minWidth: 1, dark: 0.55, ss: 2, glass: "#45708f", glassK: 0.75, water: "#2c6ea8", waterK: 0.65 }
 const GLASS = 1 << 22 // (passes B's and C's flags on a thing's number)
 const LIQUID = 1 << 23
+const TOP = 1 << 21 // (pass C: a liquid's face that looks up, its surface)
 
 const VS = "precision highp float;\nin vec3 position;\nvoid main() { gl_Position = vec4(position.xy, 0.0, 1.0); }"
 const FS = `precision highp float;
@@ -47,6 +49,7 @@ int idAt(sampler2D t, ivec2 p, ivec2 size) {
 const vec2 DIRS[8] = vec2[8](vec2(1.0, 0.0), vec2(0.7071, 0.7071), vec2(0.0, 1.0), vec2(-0.7071, 0.7071), vec2(-1.0, 0.0), vec2(-0.7071, -0.7071), vec2(0.0, -1.0), vec2(0.7071, -0.7071));
 const int GLASS = ${GLASS};
 const int LIQUID = ${LIQUID};
+const int TOP = ${TOP};
 void main() {
 	ivec2 P = ivec2(gl_FragCoord.xy);
 	vec4 col = texelFetch(tColor, P, 0);
@@ -79,10 +82,22 @@ void main() {
 				}
 			}
 			if (uLiquidOn) {
+				// a liquid's lines, on its side: where its front meets its surface (the waterline across its vessel), and where it covers part of a thing
+				// (pass A has the same thing behind it there: the waterline round a floating thing); none round its own outline against what is behind
 				int w = idAt(tLiquid, q, size);
 				if ((w & LIQUID) != 0) {
+					int behind = idAt(tId, q, size);
 					for (int k = 0; k < 8; k++) {
-						if (idAt(tLiquid, q + ivec2(round(DIRS[k] * r)), size) != w) {
+						int o = idAt(tLiquid, q + ivec2(round(DIRS[k] * r)), size);
+						if (o == w || o == 0) continue;
+						if ((o & LIQUID) != 0) {
+							if ((w & TOP) == 0 && o == (w | TOP)) {
+								ew += 1.0;
+								break;
+							}
+							continue;
+						}
+						if (behind == o) {
 							ew += 1.0;
 							break;
 						}
@@ -100,30 +115,45 @@ void main() {
 
 /** One outliner per view (its targets, its materials). renderer: the view's. */
 export function makeOutliner(renderer) {
+	// (its number as a float, exact below 2^24, written as three bytes; with uTop set, a face that looks up adds it: a liquid's surface in pass C)
 	const idMat = new THREE.ShaderMaterial({
-		uniforms: { uId: { value: new THREE.Color(0, 0, 0) } },
+		uniforms: { uId: { value: 0 }, uTop: { value: 0 } },
 		vertexShader: `#include <common>
 #include <batching_pars_vertex>
 #include <morphtarget_pars_vertex>
 #include <skinning_pars_vertex>
+varying float vUp;
 void main() {
+#include <beginnormal_vertex>
+#include <morphnormal_vertex>
 #include <batching_vertex>
 #include <skinbase_vertex>
+#include <skinnormal_vertex>
 #include <begin_vertex>
 #include <morphtarget_vertex>
 #include <skinning_vertex>
 #include <project_vertex>
+	vec3 wn = mat3(modelMatrix) * objectNormal;
+#ifdef USE_INSTANCING
+	wn = mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal;
+#endif
+	vUp = normalize(wn).y;
 }`,
-		fragmentShader: "uniform vec3 uId;\nvoid main() { gl_FragColor = vec4(uId, 1.0); }",
+		fragmentShader: `uniform float uId;
+uniform float uTop;
+varying float vUp;
+void main() {
+	float n = uId + (vUp > 0.7 ? uTop : 0.0);
+	gl_FragColor = vec4(mod(n, 256.0), mod(floor(n / 256.0), 256.0), floor(n / 65536.0), 255.0) / 255.0;
+}`,
 		side: THREE.DoubleSide,
 		toneMapped: false,
 	})
 	const code = new Map() // mesh -> its number in the pass being drawn
-	const col = new THREE.Color()
+	const tops = new Set() // the meshes whose up-looking faces are told apart in the pass being drawn (the liquids, in pass C)
 	idMat.onBeforeRender = (_r, _s, _c, _g, object) => {
-		const n = code.get(object) ?? 0
-		col.setRGB((n & 255) / 255, ((n >> 8) & 255) / 255, ((n >> 16) & 255) / 255, THREE.LinearSRGBColorSpace)
-		idMat.uniforms.uId.value.copy(col)
+		idMat.uniforms.uId.value = code.get(object) ?? 0
+		idMat.uniforms.uTop.value = tops.has(object) ? TOP : 0
 		idMat.uniformsNeedUpdate = true
 	}
 	const comp = new THREE.RawShaderMaterial({
@@ -217,10 +247,11 @@ void main() {
 		}
 		return n
 	}
-	const drawPass = (scene, camera, rt, run, list, want) => {
+	const drawPass = (scene, camera, rt, run, list, want, surfaces = false) => {
 		// the meshes of `list` ([mesh, kind]) that this pass leaves out are hidden while it draws; the rest wear their numbers
 		const hide = []
 		code.clear()
+		tops.clear()
 		for (const [o, kind] of list) {
 			if (!want(kind)) {
 				if (o.visible) {
@@ -231,6 +262,7 @@ void main() {
 			}
 			const n = numberOf(o, run)
 			code.set(o, kind === "liquid" ? n | LIQUID : kind === "glass" ? n | GLASS : n)
+			if (surfaces && kind === "liquid") tops.add(o)
 		}
 		try {
 			renderer.setRenderTarget(rt)
@@ -273,7 +305,7 @@ void main() {
 				drawPass(scene, camera, idRT, run, list, (k) => k === "thing")
 				// (each kind of see-through thing in its own pass with the opaque things: a tank's front pane would hide its water's surface)
 				if (glass) drawPass(scene, camera, glassRT, run, list, (k) => k === "thing" || k === "glass")
-				if (liquid) drawPass(scene, camera, liquidRT, run, list, (k) => k === "thing" || k === "liquid")
+				if (liquid) drawPass(scene, camera, liquidRT, run, list, (k) => k === "thing" || k === "liquid", true)
 			} finally {
 				camera.layers.mask = mask
 				scene.overrideMaterial = ov
@@ -281,6 +313,7 @@ void main() {
 				renderer.setClearColor(clear, alpha)
 				renderer.shadowMap.needsUpdate = shadowUpdate
 				code.clear()
+				tops.clear()
 			}
 			// the composite
 			const U = comp.uniforms

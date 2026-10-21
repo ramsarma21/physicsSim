@@ -1790,16 +1790,20 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
     liquids' or pouring modules' liquid: `material.userData.kitKey`, which web/models3d.js `kit.mat` now records) drawn both sides, the far side at
     max(opacity, 0.6) and the near side at 0.45 × opacity (at least 0.12), tone-mapped by their brightest channel (the paints' path: the water stays
     blue); one as opaque as 0.75 or more (honey, oil, a dyed or milky liquid) as it is. So a thing in the water shows in its own colours with its
-    waterline visible, and the water reads as water. The vessels' faint glass panes at 0.6 × their opacity, less glossy; the pouring module's
-    streams, drops and the liquid drawn solid in a glass jar keep their colour (the paints' path) with a softer gloss;
+    waterline visible, and the water reads as water. The vessels' faint glass panes at 0.6 × their opacity, less glossy; real (transmissive) glass, a
+    jar's, with at most 0.55 of the room's light in it and its tint over at least 30 cm (`lessonGlass`: what is inside shows); the pouring module's
+    streams, drops and the liquid drawn solid in a glass jar keep their colour (the paints' path) with a softer gloss, and the streams and drops are
+    opaque (three.js's transmission pass draws only opaque things: a see-through stream vanished behind a jar's wall);
   - no machinery: a model part (any Object3D) marked `userData.machinery = true` is not drawn (now: the sand funnel's ring stand, web/models/mod-granular.js);
   - mounts (the view's supports of a static part in mid-air): a post or a wall bracket is a **hanger** instead, a slim grey rod from 3 m above down to
     a small collar on the part's top (`mountHanger`; two near the ends of a bar wider than 26 cm), not in the shot's framing, casting no shadow;
   - the pull pin and its post slim and plain (a 10 mm grey rod, a 6 mm pin: `lessonPost`);
   - **outlines** (web/lesson-outline.js `OUTLINE`; on unless `setOptions({outline: false})`): lines 1/400 of the picture's height wide (2.7 px at 1080p,
     at least 1 px), drawn only by changing pixels already there, on the inside of a silhouette (no shape grows or moves): just inside every thing, its
-    own colour × 0.45 (a darker shade); round a see-through vessel (glass, a tank's panes, ice), tinted 0.75 toward `#45708f`; and on a liquid's side
-    where it meets anything (its surface against the glass above, the waterline under a floating thing), tinted 0.65 toward `#2c6ea8`. ID passes draw
+    own colour × 0.45 (a darker shade); round a see-through vessel (glass, a tank's panes, ice), tinted 0.75 toward `#45708f`; and on a liquid's side,
+    tinted 0.65 toward `#2c6ea8`, where its front meets its surface (one waterline across the vessel, as the flat pictures draw it; the ID pass tells
+    a liquid's up-looking faces apart) and where it covers part of a thing (pass A has that thing behind it there: the waterline round a floating
+    thing), never round its own outline against what is behind it. ID passes draw
     every mesh in a flat colour per item (a holder or a stand its own; the tabletop or floor and the room are the background) into targets twice the
     picture's size each way: A the opaque things only (what is in a glass tank gets its line), B the same and the vessels, C the same and the liquids
     (apart: a tank's front pane would hide its water's surface). Left out of all: contact shades, labels, glows (unlit see-through), streams, drops and
@@ -1824,9 +1828,9 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
     pure function of t: an export frame is the same in any order); not drawn once 2 m up. Picked as the item while it is held, like the pin;
   - "auto": "hanger" when the held part is in a liquid's container or over it (`doc.processes` "liquid", "flow-vessel", "flow-basin": between its x0 and
     x1, below its rim + 15 cm: `overLiquid`), or held up in mid-air (more than 1 cm over the top of the static slab under it, or anything) with room over
-    it (no static thing's underside within 5 cm over its top); else "hidden" (a thing that rests on something, a car at the top of a ramp; a clip with a
-    magnet just over it). Decided per held item when the run is built, so per scene: a lesson whose screens differ in what is over the thing (FO-13: a
-    magnet in its second screen) names one release stand for all of them (`settings.release_stand`).
+    it for the pad and arm (no static thing's underside within 1.2 cm over its top: a magnet 1.5 cm over a clip leaves room, and the holder comes down
+    behind it); else "hidden" (a thing that rests on something, a car at the top of a ramp). Decided per held item when the run is built, so per scene:
+    a lesson whose screens could differ in it names one release stand for all of them (`settings.release_stand`).
   The export's motion blur takes sub-frames while a hidden post fades or a hanger lifts (as for a gate).
 - **Painted lines on any floor** (both looks): the measure module's start and finish lines (web/models/mod-measure.js: their builders say `build.paint =
   true`) are drawn ON the top face of the highest static slab under the line's middle, from 10 cm below where the line's top is meant to be to 1 cm

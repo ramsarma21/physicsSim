@@ -4385,7 +4385,7 @@ ${GRADE}
 			return bottom - (top === -Infinity ? 0 : top) > 0.01
 		}
 		const roomAbove = (list, pf) => {
-			// (no static thing's underside within 5 cm over the item's top across its width: room for a holder from above)
+			// (no static thing's underside within 1.2 cm over the item's top across its width: room for a holder's pad and arm under it)
 			let x0 = Infinity
 			let x1 = -Infinity
 			let y1 = -Infinity
@@ -4398,7 +4398,7 @@ ${GRADE}
 			for (const o of solids) {
 				if (o.kind !== "static" || o === table || o.ghost === true || isTableSolid(o)) continue
 				const e = extentOf(o.body, pf(o))
-				if (e.x1 >= x0 - 0.02 && e.x0 <= x1 + 0.02 && e.y0 >= y1 - 0.005 && e.y0 < y1 + 0.05) return false
+				if (e.x1 >= x0 - 0.02 && e.x0 <= x1 + 0.02 && e.y0 >= y1 - 0.005 && e.y0 < y1 + 0.012) return false
 			}
 			return true
 		}
@@ -5132,6 +5132,7 @@ ${GRADE}
 	}
 	function applyGlass(root) {
 		const low = !TIERS[Q.tier].glass
+		if (run) run.lessonLeft = -1 // (the lesson look's materials are put on again at the next draw: lessonDraw)
 		root.traverse((o) => {
 			if (!o.isMesh) return
 			let on = glassOn.get(o)

@@ -27,8 +27,9 @@ export const LESSON_LIGHT = { key: 3.1, keyAt: [-0.6, 3.8, 1.9], shadow: 0.4, sh
  *  kept as the liquid's (tone-mapped by its brightest channel, as the paints are: AgX washed the lit water to grey) with a softer gloss: a thing
  *  in it keeps its colours, tinted just enough that its waterline shows (how deep it floats is often the lesson); a
  *  liquid as opaque as `opaque` or more (honey, oil, a dyed or a milky one) is drawn as it is. Glass panes (a tank's, a jar's faint pane) are
- *  drawn `pane` x as strong and less glossy: the room's light in them was a haze over the water. */
-export const LESSON_LIQUID = { back: 0.6, front: 0.45, frontMin: 0.12, opaque: 0.75, clearcoat: 0.3, env: 0.5, pane: 0.6 }
+ *  drawn `pane` x as strong and less glossy: the room's light in them was a haze over the water; real (transmissive) glass, a jar's, shows the room's
+ *  light at most `glassEnv` and tints over at least `glassTint` m. */
+export const LESSON_LIQUID = { back: 0.6, front: 0.45, frontMin: 0.12, opaque: 0.75, clearcoat: 0.3, env: 0.5, pane: 0.6, glassEnv: 0.55, glassTint: 0.3 }
 export const STYLE_NAMES = ["lesson", "real"]
 export const RELEASE_STANDS = ["post", "hidden", "hanger", "auto"]
 const HEX = /^#[0-9a-f]{6}$/i
@@ -116,11 +117,15 @@ export function isStream(o) {
 	if (!m || Array.isArray(m) || glossCopies.has(m) || !(m.isMeshStandardMaterial || m.isMeshPhysicalMaterial)) return false
 	return STREAM_KEY.test(m.userData?.kitKey ?? "")
 }
-/** Its lesson copy: its colour kept (the paints' tone mapping: a dyed stream stays orange, not beige) and a softer gloss. */
+/** Its lesson copy: its colour kept (the paints' tone mapping: a dyed stream stays orange, not beige), a softer gloss, and opaque (three.js's
+ *  transmission pass draws only opaque things: a see-through stream vanished behind a glass jar's wall, and the pour never reached the pool). */
 export function lessonStream(m, grade = null) {
 	let c = glossCache.get(m)
 	if (c) return c
 	c = m.clone()
+	c.transparent = false
+	c.opacity = 1
+	c.depthWrite = true
 	c.clearcoat = Math.min(m.clearcoat ?? 0, LESSON_LIQUID.clearcoat)
 	c.envMapIntensity = Math.min(m.envMapIntensity ?? 1, LESSON_LIQUID.env)
 	c.onBeforeCompile = (shader) => grade?.(shader, true)
@@ -131,6 +136,28 @@ export function lessonStream(m, grade = null) {
 }
 const paneCopies = new WeakSet()
 const paneCache = new WeakMap()
+const glassCopies = new WeakSet()
+const glassCache = new WeakMap()
+
+/** Is this mesh real (transmissive) glass, a jar's or a bottle's, that is not a liquid? */
+export function isGlass(o) {
+	const m = o.material
+	if (!m || Array.isArray(m) || glassCopies.has(m) || liquidCopies.has(m) || !m.isMeshPhysicalMaterial || !((m.transmission ?? 0) > 0)) return false
+	return !LIQ_KEY.test(m.userData?.kitKey ?? "")
+}
+/** Its lesson copy: clearer (the room's light in it at most `glassEnv`, its own tint over at least `glassTint` m), so what is inside shows. */
+export function lessonGlass(m) {
+	let c = glassCache.get(m)
+	if (c) return c
+	c = m.clone()
+	c.onBeforeCompile = m.onBeforeCompile
+	c.customProgramCacheKey = m.customProgramCacheKey
+	c.envMapIntensity = Math.min(m.envMapIntensity ?? 1, LESSON_LIQUID.glassEnv)
+	if (Number.isFinite(m.attenuationDistance)) c.attenuationDistance = Math.max(m.attenuationDistance, LESSON_LIQUID.glassTint)
+	glassCopies.add(c)
+	glassCache.set(m, c)
+	return c
+}
 
 /** Is this mesh one of the liquids' vessels' faint glass panes (alpha-blended, no depth write)? */
 export function isPane(o) {
@@ -200,7 +227,7 @@ export function lessonLiquid(m, grade = null) {
 	return c
 }
 
-/** Put the lesson look on what is drawn under `root`: liquids, streams and glass panes get their lesson copies, machinery is hidden. Cheap (a traversal and a WeakMap
+/** Put the lesson look on what is drawn under `root`: liquids, streams, glass and panes get their lesson copies, machinery is hidden. Cheap (a traversal and a WeakMap
  *  look-up a mesh), so the view runs it on a run's group whenever models have come in and on its plug-ins' groups at every draw (a module makes
  *  its liquid's meshes as it pours). grade: web/models3d.js gradeShader (the paints' tone mapping); noShadow: the solid ids whose meshes cast no
  *  shadow (the static parts held up in mid-air). Returns how many materials it swapped. */
@@ -213,7 +240,7 @@ export function lessonPass(root, grade = null, noShadow = null) {
 		}
 		if (!o.isMesh) return
 		if (noShadow && o.castShadow && noShadow.has(o.userData?.solidId)) o.castShadow = false
-		const c = isLiquid(o) ? lessonLiquid(o.material, grade) : isPane(o) ? lessonPane(o.material) : isStream(o) ? lessonStream(o.material, grade) : null
+		const c = isLiquid(o) ? lessonLiquid(o.material, grade) : isPane(o) ? lessonPane(o.material) : isStream(o) ? lessonStream(o.material, grade) : isGlass(o) ? lessonGlass(o.material) : null
 		if (c && c !== o.material) {
 			o.material = c
 			n++

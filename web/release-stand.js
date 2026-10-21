@@ -82,9 +82,9 @@ export function floats(doc, s, q) {
 
 /** What holds a held item: "post" | "hidden" | "hanger" (want: the style's release stand, "auto" resolved here for the item's held part s at pose
  *  q: a holder from above in or over a liquid, or for a thing held up in mid-air (airborne: more than 1 cm over whatever is under it) with room
- *  over it (roomAbove: no static thing within 5 cm over it, as a magnet just over a clip), else the pin and post that go (a thing that rests on
- *  something, a car at the top of a ramp, is held from behind; so is one with a magnet just over it). Decided per scene: a lesson whose screens
- *  differ in what is over the thing names one release stand for all of them. */
+ *  over it for the holder's pad and arm (roomAbove: no static thing's underside within 1.2 cm over its top; one further up, a magnet over a clip,
+ *  the holder comes down behind), else the pin and post that go (a thing that rests on something, a car at the top of a ramp, is held from
+ *  behind). Decided per scene: a lesson whose screens differ in this names one release stand for all of them. */
 export function standModeFor(want, doc, s, q, { airborne = false, roomAbove = true } = {}) {
 	if (want === "post" || want === "hidden" || want === "hanger") return want
 	return overLiquid(doc, q.x, q.y) || (airborne && roomAbove) ? "hanger" : "hidden"
