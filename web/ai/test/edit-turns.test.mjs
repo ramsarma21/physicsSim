@@ -3,9 +3,9 @@
 import test from "node:test"
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { routeKind, cleanTargets, targetWords, overlapFeedback, fixFeedback, hitsInOrder, newOverlaps, headsUpLines, headsUpText, lastUserTurn, namedInTurn, aimReply, stillFailsText, REPLY_KINDS } from "../edit-turns.js"
+import { routeKind, cleanTargets, targetWords, overlapFeedback, fixFeedback, hitsInOrder, newOverlaps, headsUpLines, headsUpText, lastUserTurn, namedInTurn, aimReply, stillFailsText, mishapLines, REPLY_KINDS } from "../edit-turns.js"
 import { aimContainer, freePath } from "../aim.js"
-import { digestScene } from "../orchestrator.js"
+import { digestScene, editLead } from "../orchestrator.js"
 import { isStaticItem } from "../solver.js"
 import { prepare, finish, layout } from "../../sim/index.js"
 import { handle } from "../../sim/engine-worker.js"
@@ -79,6 +79,28 @@ test("new start-up overlaps only; the heads-up says what the lead doesn't (stage
 	assert.deepEqual(headsUpLines({ lost: ["Dominoes: 3 of 7 fall (was 7 of 7)"], said: "I moved the dominoes 5 cm left — now dominoes: 3 of 7 fall ✗." }), [])
 	assert.equal(headsUpText(["a", "b", "c"]), "Heads-up, in the new run: a, b and c.")
 	assert.equal(headsUpText([]), "")
+})
+
+test("mishaps (V2 release): what the change added that ran into the table's end or that a module says went wrong is said in the lead, never 'everything still works'", async () => {
+	// the AI's edit "Add a second battery car next to it with a hobby motor instead, so the two race" (the scene it made, on the real engine): the
+	// hobby-motor car runs into the table's right end at 3.85 s with its battery, and both its leads pull off
+	const before = JSON.parse(readFileSync(new URL("./fixtures/race/batterycar-build.scene.json", import.meta.url), "utf8"))
+	const after = JSON.parse(readFileSync(new URL("./fixtures/race/batterycar-edit1.scene.json", import.meta.url), "utf8"))
+	const sim = await simulate(after)
+	const lines = mishapLines({ after: sim, beforeScene: before, afterScene: after, skip: ["car", "motor"] })
+	assert.deepEqual(lines.map((l) => l.text), ["Battery 2 (2 AA) and Hobby-motor car run into the end of the table", "Black lead 2 pulled off", "Red lead 2 pulled off"])
+	assert.ok(Math.abs(lines[0].t - 3.84) < 0.05 && Math.abs(lines[1].t - 3.9) < 0.05, JSON.stringify(lines))
+	// (the things the scene had before are never this change's mishaps; a goal that names a thing may want it so; a goal on the wall, a hit)
+	assert.deepEqual(mishapLines({ after: sim, beforeScene: after, afterScene: after }), [])
+	assert.deepEqual(mishapLines({ after: sim, beforeScene: before, afterScene: after, skip: ["wire3", "wire4", "wall-right"] }), [])
+	const both = [{ label: "The battery car drives forward along the table", ok: true, was: true }, { label: "The motor turns", ok: true, was: true }]
+	const said = lines.map((l) => `${l.text} (${l.t.toFixed(2)} s)`)
+	const lead = editLead({ changes: ["added a toy car next to the battery (2 AA)"], targets: both, mishaps: said })
+	assert.doesNotMatch(lead, /everything still works/)
+	assert.match(lead, /^Done — both goals still happen, but Battery 2 \(2 AA\) and Hobby-motor car run into the end of the table \(3\.8\d s\), Black lead 2 pulled off \(3\.9\d s\) and 1 more thing goes wrong ✗$/)
+	assert.equal(editLead({ changes: ["x"], targets: both }), "Done — everything still works ✓", "(without mishaps, as before)")
+	assert.equal(editLead({ changes: ["x"], targets: [{ label: "The car moves", ok: true }], mishaps: ["Wire 3 pulled off (2.00 s)"] }), "Done — the car moves, but Wire 3 pulled off (2.00 s) ✗")
+	assert.equal(editLead({ changes: ["x"], targets: [], mishaps: ["Wire 3 pulled off (2.00 s)"] }), "Done — Wire 3 pulled off (2.00 s) ✗")
 })
 
 test("aim helpers: the user's last turn, whether it named the container, and the replies", () => {

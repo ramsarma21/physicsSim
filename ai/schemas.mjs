@@ -2117,8 +2117,10 @@ function dropHeightMissing(list, path, warnings) {
 function outcomeGoalSoft(v, ctx) {
 	if (v?.mode !== "patch" || !["change", "fix"].includes(v?.kind) || !statesNewOutcome(ctx?.text)) return []
 	if ((Array.isArray(v.patches) ? v.patches : []).some((p) => isObj(p) && p.op === "set_goals")) return []
+	// (a race: "add a second car next to it, so the two race" added the car and no goal for it, V2 release)
+	const race = /\brac(?:e|es|ing)\b/i.test(String(ctx.text ?? "")) ? ` For a race: faster {a: the one that wins, b: the other} and moves {item, min_m} for each racer, each in a lane of its own with room to finish (the energy and measuring modules' lines).` : ""
 	return [
-		`The request asks for an outcome of its own ("${String(ctx.text).trim().slice(0, 160)}"), but the answer sets no goal for it: add set_goals with every goal the scene keeps plus one for that outcome, of the goal kind that checks it (the core kinds or a physics module's: deforms_more {a, b} for "squashes more than", melts_first, floats, lights, farther, faster…). Leave out a goal of the scene that the new outcome makes untrue, and say so in the reply. If no goal kind can check it, or the scene already has that goal, keep the answer as it is`
+		`The request asks for an outcome of its own ("${String(ctx.text).trim().slice(0, 160)}"), but the answer sets no goal for it: add set_goals with every goal the scene keeps plus one for that outcome, of the goal kind that checks it (the core kinds or a physics module's: deforms_more {a, b} for "squashes more than", melts_first, floats, lights, farther, faster…).${race} Leave out a goal of the scene that the new outcome makes untrue, and say so in the reply. If no goal kind can check it, or the scene already has that goal, keep the answer as it is`
 	]
 }
 

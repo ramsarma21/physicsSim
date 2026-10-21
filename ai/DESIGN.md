@@ -430,6 +430,16 @@ without modules: the digest text, the prompts and every answer are what they wer
   than the 300 g spring, but don't change any of the masses" → "Done — both goals happen ✓ … No longer checked: “The spring with 200 g squashes more
   than the one with 100 g”"; a heat scene "now make the plain ice cube melt first, without taking the salt off" → the plain cube on an aluminium plate,
   "Done — the plain ice cube melts first ✓" (was "It already works: the salted ice cube melts first ✓ — nothing changed").
+- **A race, and what the change added going wrong** (2026-10-21, the V2 release's app test: "Add a second battery car next to it with a hobby motor
+  instead, so the two race" added the car and no goal for it, in the first car's lane 36 cm ahead; it ran into the table's end at 3.85 s, its battery
+  thrown off and both its leads pulled off, under "Done — everything still works ✓"): `race` is an outcome verb ("so the two race" asks for one:
+  the soft repair then names its goals, faster {a, b} and moves for each racer, in lanes of their own with room to finish); the energy module's plan
+  and edit lines say how (the measuring module's lanes one above the other at x −0.15, 2.9 m with margin 0.3 inside the table's end walls,
+  end_stop on: checked in the engine, both cars' goals met, no lead pulled off); and `mishapLines` (web/ai/edit-turns.js): a thing the change added
+  that runs into an invisible wall at the table's end, or that a module says went wrong (a lead pulled off, a bulb or LED burnt out, a short, a
+  break; not for a thing a goal names), is said in the edit's lead with its time, "Done — both goals still happen, but Battery 2 (2 AA) and
+  Hobby-motor car run into the end of the table (3.84 s), Black lead 2 pulled off (3.90 s) and 1 more thing goes wrong ✗", never "everything
+  still works". Tests: `ai/test/edit-outcome.test.mjs`, `web/ai/test/edit-turns.test.mjs` (the AI's own scene on the real engine).
 - **"What I planned" after tuning**: the critic is sent what the user was told (the plan's `reply`) and may answer `planned` (refine and rate, ≤ 1200
   characters, only with done or in the final check) when the version it judges no longer fits it; a new scene's card shows that for the version on the
   table (`verdictOf` keeps it), else `web/ai/planned-words.js` `refreshPlanned` puts each setting the planner's words state (props, a held thing's height,

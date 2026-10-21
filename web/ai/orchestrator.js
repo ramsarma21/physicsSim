@@ -26,7 +26,7 @@ export { quotaWords, resetWords, OFF_WORDS, SIGN_IN_WORDS }
 import { findFix as searchFix, restageFix, TIME_SCALE, probeRun, fixTargets, judge as judgeTargets, outcomeWords, FIX_MS, riderMap, groupNames, chainStop, tippers as fixerTippers, chainBreak, claimLabel, characterBreak, placeName, standardSized, containerKind, STD_SIZE, dimKeys, offRealSize, helperSizeBreak, farness, chainOf, frozenChanged } from "./fixer.js"
 import { build as buildDoc, catalog as simCatalog, MATERIALS, layout as simLayout, inside as simInside } from "../sim/index.js"
 import { conceptRoute, pickConcept, withDeadline, dropPictureLines, dropPictureSentences, mentionsPicture, CONCEPT_LABEL, CONCEPT_NOTE, IMAGINE_DEADLINE_MS } from "./imagine.js"
-import { routeKind, REPLY_KINDS, cleanTargets, targetWords, overlapFeedback, fixFeedback, newOverlaps, headsUpLines, lastUserTurn, namedInTurn, aimReply } from "./edit-turns.js"
+import { routeKind, REPLY_KINDS, cleanTargets, targetWords, overlapFeedback, fixFeedback, newOverlaps, headsUpLines, lastUserTurn, namedInTurn, aimReply, mishapLines } from "./edit-turns.js"
 import { aimContainer } from "./aim.js"
 import { kindNoun, aKindOf, weightOf, imperative, solidMass, clipLabel, changesLabel, tidyBrackets } from "./words.js"
 import { statesNewOutcome, orderKey, overriddenBy } from "./outcome-goals.js"
@@ -2237,7 +2237,7 @@ const inClause = (label) => {
 	const t = String(label ?? "").replace(/[.!]+$/, "")
 	return /^(The|A|An|All|Every|Each|Both)\b/.test(t) ? lc(t) : t
 }
-export function editLead({ changes = [], targets = [], noChange = false, fixApplied = null, undid = null, room = [], said = null, also = [] }) {
+export function editLead({ changes = [], targets = [], noChange = false, fixApplied = null, undid = null, room = [], said = null, also = [], mishaps = [] }) {
 	const plain = (l) => {
 		const t = String(l).replace(/[.!]+$/, "")
 		return /^(The|A|An|All|Every|Each|Both)\b/.test(t) ? lc(t) : t
@@ -2249,7 +2249,14 @@ export function editLead({ changes = [], targets = [], noChange = false, fixAppl
 	if (!failed.length) {
 		const kept = explicit.length > 0 && explicit.every((t) => t.was === true) && !fixApplied
 		const implicitKept = !explicit.length && targets.length === 1 && targets[0].was === true ? `${plain(targets[0].label)}, as before ✓` : ""
-		const outcome = explicit.length === 1 ? (kept ? `${plain(explicit[0].label)}, as before ✓` : `${plain(explicit[0].label)} ✓`) : explicit.length > 1 ? (kept ? "everything still works ✓" : `${allN(explicit.length)} goals happen ✓`) : implicitKept
+		let outcome = explicit.length === 1 ? (kept ? `${plain(explicit[0].label)}, as before ✓` : `${plain(explicit[0].label)} ✓`) : explicit.length > 1 ? (kept ? "everything still works ✓" : `${allN(explicit.length)} goals happen ✓`) : implicitKept
+		// (what the change added went wrong in the run though every goal passes (./edit-turns.js mishapLines: it ran into the table's end, a lead
+		// pulled off): said, never "everything still works" over it; the goals that pass are still named)
+		if (mishaps.length) {
+			const ok = explicit.length > 1 ? `${kept ? (explicit.length === 2 ? "both goals still happen" : `all ${explicit.length} goals still happen`) : `${allN(explicit.length)} goals happen`}` : outcome.replace(/ ✓$/, "")
+			const what = mishaps.length > 2 ? `${mishaps.slice(0, 2).join(", ")} and ${plural(mishaps.length - 2, "more thing")} go${mishaps.length - 2 === 1 ? "es" : ""} wrong` : andList(mishaps)
+			outcome = `${ok ? `${ok}, but ` : ""}${what} ✗`
+		}
 		// (a "make it work" says what it changed in the lines the card lists, every one of them: never the fix's words alone while the list shows
 		// the cans emptied too (V8832 y8))
 		if (Array.isArray(said) && said.length) return `Done! I ${saidChanges(said.map((c) => c?.text ?? String(c)), said.map((c) => c?.name ?? null))}${outcome ? ` — ${outcome}` : "."}`
@@ -6378,7 +6385,13 @@ export function createOrchestrator(deps) {
 				// (only what it was moved to clear: "to sit on the middle of the cup post" is no reason a goal fails)
 				return [...unasked].filter(([id, u]) => refs.has(id) && /^to clear /.test(u.reason)).map(([, u]) => `${u.reason} I also ${u.words}`)
 			}
-			report.lead = editLead({ changes: asked.map((c) => c.text), targets: report.targets ?? [], noChange: !!report.edit?.noChange && !report.fixApplied, fixApplied: oneChange ? null : report.fixApplied, undid: report.edit?.fixFlow?.undid ?? null, room: roomLines, also: alsoLines(), said: fixKind && pureFix && report.fixApplied && humanList.length ? humanList : null })
+			// (what the change added that went wrong in the run, a goal or not: the second battery car added "so the two race" ran into the table's
+			// end and both its leads pulled off under "everything still works ✓" (V2 release); said with the names on screen, at its time)
+			let mishaps = []
+			try {
+				mishaps = mishapLines({ after: cur.sim, beforeScene: request.scene, afterScene: cur.scene, skip: (G(cur) ?? []).filter(isObj).flatMap((g) => goalRefs(g)) }).map((m) => `${clauseName(m.text, cur.scene)} (${Number(m.t).toFixed(2)} s)`)
+			} catch {}
+			report.lead = editLead({ changes: asked.map((c) => c.text), targets: report.targets ?? [], noChange: !!report.edit?.noChange && !report.fixApplied, fixApplied: oneChange ? null : report.fixApplied, undid: report.edit?.fixFlow?.undid ?? null, room: roomLines, also: alsoLines(), said: fixKind && pureFix && report.fixApplied && humanList.length ? humanList : null, mishaps })
 			if (report.edit) {
 				// a "make it work" that still fails says so (the lead says what happens instead); a plain change gets the heads-up (§14.2 (5)) only
 				// for what the lead doesn't already say: stages that worked and no longer do, firm hits that no longer happen

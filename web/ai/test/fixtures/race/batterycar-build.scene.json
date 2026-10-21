@@ -1,0 +1,111 @@
+{
+ "version": 2,
+ "id": "battery-car-drives-along",
+ "name": "Battery car drives along",
+ "seconds": 6,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "car",
+   "type": "toy-car",
+   "name": "Toy car",
+   "x": -0.0625,
+   "y": 0.0005,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "battery",
+   "type": "battery",
+   "name": "Battery (2 AA)",
+   "x": 0.00825,
+   "y": 0.052036,
+   "angle": -14.420773127510982,
+   "props": {}
+  },
+  {
+   "id": "motor",
+   "type": "motor",
+   "name": "Geared motor",
+   "x": -0.05,
+   "y": 0.0818,
+   "angle": 0,
+   "props": {
+    "kind": "geared",
+    "drives": "wheels",
+    "car": "car"
+   }
+  },
+  {
+   "id": "wire1",
+   "type": "wire",
+   "name": "Red lead",
+   "x": 0,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "a": "battery",
+    "b": "motor",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "wire2",
+   "type": "wire",
+   "name": "Black lead",
+   "x": 0,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "a": "motor",
+    "a_end": "-",
+    "b": "battery",
+    "color": "black"
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "spins",
+   "item": "motor",
+   "label": "The motor turns"
+  }
+ ]
+}
