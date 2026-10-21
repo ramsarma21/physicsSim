@@ -3554,7 +3554,7 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
   read 94 g in the jar and 10 g outside of the 160 g poured: as the cup passed 90° + φ its spout wall stood steeper than repose, the line through the
   lip only clipped the opening's corner, and excess ÷ that short chord was a layer as thick as the cup is long: 69 mL left in one step at 1.8 m/s and
   flew 20 cm, past the landing bed, and was lost (from about 3 cm over the rim up, whatever the height). Now the layer is never thicker than the
-  grains over the line (at most 0.9 mL a step, 0.42 m/s: all 160 g in the jar at every height the probe tried, 0-19 cm over the rim); what does
+  grains over the line (at most 0.9 mL a step, 0.42 m/s: all 160 g in the jar at every height the probe tried, its lip 4-19 cm over the rim); what does
   land outside (a cup held high, a stream thrown wide) is read in `outside_g` wherever it went, and said; a grain landing on a wall's top more than
   3 columns from any column that holds grains rolls to the nearest one (it fell on through the wall); the landing region's top is under the lip.
   Checked: `rw-validate-kitchen.ts conserve` (56 pours over 7 containers, the lip 0-15 cm over each rim, tipped 125° and 150°: the worst
