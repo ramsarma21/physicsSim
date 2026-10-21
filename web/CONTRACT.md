@@ -3649,15 +3649,17 @@ above (and a starting gate: the hand wins when an item sets both).
   against the thing's outline in the machine plane and its drawn depth — the model's own box, so a wine cork is 44 mm long). `auto` picks: in a
   liquid (the liquids module's water, `doc.processes` kind `liquid`), a thing that rises (lighter than the liquid) gets `press` up to 6.5 cm and
   `grip` above, one that sinks `pinch` up to 4.5 cm (or thin: under 1.5 cm one way and at most 20 cm, a nail, a pencil) and `grip` above; out of
-  one, a thing that rises with room above it `press`; else a small or thin thing `pinch`; a thing resting on something (less than 4 mm over it)
-  `grip` from above; else `palm`. Which way it goes is read from the run (its first
+  one, a thing that rises with room above it `press`; else a small or thin thing `pinch`; a thing with less than 4 cm under it (the hand would not
+  fit: it rests on something, or nearly) `grip` from above; else `palm`. A `palm` asked for where no hand fits under the thing is a `grip` from
+  above, and a pinch from a side needs 3 cm under it (else it is from above): a hand never goes through what the thing stands on. Which way it goes is read from the run (its first
   3 mm within 0.6 s of the release); a thing let go only after the run ends (a still) is guessed from its density against its liquid's (else it
   falls). `pinch`: the thumb and index on either side of it across the way it will go, so it slides out from between them (the fingers front and back
   when it is thin that way), at its end on the hand's side (7 mm in) or from above at its middle. `grip` from above: the hand on top, the fingers
   draped down one side (a little toward the camera) and the thumb round its back, so its front shows; a bar (longer than 5 cm and twice its depth, at
   most 4 cm high and deep) lies across the base of the fingers in a fist. `palm` under a ball is tangent to it 20 degrees off its bottom toward the camera.
 - **Letting go**: at the release the fingers open (0.08 s, as `doc.release.holder`'s opening) and the hand leaves along its way out (the arm's line;
-  a palm drops 5 cm straight down from under the thing, then goes out to its side and down), starting at 30 m/s² up to 1.4 m/s (a palm 40 m/s² and
+  a palm drops straight down from under the thing, up to 5 cm and never into what is under it, then goes out to its side, and down only with 40 cm
+  of room), starting at 30 m/s² up to 1.4 m/s (a palm 40 m/s² and
   2.5 m/s: a thing falls at g, and a hand left under it would be seen to carry it; a cork shoots up at under 20 m/s², so the finger is seen to leave
   it, not to lift it). Frame by frame the hand is also kept 0.8 mm clear of the thing it let go, from the track (the hand is pushed further along its
   way when the thing would reach it: it never passes through it and never comes back); it is hidden once out of the picture. A thing that leaves at

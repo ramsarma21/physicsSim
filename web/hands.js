@@ -26,6 +26,8 @@ export const HAND_MODES = ["scene", "all", "off"]
 export const HOLD_GRIPS = ["auto", "pinch", "palm", "press", "grip"]
 export const PUSH_SKINS = ["finger", "hand", "two hands", "fist"]
 export const OPEN_S = 0.08 // the fingers open at the release (doc.release.holder: holding -> opening 0.08 s -> open)
+const PALM_ROOM = 0.04 // m under a thing for a palm to go under it (the hand 2.2 cm thick, and air), else it is held from above
+const PINCH_ROOM = 0.03 // ... for a pinch from the side (the curled fingers hang below it), else from above
 const WA = 30 // m/s²: a hand pulled away from what it let go (a quick flick of the forearm; a cork rises from rest at under 20 m/s² in water)
 const WV = 1.4 // m/s: ... and its speed out of the picture
 const D2R = Math.PI / 180
@@ -435,24 +437,29 @@ function clearance(rig, d, links = null) {
 function closeFinger(rig, d, i, { gap = 0.0006, most = null, step = 1.5 } = {}) {
 	const P = rig.pose
 	const isT = i === "t"
+	// (the thumb's metacarpal is the ball of the thumb, part of the palm: a thing resting on the palm touches it, so it is not a part that stops the
+	// closing; the thumb's swing toward the palm stops where its phalanges touch)
 	const acc = isT
 		? [
-				{ get: () => -P.t[1], set: (v) => (P.t[1] = -v), max: most?.[0] ?? 62, k: 0.7, link: "t.0" },
+				{ get: () => -P.t[1], set: (v) => (P.t[1] = -v), max: most?.[0] ?? 62, k: 0.7, link: "t.1" },
 				{ get: () => P.t[3], set: (v) => (P.t[3] = v), max: most?.[1] ?? 55, k: 1, link: "t.1" },
 				{ get: () => P.t[4], set: (v) => (P.t[4] = v), max: most?.[2] ?? 70, k: 1, link: "t.2" }
 			]
 		: [0, 1, 2].map((j) => ({ get: () => P.f[i][j + 1], set: (v) => (P.f[i][j + 1] = v), max: most?.[j] ?? FLEX_MAX[i][j], k: [1, 1.15, 0.75][j], link: `f${i}.${j}` }))
 	const top = isT ? rig.t.cmc : rig.f[i].mcp
-	const links = acc.map((a) => a.link)
-	const touching = (j) => {
+	const links = isT ? ["t.1", "t.2"] : acc.map((a) => a.link)
+	const touching = () => {
 		applyPose(rig, P)
 		top.updateMatrixWorld(true)
-		return clearance(rig, d, (l) => links.indexOf(l) >= j) < gap
+		return clearance(rig, d, (l) => links.includes(l)) < gap
 	}
 	rig.root.updateMatrixWorld(true)
-	// (already in it: open it until it is not, then stop)
-	if (touching(0)) {
-		for (let n = 0; n < 60 && touching(0); n++) for (const a of acc) a.set(a.get() - 2)
+	// (already in it: open it a little until it is not, at most 30 degrees a joint; failing that it stays as it was)
+	if (touching()) {
+		const was = acc.map((a) => a.get())
+		for (let n = 0; n < 15 && touching(); n++) for (const a of acc) a.set(a.get() - 2)
+		if (touching()) acc.forEach((a, j) => a.set(was[j]))
+		applyPose(rig, P)
 		return
 	}
 	let active = 0 // joints before this one are stopped
@@ -471,7 +478,7 @@ function closeFinger(rig, d, i, { gap = 0.0006, most = null, step = 1.5 } = {}) 
 		// which part touches first, from the tip back: it stops its own joint and the ones before it
 		let hit = -1
 		for (let j = acc.length - 1; j >= active; j--) {
-			if (clearance(rig, d, (l) => l === acc[j].link) < gap) {
+			if (clearance(rig, d, (l) => l === acc[j].link || (isT && j === 0 && l === "t.2")) < gap) {
 				hit = j
 				break
 			}
@@ -673,8 +680,9 @@ function densityOf(list, doc) {
 	return v > 0 ? m / v : null
 }
 
-/** Statics (not of the item) whose outline comes within `reach` above / below the thing's extent E across its width: {above: gap or Infinity, below}. */
-function roomAround(E, statics, pf, reach = 0.15) {
+/** Statics (not of the item) over or under the thing's extent E across its width: {above: the gap to the nearest within 15 cm, or Infinity; below: the
+ *  gap to the nearest within 50 cm, or Infinity}. */
+function roomAround(E, statics, pf, reach = 0.15, reachBelow = 0.5) {
 	let above = Infinity
 	let below = Infinity
 	for (const s of statics) {
@@ -683,7 +691,7 @@ function roomAround(E, statics, pf, reach = 0.15) {
 		if (e.y0 >= E.y1 - 0.001) above = Math.min(above, e.y0 - E.y1)
 		if (e.y1 <= E.y0 + 0.004) below = Math.min(below, E.y0 - e.y1)
 	}
-	return { above: above <= reach ? above : Infinity, below: below <= reach ? below : Infinity }
+	return { above: above <= reach ? above : Infinity, below: below <= reachBelow ? below : Infinity }
 }
 
 /** The grip a held thing gets for `auto`: from its size, whether it is in a liquid, which way it goes once let go and what is round it. */
@@ -694,7 +702,7 @@ export function autoGrip({ E, move, inWater, room, depth = Infinity }) {
 	if (inWater) return rises ? (size <= 0.065 ? "press" : "grip") : size <= 0.045 || thin ? "pinch" : "grip"
 	if (rises && room.above === Infinity) return size <= 0.065 ? "press" : "grip"
 	if (size <= 0.045 || thin) return "pinch"
-	if (room.below < 0.004) return "grip" // (it rests on something: held from above)
+	if (room.below < PALM_ROOM) return "grip" // (it rests on something, or a hand would not fit under it: held from above)
 	return "palm"
 }
 
@@ -716,12 +724,12 @@ export function fromFor(grip, from, { move, inWater, room }) {
 	if (grip === "palm") return from === "left" || from === "right" ? from : sideFrom(move)
 	if (from === "left" || from === "right" || from === "above") return from
 	if (grip === "grip") return "above"
-	return (inWater || room.below < 0.004) && room.above === Infinity ? "above" : sideFrom(move) // (pinch)
+	return (inWater || room.below < PINCH_ROOM) && room.above === Infinity ? "above" : sideFrom(move) // (pinch: from a side only with room under the hand)
 }
 
 /** The hold of one thing: {rig, wrist, X, Y, armDir, exit: [{dir, len}] (the way out once it is let go: straight lines, the last one open-ended),
  *  pose} with the fingers closed round it (field d, its extent E, its first move). */
-function solveHold(grip, from, d, E, move) {
+function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infinity }) {
 	const R = refs()
 	const side = from === "right" ? -1 : 1 // (from the side: +1 the arm comes from the left and the hand reaches to +x)
 	const falls = !!move && move.y < 0.3 // (what it does once let go: the fingers never wrap under a thing that will drop out of them)
@@ -799,12 +807,15 @@ function solveHold(grip, from, d, E, move) {
 		}
 		applyPose(rig, POSES.cup)
 		W.copy(B).sub(offsetOf(rig, V(0.046, -PALM_T / 2 - 0.0003, 0), X, Y))
-		A = V(-side * 0.94, -0.22, 0.18)
-		// (let go, a hand drops straight down from under it, faster than it falls, then out to its side and down)
-		exit = [{ dir: V(0, -1, 0), len: 0.05 }, { dir: V(-side * 0.95, -0.3, 0.06), len: Infinity }]
+		A = room.below < 0.4 ? V(-side * 0.94, 0.08, 0.25) : V(-side * 0.94, -0.22, 0.18) // (near what is under it the forearm rises, never through it)
+		// (let go, a hand drops straight down from under it, faster than it falls, then out to its side and down; never into what is under it: the
+		// drop is what the room under the thing leaves, and the way out is level when that is under 25 cm)
+		const drop = clamp(room.below - 0.027, 0.005, 0.05)
+		exit = [{ dir: V(0, -1, 0), len: drop }, { dir: V(-side * 0.95, room.below < 0.4 ? 0 : -0.3, 0.06), len: Infinity }]
 		pace = { a: 40, v: 2.5 } // (a whip away: it falls at g, and a hand left under it would be seen to carry it)
 		rig.pose = copyPose(POSES.cup)
-		close = [[0, { most: [30, 35, 25] }], [1, { most: [30, 35, 25] }], [2, { most: [30, 35, 25] }], [3, { most: [30, 35, 25] }], ["t", { most: [20, 20, 20] }]]
+		rig.pose.t = [-50, 12, 88, 4, 4] // (the thumb a little below the palm, so it closes up onto the thing's side however wide its base)
+		close = [[0, { most: [30, 35, 25] }], [1, { most: [30, 35, 25] }], [2, { most: [30, 35, 25] }], [3, { most: [30, 35, 25] }], ["t", { most: [24, 20, 20] }]]
 	} else {
 		// "grip": the whole hand round it, from above (the fingers draped down its front) or from a side (the palm on that side, the fingers round its
 		// front); a thin bar lies across the base of the fingers, a big thing under the middle of the palm
@@ -1014,7 +1025,8 @@ function holdRig(p, pf, C) {
 	}
 	const others = C.statics.filter((s) => s.item !== p.item)
 	const room = roomAround(E, others, pf)
-	const grip = p.grip === "auto" ? autoGrip({ E, move, inWater, room, depth: 2 * halfZ(d) }) : p.grip
+	// (a palm asked for where no hand fits under the thing is a grip from above: a hand never goes through what it stands on)
+	const grip = p.grip === "auto" ? autoGrip({ E, move, inWater, room, depth: 2 * halfZ(d) }) : p.grip === "palm" && room.below < PALM_ROOM ? "grip" : p.grip
 	const from = fromFor(grip, p.from ?? "auto", { move, inWater, room })
 	if (p.kind === "fixed" && grip === "grip") {
 		// a fist round a fixed bar: at its end away from what moves (a magnet held by its far end)
@@ -1026,7 +1038,7 @@ function holdRig(p, pf, C) {
 			E.cx = at
 		}
 	}
-	const S = solveHold(grip, from, d, E, move)
+	const S = solveHold(grip, from, d, E, move, room)
 	const rig = S.rig
 	const W0 = S.wrist
 	const hold = S.pose
