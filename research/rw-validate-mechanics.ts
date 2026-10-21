@@ -7,7 +7,8 @@
 //              K2 the same scene twice gives the same track, byte for byte (determinism); K3 a 60 g lump of clay on the car's roof rides
 //              down with it and changes the roll by under 10 % (rolling resistance ∝ weight)
 //   start      K4 a motor car at 10/3 m/s given start_speed 10/3 crosses 10 m at 3.000 ± 0.005 s; a bowling ball given 2 m/s on concrete
-//              still has ≥ 1.95 m/s after 1 m (rolling resistance 0.01 [WHITE-RR]: v² = v0² − 2·C_rr·g·d)
+//              still has ≥ 1.95 m/s after 1 m (rolling resistance 0.01 [WHITE-RR]: v² = v0² − 2·C_rr·g·d); an Atwood machine started the
+//              rope's way: equal weights go on at their start speed (± 1 %), unequal ones speed up at g·(m₁ − m₂)/(m₁ + m₂) (± 1 %)
 //   forces     K5 a 1 kg cart pulled 5 N one way and 3 N the other: a = (2 − C_rr·m·g)/(m + wheels' I/r²) toward the 5 N side ± 1.5 %;
 //              equal pulls: it stays (≤ 1 mm); K9 F = ma: a 0.5 kg cart and 50 g over an edge pulley: a = m·g/(M + m) = 0.892 m/s²
 //              [SERWAY] within 5 %, and with the cart's rolling resistance (0.003 [PASCO]) and wheels counted, within 1 %
@@ -236,6 +237,20 @@ if (which === "start" || which === "all") {
 	const kb = b.track.frames.findIndex((f, i) => pose(b, bid, i).x >= bx0 + 1)
 	const vb = (pose(b, bid, kb + 2).x - pose(b, bid, kb - 2).x) / (b.track.frames[kb + 2].t - b.track.frames[kb - 2].t)
 	truth("K4 a bowling ball given 2 m/s on concrete still rolls at ≥ 1.95 m/s after 1 m", vb >= 1.95, `${vb.toFixed(4)} m/s (rolling, C_rr 0.01: ${Math.sqrt(4 - 2 * 0.01 * G * (5 / 7)).toFixed(4)})`)
+	// engine6: two bodies on one rope over a pulley start the rope's way (start_dir −90: its left weight down, the other up as fast): an Atwood
+	// machine with equal weights given 0.3 m/s goes on at 0.3 m/s (balanced forces, Newton's first law: lowered steadily); unequal weights start
+	// at 0.3 m/s and speed up at g·(m₁ − m₂)/(m₁ + m₂) [ATWOOD]. (It gave both weights the same start, which the rope could not take: equal
+	// weights did not move at all)
+	const atwood = (left: number, right: number) =>
+		run([{ id: "aw", type: "atwood-machine", x: 1.3, y: 1.4, props: { left_mass: left, right_mass: right, drop: 0.5, start_speed: 0.3, start_dir: -90 } }], { seconds: 1.4, release: 0.3, fps: 240 })
+	const eq = atwood(0.3, 0.3)
+	const v0 = vel(eq, "aw/left", 0.31, 0.36).y
+	const v1 = vel(eq, "aw/left", 1.25, 1.3).y
+	check("an equal-weight Atwood machine given 0.3 m/s down: its left weight still falls at 0.3 m/s 1 s later (balanced)", v1, -0.3, 0.01, " m/s")
+	check("and its right weight rises as fast as the left falls", vel(eq, "aw/right", 1.25, 1.3).y, -v1, 0.001, " m/s")
+	truth("it starts at its start speed", Math.abs(v0 + 0.3) < 0.003, `${v0.toFixed(4)} m/s`)
+	const un = atwood(0.35, 0.25)
+	check("an unequal Atwood machine (0.35 vs 0.25 kg) given 0.3 m/s: it speeds up at g·(m₁ − m₂)/(m₁ + m₂)", -accel({ track: { frames: un.track.frames.map((f) => ({ t: f.t, placements: { x: { x: f.placements["aw/left"]?.y ?? un.track.frames[0].placements["aw/left"].y, y: 0, angle: 0 } } })) } } as unknown as Run, "x", 0.32, 0.7), (G * 0.1) / 0.6, 0.01, " m/s²")
 }
 
 // ================================================================ K5, K9: forces

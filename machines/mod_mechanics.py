@@ -233,11 +233,17 @@ def _common(sb, scene):
             # a round body (a ball, a wheel) rolling along the floor turns at -v/r, the floor's way: its speed along its heading over its radius
             along = v * cos(a - heading)
             roll = props.get("start_spin", "roll") != "none"
+            # (two bodies on one rope over a pulley, an Atwood machine's weights or a pulley lift's weight and pail: the rope's first end moves as
+            # asked and its other end the rope's way, rising as fast as the first falls (÷ the rope's ratio); the same start for both was one the
+            # rope could not take, so equal weights given a start did not move at all)
+            rope_b = {j["b"]: j.get("ratio") or 1.0 for j in sb.joints
+                      if j.get("kind") == "pulley" and j.get("item") == iid and isinstance(j.get("a"), str) and isinstance(j.get("b"), str)}
             # (weld groups move as one: a start goes on each group's root, the solids without a parent; a vehicle's wheels are their own bodies)
             for s in mine:
                 if s["kind"] != "dynamic" or ("parent" in s and "pivot" not in s):
                     continue
-                rec = {"kind": "mechanics", "id": f"{s['id']}#start", "item": iid, "role": "start", "solid": s["id"], "vx": vx, "vy": vy}
+                rec = {"kind": "mechanics", "id": f"{s['id']}#start", "item": iid, "role": "start", "solid": s["id"], "vx": vx,
+                       "vy": round(-vy / rope_b[s["id"]], 6) if s["id"] in rope_b else vy}
                 if roll and s["body"]["kind"] == "ball" and s["body"]["radius"] > 0:     # (a ball too small to have a radius in the doc does not spin)
                     rec["w"] = round(-along / s["body"]["radius"], 6)
                 sb.processes.append(rec)

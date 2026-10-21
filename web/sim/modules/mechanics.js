@@ -253,9 +253,11 @@ function _common(sb, scene) {
 			const vy = py.pyRound(v * py.sin(a), 6)
 			const along = v * py.cos(a - heading)
 			const roll = (has(props, "start_spin") ? props.start_spin : "roll") !== "none"
+			// (two bodies on one rope over a pulley: its other end moves the rope's way, machines/mod_mechanics.py)
+			const ropeB = new Map(sb.joints.filter((j) => j.kind === "pulley" && j.item === iid && typeof j.a === "string" && typeof j.b === "string").map((j) => [j.b, py.truthy(j.ratio) ? j.ratio : 1.0]))
 			for (const s of mine) {
 				if (s.kind !== "dynamic" || (has(s, "parent") && !has(s, "pivot"))) continue
-				const rec = { kind: "mechanics", id: `${s.id}#start`, item: iid, role: "start", solid: s.id, vx, vy }
+				const rec = { kind: "mechanics", id: `${s.id}#start`, item: iid, role: "start", solid: s.id, vx, vy: ropeB.has(s.id) ? py.pyRound(-vy / ropeB.get(s.id), 6) : vy }
 				if (roll && s.body.kind === "ball" && s.body.radius > 0) rec.w = py.pyRound(-along / s.body.radius, 6) // (a ball too small to have a radius in the doc does not spin)
 				sb.processes.push(rec)
 			}
