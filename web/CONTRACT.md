@@ -3648,7 +3648,8 @@ bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte 
   (items.py = items.js) and the AI's `wallsInside` also read a pail's `wall1` and `wall2` as its left and right walls.
 - **Hanging machines hang** (web/ai/solver.js `hangClear`, `HUNG` = atwood-machine, pulley-lift): put `on` the table or a thing, it is raised so
   its lowest part hangs its rope's `drop` (0.1-1 m) over the support (placement report `hung`: that height; an info issue "hung"); set down, an
-  Atwood machine's two weights rested and nothing could move. `on: "air"` keeps its height exactly. The planner's notes for both types say so.
+  Atwood machine's two weights rested and nothing could move. `on: "air"` keeps its height exactly, and `planFromScene` (an edit's base plan) gives
+  a hanging machine its exact place (`on: "air"`, `keep`), so an edit's re-solve never hangs one unasked. The planner's notes for both types say so.
 - **start_speed on a pulley rope** (`_common`, both ports): two bodies of one item joined by a `pulley` joint start the rope's way: its `a` end
   as asked, its `b` end with vertical speed −vy ÷ the rope's ratio (both had the same start, which the rope could not take: equal weights did
   not move). An equal-weight Atwood machine given 0.3 m/s (start_dir −90) goes on at 0.2998 m/s 1 s later; 0.35 against 0.25 kg speeds up from
