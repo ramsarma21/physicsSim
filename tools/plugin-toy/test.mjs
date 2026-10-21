@@ -5,7 +5,8 @@
 //   summary   items.py summarize == web/sim summarize (the toy_melts goal kind, readings, happenings)
 //   plugins   the AI's registry: the goal kind (checkModuleGoal), knobs, prompt snippets, digest lines, change words
 //   identity  a scene without module items builds and runs exactly as without the framework (the 22 scenes: tools/plugin-toy/identity.sh)
-//   node tools/plugin-toy/test.mjs [--browser]   (--browser: also the bundle in headless Chromium)
+//   node tools/plugin-toy/test.mjs   (a step of tools/parity/run.sh, so CI's parity jobs run it; TOY_OUT=<dir> node tools/plugin-toy/browser.mjs
+//                                     then runs the bundle it built in headless Chromium)
 import { execFileSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
