@@ -3612,3 +3612,54 @@ are identical byte for byte (document, resolved, warnings, summary and track; Py
   `tools/parity-engine.mjs --catalog` ALL IDENTICAL (131 scenes × 3 runs in node and headless Chromium, 4 rates, 4 error messages),
   `tools/parity/fuzz-live.mjs --n 300` 754 cases, 0 mismatches; the node:test files as CI runs them, 473 of 473; the app in headless Chromium (the
   engine on the server and in the page) runs the starter and wrecking-ball, the same track both ways, no console errors.
+
+## Mechanics fixes (engine6, 2026-10-20): the pusher's push, holding from above, hanging machines, "moves" goals, a pail as a container
+From the lesson benchmark (lesson-regen/bench: FO-36, MA-25, FO-13, FO-79) and the sandbox AI follow-ups. No engine change (tooling/src/sim and the
+bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte for byte as before (server and web/sim).
+- **Pusher** (machines/mod_mechanics.py = web/sim/modules/mechanics.js `_pusher`): its rod sat inside its own static housing, so the contact
+  fought the drive's rail and its friction took a different share of every push (a sprung toy car pushed 5.0 N for 0.15 s left at 0.93 m/s,
+  5.25 N at 0.49 m/s). Now the slider's `a` is the housing (`a: "<id>/housing"`, `anchorA` (0.01, h − yh) and `axis` (1, 0) in the housing's
+  frame): planck joins the two, so they never touch. The housing (cart blue, 5 cm tall) is as long as the stroke + 2 cm (at least 10 cm, from x = −Lh
+  to 0 in the item's frame) and holds the rod 5 mm over its middle: `yh = max(0.025, height − 0.005)`; raised, it stands on a static wooden
+  `riser` (as long, from the floor to the housing). The rod spans the housing and 2 cm more (to the paddle at x 0.026, its face at 0.032: the
+  anchor text now says so) and stays in it over its whole stroke. The rod weighs 0.1356 kg and the paddle 0.0634 kg whatever the stroke and the
+  paddle's size (their densities set so): a paddle's size is its reach, not its push. A pusher at the default height and stroke builds a longer
+  housing than before (17 cm); its push is now its full F·t on the rod, the paddle and what it pushes. Checked (`research/rw-validate-mechanics.ts
+  pusher`, 13 checks; the base tree fails 12): a toy car pushed 3-9 N in 0.25 N steps for 0.15 s starts faster at every step, on carpet and
+  hardwood, rigid and 8 Hz axles; sprung = rigid within 1.8 %; 5 N within 1.7 % of (F·t − C_rr·m·g·t)/(car + wheels' I/r² + rod and paddle);
+  3 N × 0.2 s = 6 N × 0.1 s (the rolling resistance's share given back) within 0.6 %; 2.5, 7 and 14 cm paddles push a soccer ball alike (0.4 %);
+  pushing nothing, the rod and paddle go the integrator's own ½(F/0.199 kg)t² × 25/24 (0.02 %). Above about 7 N for 0.15 s the stroke's end
+  (15 cm) cuts the push short (the start then grows more slowly: still at every step).
+- **Held from above** (build hook `_holds`, both ports; render only): a held thing whose body (a root's middle) starts in a liquid (between a
+  `liquid` record's x0 and x1, over its floor, under its surface: the floor + its layers' heights) carries `holdFrom: "above"` on its moving
+  solids. web/view3d.js draws no pull pin or post for such an item; web/models/mod-mechanics.js "mechanics:holders" draws a grey plastic rod
+  from a steel arm over the tank, a pad and a two-tined fork on the thing's top (the tines down its sides to its middle's height, at most
+  2.5 cm), the arm running along the tank over its rim to a wooden post 4 cm past the tank's nearer end; at `doc.release.at` the arm, rod and
+  fork slide up the post (0.15 s, ease-out) until the fork is 2 cm over the rim, and stay. A cork held on a tank's floor, a grape held under the
+  water: marked; a ball held over the water, a cork in an empty tank: not. A scene without a liquid gets nothing.
+- **"moves" goals** (machines/items.py = web/sim/items.js summarize; ai/goals.mjs = web/ai/goals.js): an item's distance is its rigid body's
+  that moved most: each weld group's parts averaged (as the whole item's were), the most of those (`_weld_groups`; the AI's `T.rigid(item)`). An
+  Atwood machine whose weights moved 31 cm each way "moved 0 cm"; now 0.31 m. An item of one rigid body gets the same bits as before.
+- **A pulley lift's pail is a container**: the mechanics plugin's `place` (`containers: ["pulley-lift"]`, `interior`: the pail's inside in the
+  lift's frame from the lift built alone: between its walls, its floor's top to its rim, the bail left out), so `place: {inside: <lift>}` sets a
+  thing on the pail's floor (the gallery's own apple spot to 0.1 mm); "pulley-lift" is in `WALL_CONTAINERS` (ai/schemas.mjs, ai/catalog-digest.mjs)
+  and `CONTAINERS_BY_WALLS` (web/ai/solver.js): an "in" goal on it becomes the scene's "walls" goal, judged by the pail's walls; `walls_inside`
+  (items.py = items.js) and the AI's `wallsInside` also read a pail's `wall1` and `wall2` as its left and right walls.
+- **Hanging machines hang** (web/ai/solver.js `hangClear`, `HUNG` = atwood-machine, pulley-lift): put `on` the table or a thing, it is raised so
+  its lowest part hangs its rope's `drop` (0.1-1 m) over the support (placement report `hung`: that height; an info issue "hung"); set down, an
+  Atwood machine's two weights rested and nothing could move. `on: "air"` keeps its height exactly. The planner's notes for both types say so.
+- **start_speed on a pulley rope** (`_common`, both ports): two bodies of one item joined by a `pulley` joint start the rope's way: its `a` end
+  as asked, its `b` end with vertical speed −vy ÷ the rope's ratio (both had the same start, which the rope could not take: equal weights did
+  not move). An equal-weight Atwood machine given 0.3 m/s (start_dir −90) goes on at 0.2998 m/s 1 s later; 0.35 against 0.25 kg speeds up from
+  it at 1.634 m/s² (g·Δm/Σm = 1.635).
+- **The upright nail** (FO-13): its weak pull under a bar lying flat is real physics, checked (`research/rw-validate-magnetism.ts upright`)
+  against VIS2, a converged volume-integral solve with both in-plane components of magnetization in each of 96 cells (its sheet force = its
+  co-energy's derivative): 0.84-1.09 of it, 3-15 mm under the bar, 4-15 mm in from its end. Under a bar lying flat the field runs along the bar,
+  across the nail. Stood on its end (its pole face down, along the nail) the bar lifts the 2.76 g nail from 15 mm, not 20 (VIS2; the engine
+  in a real run from 15 mm, not 18). Known limit, said there: a flat nail whose end lies 10 mm past the pole's corner is pulled 0.36-0.70 of
+  VIS2, because a row's pull is reckoned on its four coarse pieces (VIS2's own magnetization lumped into them gives the engine's number); its
+  24 cells' magnetization is right. Reckoning a row's pull on its cells is the fix (more face sampling: not done).
+- Checked: the 22 identity scenes byte-identical (server: Python + engine; web/sim + engine); `tools/mechanics/test.mjs` 0 mismatches (its new
+  regressions: the pusher at five heights, strokes and paddles, one turned; held cork, grape and dry tank; an Atwood/pulley-lift "moves" and pail
+  "walls" run); "moves" on eight multi-body scenes and "walls" on a pail Python == web/sim; web/ai/test/solver.test.mjs, ai/test/goals.test.mjs,
+  ai/test/schemas.test.mjs (new tests for each); the view's holder seen in headless renders of the cork and the grape.
