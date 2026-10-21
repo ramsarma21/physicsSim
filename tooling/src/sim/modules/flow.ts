@@ -48,7 +48,7 @@
  * steeper than about 6° runs on down it (a ramp, a slide into a bucket); only on a near-level surface does it come to rest as a puddle.
  * A catalog container's overflow_ml reading: what has gone over its rim.
  */
-import { Basin, type BasinLayer, type Collider, type Dye, Emitter, FlowSim, type FlowLiquid, flatCentroid, clipBelowFlat, makeCollider, orificeFlow, pipeSpeed, shapeCollider, tintOf, weirFlow } from "#sim/flow.ts"
+import { Basin, type BasinLayer, type Collider, type Dye, dyePlus, Emitter, FlowSim, type FlowLiquid, flatCentroid, clipBelowFlat, makeCollider, orificeFlow, pipeSpeed, scatterOf, seenOf, shapeCollider, tintOf, weirFlow } from "#sim/flow.ts"
 import { type FluidBody, type FluidShape, fluidPushes, type RegionState } from "#sim/fluids.ts"
 import { liquidsIn } from "#sim/modules/fluids.ts"
 import type { SimScene } from "#sim/part.ts"
@@ -73,7 +73,9 @@ const liquidProblem = (l: unknown): string | undefined => {
 	return undefined
 }
 const dyeProblem = (d: unknown): string | undefined =>
-	Array.isArray(d) && d.length === 3 && d.every((v) => finite(v) && v >= 0 && v <= 100) ? undefined : "dye must be three absorbances per cm, 0 to 100"
+	Array.isArray(d) && (d.length === 3 || d.length === 4) && d.every((v) => finite(v) && v >= 0 && v <= 100)
+		? undefined
+		: "dye must be three absorbances per cm, 0 to 100 (and, for one that scatters light, its scattering per cm)"
 const insideProblem = (p: unknown): string | undefined => {
 	if (!Array.isArray(p) || p.length !== 4 || !p.every(isPoint)) return "inside must be 4 {x, y}: bottom-left, bottom-right, top-right, top-left"
 	const [bl, br, tr, tl] = p as Point[]
@@ -271,8 +273,8 @@ class RegionStore implements Store {
 	readonly key: number
 	readonly st: RegionState
 	readonly liquids: Liquids
-	/** dye per layer, as that module's layers stand */
-	dyes: [number, number, number][]
+	/** dye per layer, as that module's layers stand (a fourth number, its scattering, only for a scattering one: milk, white colouring) */
+	dyes: number[][]
 	received = 0
 	taken = 0
 	lastSpilled = 0
@@ -284,7 +286,7 @@ class RegionStore implements Store {
 		this.item = st.region.item
 		this.key = key
 		this.liquids = liquids
-		this.dyes = st.region.layers.map((l) => [...dyeOfWords(l.words)] as [number, number, number])
+		this.dyes = st.region.layers.map((l) => [...dyeOfWords(l.words)])
 		this.lastSpilled = st.spilled
 		this.spill = [new Emitter(lanes[0]), new Emitter(lanes[1])]
 	}
@@ -316,7 +318,7 @@ class RegionStore implements Store {
 		return this.liquids.of(l)
 	}
 	dyeOf(layer: number): Dye {
-		return this.dyes[layer] ?? [0, 0, 0]
+		return (this.dyes[layer] as Dye | undefined) ?? [0, 0, 0]
 	}
 	pressure(y: number, g: number) {
 		let p = 0
@@ -350,8 +352,11 @@ class RegionStore implements Store {
 		}
 		const v0 = this.st.volumes[i] as number
 		const t = v0 + vol
-		const d = this.dyes[i] as [number, number, number]
-		this.dyes[i] = [(d[0] * v0 + dye[0] * vol) / t, (d[1] * v0 + dye[1] * vol) / t, (d[2] * v0 + dye[2] * vol) / t]
+		const d = this.dyes[i] as number[]
+		const mix = [((d[0] as number) * v0 + dye[0] * vol) / t, ((d[1] as number) * v0 + dye[1] * vol) / t, ((d[2] as number) * v0 + dye[2] * vol) / t]
+		const s0 = d.length > 3 ? (d[3] as number) : 0
+		const s1 = scatterOf(dye)
+		this.dyes[i] = s0 !== 0 || s1 !== 0 ? [...mix, (s0 * v0 + s1 * vol) / t] : mix
 		this.st.volumes[i] = t
 		// (its level follows at that module's next update; until then, a first guess so a stream lands on it)
 		const r = this.st.region
@@ -374,7 +379,9 @@ class RegionStore implements Store {
 }
 
 // ------------------------------------------------------------------------------------------------ the liquids' colours
-/** A liquid's own colour as absorbance per cm (what shows through: exp(−a·path)): clear water, amber honey, yellow oil... */
+/** A liquid's own colour as absorbance per cm (what shows through: exp(−a·path)): clear water, amber honey, yellow oil... Milk and chocolate
+ *  milk scatter light (their fourth number, per cm: their fat droplets and casein, 25 [MILK-SCAT], provisional): white, and a cocoa brown
+ *  (its absorbances set so a deep layer reflects about 0.26, 0.11 and 0.05 of red, green and blue: a milk-chocolate colour, provisional). */
 const OWN_DYE: Record<string, Dye> = {
 	water: [0.004, 0.0015, 0.0006],
 	"sea water": [0.006, 0.0025, 0.0015],
@@ -383,12 +390,18 @@ const OWN_DYE: Record<string, Dye> = {
 	"corn syrup": [0.006, 0.012, 0.06],
 	"dish soap": [0.25, 0.04, 0.22],
 	"rubbing alcohol": [0.002, 0.001, 0.001],
-	milk: [0.002, 0.003, 0.006]
+	milk: [0.002, 0.003, 0.006, 25],
+	"chocolate milk": [13.2, 45.0, 113.0, 25]
 }
 const dyeOfWords = (words: string): Dye => OWN_DYE[words] ?? (words.startsWith("salt water") ? [0.005, 0.002, 0.001] : [0.004, 0.0015, 0.0006])
 
-/** A colour as 12 bits (4 per channel) of what shows through 3 cm (particles) or 5 cm (containers). */
+/** A colour as 12 bits (4 per channel) of what shows through 3 cm (particles) or 5 cm (containers); + 4096 for a liquid that one does not see
+ *  through (it scatters back half or more of the light: milk, white colouring), whose 12 bits are then the colour it shows (seenOf). */
 const look12 = (a: Dye, path: number) => {
+	if (scatterOf(a) > 0) {
+		const t = seenOf(a, path)
+		return Math.round(t[0] * 15) * 256 + Math.round(t[1] * 15) * 16 + Math.round(t[2] * 15) + (t[3] >= 0.5 ? 4096 : 0)
+	}
 	const t = tintOf(a, path)
 	return Math.round(t[0] * 15) * 256 + Math.round(t[1] * 15) * 16 + Math.round(t[2] * 15)
 }
@@ -635,6 +648,8 @@ interface Puddle {
 	x1: number
 	y: number
 	a: [number, number, number]
+	/** its dye's scattering × volume (a white colouring's, milk's own is its liquid's) */
+	s?: number
 	liq: number
 }
 /** m: how deep a puddle stands on a table: water spreads to about 4 mm (its capillary length sets it), thick liquids stay about 8 mm. */
@@ -679,7 +694,7 @@ export class Flow {
 	readonly occupied = new Set<number>()
 	/** colours already worked out (absorbance triple → 12-bit look), so keyframes need no exp per particle */
 	readonly looks = new Map<string, number>()
-	readonly tints = new Map<string, { a: [number, number, number]; t: [number, number, number] }>()
+	readonly tints = new Map<string, { a: number[]; t: [number, number, number]; o: number }>()
 	/** dynamic containers: their planck bodies, own mass data and what was last set */
 	readonly carried = new Map<BasinStore, { body: PlanckBody; base: { mass: number; center: { x: number; y: number }; I: number }; last: number }>()
 	killY = -10
@@ -1281,7 +1296,8 @@ export class Flow {
 					const was = this.lands.get(src)
 					this.lands.set(src, was === undefined ? x : was + (x - was) / 30)
 				}
-				st.add(vol, sim.liq[i] as number, [sim.a0[i] as number, sim.a1[i] as number, sim.a2[i] as number])
+				const a3 = sim.a3[i] as number
+				st.add(vol, sim.liq[i] as number, a3 !== 0 ? [sim.a0[i] as number, sim.a1[i] as number, sim.a2[i] as number, a3] : [sim.a0[i] as number, sim.a1[i] as number, sim.a2[i] as number])
 				if (st instanceof BasinStore && this.carried.has(st)) {
 					// its momentum (against the container's own motion) goes to the container
 					const h = ctx.solid(st.frame)
@@ -1316,6 +1332,7 @@ export class Flow {
 			p.x0 = Math.min(p.x0, x)
 			p.x1 = Math.max(p.x1, x)
 			p.a = [p.a[0] + vol * (sim.a0[i] as number), p.a[1] + vol * (sim.a1[i] as number), p.a[2] + vol * (sim.a2[i] as number)]
+			if ((sim.a3[i] as number) !== 0 || p.s !== undefined) p.s = (p.s ?? 0) + vol * (sim.a3[i] as number)
 			sim.dead[i] = 1
 		}
 	}
@@ -1533,12 +1550,15 @@ export class Flow {
 		const ml = (v: number) => v * 1e6
 		for (const p of this.pours) {
 			const item = p.store.item
-			const lx = this.lands.get(p.store.key)
-			if (lx !== undefined) ctx.set(item, "lands_x", lx)
-			ctx.set(item, "left_ml", ml(p.store.volume()))
-			ctx.set(item, "poured_ml", ml(p.store.poured))
-			ctx.set(item, "flow_ml_s", ml(p.flow))
 			const pose = p.store.pose
+			// (a pitcher of grains, contents "grains": this module only tips it; the granular module reads what it pours)
+			if (p.rec.contents !== "grains") {
+				const lx = this.lands.get(p.store.key)
+				if (lx !== undefined) ctx.set(item, "lands_x", lx)
+				ctx.set(item, "left_ml", ml(p.store.volume()))
+				ctx.set(item, "poured_ml", ml(p.store.poured))
+				ctx.set(item, "flow_ml_s", ml(p.flow))
+			}
 			ctx.set(item, "tilt_deg", (Math.abs(pose.angle - p.a0) * 180) / Math.PI)
 		}
 		for (const tp of this.taps) {
@@ -1575,6 +1595,9 @@ export class Flow {
 			ctx.set(st.item, "tint_r", tint[0])
 			ctx.set(st.item, "tint_g", tint[1])
 			ctx.set(st.item, "tint_b", tint[2])
+			// (only once a liquid that scatters light is in it: milk, white colouring)
+			const o = this.opacity(st.item)
+			if (o > 0 || ctx.get(st.item, "tint_o") !== undefined) ctx.set(st.item, "tint_o", o)
 		}
 		for (const rs of this.regions) {
 			if (!(rs.received > 0) && !(rs.taken > 0)) continue
@@ -1583,6 +1606,8 @@ export class Flow {
 			ctx.set(rs.item, "tint_r", tint[0])
 			ctx.set(rs.item, "tint_g", tint[1])
 			ctx.set(rs.item, "tint_b", tint[2])
+			const o = this.opacity(rs.item)
+			if (o > 0 || ctx.get(rs.item, "tint_o") !== undefined) ctx.set(rs.item, "tint_o", o)
 		}
 		if (this.puddles.size > 0) {
 			const by = new Map<string, number>()
@@ -1607,10 +1632,22 @@ export class Flow {
 	/** What shows through 5 cm of a container's liquid, worked out again only when its mix has changed. */
 	tint(item: string, a: Dye): [number, number, number] {
 		const was = this.tints.get(item)
-		if (was !== undefined && was.a[0] === a[0] && was.a[1] === a[1] && was.a[2] === a[2]) return was.t
+		if (was !== undefined && was.a.length === a.length && was.a.every((v, k) => v === a[k])) return was.t
+		// (a clear liquid: what shows through it; one that scatters light (milk, white colouring): what it looks like, and how much of that it
+		// scatters back: its opacity, the tint_o reading)
+		if (scatterOf(a) > 0) {
+			const t4 = seenOf(a, 5)
+			const t: [number, number, number] = [t4[0], t4[1], t4[2]]
+			this.tints.set(item, { a: [...a], t, o: t4[3] })
+			return t
+		}
 		const t = tintOf(a, 5)
-		this.tints.set(item, { a: [a[0], a[1], a[2]], t })
+		this.tints.set(item, { a: [...a], t, o: 0 })
 		return t
+	}
+	/** How much of what one sees of a container's liquid it scatters back (0: clear; 1: milk), as its last tint was worked out. */
+	opacity(item: string): number {
+		return this.tints.get(item)?.o ?? 0
 	}
 
 	/**
@@ -1623,7 +1660,7 @@ export class Flow {
 		for (const l of layers) if (big === undefined || l.vol > big.vol) big = l
 		if (big === undefined || !(big.vol > 0)) return [0, 0, 0]
 		const own = dyeOfWords((this.liquids.list[big.liq] as FlowLiquid).words)
-		return [(big.a[0] as number) + (own[0] as number), (big.a[1] as number) + (own[1] as number), (big.a[2] as number) + (own[2] as number)]
+		return dyePlus(big.a, own)
 	}
 	/** The same for a fluids-module container: its biggest layer's colour. */
 	mixedRegion(rs: RegionStore): Dye {
@@ -1633,9 +1670,9 @@ export class Flow {
 		})
 		if (at < 0 || !((rs.st.volumes[at] as number) > 0)) return [0, 0, 0]
 		const own = dyeOfWords((rs.st.region.layers[at] as { words: string }).words)
-		const d = rs.dyes[at] ?? [0, 0, 0]
-		const added = d[0] === own[0] && d[1] === own[1] && d[2] === own[2]
-		return [(d[0] as number) + (added ? 0 : (own[0] as number)), (d[1] as number) + (added ? 0 : (own[1] as number)), (d[2] as number) + (added ? 0 : (own[2] as number))]
+		const d = (rs.dyes[at] as Dye | undefined) ?? [0, 0, 0]
+		const added = d[0] === own[0] && d[1] === own[1] && d[2] === own[2] && scatterOf(d) === scatterOf(own)
+		return dyePlus(d, added ? [0, 0, 0] : own)
 	}
 
 	/** What the view draws: the particles, each container's layers and inside, each hose's path. */
@@ -1647,32 +1684,39 @@ export class Flow {
 			let la = Number.NaN
 			let lb = Number.NaN
 			let lc = Number.NaN
+			let ld = Number.NaN
 			let ll = -1
 			let col = 0
+			let opq = 0
 			for (let i = 0; i < sim.n; i++) {
 				const a0 = sim.a0[i] as number
 				const a1 = sim.a1[i] as number
 				const a2 = sim.a2[i] as number
+				const a3 = sim.a3[i] as number
 				const li = sim.liq[i] as number
-				if (a0 !== la || a1 !== lb || a2 !== lc || li !== ll) {
+				if (a0 !== la || a1 !== lb || a2 !== lc || a3 !== ld || li !== ll) {
 					// (dye to three digits is all a 4-bit colour can show)
-					const key = `${li}|${Math.round(a0 * 1000)}|${Math.round(a1 * 1000)}|${Math.round(a2 * 1000)}`
+					const key = `${li}|${Math.round(a0 * 1000)}|${Math.round(a1 * 1000)}|${Math.round(a2 * 1000)}${a3 !== 0 ? `|${Math.round(a3 * 1000)}` : ""}`
 					let c = this.looks.get(key)
 					if (c === undefined) {
 						const own = dyeOfWords((this.liquids.list[li] as FlowLiquid).words)
-						c = look12([Math.round(a0 * 1000) / 1000 + (own[0] as number), Math.round(a1 * 1000) / 1000 + (own[1] as number), Math.round(a2 * 1000) / 1000 + (own[2] as number)], 3)
+						const dye: Dye = a3 !== 0 ? [Math.round(a0 * 1000) / 1000, Math.round(a1 * 1000) / 1000, Math.round(a2 * 1000) / 1000, Math.round(a3 * 1000) / 1000] : [Math.round(a0 * 1000) / 1000, Math.round(a1 * 1000) / 1000, Math.round(a2 * 1000) / 1000]
+						c = look12(dyePlus(dye, own), 3)
 						this.looks.set(key, c)
 					}
-					col = c
+					// (a liquid one does not see through: its flag rides on the touch number, 2 or 3)
+					col = c % 4096
+					opq = c >= 4096 ? 1 : 0
 					la = a0
 					lb = a1
 					lc = a2
+					ld = a3
 					ll = li
 				}
 				const dmm = Math.max(1, Math.min(999, Math.round(((sim.vol[i] as number) / (sim.s * sim.s)) * 1000)))
 				const touch = (sim.hit[i] as number) >= 0 || sim.sleep[i] === 1 ? 1 : 0
 				const lane = (sim.lane[i] as number) % 1048576
-				list.push(sim.pid[i] as number, Math.round((sim.x[i] as number) * 1000), Math.round((sim.y[i] as number) * 1000), col + 4096 * (dmm + 1000 * (lane + 1048576 * touch)))
+				list.push(sim.pid[i] as number, Math.round((sim.x[i] as number) * 1000), Math.round((sim.y[i] as number) * 1000), col + 4096 * (dmm + 1000 * (lane + 1048576 * (touch + 2 * opq))))
 			}
 			ctx.keyframe(this.ownerItem, "p", list)
 			this.keyed = sim.n > 0
@@ -1682,7 +1726,7 @@ export class Flow {
 			const list: number[] = []
 			b.layers.forEach((l, i) => {
 				const own = dyeOfWords((this.liquids.list[l.liq] as FlowLiquid).words)
-				list.push(b.tops[i] ?? b.bottom, look12([l.a[0] + (own[0] as number), l.a[1] + (own[1] as number), l.a[2] + (own[2] as number)], 5))
+				list.push(b.tops[i] ?? b.bottom, look12(dyePlus(l.a, own), 5))
 			})
 			ctx.keyframe(st.item, "b", list)
 			if (first) ctx.keyframe(st.item, "i", [...b.local.flatMap((p) => [p.x, p.y]), b.depth])
@@ -1699,7 +1743,7 @@ export class Flow {
 			for (const p of this.puddles.values()) {
 				const L = this.liquids.list[p.liq] as FlowLiquid
 				const own = dyeOfWords(L.words)
-				const a: Dye = [p.a[0] / p.vol + (own[0] as number), p.a[1] / p.vol + (own[1] as number), p.a[2] / p.vol + (own[2] as number)]
+				const a: Dye = dyePlus(p.s !== undefined ? [p.a[0] / p.vol, p.a[1] / p.vol, p.a[2] / p.vol, p.s / p.vol] : [p.a[0] / p.vol, p.a[1] / p.vol, p.a[2] / p.vol], own)
 				const deep = L.viscosity / L.density > 1e-4 ? PUDDLE_DEPTH_THICK : PUDDLE_DEPTH
 				list.push(p.xv / p.vol, p.y, p.vol * 1e6, p.x0, p.x1, look12(a, 0.4), deep * 1000, p.ang)
 			}

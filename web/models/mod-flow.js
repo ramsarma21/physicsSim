@@ -25,8 +25,10 @@ const FLOW_KINDS = ["flow-pour", "flow-tap", "flow-vessel", "flow-basin", "flow-
 // catching containers whose models are real (transmissive) glass: their liquid is drawn opaque so it shows through (liquidMat "solid")
 const THROUGH_GLASS = new Set(["glass-jar"])
 
-/** A 12-bit look (4 bits per channel of what shows through the liquid) as 0…1 r, g, b. */
+/** A 12-bit look (4 bits per channel of what shows through the liquid) as 0…1 r, g, b. (+ 4096: a liquid one does not see through, milk or
+ *  white colouring, whose 12 bits are the colour it shows: tooling/src/sim/modules/flow.ts look12.) */
 const look3 = (c) => [((c >> 8) & 15) / 15, ((c >> 4) & 15) / 15, (c & 15) / 15]
+const opaqueLook = (c) => c >= 4096
 
 /** The keyframe rows around t: {a, b, u} (b may be a). rows = [[t, ...values]]. */
 function around(rows, t) {
@@ -60,8 +62,13 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	const plastic = (hex, gloss = 0.45) => kit.plastic(hex, { gloss, key: "flow" })
 	const tubing = () => M("flow-tubing", { color: "#e9f4f6", roughness: 0.2, metalness: 0, transparent: true, opacity: 0.38, depthWrite: false, clearcoat: 0.8, side: T.DoubleSide })
 	/** A liquid of a colour (0…1 rgb of what shows through it): alpha-blended and clear-coated, deeper colours more opaque. */
-	function liquidMat(rgb, kind = "body") {
+	function liquidMat(rgb, kind = "body", opaque = false) {
 		const q = rgb.map((v) => Math.round(v * 15))
+		if (opaque) {
+			// (milk, chocolate milk, white colouring: one sees its colour, not through it; a glossy surface, no transparency)
+			const oc = new T.Color(Math.max(0.02, rgb[0]) ** 1.2, Math.max(0.02, rgb[1]) ** 1.2, Math.max(0.02, rgb[2]) ** 1.2)
+			return M(`flow-liquid|opaque|${q.join(",")}`, { color: oc, roughness: 0.2, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.08, specularIntensity: 0.8, envMapIntensity: 1.1 })
+		}
 		const dark = 1 - (rgb[0] + rgb[1] + rgb[2]) / 3
 		const col = new T.Color(0.62 + 0.38 * rgb[0], 0.74 + 0.26 * rgb[1], 0.86 + 0.14 * rgb[2])
 		// (a clear liquid is a pale water-blue; a dyed one takes its colour)
@@ -80,8 +87,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	}
 
 	/** A puddle: a thin wet film (darker where it lies, glossy), tinted by its colour. */
-	function wetMat(rgb) {
+	function wetMat(rgb, opaque = false) {
 		const q = rgb.map((v) => Math.round(v * 15))
+		if (opaque) return M(`flow-wet|opaque|${q.join(",")}`, { color: new T.Color(rgb[0] ** 1.2, rgb[1] ** 1.2, rgb[2] ** 1.2), roughness: 0.15, metalness: 0, transparent: true, opacity: 0.92, depthWrite: false, clearcoat: 0.8, clearcoatRoughness: 0.05 })
 		const dark = 1 - (rgb[0] + rgb[1] + rgb[2]) / 3
 		// (a wet patch darkens what it lies on and shines: a clear one is a dark glossy film, never a pale disc)
 		const col = dark > 0.06 ? new T.Color(rgb[0] * 0.6, rgb[1] * 0.6, rgb[2] * 0.6) : new T.Color(0.16, 0.14, 0.12)
@@ -351,7 +359,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 					const ny = tx
 					const [cr, cg, cb] = look3(look)
 					const dark = 1 - (cr + cg + cb) / 3
-					const c3 = dark > 0.06 ? [Math.max(0.02, cr) ** 1.2, Math.max(0.02, cg) ** 1.2, Math.max(0.02, cb) ** 1.2] : [0.6, 0.78, 0.95]
+					const c3 = dark > 0.06 || opaqueLook(look) ? [Math.max(0.02, cr) ** 1.2, Math.max(0.02, cg) ** 1.2, Math.max(0.02, cb) ** 1.2] : [0.6, 0.78, 0.95]
 					for (let k = 0; k < SIDES; k++) {
 						const a = (k / SIDES) * TAU
 						const ca = Math.cos(a)
@@ -453,7 +461,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 					live[i] = 1
 				}
 				const laneOf = (i) => Math.floor(Math.floor(A[1 + 4 * i + 3] / 4096) / 1000) % 1048576
-				const touchOf = (i) => Math.floor(Math.floor(Math.floor(A[1 + 4 * i + 3] / 4096) / 1000) / 1048576)
+				// (its touch number: 1 it touches something; + 2 a liquid one does not see through, its look then the colour it shows)
+				const touchOf = (i) => Math.floor(Math.floor(Math.floor(A[1 + 4 * i + 3] / 4096) / 1000) / 1048576) % 2
+				const lookOf = (i) => (A[1 + 4 * i + 3] % 4096) + (Math.floor(Math.floor(Math.floor(A[1 + 4 * i + 3] / 4096) / 1000) / 1048576) >= 2 ? 4096 : 0)
 				const volOf = (i) => ((Math.floor(A[1 + 4 * i + 3] / 4096) % 1000) / 1000) * S * S
 				// a stream's rows: the particles a source let go together (consecutive ids, one emitter, across-places 0, 1, 2...), in flight
 				const rowOf = new Int32Array(n).fill(-1)
@@ -479,7 +489,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 						vol += volOf(m)
 						rowOf[m] = rows.length
 					}
-					rows.push({ em, x, y, vx, vy, vol, look: A[1 + 4 * i + 3] % 4096, next: -1 })
+					rows.push({ em, x, y, vx, vy, vol, look: lookOf(i), next: -1 })
 				}
 				const lastOf = new Map()
 				for (let r = rows.length - 1; r >= 0; r--) {
@@ -498,7 +508,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 					inst.setMatrixAt(c, m4)
 					const [r, gg, b] = look3(look)
 					const dark = 1 - (r + gg + b) / 3
-					if (dark > 0.06) col.setRGB(Math.max(0.02, r) ** 1.2, Math.max(0.02, gg) ** 1.2, Math.max(0.02, b) ** 1.2)
+					if (dark > 0.06 || opaqueLook(look)) col.setRGB(Math.max(0.02, r) ** 1.2, Math.max(0.02, gg) ** 1.2, Math.max(0.02, b) ** 1.2)
 					else col.setRGB(0.6, 0.78, 0.95)
 					inst.setColorAt(c, col)
 					c++
@@ -546,7 +556,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 					const vol = volOf(i)
 					const rad = Math.min(0.009, Math.max(0.0025, Math.cbrt((3 * vol) / (4 * Math.PI))))
 					const sp = Math.hypot(pvx[i], pvy[i])
-					place(px[i], py[i], pvx[i], pvy[i], rad * (sp > 0.3 ? 1.3 : 1), rad, touchOf(i) ? 0.75 : 1, A[1 + 4 * i + 3] % 4096)
+					place(px[i], py[i], pvx[i], pvy[i], rad * (sp > 0.3 ? 1.3 : 1), rad, touchOf(i) ? 0.75 : 1, lookOf(i))
 				}
 				inst.count = c
 				inst.instanceMatrix.needsUpdate = true
@@ -583,6 +593,91 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 					}
 				}
 				return out
+			}
+			/**
+			 * A round container's inside (its box in its frame: its axis half its width in, its radius half its width) between two level world heights
+			 * yLo (or none) and yHi, as a closed body: over the stretch of its width where that slab is inside it, a grid that follows the round wall
+			 * front to back, its top and bottom the cut (or the floor, the rim). Null when nothing is left.
+			 */
+			const cutCylinder = (local, pl, yLo, yHi) => {
+				const ax = (local[0][0] + local[1][0]) / 2
+				const rad = Math.max(0.002, (local[1][0] - local[0][0]) / 2 - 0.0005)
+				const yb = local[0][1] + 0.0004
+				const yt = local[3][1]
+				const c = Math.cos(pl.angle)
+				const sn = Math.sin(pl.angle)
+				// (a level world height Y in the frame: the line sn·x + c·y = Y − pl.y)
+				const spanAt = (x) => {
+					let lo = yb
+					let hi = yt
+					const cut = (Y, keepBelow) => {
+						if (!Number.isFinite(Y)) return
+						const k = Y - pl.y - sn * x
+						if (Math.abs(c) < 1e-9) {
+							if (keepBelow ? 0 > k : 0 < k) lo = hi
+							return
+						}
+						const yy = k / c
+						if (keepBelow === c > 0) hi = Math.min(hi, yy)
+						else lo = Math.max(lo, yy)
+					}
+					cut(yHi, true)
+					if (yLo > -Infinity) cut(yLo, false)
+					return hi > lo ? [lo, hi] : null
+				}
+				const NX = 22
+				const NZ = 12
+				let xa = ax - rad
+				let xb = ax + rad
+				const ok = (x) => spanAt(x) !== null
+				let any = -1
+				for (let q = 0; q <= 24; q++) if (ok(xa + ((xb - xa) * q) / 24)) any = q
+				if (any < 0) return null
+				const inner = xa + ((xb - xa) * any) / 24
+				const fit = (out, inn) => {
+					let a = out
+					let b = inn
+					for (let it = 0; it < 30; it++) {
+						const mid = 0.5 * (a + b)
+						if (ok(mid)) b = mid
+						else a = mid
+					}
+					return b
+				}
+				if (!ok(xa)) xa = fit(xa, inner)
+				if (!ok(xb)) xb = fit(xb, inner)
+				const nvz = NZ + 1
+				const cnt = (NX + 1) * nvz
+				const pos = new Float32Array(cnt * 2 * 3)
+				const idx = []
+				const top = (i, j) => i * nvz + j
+				const bot = (i, j) => cnt + i * nvz + j
+				for (let i = 0; i <= NX; i++) {
+					const x = xa + ((xb - xa) * i) / NX
+					const sp = spanAt(Math.min(xb, Math.max(xa, x))) ?? [yb, yb]
+					const zmax = Math.sqrt(Math.max(0, rad * rad - (x - ax) * (x - ax)))
+					for (let j = 0; j <= NZ; j++) {
+						const z = -zmax + (2 * zmax * j) / NZ
+						for (const [v, y] of [[top(i, j), sp[1]], [bot(i, j), sp[0]]]) {
+							pos[v * 3] = pl.x + x * c - y * sn
+							pos[v * 3 + 1] = pl.y + x * sn + y * c
+							pos[v * 3 + 2] = z
+						}
+					}
+				}
+				for (let i = 0; i < NX; i++) {
+					for (let j = 0; j < NZ; j++) {
+						idx.push(top(i, j), top(i, j + 1), top(i + 1, j), top(i + 1, j), top(i, j + 1), top(i + 1, j + 1))
+						idx.push(bot(i, j), bot(i + 1, j), bot(i, j + 1), bot(i + 1, j), bot(i + 1, j + 1), bot(i, j + 1))
+					}
+					idx.push(bot(i, 0), bot(i + 1, 0), top(i, 0), bot(i + 1, 0), top(i + 1, 0), top(i, 0))
+					idx.push(bot(i, NZ), top(i, NZ), bot(i + 1, NZ), bot(i + 1, NZ), top(i, NZ), top(i + 1, NZ))
+				}
+				const geo = new T.BufferGeometry()
+				geo.setAttribute("position", new T.BufferAttribute(pos, 3))
+				geo.setIndex(idx)
+				geo.computeVertexNormals()
+				return geo
 			}
 			const drawBasin = (B, t) => {
 				const w = around(B.rows, t)
@@ -623,8 +718,18 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 							}
 							const cx = (world[0][0] + world[1][0]) / 2
 							const geo = new T.LatheGeometry([new T.Vector2(0, 0), new T.Vector2(rAt(y0) - 0.0005, 0), new T.Vector2(rAt(y1) - 0.0005, y1 - y0), new T.Vector2(0, y1 - y0)], 48)
-							const m = new T.Mesh(geo, liquidMat(rgb, B.kind))
+							const m = new T.Mesh(geo, liquidMat(rgb, B.kind, opaqueLook(look)))
 							m.position.set(cx, y0, 0)
+							m.renderOrder = 2
+							B.holder.add(m)
+							B.meshes.push(m)
+						}
+					} else if (B.round && opaqueLook(look)) {
+						// (a round container tipped, its liquid one does not see through (milk): its round inside cut by the level surfaces, so it is
+						// never a box seen through the cup's side)
+						const geo = cutCylinder(B.local, pl, below, top)
+						if (geo) {
+							const m = new T.Mesh(geo, liquidMat(rgb, B.kind, true))
 							m.renderOrder = 2
 							B.holder.add(m)
 							B.meshes.push(m)
@@ -637,7 +742,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 							const depth = Math.max(0.004, width - 0.001)
 							const geo = new T.ExtrudeGeometry(shape, { depth, bevelEnabled: false })
 							geo.translate(0, 0, -depth / 2)
-							const m = new T.Mesh(geo, liquidMat(rgb, B.kind))
+							const m = new T.Mesh(geo, liquidMat(rgb, B.kind, opaqueLook(look)))
 							m.renderOrder = 2
 							B.holder.add(m)
 							B.meshes.push(m)
@@ -672,7 +777,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				Tn.m.position.set((Tn.r.x0 + Tn.r.x1) / 2, Tn.r.floor + h / 2, 0)
 				if (look !== Tn.look) {
 					Tn.look = look
-					Tn.m.material = liquidMat(look3(look))
+					Tn.m.material = liquidMat(look3(look), "body", opaqueLook(look))
 				}
 			}
 
@@ -719,7 +824,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 					P.m.position.set(cx - Math.sin(ang) * up, A[o + 1] + Math.cos(ang) * up, 0)
 					if (A[o + 5] !== P.look) {
 						P.look = A[o + 5]
-						P.m.material = wetMat(look3(P.look))
+						P.m.material = wetMat(look3(P.look), opaqueLook(P.look))
 					}
 				}
 			}

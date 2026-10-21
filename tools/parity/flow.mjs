@@ -5,7 +5,8 @@
 //             buckets, bowls, boxes) and the fluids module's (beakers, jugs, tanks), hoses linked every way (from/to, to nothing, to a missing
 //             item), and scenes without a pouring item (no flow-basin record may appear)
 //   engine    (--engine) the server's engine (node, the bundle's math) == the browser bundle web/sim/engine-worker.js, byte for byte, on --per
-//             scenes of each kind; the readings and keyframes finite; and the summaries (every goal kind sampled, readings) Python == JS
+//             scenes of each kind and on every combination scene (milk and chocolate milk, white and brown colouring, cups of grains into a
+//             jar and a glass); the readings and keyframes finite; and the summaries (every goal kind sampled, readings) Python == JS
 //   node --no-warnings tools/parity/flow.mjs [--n 20] [--engine] [--per 2] [--seed 11]
 import { execFileSync } from "node:child_process"
 import { dirname, join } from "node:path"
@@ -102,9 +103,15 @@ for (const t of TYPES) {
 	}
 }
 // combinations: two pitchers into a jar, a tap over a wheel, a bottle and a hose between beakers, and no pouring item at all (no basins)
+const combos = scenes.length
 scenes.push(scene([{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "a", type: "pitcher", x: 1.12, y: 0.32, props: { vessel: "cup", dye: "blue" } }, { id: "b", type: "pitcher", x: 1.28, y: 0.32, props: { vessel: "cup", dye: "yellow", pour_to: "left", pour_at: 2 } }]))
 scenes.push(scene([{ id: "w", type: "waterwheel", x: 1.2, y: 0.5 }, { id: "t", type: "tap", x: 1.29, y: 0.8 }, { id: "bu", type: "bucket", x: 1.3, y: 0 }]))
 scenes.push(scene([{ id: "b", type: "leaky-bottle", x: 0.4, y: 0, props: { kept_full: true } }, { id: "up", type: "beaker", x: 1.6, y: 0, props: { size: "1000 mL", fill_ml: 800 } }, { id: "dn", type: "beaker", x: 2.0, y: 0 }, { id: "h", type: "hose", x: 1.8, y: 0.3, props: { from: "up", to: "dn" } }]))
+// (2026-10-20) milk and chocolate milk, white and brown colouring, cups of grains (the granular module pours them) into a jar and a glass
+scenes.push(scene([{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "a", type: "pitcher", x: 1.165, y: 0.15, props: { vessel: "cup", liquid: "milk", tilt: 115, tip_s: 1 } }, { id: "b", type: "pitcher", x: 1.25, y: 0.15, props: { vessel: "cup", liquid: "chocolate milk", pour_to: "left", pour_at: 1.2, tip_s: 0.5 } }]))
+scenes.push(scene([{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "t", type: "tap", x: 1.2, y: 0.3, props: { dye: "white" } }, { id: "t2", type: "tap", x: 1.6, y: 0.3, props: { dye: "brown" } }, { id: "bu", type: "bucket", x: 1.6, y: 0 }]))
+scenes.push(scene([{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "c", type: "pitcher", x: 1.185, y: 0.15, props: { vessel: "cup", contents: "grains", grain: "sugar", tilt: 135, tip_s: 1, pour_at: 0.3 } }]))
+scenes.push(scene([{ id: "glass", type: "glass-jar", x: 1.2, y: 0, props: { width: 0.065, depth: 0.065, wall: 0.16 } }, { id: "c", type: "pitcher", x: 1.19, y: 0.22, props: { vessel: "measuring cup", contents: "grains", grain: "rice", fill_ml: 300, tilt: 140, tip_s: 1, pour_at: 0.3 } }]))
 const plain = scene([{ id: "cup", type: "cup", x: 1.0, y: 0 }, { id: "mug", type: "coffee-mug", x: 1.4, y: 0.0475 }, { id: "ball", type: "tennis-ball", x: 1.0, y: 0.4 }])
 scenes.push(plain)
 
@@ -186,7 +193,7 @@ if (process.argv.includes("--engine")) {
 		if (picks.filter((p) => p.t === t).length >= Number(arg("--per", 2))) continue
 		picks.push({ k, t })
 	}
-	for (let k = scenes.length - 4; k < scenes.length; k++) if (!picks.some((p) => p.k === k)) picks.push({ k, t: "combo" })
+	for (let k = combos; k < scenes.length; k++) if (!picks.some((p) => p.k === k)) picks.push({ k, t: "combo" })
 	for (const { k } of picks) {
 		const doc = jsOut[k].doc
 		let server

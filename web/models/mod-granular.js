@@ -9,16 +9,22 @@
 import { makeLib } from "./surfaces-lib.js"
 
 // tooling/src/sim/granular.ts GRAIN_KEYS (the keyframes' grain indices) and their colours (looks of machines/mod_granular.py)
-const GRAIN_KEYS = ["fine sand", "sand", "coarse sand", "gravel", "pebbles", "soil", "flour"]
+const GRAIN_KEYS = ["fine sand", "sand", "coarse sand", "gravel", "pebbles", "soil", "flour", "sugar", "salt", "rice"]
 const WET_KEYS = ["dry", "damp", "soaked"]
-const GRAIN_COLOR = { "fine sand": "#e6d3a3", sand: "#d9b97c", "coarse sand": "#c8a26a", gravel: "#9b948a", pebbles: "#8a8178", soil: "#6e5136", flour: "#f3eee2" }
-// what a grain looks like in the air (m: drawn a little larger than a sand grain, so a stream reads at a classroom distance)
-const GRAIN_SIZE = { "fine sand": 0.0012, sand: 0.0014, "coarse sand": 0.0018, gravel: 0.005, pebbles: 0.012, soil: 0.0014, flour: 0.0012 }
+const GRAIN_COLOR = {
+	"fine sand": "#e6d3a3", sand: "#d9b97c", "coarse sand": "#c8a26a", gravel: "#9b948a", pebbles: "#8a8178", soil: "#6e5136", flour: "#f3eee2",
+	sugar: "#f7f5ee", salt: "#f4f4f2", rice: "#f1ebdc"
+}
+// what a grain looks like in the air (m: drawn a little larger than a sand grain, so a stream reads at a classroom distance; rice drawn long)
+const GRAIN_SIZE = { "fine sand": 0.0012, sand: 0.0014, "coarse sand": 0.0018, gravel: 0.005, pebbles: 0.012, soil: 0.0014, flour: 0.0012, sugar: 0.0013, salt: 0.0012, rice: 0.0024 }
+/** How a grain's surface is drawn: rounded stones, long rice grains, sparkling crystals (sugar, salt) or a fine speckle. */
+const kindOf = (grain) => (grain === "gravel" || grain === "pebbles" ? "stone" : grain === "rice" ? "rice" : grain === "sugar" || grain === "salt" ? "crystal" : "fine")
 const TINTS = { red: "#c8443a", blue: "#3f7fd0", green: "#4fa35a", yellow: "#e8c13a", purple: "#8a5cc0", white: "#f2f0ea", black: "#2c2a28", pink: "#e889a8", orange: "#e8823a" }
 // [grain density, porosity, tan(repose)] for the starting shapes (machines/mod_granular.py GRAINS)
 const GRAIN_DATA = {
 	sand: [2650, 0.4, 0.674509], "fine sand": [2650, 0.42, 0.624869], "coarse sand": [2650, 0.38, 0.700208], gravel: [2650, 0.38, 0.781286],
-	pebbles: [2650, 0.38, 0.8391], soil: [2600, 0.5, 0.700208], flour: [1450, 0.59, 1.0]
+	pebbles: [2650, 0.38, 0.8391], soil: [2600, 0.5, 0.700208], flour: [1450, 0.59, 1.0],
+	sugar: [1587, 0.4959, 0.700208], salt: [2165, 0.4457, 0.624869], rice: [1450, 0.469, 0.624869]
 }
 /** m: a column thinner than this is bare (drawn as its floor); water shallower than WATER_MIN is not drawn. */
 const SAND_MIN = 0.0003
@@ -121,20 +127,66 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 			o.h = edge
 			o.rough = 0.8
 		}, { normal: 3, blur: 1 })
-	const sandMat = (key, stony = false, repeat = 1) => {
-		const maps = stony ? stoneMaps() : fineMaps()
-		return M(`gr-sand|${key}|${stony}|${f5(repeat)}`, {
-			color: "#ffffff", vertexColors: true, roughness: 0.97, metalness: 0, map: L.withRepeat(maps.map, repeat, repeat), normalMap: L.withRepeat(maps.normalMap, repeat, repeat),
-			normalScale: V2(stony ? 0.9 : 0.55)
+	/** Sugar and salt: fine speckle with bright facets (the crystals catch the light). */
+	const crystalMaps = () =>
+		L.bake("gr-crystal1", 256, 256, (u, v, o) => {
+			const n = L.pfbm(u, v, 48, 48, 91, 2)
+			const s = L.h3(Math.floor(u * 256), Math.floor(v * 256), 29)
+			const k = 0.9 + 0.14 * n + (s > 0.9 ? 0.22 : s < 0.05 ? -0.12 : 0)
+			o.r = o.g = o.b = Math.max(0, Math.min(255, 255 * k * 0.96))
+			o.h = 0.5 + 0.3 * (n - 0.5) + 0.35 * (s - 0.5)
+			o.rough = s > 0.9 ? 0.25 : 0.7
+		}, { normal: 2.6, blur: 0 })
+	/** Rice: long grains (about 3 to 1) lying every way, a little gap of shadow between them; tiled 4 cm (a grain 6-7 mm long). */
+	const riceMaps = () => {
+		const grains = []
+		for (let k = 0; k < 220; k++) grains.push([L.h3(k, 1, 53), L.h3(k, 2, 53), L.h3(k, 3, 53) * Math.PI, 0.78 + 0.22 * L.h3(k, 4, 53)])
+		const A = 0.085
+		const B = 0.028
+		return L.bake("gr-rice2", 256, 256, (u, v, o) => {
+			let best = 0
+			let tone = 0.55
+			for (const [gx, gy, ang, t] of grains) {
+				let dx = u - gx
+				let dy = v - gy
+				dx -= Math.round(dx)
+				dy -= Math.round(dy)
+				if (Math.abs(dx) > A || Math.abs(dy) > A) continue
+				const ca = Math.cos(ang)
+				const sa = Math.sin(ang)
+				const a = (dx * ca + dy * sa) / A
+				const b = (-dx * sa + dy * ca) / B
+				const r2 = a * a + b * b
+				if (r2 < 1) {
+					const hgt = Math.sqrt(1 - r2)
+					if (hgt > best) {
+						best = hgt
+						tone = t
+					}
+				}
+			}
+			// (white grains, a soft shade between them: a heap of rice is white, its grains seen as a fine texture, never stripes)
+			const k = best > 0 ? 0.86 + 0.14 * best * tone : 0.74
+			o.r = o.g = o.b = Math.max(0, Math.min(255, 255 * Math.min(1, k)))
+			o.h = 0.35 * best
+			o.rough = 0.6
+		}, { normal: 1.2, blur: 1 })
+	}
+	const mapsOf = (kind) => (kind === "stone" ? stoneMaps() : kind === "rice" ? riceMaps() : kind === "crystal" ? crystalMaps() : fineMaps())
+	const sandMat = (key, kind = "fine", repeat = 1) => {
+		const maps = mapsOf(kind)
+		return M(`gr-sand|${key}|${kind}|${f5(repeat)}`, {
+			color: "#ffffff", vertexColors: true, roughness: kind === "crystal" ? 0.7 : kind === "rice" ? 0.75 : 0.97, metalness: 0, map: L.withRepeat(maps.map, repeat, repeat), normalMap: L.withRepeat(maps.normalMap, repeat, repeat),
+			normalScale: V2(kind === "stone" ? 0.9 : kind === "rice" ? 0.8 : 0.55)
 		})
 	}
 	/** A solid-coloured sand material for the starting shapes (no vertex colours). */
 	const startMat = (grain, wet, tint) => {
-		const stony = grain === "gravel" || grain === "pebbles"
-		const maps = stony ? stoneMaps() : fineMaps()
+		const kind = kindOf(grain)
+		const maps = mapsOf(kind)
 		const c = grainColor(T, grain, wet, tint)
-		const rep = stony ? 6 : 12
-		return M(`gr-start|${grain}|${wet}|${tint}`, { color: c, roughness: 0.97, metalness: 0, map: L.withRepeat(maps.map, rep, rep), normalMap: L.withRepeat(maps.normalMap, rep, rep), normalScale: V2(stony ? 0.9 : 0.55) })
+		const rep = kind === "stone" ? 6 : kind === "rice" ? 2.5 : 12
+		return M(`gr-start|${grain}|${wet}|${tint}`, { color: c, roughness: kind === "crystal" ? 0.7 : kind === "rice" ? 0.75 : 0.97, metalness: 0, map: L.withRepeat(maps.map, rep, rep), normalMap: L.withRepeat(maps.normalMap, rep, rep), normalScale: V2(kind === "stone" ? 0.9 : kind === "rice" ? 0.8 : 0.55) })
 	}
 	const waterMat = () =>
 		M("gr-water2", { color: "#5fa8dc", roughness: 0.04, metalness: 0, transparent: true, opacity: 0.68, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.03, specularIntensity: 1, envMapIntensity: 1.3, side: T.DoubleSide })
@@ -408,15 +460,20 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 			}
 			let air = null
 			for (const [item, keys] of Object.entries(K)) if (keys.air) air = makeAir(ctx, keys.air)
-			if (!beds.length && !air) return null
+			// the grains in each cup a hand tips (a "sand-pour" record: the flow module's pitcher of grains)
+			const cups = []
+			for (const r of ctx.doc?.processes ?? []) if (r.kind === "sand-pour" && K[r.item]?.cup) cups.push(makeCup(ctx, r, K[r.item].cup))
+			if (!beds.length && !air && !cups.length) return null
 			return {
 				frame(t) {
 					for (const b of beds) b.frame(t)
 					air?.frame(t)
+					for (const c of cups) c.frame(t)
 				},
 				dispose() {
 					for (const b of beds) b.dispose()
 					air?.dispose()
+					for (const c of cups) c.dispose()
 				}
 			}
 		}
@@ -565,7 +622,26 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 		const { floor, kind } = unpackGrid(grid, p, n)
 		const tint = ctx.resolved?.[item]?.sand_color
 		const classColors = gi.map((g, k) => grainColor(T, GRAIN_KEYS[g] ?? "sand", WET_KEYS[wi[k]] ?? "dry", tint === "natural" ? null : tint))
-		const stony = gi.some((g) => GRAIN_KEYS[g] === "gravel" || GRAIN_KEYS[g] === "pebbles") && gi.every((g) => ["gravel", "pebbles"].includes(GRAIN_KEYS[g]))
+		// (one look for the bed when its grains share one: stones, rice, crystals; else the fine speckle)
+		const kinds = new Set(gi.map((g) => kindOf(GRAIN_KEYS[g] ?? "sand")))
+		const bedKind = kinds.size === 1 ? [...kinds][0] : "fine"
+		// its containers (a jar, a glass, a cup, a box: tooling/src/sim/modules/granular.ts "holders:<bed>"): a round one's sand is drawn as its own
+		// turned mesh, smooth against its glass, its side seen through it
+		const hk = keys[`holders:${id}`]?.[0]
+		const rounds = []
+		if (hk) {
+			for (let k = 0; k < hk[1]; k++) {
+				const o = 2 + 12 * k
+				const H = { round: hk[o] === 1, x: hk[o + 1], floor: hk[o + 2], r0: hk[o + 3], rb: hk[o + 4], ylo: hk[o + 5], rt: hk[o + 6], yhi: hk[o + 7], t: hk[o + 8], rim: hk[o + 9], k: hk[o + 10], ring: hk[o + 11] }
+				if (H.round && H.rt > 0.004) rounds.push(H)
+			}
+		}
+		const inRound = new Uint8Array(n)
+		for (let c = 0; c < n && rounds.length; c++) {
+			const x = x0 + ((c % nx) + 0.5) * dx
+			const z = z0 + (Math.floor(c / nx) + 0.5) * dx
+			for (const H of rounds) if (Math.hypot(x - H.x, z / H.k) <= H.rt + 0.5 * H.ring) inRound[c] = 1
+		}
 		// every keyframe's whole field (h, mm → m), built once
 		const hRows = keys[`h:${id}`] ?? []
 		const times = []
@@ -629,6 +705,8 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 				const c = a + nx
 				const d = c + 1
 				if (kind[a] || kind[b] || kind[c] || kind[d]) continue
+				// (inside a round container: its own mesh draws that sand)
+				if (inRound[a] || inRound[b] || inRound[c] || inRound[d]) continue
 				idx.push(a, c, b, b, c, d)
 				quadList.push(a, b, c, d)
 			}
@@ -658,7 +736,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 		setUV()
 		geo.setAttribute("uv", new T.BufferAttribute(uv, 2))
 		geo.setIndex(new T.BufferAttribute(live, 1))
-		const sand = new T.Mesh(geo, sandMat(`${item}|${id}`, stony, stony ? 0.25 : 1))
+		const sand = new T.Mesh(geo, sandMat(`${item}|${id}`, bedKind, bedKind === "stone" ? 0.25 : 1))
 		sand.castShadow = true
 		sand.receiveShadow = true
 		sand.frustumCulled = false
@@ -694,6 +772,169 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 		skirt.frustumCulled = false
 		skirt.receiveShadow = true
 		ctx.group.add(skirt)
+		// each round container's sand: rings × segments over its inside (an ellipse when it is deeper or shallower front to back), each vertex the
+		// columns' surface there (bilinear, from the inside's own columns only), and, against a straight wall, its side down to the floor
+		const roundMeshes = rounds.map((H) => {
+			const NR = 16
+			const NS = 56
+			const rOut = H.rt - 0.0008
+			const nv = 1 + NR * NS
+			const straight = !(H.rt > H.r0 + 1e-4)
+			const rp = new Float32Array((nv + (straight ? NS : 0)) * 3)
+			const rc = new Float32Array(rp.length)
+			const ruv = new Float32Array((rp.length / 3) * 2)
+			// per vertex: its four columns and their weights (inside columns only, renormalised), its plan place
+			const wc = new Int32Array(nv * 4).fill(-1)
+			const ww = new Float32Array(nv * 4)
+			const px = new Float32Array(nv)
+			const pz = new Float32Array(nv)
+			const isIn = (c) => c >= 0 && c < n && !kind[c] && Math.hypot(x0 + ((c % nx) + 0.5) * dx - H.x, (z0 + (Math.floor(c / nx) + 0.5) * dx) / H.k) <= H.rt
+			const setW = (v, x, z) => {
+				px[v] = x
+				pz[v] = z
+				const fi = (x - x0) / dx - 0.5
+				const fj = (z - z0) / dx - 0.5
+				const i0 = Math.floor(fi)
+				const j0 = Math.floor(fj)
+				const u = fi - i0
+				const t = fj - j0
+				const cand = [[i0, j0, (1 - u) * (1 - t)], [i0 + 1, j0, u * (1 - t)], [i0, j0 + 1, (1 - u) * t], [i0 + 1, j0 + 1, u * t]]
+				let sum = 0
+				cand.forEach(([i, j, w], q) => {
+					const c = i >= 0 && j >= 0 && i < nx && j < nz ? j * nx + i : -1
+					if (isIn(c) && w > 0) {
+						wc[v * 4 + q] = c
+						ww[v * 4 + q] = w
+						sum += w
+					}
+				})
+				if (sum > 0) for (let q = 0; q < 4; q++) ww[v * 4 + q] /= sum
+				else {
+					// (no inside column round it: the nearest inside one)
+					let best = -1
+					let bd = Infinity
+					for (let c = 0; c < n; c++) {
+						if (!isIn(c)) continue
+						const d = Math.hypot(x0 + ((c % nx) + 0.5) * dx - x, z0 + (Math.floor(c / nx) + 0.5) * dx - z)
+						if (d < bd) {
+							bd = d
+							best = c
+						}
+					}
+					wc[v * 4] = best
+					ww[v * 4] = 1
+				}
+			}
+			setW(0, H.x, 0)
+			for (let r = 1; r <= NR; r++)
+				for (let s2 = 0; s2 < NS; s2++) {
+					const a = (s2 / NS) * TAU
+					const rr = (rOut * r) / NR
+					setW(1 + (r - 1) * NS + s2, H.x + rr * Math.cos(a), H.k * rr * Math.sin(a))
+				}
+			const ridx = []
+			for (let s2 = 0; s2 < NS; s2++) ridx.push(0, 1 + ((s2 + 1) % NS), 1 + s2)
+			for (let r = 1; r < NR; r++)
+				for (let s2 = 0; s2 < NS; s2++) {
+					const a = 1 + (r - 1) * NS + s2
+					const b = 1 + (r - 1) * NS + ((s2 + 1) % NS)
+					const c = a + NS
+					const d = b + NS
+					ridx.push(a, b, c, b, d, c)
+				}
+			const top = ridx.length
+			if (straight)
+				for (let s2 = 0; s2 < NS; s2++) {
+					const o = 1 + (NR - 1) * NS
+					const a = o + s2
+					const b = o + ((s2 + 1) % NS)
+					const lo = nv + s2
+					const lb = nv + ((s2 + 1) % NS)
+					ridx.push(lo, a, b, lo, b, lb)
+				}
+			const rg = new T.BufferGeometry()
+			rg.setAttribute("position", new T.BufferAttribute(rp, 3))
+			rg.setAttribute("color", new T.BufferAttribute(rc, 3))
+			rg.setAttribute("uv", new T.BufferAttribute(ruv, 2))
+			const live2 = new Uint32Array(ridx.length)
+			rg.setIndex(new T.BufferAttribute(live2, 1))
+			const m = new T.Mesh(rg, sandMat(`${item}|${id}|round`, bedKind, 1))
+			m.castShadow = true
+			m.receiveShadow = true
+			m.frustumCulled = false
+			ctx.group.add(m)
+			const hv = new Float32Array(nv)
+			return {
+				update() {
+					for (let v = 0; v < nv; v++) {
+						let hh = 0
+						let fl = 0
+						let cr = 0
+						let cg = 0
+						let cb = 0
+						for (let q = 0; q < 4; q++) {
+							const c = wc[v * 4 + q]
+							if (c < 0) continue
+							const w = ww[v * 4 + q]
+							hh += w * hNow[c]
+							fl += w * floor[c]
+							cr += w * col[c * 3]
+							cg += w * col[c * 3 + 1]
+							cb += w * col[c * 3 + 2]
+						}
+						hv[v] = hh
+						const y = hh > SAND_MIN ? fl + hh : fl - 0.0015
+						rp[v * 3] = px[v]
+						rp[v * 3 + 1] = y
+						rp[v * 3 + 2] = pz[v]
+						rc[v * 3] = cr
+						rc[v * 3 + 1] = cg
+						rc[v * 3 + 2] = cb
+						ruv[v * 2] = (px[v] + 0.7 * y) / 0.04
+						ruv[v * 2 + 1] = (pz[v] + 0.7 * y) / 0.04
+					}
+					if (straight)
+						for (let s2 = 0; s2 < NS; s2++) {
+							const v = 1 + (NR - 1) * NS + s2
+							const w = nv + s2
+							rp[w * 3] = px[v]
+							rp[w * 3 + 1] = H.floor + 0.0002
+							rp[w * 3 + 2] = pz[v]
+							rc[w * 3] = rc[v * 3] * 0.78
+							rc[w * 3 + 1] = rc[v * 3 + 1] * 0.78
+							rc[w * 3 + 2] = rc[v * 3 + 2] * 0.78
+							ruv[w * 2] = ruv[v * 2]
+							ruv[w * 2 + 1] = (H.floor + 0.0002) / 0.04
+						}
+					// only the triangles that touch some sand (and, on the side, where the sand stands over the floor)
+					let m2 = 0
+					for (let q = 0; q < top; q += 3) {
+						const a = ridx[q]
+						const b = ridx[q + 1]
+						const c = ridx[q + 2]
+						if (hv[a] > SAND_MIN || hv[b] > SAND_MIN || hv[c] > SAND_MIN) {
+							live2[m2++] = a
+							live2[m2++] = b
+							live2[m2++] = c
+						}
+					}
+					for (let q = top; q < ridx.length; q += 6) {
+						const v = ridx[q + 1]
+						const v2 = ridx[q + 2]
+						if (hv[v] > SAND_MIN || hv[v2] > SAND_MIN) for (let e = 0; e < 6; e++) live2[m2++] = ridx[q + e]
+					}
+					rg.index.needsUpdate = true
+					rg.setDrawRange(0, m2)
+					rg.attributes.position.needsUpdate = true
+					rg.attributes.color.needsUpdate = true
+					rg.attributes.uv.needsUpdate = true
+					rg.computeVertexNormals()
+				},
+				dispose() {
+					rg.dispose()
+				}
+			}
+		})
 		const updateSkirt = () => {
 			edgeCells.forEach(([c, , side], e) => {
 				const x = pos[c * 3]
@@ -819,6 +1060,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 				geo.attributes.position.needsUpdate = true
 				geo.attributes.color.needsUpdate = true
 				geo.computeVertexNormals()
+				for (const R of roundMeshes) R.update()
 				if (!water) updateSkirt()
 				if (water) {
 					for (let c = 0; c < n; c++) wNow[c] = wa[c] + (wb[c] - wa[c]) * wu
@@ -868,6 +1110,145 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 				geo.dispose()
 				sgeo.dispose()
 				water?.geometry.dispose()
+				for (const R of roundMeshes) R.dispose()
+			}
+		}
+	}
+
+	/**
+	 * The grains in a cup a hand tips (tooling/src/sim/granular.ts TipCup: its "cup" keyframes, the surface of its grains in the cup's own frame,
+	 * nx, ny, c, area, and the cup's world angle): the cup's round inside (its axis half its width behind the lip, as the flow module's model
+	 * draws it) cut by that surface, as a body of grains: over the stretch of its width where the cut leaves grains, a grid that follows the
+	 * round wall front to back, its top the flat surface (or the rim), its bottom the cup's floor (or the surface, the cup turned past upright).
+	 */
+	function makeCup(ctx, r, rows) {
+		const ins = r.inside
+		const root = (ctx.doc.solids ?? []).find((s2) => s2.id === r.solid)
+		const at = root?.at ?? { x: 0, y: 0 }
+		const ax = (ins[0].x + ins[1].x) / 2
+		const rad = Math.max(0.002, (ins[1].x - ins[0].x) / 2 - 0.0006)
+		const yb = ins[0].y + 0.0005
+		const yt = ins[3].y
+		const NX = 22
+		const NZ = 12
+		const nvx = NX + 1
+		const nvz = NZ + 1
+		const cnt = nvx * nvz
+		const pos = new Float32Array(cnt * 2 * 3)
+		const uv = new Float32Array(cnt * 2 * 2)
+		const idx = []
+		const top = (i, j) => i * nvz + j
+		const bot = (i, j) => cnt + i * nvz + j
+		for (let i = 0; i < NX; i++)
+			for (let j = 0; j < NZ; j++) {
+				idx.push(top(i, j), top(i, j + 1), top(i + 1, j), top(i + 1, j), top(i, j + 1), top(i + 1, j + 1))
+				idx.push(bot(i, j), bot(i + 1, j), bot(i, j + 1), bot(i + 1, j), bot(i + 1, j + 1), bot(i, j + 1))
+			}
+		// the round wall, front and back (j = 0 and j = NZ), between the bottom and the top
+		for (let i = 0; i < NX; i++)
+			for (const j of [0, NZ]) {
+				const flip = j === 0
+				const a = bot(i, j)
+				const b = bot(i + 1, j)
+				const c = top(i, j)
+				const d = top(i + 1, j)
+				if (flip) idx.push(a, b, c, b, d, c)
+				else idx.push(a, c, b, b, c, d)
+			}
+		const geo = new T.BufferGeometry()
+		geo.setAttribute("position", new T.BufferAttribute(pos, 3))
+		geo.setAttribute("uv", new T.BufferAttribute(uv, 2))
+		geo.setIndex(idx)
+		const grain = typeof r.grain === "string" ? r.grain : "sugar"
+		const m = new T.Mesh(geo, startMat(grain, "dry", null))
+		m.castShadow = true
+		m.receiveShadow = true
+		m.frustumCulled = false
+		const holder = new T.Group()
+		holder.position.set(at.x, at.y, 0)
+		holder.add(m)
+		ctx.group.add(holder)
+		const times = rows.map((row) => row[0])
+		let shown = ""
+		return {
+			frame(t) {
+				const { k, u } = locate(times, t)
+				const A = rows[k]
+				const B = rows[Math.min(k + 1, rows.length - 1)]
+				const mixv = (q) => A[q] + (B[q] - A[q]) * u
+				let nxv = mixv(1)
+				let nyv = mixv(2)
+				const nl = Math.hypot(nxv, nyv) || 1
+				nxv /= nl
+				nyv /= nl
+				const c = mixv(3)
+				const area = mixv(4)
+				const ang = mixv(5)
+				const key = `${nxv.toFixed(4)}|${nyv.toFixed(4)}|${c.toFixed(5)}|${area.toFixed(7)}|${ang.toFixed(4)}`
+				if (key === shown) return
+				shown = key
+				holder.rotation.z = ang
+				m.visible = area > 1e-7
+				if (!m.visible) return
+				// the stretch of x where the cut leaves grains: n·p ≤ c with y between the floor and the rim
+				const span = (x) => {
+					let lo = yb
+					let hi = yt
+					if (Math.abs(nyv) < 1e-9) return nxv * x <= c ? [lo, hi] : null
+					const yc = (c - nxv * x) / nyv
+					if (nyv > 0) hi = Math.min(hi, yc)
+					else lo = Math.max(lo, yc)
+					return hi > lo ? [lo, hi] : null
+				}
+				let xa = ax - rad
+				let xb = ax + rad
+				// (narrowed to where the span is not empty: the surface meets the floor or the rim there; bisection on each side)
+				const okAt = (x) => span(x) !== null
+				const fit = (from, to) => {
+					let a = from
+					let b = to
+					for (let it = 0; it < 30; it++) {
+						const mid = 0.5 * (a + b)
+						if (okAt(mid)) b = mid
+						else a = mid
+					}
+					return b
+				}
+				const NS = 24
+				let any = -1
+				for (let q = 0; q <= NS; q++) if (okAt(xa + ((xb - xa) * q) / NS)) any = q
+				if (any < 0) {
+					m.visible = false
+					return
+				}
+				if (!okAt(xa)) xa = fit(xa, xa + ((xb - xa) * any) / NS)
+				if (!okAt(xb)) xb = fit(xb, xa + ((xb - xa) * any) / NS)
+				for (let i = 0; i <= NX; i++) {
+					const x = xa + ((xb - xa) * i) / NX
+					const sp = span(Math.min(xb, Math.max(xa, x))) ?? [yb, yb]
+					const zmax = Math.sqrt(Math.max(0, rad * rad - (x - ax) * (x - ax)))
+					for (let j = 0; j <= NZ; j++) {
+						const z = -zmax + (2 * zmax * j) / NZ
+						const ti = top(i, j)
+						const bi = bot(i, j)
+						pos[ti * 3] = x
+						pos[ti * 3 + 1] = sp[1]
+						pos[ti * 3 + 2] = z
+						pos[bi * 3] = x
+						pos[bi * 3 + 1] = sp[0]
+						pos[bi * 3 + 2] = z
+						uv[ti * 2] = x / 0.012
+						uv[ti * 2 + 1] = z / 0.012
+						uv[bi * 2] = x / 0.012
+						uv[bi * 2 + 1] = (z + sp[0]) / 0.012
+					}
+				}
+				geo.attributes.position.needsUpdate = true
+				geo.attributes.uv.needsUpdate = true
+				geo.computeVertexNormals()
+			},
+			dispose() {
+				geo.dispose()
 			}
 		}
 	}
@@ -891,8 +1272,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 		const s = new T.Vector3()
 		const v = new T.Vector3()
 		const colors = GRAIN_KEYS.map((k) => new T.Color(GRAIN_COLOR[k]))
-		// (a fixed scatter of the grains in a streak: the same picture for the same moment)
+		// (a fixed scatter of the grains in a streak: the same picture for the same moment; a long grain (rice) turned its own way)
 		const jit = Array.from({ length: PER }, (_, k) => [L.h3(k, 1, 7) - 0.5, L.h3(k, 2, 7) - 0.5, L.h3(k, 3, 7) - 0.5, L.h3(k, 4, 7)])
+		const turns = jit.map((_, k) => new T.Quaternion().setFromEuler(new T.Euler(L.h3(k, 5, 7) * TAU, L.h3(k, 6, 7) * TAU, L.h3(k, 8, 7) * TAU)))
 		let shown = -1
 		const g = 9.81
 		return {
@@ -915,12 +1297,17 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 					const size = GRAIN_SIZE[grain] ?? 0.0014
 					const sp = Math.hypot(vx, vy, vz)
 					const len = sp / 30
-					for (const [a, b, c, e] of jit) {
+					const long = grain === "rice"
+					for (let jj = 0; jj < jit.length; jj++) {
+						const [a, b, c, e] = jit[jj]
 						// along the flight (behind the parcel: where it was) and a little across (a stream a few grains wide)
-						v.set(x - (vx / (sp || 1)) * len * e + a * size * 4, y - (vy / (sp || 1)) * len * e + b * size * 2, z - (vz / (sp || 1)) * len * e + c * size * 4)
+						// (a long grain's stream is as wide as a sand stream: its grains are long, not the stream)
+						const wide = long ? 0.0014 : size
+						v.set(x - (vx / (sp || 1)) * len * e + a * wide * 4, y - (vy / (sp || 1)) * len * e + b * wide * 2, z - (vz / (sp || 1)) * len * e + c * wide * 4)
 						const sz = size * (0.7 + 0.6 * e)
-						s.set(sz, sz, sz)
-						m4.compose(v, q, s)
+						if (long) s.set(sz * 1.4, sz * 0.42, sz * 0.42)
+						else s.set(sz, sz, sz)
+						m4.compose(v, long ? turns[jj] : q, s)
 						inst.setMatrixAt(m, m4)
 						inst.setColorAt(m, colors[GRAIN_KEYS.indexOf(grain)] ?? colors[1])
 						m++

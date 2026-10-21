@@ -1,9 +1,12 @@
 // The granular module's parity and engine checks (machines/mod_granular.py == web/sim/modules/granular.js; the server's engine == the browser bundle):
 //   catalog   every matter type's catalog entry, Python == JS (props, links, readouts, module, categories)
 //   build     documents, resolved props and warnings, Python == JS, for every type at its defaults and at --n random props each (and scenes
-//             that combine them: on a kitchen scale, an ice cube in a bag, a dish under a magnet)
-//   engine    (--engine) the server's engine (node, the bundle's math) == the browser bundle web/sim/engine-worker.js, byte for byte, on a
-//             scene of each type; and the summaries (goal kinds, readings) Python == JS on those runs, with every goal kind sampled
+//             that combine them: a pile in a tray, a funnel over a tray, castles, hourglasses, stream tables; and grains held by containers:
+//             400 g into a 6.5 cm glass, rice in a plastic cup, salt in a bowl and a box, sugar in a mug, rice in a beaker, a cup of sugar
+//             tipped over a jar)
+//   engine    (--engine) the server's engine (node, the bundle's math) == the browser bundle web/sim/engine-worker.js, byte for byte, on
+//             --per scenes of each first item's type (the containers' scenes among them); and the summaries (goal kinds, readings) Python ==
+//             JS on those runs, with every goal kind sampled
 //   node tools/parity/granular.mjs [--n 40] [--engine] [--seed 7]
 import { execFileSync } from "node:child_process"
 import { dirname, join } from "node:path"
@@ -89,6 +92,11 @@ scenes.push(scene([{ id: "damp", type: "sand-pile", x: 0.8, y: 0, props: { shape
 scenes.push(scene([{ id: "hg1", type: "hourglass", x: 0.9, y: 0 }, { id: "hg2", type: "hourglass", x: 1.3, y: 0, props: { neck_mm: 4 } }], { settings: { time_lapse: 6 } }))
 scenes.push(scene([{ id: "st", type: "stream-table", x: 1.2, y: 0.3, props: { plants: "lower half", tilt_deg: 10 } }], { settings: { time_lapse: 20 } }))
 scenes.push(scene([{ id: "st", type: "stream-table", x: 1.2, y: 0.3, props: { grain: "gravel", tilt_deg: 0 } }]))
+// (2026-10-20) containers that hold grains (round, tapered, square, moving), the kitchen grains, a pitcher of grains (the flow module's)
+scenes.push(scene([{ id: "glass", type: "glass-jar", x: 1.2, y: 0, props: { width: 0.065, depth: 0.065, wall: 0.16 } }, { id: "fun", type: "sand-funnel", x: 1.2, y: 0, props: { sand_kg: 0.4, height: 0.3, outlet_mm: 15 } }]))
+scenes.push(scene([{ id: "cup", type: "plastic-cup", x: 1.0, y: 0 }, { id: "pile", type: "sand-pile", x: 1.0, y: 0, props: { grain: "rice", sand_kg: 0.2 } }, { id: "bowl", type: "bowl", x: 1.6, y: 0 }, { id: "p2", type: "sand-pile", x: 1.6, y: 0.0035, props: { grain: "salt", sand_kg: 0.1 } }]))
+scenes.push(scene([{ id: "box", type: "box", x: 1.4, y: 0, props: { hung: false } }, { id: "fun", type: "sand-funnel", x: 1.4, y: 0, props: { grain: "salt", sand_kg: 0.3, height: 0.3 } }, { id: "mug", type: "coffee-mug", x: 0.8, y: 0.0475 }, { id: "f2", type: "sand-funnel", x: 0.8, y: 0, props: { grain: "sugar", sand_kg: 0.08, height: 0.3, outlet_mm: 14 } }]))
+scenes.push(scene([{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "cup", type: "pitcher", x: 1.185, y: 0.15, props: { vessel: "cup", contents: "grains", grain: "sugar", tilt: 135, tip_s: 1, pour_at: 0.3 } }, { id: "b", type: "beaker", x: 1.7, y: 0, props: { fill_ml: 0 } }, { id: "f3", type: "sand-funnel", x: 1.7, y: 0, props: { grain: "rice", sand_kg: 0.1, height: 0.3, outlet_mm: 25 } }]))
 
 const cleaned = []
 const jsOut = []

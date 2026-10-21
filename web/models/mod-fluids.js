@@ -19,7 +19,10 @@ const LIQUID_LOOK = {
 	"corn syrup": { color: "#ead190", dist: 0.18 },
 	honey: { color: "#c47a08", dist: 0.025 },
 	"dish soap": { color: "#3fa54e", dist: 0.035 },
-	"rubbing alcohol": { color: "#e0566a", dist: 0.12 } // (tinted, as a density column's alcohol is dyed to be seen)
+	"rubbing alcohol": { color: "#e0566a", dist: 0.12 }, // (tinted, as a density column's alcohol is dyed to be seen)
+	// (milk and chocolate milk are opaque: one sees their colour, never through them; machines/mod_fluids.py's 2026-10-20 liquids)
+	milk: { color: "#f3f0e8", dist: 0.002, opaque: true },
+	"chocolate milk": { color: "#6e4631", dist: 0.002, opaque: true }
 }
 const liquidName = (words) => Object.keys(LIQUID_LOOK).find((k) => words === k || words.startsWith(k)) ?? "water"
 // liquids drawn as clear water (a tinting body under a reflecting top) rather than a see-through coloured body
@@ -50,6 +53,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	function liquidMat(name, thickness, tint = 1, clear = true) {
 		if (CLEAR_LIQUIDS.has(name) && clear) return clearWaterMat(name, thickness, tint)
 		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
+		if (lk.opaque) return M(`fl-liquid-opaque|${name}`, { color: lk.color, roughness: 0.2, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.08, specularIntensity: 0.8, envMapIntensity: 1.1, normalMap: ripples(), normalScale: V2(0.03) })
 		const opacity = clamp(1 - Math.exp(-thickness / (lk.dist * tint)), 0.16, 0.9)
 		return M(`fl-liquid2|${name}|${f5(thickness)}|${tint}`, {
 			color: lk.color, roughness: 0.05, metalness: 0, transparent: true, opacity, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.03,

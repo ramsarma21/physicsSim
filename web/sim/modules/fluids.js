@@ -38,7 +38,9 @@ export const LIQUIDS = {
 	"corn syrup": [1380.0, 2.5, "syrup", "Light corn syrup: about 1380 kg/m³; about 2.5 Pa·s at 20 °C (approximate: brands differ)."],
 	honey: [1420.0, 10.0, "honey", "Honey: about 1420 kg/m³; 2-20 Pa·s at 20 °C by its water, 10 used [YANNIOTIS] (approximate)."],
 	"dish soap": [1050.0, 0.5, "soap", "Liquid dish soap: about 1050 kg/m³, about 0.5 Pa·s (manufacturers' data; approximate)."],
-	"rubbing alcohol": [880.0, 0.0025, "alcohol", "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."]
+	"rubbing alcohol": [880.0, 0.0025, "alcohol", "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."],
+	milk: [1030.5, 0.0021, "milk", "Whole milk at 20 °C: 1030.5 kg/m³ [MILK-RHO], 2.1 mPa·s [MILK-MU]; white and opaque (its fat droplets and casein scatter light)."],
+	"chocolate milk": [1065.0, 0.008, "chocolate milk", "Chocolate milk at 20 °C: about 1065 kg/m³ (provisional); about 8 mPa·s as it pours (it thins " + "as it flows [DRINKS-RHEO]); brown and opaque."]
 }
 export const LIQUID_NAMES = Object.keys(LIQUIDS)
 // NaCl in water at 20 °C [CRC]: mass % -> [density kg/m³, viscosity mPa·s]; between the rows, a straight line
@@ -93,6 +95,8 @@ function _looks() {
 	add_look("honey", { fill: "#d08a12", shade: "#9c6208", roughness: 0.08, metalness: 0.0, clearcoat: 1.0, transmission: 0.55, ior: 1.5, thickness: 0.05 })
 	add_look("soap", { fill: "#4fb05a", shade: "#2f7f3a", roughness: 0.08, metalness: 0.0, clearcoat: 1.0, transmission: 0.6, ior: 1.4, thickness: 0.05 })
 	add_look("alcohol", { fill: "#e8eef2", shade: "#b9c4cc", roughness: 0.05, metalness: 0.0, clearcoat: 1.0, transmission: 0.9, ior: 1.38, thickness: 0.05 })
+	add_look("milk", { fill: "#f6f4ee", shade: "#d9d4c8", roughness: 0.25, metalness: 0.0, clearcoat: 0.6 })
+	add_look("chocolate milk", { fill: "#7a4e33", shade: "#563622", roughness: 0.25, metalness: 0.0, clearcoat: 0.6 })
 	add_look("tub plastic", { fill: "#4f8fd8", shade: "#2f6bb0", roughness: 0.45, metalness: 0.0, clearcoat: 0.2 })
 	add_look("vinyl", { fill: "#eef0ec", shade: "#c4c8c0", roughness: 0.4, metalness: 0.0, clearcoat: 0.2 })
 	add_look("sail", { fill: "#f6f3ea", shade: "#cfc9b8", roughness: 0.85, metalness: 0.0, clearcoat: 0.0 })
@@ -671,7 +675,7 @@ function _air() {
 // liquid -> [surface tension N/m, the largest contact angle it makes on ordinary solids (degrees)], at 20 °C [IAPWS-ST] (the others approximate)
 export const TENSION = {
 	water: [0.0728, 180.0], "sea water": [0.0738, 180.0], "vegetable oil": [0.032, 15.0], "corn syrup": [0.075, 180.0], honey: [0.055, 90.0],
-	"dish soap": [0.03, 25.0], "rubbing alcohol": [0.025, 10.0]
+	"dish soap": [0.03, 25.0], "rubbing alcohol": [0.025, 10.0], milk: [0.047, 90.0], "chocolate milk": [0.046, 90.0]
 }
 export const SOAPY = [0.03, 25.0] // water with dish soap on it: 25-35 mN/m; it wets steel (provisional)
 export const SOAP_SPREAD = 0.12 // m at 1 s: the soap film's edge runs out as SOAP_SPREAD·t^(3/4) [JENSEN] (the magnitude provisional)
