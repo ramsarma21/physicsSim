@@ -68,7 +68,7 @@ export async function runModuleParity(opts = {}) {
 		try {
 			return JSON.parse(execFileSync("python3", [join(HERE, "py_module.py")], { input: JSON.stringify({ module: name, ...req }), maxBuffer: 1 << 30, stdio: ["pipe", "pipe", "pipe"] }).toString())
 		} catch (e) {
-			throw new Error(`py_module.py failed: ${String(e.stderr ?? e.message).trim().split("\n").slice(-6).join(" | ")}`)
+			throw new Error(`py_module.py failed: ${String(e.stderr ?? e.message).trim().split("\n").slice(-40).join(" | ")}`)
 		}
 	}
 	const cat = sim.catalog()

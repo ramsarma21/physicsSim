@@ -266,7 +266,7 @@ jobs:
           npm install -g --no-audit --no-fund vercel@64.0.2
           npm run check:vercel
       - name: Upload logs
-        if: failure()
+        if: ${{ failure() || cancelled() }} # (also on the job's timeout: its ci-logs say where it was)
         uses: actions/upload-artifact@v7
         with:
           name: macos-logs
@@ -314,7 +314,7 @@ jobs:
         if: ${{ !cancelled() && steps.engine.outcome == 'success' }}
         run: .github/scripts/parity-macos.sh
       - name: Upload logs
-        if: failure()
+        if: ${{ failure() || cancelled() }} # (also on the job's timeout: its ci-logs say where it was)
         uses: actions/upload-artifact@v7
         with:
           name: macos-26-logs

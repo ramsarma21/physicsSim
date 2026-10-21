@@ -40,6 +40,12 @@ fi
 mkdir -p ci-logs
 major="$(node -p 'process.versions.node.split(".")[0]')"
 echo "unit-tests: Node $(node --version), ${#run[@]} of ${#all[@]} files: ${run[*]}"
+# A hang report if the run is still going after UNIT_TESTS_HANG_S (35 min; the runners take 13-18): the processes left, and a python3
+# child stuck for 10 min or more is sent SIGABRT so its Python stack shows in its test's error (.github/scripts/hang-report.sh)
+export PYTHONFAULTHANDLER=1
+.github/scripts/hang-report.sh "${UNIT_TESTS_HANG_S:-2100}" "unit tests (node --test, Node $major)" &
+hang=$!
+trap 'kill "$hang" 2>/dev/null || true' EXIT
 node --test \
 	--test-reporter=spec --test-reporter-destination=stdout \
 	--test-reporter=junit --test-reporter-destination="ci-logs/unit-tests-node$major.xml" \
