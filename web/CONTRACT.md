@@ -1800,14 +1800,15 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
   - the pull pin and its post slim and plain (a 10 mm grey rod, a 6 mm pin: `lessonPost`);
   - **outlines** (web/lesson-outline.js `OUTLINE`; on unless `setOptions({outline: false})`): lines 1/400 of the picture's height wide (2.7 px at 1080p,
     at least 1 px), drawn only by changing pixels already there, on the inside of a silhouette (no shape grows or moves): just inside every thing, its
-    own colour × 0.45 (a darker shade); round a see-through vessel (glass, a tank's panes, ice), tinted 0.75 toward `#45708f`; and on a liquid's side,
+    own colour × 0.45 (a darker shade); round a see-through vessel (glass, a tank's panes, ice), 1.6 × as wide, tinted 0.85 toward `#3d6584`; and on a liquid's side,
     tinted 0.65 toward `#2c6ea8`, where its front meets its surface (one waterline across the vessel, as the flat pictures draw it; the ID pass tells
     a liquid's up-looking faces apart) and where it covers part of a thing (pass A has that thing behind it there: the waterline round a floating
     thing), never round its own outline against what is behind it. ID passes draw
     every mesh in a flat colour per item (a holder or a stand its own; the tabletop or floor and the room are the background) into targets twice the
     picture's size each way: A the opaque things only (what is in a glass tank gets its line), B the same and the vessels, C the same and the liquids
     (apart: a tank's front pane would hide its water's surface). Left out of all: contact shades, labels, glows (unlit see-through), streams, drops and
-    puddles, shadow-only proxies (no colour written: a glass tank's faint shadow box) and parts shaped in their vertex shader (springs, ropes). A
+    puddles, shadow-only proxies (no colour written: a glass tank's faint shadow box), instanced clouds (grains, drops, a chain's links: no line round
+    each grain) and parts shaped in their vertex shader (springs, ropes). A
     composite pass weighs each pixel by the share of its sub-pixels within the width of another thing: anti-aliased. Export frames outline each
     (sub-)frame after its main pass (with motion blur, before the frames are summed); the canvas draws its picture into a 4× MSAA target of its own,
     outlines it with one sub-pixel and copies it out (so its lesson picture can differ from the export's in the lines' anti-aliasing); on the low tier

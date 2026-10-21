@@ -7,7 +7,8 @@
 //      background). Pass A draws the opaque things only (glass, water and anything alpha-blended or transmissive left out: what is inside a glass
 //      tank gets its line). Pass B draws them and the see-through vessels (glass, panes, ice), flagged; pass C them and the liquids, flagged (each
 //      only when the run has such things; apart, as a tank's front pane would hide its water's surface). Contact shades, labels, streams and drops,
-//      glows, shadow-only proxies (no colour written) and parts shaped in their own vertex shader (springs, ropes) are in none.
+//      glows, shadow-only proxies (no colour written), instanced clouds (grains, drops, a chain's links: no line round each) and parts shaped in their
+//      own vertex shader (springs, ropes) are in none.
 //   2. a composite pass: each pixel darkened by `dark` x the share of its ss x ss sub-pixels that lie within `width` px (at the picture's size) of
 //      another thing in pass A (on the thing's side: the background gets no line), then tinted toward `glass` where a see-through vessel meets
 //      anything else in pass B (the vessel's side: its outline), and toward `water` on a liquid's side in pass C where its front meets its surface
@@ -18,8 +19,9 @@
 import * as THREE from "three"
 
 /** width: of the picture's height (2.7 px at 1080p), at least minWidth px; dark: how much a thing's line darkens it; glass / water: the colours
- *  the see-through vessels' and the liquids' lines tint toward, and how far (glassK, waterK). */
-export const OUTLINE = { width: 1 / 400, minWidth: 1, dark: 0.55, ss: 2, glass: "#45708f", glassK: 0.75, water: "#2c6ea8", waterK: 0.65 }
+ *  the see-through vessels' and the liquids' lines tint toward, and how far (glassK, waterK); a vessel's line is glassWidth x as wide (a faint jar
+ *  needs it). */
+export const OUTLINE = { width: 1 / 400, minWidth: 1, dark: 0.55, ss: 2, glass: "#3d6584", glassK: 0.85, glassWidth: 1.6, water: "#2c6ea8", waterK: 0.65 }
 const GLASS = 1 << 22 // (passes B's and C's flags on a thing's number)
 const LIQUID = 1 << 23
 const TOP = 1 << 21 // (pass C: a liquid's face that looks up, its surface)
@@ -35,6 +37,7 @@ uniform sampler2D tLiquid;
 uniform bool uGlassOn;
 uniform bool uLiquidOn;
 uniform float uR;
+uniform float uRg;
 uniform int uS;
 uniform float uDark;
 uniform vec3 uGlass;
@@ -73,8 +76,9 @@ void main() {
 			if (uGlassOn) {
 				int g = idAt(tGlass, q, size);
 				if ((g & GLASS) != 0) {
+					float rg = uRg * float(uS);
 					for (int k = 0; k < 8; k++) {
-						if (idAt(tGlass, q + ivec2(round(DIRS[k] * r)), size) != g) {
+						if (idAt(tGlass, q + ivec2(round(DIRS[k] * rg)), size) != g) {
 							eg += 1.0;
 							break;
 						}
@@ -162,7 +166,7 @@ void main() {
 		fragmentShader: FS,
 		uniforms: {
 			tColor: { value: null }, tId: { value: null }, tGlass: { value: null }, tLiquid: { value: null }, uGlassOn: { value: false }, uLiquidOn: { value: false },
-			uR: { value: 2 }, uS: { value: OUTLINE.ss }, uDark: { value: OUTLINE.dark },
+			uR: { value: 2 }, uRg: { value: 3 }, uS: { value: OUTLINE.ss }, uDark: { value: OUTLINE.dark },
 			uGlass: { value: new THREE.Color(OUTLINE.glass) }, uWater: { value: new THREE.Color(OUTLINE.water) }, uGlassK: { value: OUTLINE.glassK }, uWaterK: { value: OUTLINE.waterK },
 		},
 		depthTest: false,
@@ -216,7 +220,7 @@ void main() {
 	const STREAM_KEY = /(^|\|)(flow-stream|flow-drops|flow-wet)/ // (a pouring stream, its drops, a puddle: no line of their own)
 	/** What a mesh is to the ID passes: "skip" (in none), "thing" (opaque), "glass" (a see-through vessel, ice), "liquid". */
 	const kindOf = (o) => {
-		if (o.userData?.blob || o.isSprite || o.isLine || o.isPoints) return "skip"
+		if (o.userData?.blob || o.isSprite || o.isLine || o.isPoints || o.isInstancedMesh) return "skip" // (a cloud of grains or drops, a row of links: no line round each)
 		const m = o.material
 		if (!m) return "skip"
 		let see = false
@@ -325,6 +329,7 @@ void main() {
 			U.uLiquidOn.value = liquid
 			U.uS.value = ss
 			U.uR.value = width ?? Math.max(OUTLINE.minWidth, OUTLINE.width * H)
+			U.uRg.value = U.uR.value * OUTLINE.glassWidth
 			renderer.autoClear = false
 			renderer.setRenderTarget(outRT)
 			renderer.render(quadScene, quadCam)
