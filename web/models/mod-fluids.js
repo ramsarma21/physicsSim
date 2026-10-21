@@ -332,15 +332,60 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const pts = ctx.body.points.map((p) => [p.x, p.y])
 		return group(mesh(kit.extrude(pts, ctx.body.depth, { bevel: 0.0008, key: `fl-keel|${JSON.stringify(pts)}` }), plastic("#2a2a2a", 0.4)))
 	})
+	/** How a sailboat's sail is drawn (render only, its props sail_shape and sail_face_on): {triangle, faceOn}. */
+	const sailLook = (P) => ({ triangle: P?.sail_shape === "triangle", faceOn: P?.sail_face_on === true })
+	/** A triangular sail of the square w × h's area: its luff on the mast from the boom (y = -h/2) up 1.5 h, its foot 4/3 w aft along the boom
+	 *  (x from 0 to -4w/3), a gentle belly; drawn in the sail's frame as the square sheet is (luff at x = 0). */
+	const sailTriangle = (w, h, faceOn) =>
+		kit.geo(`fl-sailtri|${f5(w)}|${f5(h)}|${faceOn ? 1 : 0}`, () => {
+			const luff = 1.5 * h
+			const foot = (4 * w) / 3
+			const n = 12
+			const pos = []
+			const idx = []
+			const belly = (faceOn ? 0.05 : 0.12) * w
+			// rows from the foot (k = 0) to the head (k = n): row k runs from the luff (x = 0) aft to the leech, (n - k) / n of the foot
+			for (let k = 0; k <= n; k++) {
+				const v = k / n
+				const span = foot * (1 - v)
+				const cols = n - k
+				for (let i = 0; i <= Math.max(cols, 0); i++) {
+					const u = cols > 0 ? i / cols : 0
+					pos.push(-span * u, -h / 2 + luff * v, belly * Math.sin(Math.PI * u) * Math.sin(Math.PI * Math.min(1, 0.15 + 0.85 * v)) * (1 - v))
+				}
+			}
+			const rowStart = (k) => {
+				let a = 0
+				for (let j = 0; j < k; j++) a += n - j + 1
+				return a
+			}
+			for (let k = 0; k < n; k++) {
+				const a = rowStart(k)
+				const b = rowStart(k + 1)
+				const cols = n - k
+				for (let i = 0; i < cols; i++) {
+					idx.push(a + i, a + i + 1, b + i)
+					if (i < cols - 1) idx.push(a + i + 1, b + i + 1, b + i)
+				}
+			}
+			const geo = new T.BufferGeometry()
+			geo.setAttribute("position", new T.Float32BufferAttribute(pos, 3))
+			geo.setIndex(idx)
+			geo.computeVertexNormals()
+			return geo
+		})
 	addModel("sailboat", "mast", (ctx) => {
 		const wood = kit.wood("#c9a06a", { roughness: 0.5, varnish: 0.6 })
-		const m = mesh(kit.cylinderY(0.002, ctx.h, 16), wood)
+		// (a triangular sail's head stands half the square's height above the square's top: the mast is drawn up to 1 cm over it)
+		const ext = sailLook(ctx.props).triangle ? Math.max(0, 0.5 * (Number(ctx.props?.sail_height) || 0) - 0.005) : 0
+		const m = mesh(kit.cylinderY(0.002, ctx.h + ext, 16), wood)
+		m.position.y = ext / 2
 		// a small pennant at the top, streaming downwind (+x)
 		const flag = mesh(kit.geo("fl-pennant", () => {
 			const s = new T.Shape([new T.Vector2(0, 0), new T.Vector2(0.03, -0.006), new T.Vector2(0, -0.012)])
 			return new T.ShapeGeometry(s)
 		}), M("fl-pennant", { color: "#e8823a", roughness: 0.8, metalness: 0, side: T.DoubleSide }))
-		flag.position.set(0.002, ctx.h / 2, 0)
+		flag.position.set(0.002, ctx.h / 2 + ext, 0)
 		return group(m, flag)
 	})
 	addModel("sailboat", "sail", (ctx) => {
@@ -353,25 +398,31 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 			color: col, roughness: stuff === "plastic" ? 0.25 : stuff === "cloth" ? 0.95 : 0.8, metalness: 0, side: T.DoubleSide,
 			sheen: stuff === "cloth" ? 1 : 0, sheenColor: new T.Color(col), clearcoat: stuff === "plastic" ? 0.6 : 0, transmission: stuff === "plastic" ? 0.3 : 0, thickness: 0.0005
 		})
-		// the sail let out 45° from the boat's line (as the catalog says), filled by the wind: a gentle belly downwind
-		const g = kit.geo(`fl-sailsheet|${f5(w)}|${f5(h)}`, () => {
+		// the sail let out 45° from the boat's line (as the catalog says), filled by the wind: a gentle belly downwind. Drawn facing the camera
+		// (sail_face_on) it is square to the picture with a shallower belly; a triangle (sail_shape) has the square's area, its luff 1.5 h up the
+		// mast from the boom and its foot 4/3 w along it, so its middle (its centroid, a third of the way up) is where the square's middle is
+		const look = sailLook(P)
+		const g = look.triangle ? sailTriangle(w, h, look.faceOn) : kit.geo(`fl-sailsheet|${f5(w)}|${f5(h)}|${look.faceOn ? 1 : 0}`, () => {
 			const geo = new T.PlaneGeometry(w, h, 12, 12)
 			const pos = geo.attributes.position
+			const belly = look.faceOn ? 0.05 : 0.12
 			for (let i = 0; i < pos.count; i++) {
 				const u = (pos.getX(i) + w / 2) / w
 				const v = (pos.getY(i) + h / 2) / h
-				pos.setZ(i, 0.12 * w * Math.sin(Math.PI * u) * Math.sin(Math.PI * (0.15 + 0.85 * v)))
+				pos.setZ(i, belly * w * Math.sin(Math.PI * u) * Math.sin(Math.PI * (0.15 + 0.85 * v)))
 			}
 			geo.translate(-w / 2, 0, 0) // its luff (front edge) at the mast
 			geo.computeVertexNormals()
 			return geo
 		})
+		const turn = look.faceOn ? 0 : Math.PI / 4
 		const sheet = mesh(g, mat)
-		sheet.rotation.y = Math.PI / 4 // the leech swings out toward the camera, the sail's face toward the wind (+x)
+		sheet.rotation.y = turn // (let out: the leech swings out toward the camera, the sail's face toward the wind (+x))
 		sheet.position.x = 0.0025
 		// the boom along its foot
-		const boom = mesh(kit.geo(`fl-boom|${f5(w)}`, () => new T.CylinderGeometry(0.0015, 0.0015, w, 10).rotateZ(Math.PI / 2).translate(-w / 2, 0, 0)), kit.wood("#c9a06a", { roughness: 0.5, varnish: 0.6 }))
-		boom.rotation.y = Math.PI / 4
+		const foot = look.triangle ? (4 * w) / 3 : w
+		const boom = mesh(kit.geo(`fl-boom|${f5(foot)}`, () => new T.CylinderGeometry(0.0015, 0.0015, foot, 10).rotateZ(Math.PI / 2).translate(-foot / 2, 0, 0)), kit.wood("#c9a06a", { roughness: 0.5, varnish: 0.6 }))
+		boom.rotation.y = turn
 		boom.position.set(0.0025, -h / 2 - 0.002, 0)
 		return group(sheet, boom)
 	})
@@ -476,8 +527,10 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		return group(s, stem)
 	})
 	addModel("cork", "cork", (ctx) => {
-		const len = ctx.solid.length ?? 0.044
 		const m = L.corkMat ? L.corkMat() : M("fl-cork", { color: "#c89a62", roughness: 0.9, metalness: 0 })
+		// (lying across: its body is a slab L × D, drawn as the round cylinder along x it is; else a cylinder through the depth, its round end to the camera)
+		if (ctx.body.kind === "slab") return group(mesh(kit.geo(`fl-cork-across|${f5(ctx.w)}|${f5(ctx.h)}`, () => new T.CylinderGeometry(ctx.h / 2, ctx.h / 2, ctx.w, 40).rotateZ(Math.PI / 2)), m))
+		const len = ctx.solid.length ?? 0.044
 		return group(mesh(kit.cylinderZ(ctx.r, len, 40), m))
 	})
 	addModel("plastic-bead", "bead", (ctx) => {
