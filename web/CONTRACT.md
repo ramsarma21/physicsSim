@@ -3669,7 +3669,7 @@ bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte 
   "walls" run; `--n 300`); "moves" on eight multi-body scenes and "walls" on a pail Python == web/sim; web/ai/test/solver.test.mjs, ai/test/goals.test.mjs,
   ai/test/schemas.test.mjs (new tests for each); the view's holder seen in headless renders of the cork and the grape. Against this branch's base
   (2cbfe0e), on the 18-core Mac under other agents' load (80-120): every research/rw-validate*.ts passes as before (mechanics 121, magnetism 81,
-  thermal 118, fluids 71, the rest unchanged) but optics' timing check (4-10 ms against its 2 ms, the base tree's the same); tools/parity/core.mjs
+  thermal 118, fluids 71, p4 56 with its crash fuzz of 1500 scenes: 0 exceptions, 0 non-finite; the rest unchanged) but optics' timing check (4-10 ms against its 2 ms, the base tree's the same); tools/parity/core.mjs
   core and server modes 21995 cases with the base's own 117 mismatches (this machine's Python 3.14 against web/sim/unicode.js's 3.13 tables and
   its "division by zero" wording), the summaries' 312 runs 0; fuzz-live --n 300 967 cases 0; fluids.mjs 1213 checks 0; staging all pass;
   machines/test_*.py all pass; the node:test files 765 of 766 (ai/test/server.test.mjs "per-step slots", a timing test the base fails alike under
