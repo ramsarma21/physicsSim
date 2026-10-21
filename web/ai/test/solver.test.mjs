@@ -764,3 +764,14 @@ test("inside a pulley lift's pail: a thing is set on the pail's floor between it
 	const sid = sim.doc.solids.find((x) => x.item === "apple" && x.kind === "dynamic").id
 	assert.ok(sim.track.frames.at(-1).placements[sid].y > sim.track.frames[0].placements[sid].y + 0.3, "it rode up")
 })
+
+test("planFromScene keeps a hanging machine exactly where the scene has it, even resting on the table: an edit's re-solve never hangs it unasked", () => {
+	const scene = { version: 2, id: "s", seconds: 2, release: 0.5, stage: DEFAULT_STAGE, items: [{ id: "table", type: "table", x: 1.3, y: 0, props: {} }, { id: "aw", type: "atwood-machine", x: 1.3, y: 0.484975, props: {} }], goals: [] }
+	const plan = planFromScene(scene)
+	const aw = plan.items.find((i) => i.id === "aw")
+	assert.equal(aw.place.on, "air")
+	assert.equal(aw.place.keep, true)
+	const r = solve(plan)
+	near(item(r, "aw").y, 0.484975, 1e-9, "kept")
+	assert.ok(!r.issues.some((i) => i.code === "hung"))
+})

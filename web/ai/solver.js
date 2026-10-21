@@ -1932,7 +1932,9 @@ export function planFromScene(scene) {
 		}
 		const dynamic = TYPES[it.type].dynamic && !it.fixed
 		const tilted = Math.abs(Number(it.angle) || 0) > 0.05
-		if (support && (dynamic || !tilted)) {
+		// (a hanging machine is kept exactly where the scene has it, resting or not: re-solved "on" its support it would be hung, hangClear, and an
+		// edit moves nothing it was not asked to)
+		if (support && (dynamic || !tilted) && !HUNG.has(it.type)) {
 			const place = support.type === "table" ? { on: "table", x: it.x } : isContainer(support.type) && boxOf(mine).y0 < boxOf(sh.get(support.id)).y1 - 0.003 ? { inside: support.id, x: it.x } : { on: support.id, x: it.x }
 			if (tilted) {
 				// a tilt that is just the support's slope there is re-made by the solver (so it follows the support); any other is kept
