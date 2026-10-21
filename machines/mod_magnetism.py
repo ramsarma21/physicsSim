@@ -449,17 +449,51 @@ CLIP_BUNDLE = 0.0019
 COLOURS = {"silver": None, "red": "#c0392b", "blue": "#2e6fc4", "green": "#2f9a4c", "yellow": "#e2b52a", "black": "#2a2a2a"}
 
 
+# `facing` (paper-clip, plastic-clip, clip-on-thread, steel-washer): "edge-on" (as it was) shows the side camera the thin thing's edge (a clip or
+# washer lying flat, its face up); "face-on" turns it a quarter turn about its length so its face looks at the camera: a clip or washer standing
+# on its edge. The same steel and weight: its side outline IS then its face (a clip's 33 × 8 mm loops, a washer's ring), so what is seen is what
+# touches, and its magnetic block turns with it (a clip's two wires across lie one above the other; a washer is magnetized along its face, as a
+# real one standing on its edge is).
+FACINGS = ["edge-on", "face-on"]
+FACING_HELP = ("edge-on: as it lies (flat, its face up), a side view sees its thin edge; face-on: standing on its edge with its face toward you "
+               "(the same steel and weight turned a quarter turn: what you see is what touches)")
+# a regular octagon's corner at 22.5° (exact square roots, the same bits in Python and JavaScript): a washer standing on its edge
+OCT_C = math.sqrt(2.0 + math.sqrt(2.0)) / 2.0
+OCT_S = math.sqrt(2.0 - math.sqrt(2.0)) / 2.0
+
+
+def facing_camera(P):
+    return P.get("facing") == "face-on"
+
+
+def clip_face(c, part, L, Wd, T, m, lx=0.0, ly=0.0, langle=0.0, base="low-carbon steel", **kw):
+    """A clip standing on its edge, its loops toward the camera: its side outline is its face, L × Wd, its ends pointed as its loops' round ends
+    are (a Gem clip's loops end in half circles: within 1 mm), so it never balances on an end as a squared-off 8 mm foot would; T front to back."""
+    e = min(0.003, L / 4)
+    pts = [(L / 2, 0.0), (L / 2 - e, Wd / 2), (-L / 2 + e, Wd / 2), (-L / 2, 0.0), (-L / 2 + e, -Wd / 2), (L / 2 - e, -Wd / 2)]
+    pts = [(round(x, 5), round(y, 5)) for x, y in pts]
+    area = sum(pts[k][0] * pts[(k + 1) % 6][1] - pts[(k + 1) % 6][0] * pts[k][1] for k in range(6)) / 2
+    mat = c.mat(base=base, overrides={}, density=round(m / (area * T), 3))
+    return c.poly(part, pts, T, lx, ly, langle=langle, material=mat, **kw)
+
+
 def build_clips(c, P):
     n, sp = int(P["count"]), P["spacing"]
     colour = COLOURS.get(P["color"])
     # a Gem no. 1 clip, 33 × 8 mm of 0.9 mm steel wire, 0.45 g, lying flat (its 8 mm across the picture's depth); its body is 1 mm thick
+    # (facing the camera: on its edge, its 8 mm up the picture and its 1 mm front to back)
     L, T, Wd, m = 0.033, 0.001, 0.008, 0.00045
+    face = facing_camera(P)
     mat = c.mat(base="low-carbon steel", overrides={}, density=round(m / (L * T * Wd), 3))
     x0 = -(n - 1) * sp / 2
     extra = {} if colour is None else {"color": colour}
     for i in range(n):
-        sid = c.slab(f"clip{i + 1}", L, T, Wd, x0 + i * sp, 0.0, material=mat, look="zinc plate", words="a steel paper clip", **extra)
-        _soft(c, f"iron{i + 1}", sid, L, CLIP_WIRE, CLIP_BUNDLE, m / STEEL)
+        if face:
+            sid = clip_face(c, f"clip{i + 1}", L, Wd, T, m, x0 + i * sp, 0.0, look="zinc plate", words="a steel paper clip", **extra)
+            _soft(c, f"iron{i + 1}", sid, L, CLIP_BUNDLE, CLIP_WIRE, m / STEEL)
+        else:
+            sid = c.slab(f"clip{i + 1}", L, T, Wd, x0 + i * sp, 0.0, material=mat, look="zinc plate", words="a steel paper clip", **extra)
+            _soft(c, f"iron{i + 1}", sid, L, CLIP_WIRE, CLIP_BUNDLE, m / STEEL)
 
 
 def build_nail(c, P):
@@ -484,6 +518,17 @@ def build_washer(c, P):
     od, t = P["diameter"], P["thickness"]
     hole = od * 0.525
     vol = math.pi / 4 * (od * od - hole * hole) * t
+    if facing_camera(P):
+        # on its edge, its face toward the camera: a regular octagon through the rim (its flats 0.38 mm in on a 16 mm washer: it rests on a flat,
+        # as a dropped washer does not roll away), t front to back; magnetized as the square block between its flats, t thick
+        R = od / 2
+        pts = [(R * a, R * b) for a, b in ((OCT_C, OCT_S), (OCT_S, OCT_C), (-OCT_S, OCT_C), (-OCT_C, OCT_S), (-OCT_C, -OCT_S), (-OCT_S, -OCT_C), (OCT_S, -OCT_C), (OCT_C, -OCT_S))]
+        pts = [(round(x, 5), round(y, 5)) for x, y in pts]
+        area = sum(pts[k][0] * pts[(k + 1) % 8][1] - pts[(k + 1) % 8][0] * pts[k][1] for k in range(8)) / 2
+        mat = c.mat(base="low-carbon steel", overrides={}, density=round(STEEL * vol / (area * t), 3))
+        sid = c.poly("washer", pts, t, material=mat, look="zinc plate", words="a steel washer")
+        _soft(c, "iron", sid, 2 * R * OCT_C, 2 * R * OCT_C, t, vol)
+        return
     mat = c.mat(base="low-carbon steel", overrides={}, density=round(STEEL * vol / (od * t * od), 3))
     sid = c.slab("washer", od, t, od, material=mat, look="zinc plate", words="a steel washer")
     _soft(c, "iron", sid, od, t, od, vol)
@@ -558,11 +603,12 @@ def _iron():
                  Readout("pull_mN", "Magnetic pull", "mN", 2, "The magnetic force on it now")]
     register(ItemType("paper-clip", "Paper clips", CATEGORY, build_clips, module="magnetism",
                       props=[Prop("count", "Clips", 1, 1, 30, 1, "", kind="int"), Prop("spacing", "Spacing", 0.04, 0.034, 0.3, 0.001, "m", "Between the clips' middles, in a row"),
-                             Prop("color", "Colour", "silver", kind="choice", choices=list(COLOURS), help="A coated clip is still steel inside")],
+                             Prop("color", "Colour", "silver", kind="choice", choices=list(COLOURS), help="A coated clip is still steel inside"),
+                             Prop("facing", "To the camera", "edge-on", kind="choice", choices=FACINGS, help=FACING_HELP)],
                       readouts=soft_read,
                       tags=["paper clip", "paperclip", "clip", "steel", "iron", "magnetic", "attracted", "pick up", "chain"],
                       description="Steel paper clips (33 mm, 0.45 g) lying flat in a row. A magnet pulls them whichever pole is near; a clip on a magnet "
-                                  "becomes a magnet itself and holds the next one (a chain).",
+                                  "becomes a magnet itself and holds the next one (a chain). Face-on stands them on their edges, their loops toward you.",
                       source="Gem no. 1 clip: 0.9 mm low-carbon steel wire, 0.45 g; soft iron, magnetized by the field [FUR] [AHARONI].",
                       anchor="the middle of the row, at the clips' middle", facts="steel · 33 mm · 0.45 g each"))
     register(ItemType("iron-nail", "Iron nail", CATEGORY, build_nail, module="magnetism",
@@ -573,10 +619,12 @@ def _iron():
                       source="2 in. common nail: 51 mm × 2.9 mm shank, about 3 g; low-carbon steel [FUR].",
                       anchor="the middle of its shank", facts="steel · 51 mm · 3 g"))
     register(ItemType("steel-washer", "Steel washer", CATEGORY, build_washer, module="magnetism",
-                      props=[Prop("diameter", "Diameter", 0.016, 0.008, 0.05, 0.0005, "m"), Prop("thickness", "Thickness", 0.0016, 0.0008, 0.005, 0.0001, "m")],
+                      props=[Prop("diameter", "Diameter", 0.016, 0.008, 0.05, 0.0005, "m"), Prop("thickness", "Thickness", 0.0016, 0.0008, 0.005, 0.0001, "m"),
+                             Prop("facing", "To the camera", "edge-on", kind="choice", choices=FACINGS, help=FACING_HELP)],
                       readouts=soft_read,
                       tags=["washer", "steel", "metal", "magnetic", "ring"],
-                      description="A flat zinc-plated steel washer (M8: 16 mm, 1.8 g) lying flat. Magnetic.",
+                      description="A flat zinc-plated steel washer (M8: 16 mm, 1.8 g) lying flat. Magnetic. Face-on stands it on its edge, its ring "
+                                  "toward you (magnetized along its face, it is pulled from farther than one lying flat).",
                       source="DIN 125 M8 washer: 16 mm, 8.4 mm hole, 1.6 mm thick, 1.8 g.", anchor="its centre", facts="steel · 16 mm · 1.8 g"))
     register(ItemType("steel-can", "Steel can", CATEGORY, build_can, module="magnetism",
                       props=[Prop("diameter", "Diameter", 0.075, 0.05, 0.12, 0.001, "m"), Prop("height", "Height", 0.11, 0.05, 0.2, 0.001, "m"),
@@ -617,8 +665,12 @@ def _iron():
 # ---------------------------------------------------------------- things a magnet does not pull
 def build_plastic_clip(c, P):
     L, T, Wd, m = 0.033, 0.0012, 0.008, 0.0003
+    colour = COLOURS.get(P["color"]) or "#2e6fc4"
+    if facing_camera(P):
+        clip_face(c, "clip", L, Wd, T, m, base="polypropylene", look="plastic", words="a plastic paper clip", color=colour)
+        return
     mat = c.mat(base="polypropylene", overrides={}, density=round(m / (L * T * Wd), 3))
-    c.slab("clip", L, T, Wd, material=mat, look="plastic", words="a plastic paper clip", color=COLOURS.get(P["color"]) or "#2e6fc4")
+    c.slab("clip", L, T, Wd, material=mat, look="plastic", words="a plastic paper clip", color=colour)
 
 
 def build_foil(c, P):
@@ -668,15 +720,20 @@ def build_clip_thread(c, P):
     L, T, Wd, m = 0.033, 0.001, 0.008, 0.00045
     # a lump of putty on the table holds a cotton thread; the clip stands on its end at the thread's other end, its length up
     c.slab("anchor", 0.02, 0.006, 0.02, 0.0, 0.003, kind="static", material=c.mat(base="modeling clay", overrides={}), look="clay", words="a lump of putty")
-    mat = c.mat(base="low-carbon steel", overrides={}, density=round(m / (L * T * Wd), 3))
-    sid = c.slab("clip", L, T, Wd, 0.0, 0.006 + th + L / 2, langle=90.0, material=mat, look="zinc plate", words="a steel paper clip on a thread")
+    face = facing_camera(P)
+    if face:
+        sid = clip_face(c, "clip", L, Wd, T, m, 0.0, 0.006 + th + L / 2, langle=90.0, look="zinc plate", words="a steel paper clip on a thread")
+    else:
+        mat = c.mat(base="low-carbon steel", overrides={}, density=round(m / (L * T * Wd), 3))
+        sid = c.slab("clip", L, T, Wd, 0.0, 0.006 + th + L / 2, langle=90.0, material=mat, look="zinc plate", words="a steel paper clip on a thread")
     c.joint("rope", "thread", a=None, b="clip", anchorA=(0.0, 0.006), anchorB=(-L / 2, 0.0), length=_r(th), thickness=0.0005)
-    _soft(c, "iron", sid, L, CLIP_WIRE, CLIP_BUNDLE, m / STEEL)
+    _soft(c, "iron", sid, L, CLIP_BUNDLE if face else CLIP_WIRE, CLIP_WIRE if face else CLIP_BUNDLE, m / STEEL)
 
 
 def _others():
     register(ItemType("plastic-clip", "Plastic clip", CATEGORY, build_plastic_clip, module="magnetism",
-                      props=[Prop("color", "Colour", "blue", kind="choice", choices=[k for k in COLOURS if k != "silver"])],
+                      props=[Prop("color", "Colour", "blue", kind="choice", choices=[k for k in COLOURS if k != "silver"]),
+                             Prop("facing", "To the camera", "edge-on", kind="choice", choices=FACINGS, help=FACING_HELP)],
                       tags=["plastic clip", "plastic", "not magnetic", "non-magnetic", "test object"],
                       description="An all-plastic paper clip (0.3 g). Not magnetic: a magnet does not pull it at all.",
                       source="Polypropylene clip, 33 mm, about 0.3 g.", anchor="its centre", facts="plastic · 0.3 g · not magnetic"))
@@ -710,7 +767,8 @@ def _others():
                       source="Non-magnetic materials have µ_r = 1 to within 1e-5: the field passes as through air [FUR].",
                       anchor="the middle of its bottom edge (on the table)", facts="10 × 10 cm · cardboard", edit=[{"kind": "rotate"}]))
     register(ItemType("clip-on-thread", "Clip on a thread", CATEGORY, build_clip_thread, module="magnetism",
-                      props=[Prop("thread", "Thread length", 0.1, 0.02, 0.4, 0.005, "m")],
+                      props=[Prop("thread", "Thread length", 0.1, 0.02, 0.4, 0.005, "m"),
+                             Prop("facing", "To the camera", "edge-on", kind="choice", choices=FACINGS, help=FACING_HELP)],
                       readouts=[Readout("pull_mN", "Magnetic pull", "mN", 2)],
                       tags=["thread", "string", "floating clip", "paper clip", "hover", "tethered", "without touching"],
                       description="A steel paper clip tied by a thread to a lump of putty on the table, standing up at the thread's end. Hold a magnet "
