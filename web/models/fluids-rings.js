@@ -2,8 +2,8 @@
 // view plug-in "fluids:rings" (web/models/mod-fluids.js registers it). A thing that pierces a liquid's top and moves up or down there pushes
 // water aside at the rate A·v (its waterline's area A, its vertical speed v): that rate, every 1/12 s, sends out a ring, a packet of a wave and
 // a half of the 4 cm ripples a bobbing thing makes, travelling at their deep-water speed c = √(gλ/2π + 2πσ/(ρλ)) = 0.27 m/s (λ 4 cm, water's
-// σ 0.0728 N/m), its height A·v / (2π·r0·c) at the thing's edge r0, falling as √(r0/r) as it spreads and dying out over 1.5 s, and mirrored by
-// the container's walls (first reflections). They are drawn on a sheet over the liquid's top that shades their slopes (lighter where a slope
+// σ 0.0728 N/m), its height 0.35 × A·v / (2π·r0·c) at the thing's edge r0 (the rest of the push goes into the slow slosh of the whole tank;
+// at most 1.5 mm), falling as √(r0/r) as it spreads and dying out over 1.5 s, and mirrored by the container's walls (first reflections, 0.6 back). They are drawn on a sheet over the liquid's top that shades their slopes (lighter where a slope
 // faces the camera, darker where it faces away) and is clear where the water is flat. A thing that enters faster than 0.5 m/s throws a crown
 // of drops: 16 drops from round its waterline, up at 0.55-0.9 and out at 0.3-0.55 of its entry speed (a sphere's splash crown rises about as
 // fast as it enters), falling back under gravity.
