@@ -26,7 +26,7 @@ const D = (await import(`${DIR}/heat-data.ts`)) as Record<string, (...a: number[
 const sim = (await import(pathToFileURL(`${PG}/web/sim/index.js`).href)) as { prepare: (s: object) => { scene: object; doc: Doc; resolved: object } }
 
 interface Track {
-	frames: { t: number; placements: Record<string, { x: number; y: number; scale?: number }> }[]
+	frames: { t: number; placements: Record<string, { x: number; y: number; angle?: number; scale?: number }> }[]
 	state?: Record<string, Record<string, number[]>>
 	events?: { t: number; text: string }[]
 }
@@ -88,6 +88,28 @@ const meltMin = (r: Run, id: string) => {
 	const t = when(r, id, "melted", (v) => v >= 0.995)
 	return t === null ? null : t / 60
 }
+/** How far apart the engine rests two polygons' outlines, m (planck's contact skin: two 1 mm polygon radii less its 0.5 mm linear slop). */
+const SKIN = 0.0015
+/**
+ * How far a resized solid stands from resting on another (mm; + over, − into it), at every frame from `from` s on (0.5: the release's settling
+ * done) while both are there (scale 0.05 and up): its origin over the other's along the other's normal, less the other's reach above its origin
+ * (`above` × its scale), the skin and the solid's own reach below its origin (`below` × its scale). Its worst and its mean, or null when it is never
+ * there.
+ */
+function restingOff(r: Run, id: string, under: string, below: number, above: number, from = 0.5): { worst: number; mean: number; n: number } | null {
+	const off: number[] = []
+	for (const f of r.track.frames) {
+		const q = f.placements[id]
+		const b = f.placements[under]
+		if (q === undefined || b === undefined || f.t < from || (q.scale ?? 1) < 0.05 || (b.scale ?? 1) < 0.05) continue
+		const a = b.angle ?? 0
+		const over = -(q.x - b.x) * Math.sin(a) + (q.y - b.y) * Math.cos(a)
+		off.push((over - above * (b.scale ?? 1) - SKIN - below * (q.scale ?? 1)) * 1000)
+	}
+	if (off.length === 0) return null
+	return { worst: off.reduce((w, v) => (Math.abs(v) > Math.abs(w) ? v : w), 0), mean: off.reduce((s, v) => s + v, 0) / off.length, n: off.length }
+}
+const offWords = (o: { worst: number; mean: number; n: number } | null) => (o === null ? "never there" : `worst ${o.worst.toFixed(3)} mm, mean ${o.mean.toFixed(3)} mm over ${o.n} frames`)
 const energyOk = (r: Run) => {
 	const w = r.world
 	if (!w) return 1
@@ -172,6 +194,17 @@ groups.melt = () => {
 	const me = series(r, "c", "melted")
 	const k = Math.floor(sc.length / 3)
 	check(Math.abs((sc[k] as number) - (1 - (me[k] as number)) ** (1 / 3)) < 0.01, "a melting cube's size is the cube root of its ice", `${sc[k]} vs ${((1 - (me[k] as number)) ** (1 / 3)).toFixed(4)}`)
+	// it stays resting on its plate as it shrinks (physics.ts `restingMoves`): its middle at the plate's top + the skin + its own half height. Rebuilt
+	// about its middle, it hovered 0.46-0.52 mm higher on average (0.58-1.37 mm at worst) and dropped back in hops each time a rebuild took it past
+	// the skin
+	for (const [x, what] of [
+		[r, "4 cm"],
+		[rs, "2.5 cm"],
+		[al, "4 cm on aluminium"]
+	] as const) {
+		const off = restingOff(x, "c/block", "p/base", 0.5 * (x === rs ? 0.025 : 0.04), 0.5 * (x === al ? (THICK.aluminium as number) : cer))
+		check(off !== null && Math.abs(off.worst) <= 0.05, `a melting cube (${what}) stays resting on its plate: its middle at the plate's top + the 1.5 mm contact skin + its half height, every frame (± 0.05 mm)`, offWords(off))
+	}
 	// mass: what melted is the puddle, the film and the vapour (the ice and its water are conserved but for evaporation, at most a few %)
 	const pud = series(r, "c", "puddle_g").at(-1) as number
 	// (a 58.7 g puddle spread 1.5 mm deep is 390 cm²: at about 20 °C it evaporates some 4-6 g an hour, so over the 3.75 h run 70-95 % is left)
@@ -192,6 +225,16 @@ groups.salt = () => {
 	// salt water melts ice below 0 °C: the salted cube's ice is colder than 0 °C while it melts
 	const lo = Math.min(...series(r, "six", "temp"))
 	check(lo < -3, "salt water melts the ice below 0 °C (the salted cube's lowest temperature)", `${lo.toFixed(1)} °C`)
+	// the salted cube stays resting on its bowl's floor as it shrinks (physics.ts `restingMoves`)
+	const cubeOff = restingOff(r, "six/block", "sixb/base", 0.025, b / 2)
+	check(cubeOff !== null && Math.abs(cubeOff.worst) <= 0.05, "a melting cube stays resting on its bowl's floor, every frame (± 0.05 mm)", offWords(cubeOff))
+	// (6 g dissolves within its first lesson minutes there, before the release; fairtest's 15 g on a cube from the freezer lasts 13 minutes) a
+	// dissolving salt pile (its origin at its foot) stays resting on its cube's top as the cube shrinks under it: carried down with the face it
+	// rests on (before, the cube hovered up to 0.7 mm over its plate and the pile up to 0.8 mm over the cube, each dropping back in hops)
+	const rp = run([plate("pp", 1.0), cube("pc", 1.0, 0.05, b, -18), salt("ps", 1.0, b + 0.0505, 15)], { lapse: 1200, seconds: 1.2 })
+	const pc = restingOff(rp, "pc/block", "pp/base", 0.025, b / 2)
+	const ps = restingOff(rp, "ps/pile", "pc/block", 0, 0.025, 0.3)
+	check(pc !== null && Math.abs(pc.worst) <= 0.05 && ps !== null && ps.n >= 5 && Math.abs(ps.worst) <= 0.05, "a 15 g salt pile dissolving on a melting 5 cm cube on a plate: the cube stays resting on the plate and the pile on the cube, every frame (± 0.05 mm)", `cube ${offWords(pc)}; salt ${offWords(ps)}`)
 	// T2: a big salted cube (5 cm, 6 g) against a small plain one (2.5 cm), in bowls: the small one first [SPEC]
 	const r2 = run([...big("big", 0.6, 6), bowl("sb", 1.4), cube("small", 1.4, 0.025, b, 0)])
 	const t2 = meltMin(r2, "small")

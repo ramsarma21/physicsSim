@@ -3,6 +3,7 @@ import {
 	type Body,
 	BoxShape,
 	CircleShape,
+	CollideCircles,
 	CollidePolygonCircle,
 	CollidePolygons,
 	Distance,
@@ -1868,6 +1869,115 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		const itemOf = (id: string) => (id.includes("/") ? id.slice(0, id.indexOf("/")) : id)
 		const base = new Map<Member, SolidPart>()
 		const middle = (m: Member) => (m.lone ? m.body.getWorldCenter() : m.body.getWorldPoint(m.center))
+		/**
+		 * A resized body that rests on something stays resting on it, and what rests on it alone stays resting on it. A body is rebuilt about
+		 * its own origin (a slab's or a ball's middle), so a shrinking one's foot rose off what it stood on by the share of its size it lost (a
+		 * 4 cm ice cube that lost 1 %: 0.2 mm), and planck holds a body anywhere inside its contact skin (outlines 2 mm apart; resting, 1.5 mm)
+		 * without letting it settle back (a contact only stops a closing approach; only an overlap past the linear slop is pushed apart): a
+		 * melting cube hovered about 0.45 mm over its resting place (up to 0.65 mm; 1.4 mm on aluminium, where it melts fast) and, once a rebuild
+		 * took it past the skin, dropped in a hop and was caught at the skin's edge, again and again (and a growing one went into what it stood
+		 * on, to be shoved out). So a lone, jointless moving body rebuilt from one live size to another (1 % and up) that touches something under
+		 * it (a touch whose normal into it is within 60° of straight up: the most upright one) moves toward it along that normal by what its
+		 * outline's reach toward it changed ((1 − ratio) × the reach from its origin), keeping the gap it rested at; a moving, jointless body
+		 * resting on it alone moves with the face it rests on (along their touch's normal), and what rests on that alone with it. Before the
+		 * release too (the world stands still, but a module runs: a cube at 0 °C melts while it is held), so it is not left shrunk in the air
+		 * over what it stood on, to drop at the release. One touching nothing under it (falling, floating, hanging) is rebuilt about its origin
+		 * as before.
+		 */
+		const UPRIGHT = 0.5
+		/**
+		 * What a body touches where it stands now: for each of its solids, the manifold planck's next step would make with each solid near it (its
+		 * own collision of the two shapes, so also before the release, when planck has made no contacts yet; sensors and pairs that never collide
+		 * left out): the other body and the unit normal into this one.
+		 */
+		const touchesOf = (body: Body) => {
+			const out: { other: Body; n: Vec2 }[] = []
+			const xf = body.getTransform()
+			for (let f = body.getFixtureList(); f !== null; f = f.getNext()) {
+				if (f.isSensor()) continue
+				const mine = f
+				world.queryAABB(mine.getAABB(0), (g) => {
+					const other = g.getBody()
+					if (other === body || g.isSensor() || !mine.shouldCollide(g) || !body.shouldCollide(other)) return true
+					const xg = other.getTransform()
+					const a = mine.getShape()
+					const b = g.getShape()
+					const manifold = new Manifold()
+					// (planck's collisions: polygon or circle first, its normal from the first shape to the second)
+					let flip = false
+					if (a.getType() === "polygon" && b.getType() === "polygon") CollidePolygons(manifold, a as PolygonShape, xf, b as PolygonShape, xg)
+					else if (a.getType() === "polygon" && b.getType() === "circle") CollidePolygonCircle(manifold, a as PolygonShape, xf, b as CircleShape, xg)
+					else if (a.getType() === "circle" && b.getType() === "polygon") {
+						CollidePolygonCircle(manifold, b as PolygonShape, xg, a as CircleShape, xf)
+						flip = true
+					} else if (a.getType() === "circle" && b.getType() === "circle") CollideCircles(manifold, a as CircleShape, xf, b as CircleShape, xg)
+					if (manifold.pointCount === 0) return true
+					const wm = flip ? manifold.getWorldManifold(null, xg, b.getRadius(), xf, a.getRadius()) : manifold.getWorldManifold(null, xf, a.getRadius(), xg, b.getRadius())
+					if (wm === undefined || wm.pointCount === 0) return true
+					// (its normal points from the first shape to the second: into this body when the other went first)
+					const sign = flip ? 1 : -1
+					out.push({ other, n: new Vec2(sign * wm.normal.x, sign * wm.normal.y) })
+					return true
+				})
+			}
+			return out
+		}
+		/** How far a fixture's outline reaches from its body's origin along the unit direction (dx, dy), planck units. */
+		const reachOf = (f: Fixture, dx: number, dy: number) => {
+			const q = f.getBody().getTransform().q
+			const along = (v: Vec2) => (q.c * v.x - q.s * v.y) * dx + (q.s * v.x + q.c * v.y) * dy
+			const shape = f.getShape() as unknown as { m_vertices: Vec2[]; m_count: number; m_p: Vec2; m_radius: number }
+			if (f.getType() === "circle") return along(shape.m_p) + shape.m_radius
+			let most = -Infinity
+			for (let i = 0; i < shape.m_count; i++) most = Math.max(most, along(shape.m_vertices[i] as Vec2))
+			return most
+		}
+		/**
+		 * Where a lone body rebuilt to `ratio` × its size about its origin, and what rests on it alone, go to keep resting as they rest (by body,
+		 * planck units); undefined when nothing moves.
+		 */
+		const restingMoves = (m: Member, ratio: number) => {
+			if (!(runGravity > 0) || m.body.getJointList() !== null) return undefined
+			const moves = new Map<Body, Vec2>()
+			const touches = touchesOf(m.body)
+			let under: (typeof touches)[number] | undefined
+			for (const t of touches) if (t.n.y > UPRIGHT && (under === undefined || t.n.y > under.n.y)) under = t
+			const s = new Vec2(0, 0)
+			if (under !== undefined) {
+				const e = reachOf(m.fixture, -under.n.x, -under.n.y)
+				s.x = -(1 - ratio) * e * under.n.x
+				s.y = -(1 - ratio) * e * under.n.y
+				moves.set(m.body, s)
+			}
+			/** A moving, jointless body resting on `on` alone moves by d, and what rests on it alone with it. */
+			const carry = (body: Body, on: Body, d: Vec2, depth: number) => {
+				if (body === m.body || moves.has(body) || depth > 8 || !body.isDynamic() || body.getJointList() !== null) return
+				const its = touchesOf(body)
+				if (its.some((t) => t.n.y > UPRIGHT && t.other !== on)) return
+				moves.set(body, d)
+				for (const t of its) if (-t.n.y > UPRIGHT) carry(t.other, body, d, depth + 1)
+			}
+			for (const t of touches) {
+				// (a body resting on it: their normal into this one points down) the face it rests on, its outline's reach that way from its origin,
+				// moves by s and by the rebuild's (ratio − 1) × that reach; the body follows along their normal
+				if (!(-t.n.y > UPRIGHT)) continue
+				const d = -(s.x * t.n.x + s.y * t.n.y) + (ratio - 1) * reachOf(m.fixture, -t.n.x, -t.n.y)
+				carry(t.other, m.body, new Vec2(-d * t.n.x, -d * t.n.y), 0)
+			}
+			return moves.size > 0 ? moves : undefined
+		}
+		/** Moves a body by d (planck units), its path through the step with it; its turn and its motion stay as they were. */
+		const shift = (body: Body, d: Vec2) => {
+			const xf = body.getTransform()
+			const sweep = sweepOf(body)
+			xf.p.x += d.x
+			xf.p.y += d.y
+			sweep.c.x += d.x
+			sweep.c.y += d.y
+			sweep.c0.x += d.x
+			sweep.c0.y += d.y
+			body.synchronizeFixtures()
+		}
 		const resize = (m: Member, wanted: number) => {
 			const scale = Number.isFinite(wanted) ? Math.max(0, wanted) : 1
 			const doc = base.get(m) ?? m.part
@@ -1882,7 +1992,12 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 						: { ...b, points: b.points.map((q) => ({ x: q.x * k, y: q.y * k })), depth: b.depth * k }
 			const part: SolidPart = { ...doc, body, ...(doc.length === undefined ? {} : { length: doc.length * k }) }
 			const dynamic = m.part.kind === "dynamic" && m.body.isDynamic()
+			// (what it rests on and what rests on it, read from its shape as it was, before the rebuild)
+			const was = scales.get(part.id) ?? 1
+			const moves = dynamic && m.lone && was >= 0.01 && scale >= 0.01 && scale !== was ? restingMoves(m, scale / was) : undefined
 			m.body.destroyFixture(m.fixture)
+			// (moved before its new fixture is made, which planck then puts where the body stands)
+			if (moves !== undefined) for (const [moved, d] of moves) shift(moved, d)
 			m.fixture = addFixture(m.body, part, m.local, dynamic, m.lone)
 			m.part = part
 			m.center = memberCenter(part, m.local)
