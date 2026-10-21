@@ -419,7 +419,7 @@ async function startView(moduleP) {
 	try {
 		const { createView3D } = await moduleP
 		S.view = createView3D(el)
-		S.view.setOptions({ looks: S.catalog.looks, camera: S.cam })
+		S.view.setOptions({ looks: S.catalog.looks, catalog: S.catalog, camera: S.cam }) // (the catalog: the export's directed camera reads its categories and readouts)
 		S.view.setQuality?.(S.quality)
 		el.addEventListener("quality", qualityTip) // (the view says when its tier changes: Auto steps up and down as the device keeps up or not)
 		qualityTip()

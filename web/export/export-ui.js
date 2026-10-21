@@ -29,6 +29,8 @@ const RES = [
 ]
 const FPS = [30, 60]
 const CAMERAS = [
+	// (the view's "focus" camera: directed for what the scene shows, from its own subjects and moments; the default for a scene with goals or a comparison)
+	{ id: "focus", label: "Directed", hint: "Close on what the scene is about, still while it matters, cut from moment to moment: no table, no wall." },
 	{ id: "wide", label: "Wide", hint: "The whole machine in one steady shot." },
 	{ id: "follow", label: "Follow", hint: "Stays with whatever is moving." },
 	{ id: "orbit", label: "Orbit", hint: "A slow turn around the machine." },
@@ -43,7 +45,7 @@ const AUDIO_KBPS = 192 // the encoder's AAC
 // What part of that bitrate a file of these scenes really takes (the encoder is VBR: a still shot costs little, a moving camera much more).
 // Measured with the real encoder on three scenes at 720p30, 1080p60 and 4K30 (Wide 0.04–0.28, Follow 0.48–0.57); each camera then learns
 // from this device's own exports (calib.bytes[camera]). Bigger frames compress better (fewer bits per pixel for the same picture).
-const SIZE_PRIOR = { wide: 0.16, follow: 0.55, orbit: 0.6, director: 0.5, fixed: 0.16 } // (fixed: a still camera, as Wide)
+const SIZE_PRIOR = { wide: 0.16, follow: 0.55, orbit: 0.6, director: 0.5, fixed: 0.16, focus: 0.3 } // (fixed: a still camera, as Wide; focus: mostly still shots, cut)
 const SIZE_RES = { "720p": 1, "1080p": 1, "1440p": 0.85, "4k": 0.7 }
 const PREVIEW = { w: 640, h: 360, fps: 15, hold: 0.7 } // the settings preview: its size, how often it draws, how long it waits at the end
 const PREVIEW_MS_PRIOR = 8 // ms a preview frame takes before any is timed (Apple M5 Pro: 6.3, 10.8 with five chrome balls; a slower device shows its own)
@@ -52,7 +54,7 @@ const PREVIEW_MS_SOFT = 400 // ... on a device that draws without a graphics chi
 // How many times a sharp frame a motion-blurred one costs at 1920 wide and 30 fps, per camera: the view takes more sub-frames where the picture moves
 // more (measured on 3 scenes: Wide 1.7–2.1, Orbit 2.3–2.4, Director 2.8–3.3, Follow 3.9–5.6); about √(width / 1920) more at other widths
 // (4K: Wide 2.7–3.6, Follow 5.2–6.8), and fewer at 60 fps (a shutter half as long).
-const BLUR_COST = { wide: 1.9, orbit: 2.4, director: 3.1, follow: 4.7, fixed: 1.9 } // (fixed: a still camera, as Wide)
+const BLUR_COST = { wide: 1.9, orbit: 2.4, director: 3.1, follow: 4.7, fixed: 1.9, focus: 2.6 } // (fixed: a still camera, as Wide; focus: still shots, some follows)
 const MIN_LEN = 0.2 // s: the shortest trim
 // What this device has room for: a 1440p or 4K export holds big frame targets on the GPU (4K at its worst about 1.2 GB more than idle, 1440p about 0.7 GB:
 // ai/EXPORT.md) besides the page and the whole file in memory. navigator.deviceMemory (Chrome, Edge, Opera; GB, rounded down, at most 8) of 2 or less offers
@@ -174,7 +176,8 @@ export function mountExportUI(o) {
 	const set = {
 		res: RES.some((r) => r.id === saved.res) ? saved.res : "1080p",
 		fps: FPS.includes(saved.fps) ? saved.fps : 60,
-		camera: CAMERAS.some((c) => c.id === saved.camera) ? saved.camera : null, // null: the live view's camera when first opened
+		camera: saved.cameraChosen === true && CAMERAS.some((c) => c.id === saved.camera) ? saved.camera : null, // null: Directed for a scene with goals or a comparison, else the live view's camera
+		cameraChosen: saved.cameraChosen === true, // (only a camera the person picked is remembered)
 		blur: saved.blurChosen === true && typeof saved.blur === "boolean" ? saved.blur : null, // null: the view's recommendation (exportInfo().recommended.motionBlur)
 		blurChosen: saved.blurChosen === true, // (only a choice the person made is remembered: the recommendation can change with the device)
 		sound: saved.sound !== false,
@@ -183,7 +186,17 @@ export function mountExportUI(o) {
 		k: saved.calib?.k && typeof saved.calib.k === "object" ? saved.calib.k : {},
 		bytes: saved.calib?.bytes && typeof saved.calib.bytes === "object" ? saved.calib.bytes : {},
 	}
-	const remember = () => { try { store?.set(STORE_KEY, { res: set.res, fps: set.fps, camera: set.camera, ...(set.blurChosen ? { blur: set.blur, blurChosen: true } : {}), sound: set.sound, calib }) } catch {} }
+	const remember = () => { try { store?.set(STORE_KEY, { res: set.res, fps: set.fps, ...(set.cameraChosen ? { camera: set.camera, cameraChosen: true } : {}), ...(set.blurChosen ? { blur: set.blur, blurChosen: true } : {}), sound: set.sound, calib }) } catch {} }
+	/** What the directed camera ("focus") is told besides the run: the scene as it is (its words and goals name the subjects). */
+	const camOpts = (cam) => (cam === "focus" ? { focus: { scene: get().scene } } : {})
+	/** A scene with goals or a comparison is filmed Directed unless the person picked a camera (exportInfo().directed). */
+	function defaultCamera() {
+		let d = null
+		try { d = get().view?.exportInfo?.()?.directed } catch {}
+		const goals = (get().scene?.goals?.length ?? 0) > 0 || (d?.goals ?? 0) > 0
+		if ((goals || d?.comparison) && (!caps.cameras || caps.cameras.includes("focus"))) return "focus"
+		return CAMERAS.some((c) => c.id === get().cam) ? get().cam : "wide"
+	}
 
 	// ----- which run the export is of: the run that landed for the scene as it is now -----
 	// A run's answer lands with the status saying "ok" (synchronously after S.sim is set): the scene at that moment is the scene of that run.
@@ -417,7 +430,7 @@ export function mountExportUI(o) {
 		const view = get().view
 		caps.render = isFn(view?.renderFrame)
 		let info = null
-		try { info = isFn(view?.exportInfo) ? await view.exportInfo({ width: resNow().w, height: resNow().h, fps: set.fps, camera: set.camera, motionBlur: set.blur }) : view?.exportInfo ?? null } catch {}
+		try { info = isFn(view?.exportInfo) ? await view.exportInfo({ width: resNow().w, height: resNow().h, fps: set.fps, camera: set.camera, motionBlur: set.blur, ...camOpts(set.camera) }) : view?.exportInfo ?? null } catch {}
 		if (info && typeof info === "object") {
 			const cams = Array.isArray(info.cameras) ? info.cameras.map((c) => (typeof c === "string" ? c : c?.id)).filter(Boolean) : null
 			caps.cameras = cams?.length ? cams : null
@@ -587,7 +600,7 @@ export function mountExportUI(o) {
 		const blurOk = blurAllowed()
 		blur.checked = blurNow()
 		blur.disabled = !blurOk
-		const choppy = blurOk && !blur.checked && (cam === "follow" || cam === "director") // (these cameras pan fast: up to ~1900 px/s at 1080p; sharp frames strobe)
+		const choppy = blurOk && !blur.checked && (cam === "follow" || cam === "director" || cam === "focus") // (these cameras pan fast: up to ~1900 px/s at 1080p; sharp frames strobe)
 		const blurCap = $("#xv-blur-cap")
 		blurCap.textContent = !caps.blur ? "Not available with this renderer." : !blurOk ? `${slow}.` : choppy ? "Fast camera moves look choppy without it." : "Soft streaks on fast parts, like a real camera. Slower to make."
 		blurCap.classList.toggle("xv-cap-warn", choppy)
@@ -692,7 +705,7 @@ export function mountExportUI(o) {
 			$(".xv-trim-head").style.left = `${trim.seconds ? (t / trim.seconds) * 100 : 0}%`
 			try {
 				const began = performance.now()
-				const src = await view.renderFrame(t, { width: PREVIEW.w, height: PREVIEW.h, camera: cam, motionBlur: false, preview: true })
+				const src = await view.renderFrame(t, { width: PREVIEW.w, height: PREVIEW.h, camera: cam, motionBlur: false, preview: true, ...camOpts(cam) })
 				const took = performance.now() - began
 				if (pv.timesSim !== s.sim) { pv.lastMs = previewMs() ?? pv.lastMs; pv.times = []; pv.timesSim = s.sim }
 				if (took < 250) { pv.times.push(took); if (pv.times.length > 12) pv.times.shift() } // (not a session's first frame: it compiles)
@@ -752,7 +765,7 @@ export function mountExportUI(o) {
 		lastFocus = document.activeElement
 		wasPlaying = !!get().playing
 		o.pause?.()
-		if (!set.camera) set.camera = CAMERAS.some((c) => c.id === get().cam) ? get().cam : "wide"
+		if (!set.cameraChosen) set.camera = defaultCamera()
 		caps.render = isFn(get().view?.renderFrame)
 		try { const rec = get().view?.exportInfo?.()?.recommended; if (rec && typeof rec === "object") caps.recommendedBlur = Number(rec.motionBlur) > 0 } catch {} // (before the first render: the toggle must not flick)
 		pv.failed = false
@@ -836,7 +849,7 @@ export function mountExportUI(o) {
 			const v = b.dataset.v
 			if (k === "fps") set.fps = Number(v)
 			else set[k] = v
-			if (k === "camera") redrawPreview()
+			if (k === "camera") { set.cameraChosen = true; redrawPreview() }
 			remember()
 			render()
 			return
@@ -1020,7 +1033,7 @@ export function mountExportUI(o) {
 			let audio = null
 			if (wantSound) {
 				phase("Making the impact sounds…")
-				try { audio = await soundFor(sim, s.scene, start, end, total / fps, ctl.signal, { camera, width: r.w, height: r.h }) } catch (e) {
+				try { audio = await soundFor(sim, s.scene, start, end, total / fps, ctl.signal, { camera, width: r.w, height: r.h, fps, ...camOpts(camera) }) } catch (e) {
 					if (isAbort(e)) throw e
 					console.warn("Export sound:", e)
 					soundNote = `The sound couldn’t be made (${e.message}), so this video is silent.`
@@ -1045,7 +1058,7 @@ export function mountExportUI(o) {
 				const t = Math.min(end, start + i / fps)
 				let src
 				try {
-					src = await view.renderFrame(t, { width: r.w, height: r.h, camera, motionBlur: blur, fps, runId, quality: "high", start, end, index: i, frames: total })
+					src = await view.renderFrame(t, { width: r.w, height: r.h, camera, motionBlur: blur, fps, runId, quality: "high", start, end, index: i, frames: total, ...camOpts(camera) })
 				} catch (e) {
 					if (ctl.signal.aborted) throw abortError()
 					// the view's own words are for developers: say what happened ("renderFrame: no finished run…" is the scene being changed)

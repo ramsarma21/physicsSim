@@ -1,0 +1,43 @@
+{
+ "about": "The design's twelve worked shot plans (scratchpad director/DIRECTOR.md section 6) and the runs each films: a path in this repository, or $LESSON_SCENES/<file> for a lesson compositor lane (lesson-regen/compositor/build2/scenes: not in this repository; those plans run only when LESSON_SCENES names that folder). A plan with lanes filmed apart names one run per lane.",
+ "plans": {
+  "01-laser-mirror": {
+   "": "demos/optics/demo-mirror.json"
+  },
+  "02-fairtest-ramps": {
+   "top": "$LESSON_SCENES/ft_1b_car_red_clay.scene.json",
+   "bottom": "$LESSON_SCENES/ft_3b_car_red_clay.scene.json"
+  },
+  "03-salt-ice": {
+   "": "$LESSON_SCENES/ft_melt_plates_salt6_plain.scene.json"
+  },
+  "04-fan-boats": {
+   "top": "$LESSON_SCENES/ft_boat_10cm_small.scene.json",
+   "bottom": "$LESSON_SCENES/ft_boat_80cm_small.scene.json"
+  },
+  "05-mo37-race": {
+   "": "demos/measure/mo37-lanes.json"
+  },
+  "06-chain-reaction": {
+   "": "web/scenarios/rube-goldberg.json"
+  },
+  "07-pendulum": {
+   "": "demos/waves/x05-pendulum-period.json"
+  },
+  "08-switch-bulb": {
+   "": "demos/circuits/board-switch-bulb.json"
+  },
+  "09-magnet-clip": {
+   "": "demos/magnetism/g1-clip-jumps.json"
+  },
+  "10-egg-drop": {
+   "": "demos/mechanics/egg-drop.json"
+  },
+  "11-siphon": {
+   "": "demos/flow/06-siphon.json"
+  },
+  "12-earth-orbit": {
+   "": "demos/space/earth-seasons-orbit.json"
+  }
+ }
+}

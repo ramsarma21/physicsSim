@@ -18,6 +18,8 @@ import { frameIndex, placementsAt } from "./track.js"
 import { animates, collectHooks, framePlugins, startPlugins, stopPlugins } from "./view-plugins.js"
 import { buildModel, beginRun, endRun, modelFor, modelKey, isModelCached, pinModel, gradeShader, gradeKeyFor, gradeSat, isPlainPaint, prebake, stealPrebake, prebakeReady, stopPrebake } from "./models3d.js"
 import { makeGate } from "./start-gate.js"
+import * as Shots from "./export/shots.js"
+import { recognize, registryOf, sceneFromSim } from "./export/subjects.js"
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Constants (all lengths in meters)
@@ -5762,6 +5764,12 @@ ${GRADE}
 				part.mesh.scale.setScalar(Math.max(1e-4, k))
 				part.mesh.visible = k > 1e-3
 				if (k <= 1e-3) part.blob.visible = false
+				part.scaled = true
+			} else if (part.scaled) {
+				// (a moment before the module first changed it: its own size, shown. The track writes a scale only once a body has changed, so without
+				// this a moment drawn after a later one kept the later size: a frame was not a pure function of t)
+				part.mesh.scale.setScalar(1)
+				part.mesh.visible = true
 			}
 		}
 		for (const pose of run.joints) pose(t)
@@ -6115,6 +6123,7 @@ ${GRADE}
 
 	function setOptions(opts = {}) {
 		dirty = true
+		if (opts.catalog && typeof opts.catalog === "object") viewCatalog = opts.catalog // (the directed cameras' subject recognition reads its categories, tags and readouts)
 		if (opts.looks && typeof opts.looks === "object") {
 			const json = JSON.stringify(opts.looks)
 			if (json !== looksJson) {
@@ -6381,7 +6390,7 @@ ${GRADE}
 	// picture; anything asked meanwhile is done when it ends); it ends at endExport(), at a new load, or EXPORT_IDLE_MS after the last frame.
 	const EXPORT_IDLE_MS = 4000
 	const EXPORT_MIRROR = 256 // cube map side of a chrome ball in an export (the canvas's are 128)
-	const EXPORT_CAMERAS = ["wide", "follow", "orbit", "director", "live", "fixed"] // fixed: the scene's fixed camera (doc.view.camera), else the wide shot
+	const EXPORT_CAMERAS = ["wide", "follow", "orbit", "director", "live", "fixed", "focus", "director-plan"] // fixed: the scene's fixed camera (doc.view.camera), else the wide shot; focus and director-plan: directed cameras (web/export/shots.js, below)
 	const BLUR_MAX = 32 // most sub-frames a blurred frame takes
 	const DIRECTOR_PEAK = 2400 // px/s across a 1920 px picture: the director's moves stay under this at their fastest point (the picture's edge as it zooms; ~1.25 widths a second)
 	const BLUR_STEP_PX = 2 // ... and as many as keep anything from moving more than this between two of them (no visible steps)
@@ -6429,8 +6438,57 @@ ${GRADE}
 		})
 	}
 
-	/** What an export of the run shown can be: duration, recommended size, whether it is settled, the camera names, limits. */
-	function exportInfo() {
+	/** What an export of the run shown can be: duration, recommended size, whether it is settled, the camera names, limits. Asked with a directed
+	 *  camera (exportInfo({camera: "focus" | "director-plan", plan | film, focus, runs, lane, width, height, fps})), also that camera's film once the
+	 *  run is settled: plan {kind, duration, frameCount, fps, shots (each one's video and run window, rate, layout, bands), lanes, notes, report (the
+	 *  safety net's measured facts and checks), plan (what it films: the automatic plan for focus)}, and duration is the film's (video seconds). */
+	function exportInfo(o) {
+		const base = exportInfoBase()
+		const cam0 = o?.camera === "plan" ? "director-plan" : o?.camera
+		if (!PLAN_CAMERAS.has(cam0) || !base.ready) return base
+		if (!isSettled()) return { ...base, plan: null, planPending: true }
+		try {
+			const W = Math.round(Number(o.width ?? 1920))
+			const H = Math.round(Number(o.height ?? 1080))
+			const fps = Number(o.fps ?? 60) > 0 ? Number(o.fps ?? 60) : 60
+			const shot = exportShot(xg, cam0, W, H, fps, planSpec(cam0, o))
+			return { ...base, duration: shot.film.duration, plan: planSummary(shot) }
+		} catch (e) {
+			return { ...base, plan: null, planError: e.message }
+		}
+	}
+	function planSummary(shot) {
+		const f = shot.film
+		return {
+			kind: shot.kind,
+			duration: f.duration,
+			frameCount: f.frameCount,
+			fps: f.fps,
+			width: f.W,
+			height: f.H,
+			lanes: f.lanes,
+			perLaneRuns: f.perLaneRuns,
+			shots: f.shots.map((s) => ({ id: s.id, beat: s.beat, move: s.move, layout: s.layout, arrange: s.arrange, video: [s.tau0, s.tau0 + s.T], frames: [s.i0, s.i0 + s.n - 1], run: [s.t0, s.t1], rate: s.rate, label: s.label, in: s.in, look: s.look, bands: s.bands })),
+			notes: f.notes,
+			report: shot.report,
+			plan: shot.plan,
+		}
+	}
+	/** Whether the run shown has goals or is a comparison (the export dialog then offers its Directed camera first): the subject recognizer's lanes,
+	 *  once per run. */
+	function directedFacts() {
+		if (!run || run.cancelled) return null
+		if (run.directedFacts) return run.directedFacts
+		let lanes = 0
+		try {
+			const rec = recognize({ scene: sceneFromSim(run.sim), run: run.sim, catalog: viewCatalog ?? { types: [] }, registry: registryOf(globalThis[Symbol.for("sandbox.plugins")] ?? null), hints: {} })
+			lanes = rec.lanes?.length ?? 0
+		} catch {}
+		const goals = run.sim?.summary?.goals ?? []
+		run.directedFacts = { goals: goals.length, comparison: lanes >= 2 || goals.some((g) => g && g.a !== undefined && g.b !== undefined), lanes }
+		return run.directedFacts
+	}
+	function exportInfoBase() {
 		const ok = canExport()
 		const low = softwareGL
 		return {
@@ -6451,6 +6509,7 @@ ${GRADE}
 			softwareGL,
 			lastFrameMs: xstats.lastMs,
 			fixed: ok ? (run.doc.view?.camera ?? null) : null, // the scene's fixed camera {x0, x1, y, pitch, hfov} (the wide and fixed cameras), or null
+			directed: ok ? directedFacts() : null, // {goals, comparison, lanes}: a scene with goals or a comparison is filmed "focus" by default (the export dialog's Directed)
 		}
 	}
 
@@ -6460,7 +6519,7 @@ ${GRADE}
 		const H = Math.round(Number(o.height ?? 1080))
 		const max = exportMaxSize()
 		if (!(W >= 16 && H >= 16 && W <= max && H <= max)) throw new RangeError(`renderFrame: width and height must be whole numbers from 16 to ${max} (got ${o.width} x ${o.height})`)
-		const camera = o.camera ?? "wide"
+		const camera = o.camera === "plan" ? "director-plan" : (o.camera ?? "wide") // ("plan": DIRECTOR.md's name for it)
 		if (!EXPORT_CAMERAS.includes(camera)) throw new RangeError(`renderFrame: camera must be one of ${EXPORT_CAMERAS.join(", ")} (got ${camera})`)
 		const mb = o.motionBlur
 		const n = mb === true ? 6 : typeof mb === "number" ? mb : mb && typeof mb === "object" ? (mb.samples ?? 6) : 1
@@ -6470,7 +6529,7 @@ ${GRADE}
 		const angle = Number((mb && typeof mb === "object" ? mb.shutter : undefined) ?? o.shutter ?? 180)
 		const open = (Math.min(360, Math.max(0, Number.isFinite(angle) ? angle : 180)) / 360) / fps // s the shutter stays open
 		const samples = Math.max(0, Math.min(renderer.capabilities.maxSamples ?? 4, Math.round(Number(o.samples ?? exportSamples(W, H)))))
-		return { W, H, camera, blur, most, open, samples, runId: o.runId, output: o.output === "imagedata" ? "imagedata" : "canvas" }
+		return { W, H, camera, blur, most, open, samples, runId: o.runId, output: o.output === "imagedata" ? "imagedata" : "canvas", fps, plan: planSpec(camera, o) }
 	}
 
 	/** The canvas's tier state on the GPU side (applyTier's, without the drawing buffer, the event and the auto-quality bookkeeping): for the export's hold on high. */
@@ -6955,13 +7014,21 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		const t0 = performance.now()
 		const g = exportGpu()
 		exportTargets(g, o)
-		const shot = exportShot(g, o.camera, o.W, o.H)
-		const T = Math.min(exportDuration(), Math.max(0, Number.isFinite(t) ? t : 0))
+		const shot = exportShot(g, o.camera, o.W, o.H, o.fps, o.plan)
+		const directed = !!shot.film
+		const T = Math.min(directed ? shot.film.duration : exportDuration(), Math.max(0, Number.isFinite(t) ? t : 0))
 		const t1 = performance.now()
-		exportDraw(g, T, o, shot)
+		const fr = directed ? exportDrawPlan(g, T, o, shot) : (exportDraw(g, T, o, shot), null)
 		if (renderer.getContext().isContextLost()) throw new Error("renderFrame: the GPU context was lost")
 		const t2 = performance.now()
 		g.ctx.putImageData(g.img, 0, 0)
+		if (fr && drawPlanOverlay(g, shot, fr) && o.output === "imagedata") {
+			const marked = g.ctx.getImageData(0, 0, g.W, g.H)
+			xstats.frames++
+			xstats.lastMs = performance.now() - t0
+			xstats.ms += xstats.lastMs
+			return marked
+		}
 		xstats.frames++
 		xstats.lastMs = performance.now() - t0
 		xstats.split = { prep: t1 - t0, draw: t2 - t1 - xstats.readMs, read: xstats.readMs, put: performance.now() - t2 }
@@ -7788,10 +7855,688 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			},
 		}
 	}
+	// ----- directed cameras: a shot plan filmed exactly (web/export/shots.js; CONTRACT.md "Filming module: directed cameras") --------------------------------
+	// camera "director-plan" films a shot plan ({plan}, or {film}: one compiled elsewhere, the lesson compositor's lanes) and camera "focus" the plan
+	// the engine makes when there is no director (Shots.autoPlan: what the subject recognizer says the run is about, big, cut by moment). For both, t is
+	// VIDEO time: a plan may slow the run down, hold a moment or cut back to it, so each frame's run time comes from the film (the focus plan plays
+	// the run at its own pace from 0 to its end: its video time is the run time). A film is planned once per run, picture size, fps and plan, from
+	// the run's track and the drawn models' boxes, measured once the models are in; its frames are drawn band by band (a comparison's lanes, an
+	// inset) with the look the plan asks for (a plain studio backdrop and floor instead of the room and the table: no wood, no wall), the other
+	// lanes' things left out of each band, the key light's shadow fitted to the shot, motion-blur sub-frames kept inside their own shot (never across
+	// a cut), and the plan's marks drawn over the frame through the same projection.
+	let viewCatalog = null
+	const PLAN_CAMERAS = new Set(["focus", "director-plan"])
+	const planIds = new WeakMap() // object -> its content's hash (a plan, a film or another lane's run passed as the same object every frame is hashed once)
+	const objId = (o) => {
+		if (!o || typeof o !== "object") return String(o)
+		let k = planIds.get(o)
+		if (!k) {
+			const j = JSON.stringify(o)
+			k = `${hashStr(j)}.${j.length}`
+			planIds.set(o, k)
+		}
+		return k
+	}
+	/** a 53-bit hash of a string (cyrb53), as hex */
+	function hashStr(str) {
+		let h1 = 0xdeadbeef
+		let h2 = 0x41c6ce57
+		for (let i = 0; i < str.length; i++) {
+			const ch = str.charCodeAt(i)
+			h1 = Math.imul(h1 ^ ch, 2654435761)
+			h2 = Math.imul(h2 ^ ch, 1597334677)
+		}
+		h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+		h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+		return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)
+	}
+	/** The directed cameras' options, normalised: {plan | film, focus: {scene, catalog, hints}, runs (other lanes' runs: {lane: {sim | doc+track,
+	 *  boxes, scene}}), lane (the lane whose run this view shows), key}. Throws a RangeError for a plan camera without what it needs. */
+	function planSpec(camera, o) {
+		if (!PLAN_CAMERAS.has(camera)) return null
+		const focus = o?.focus && typeof o.focus === "object" ? o.focus : null
+		const spec = { focus, runs: o?.runs && typeof o.runs === "object" ? o.runs : null, lane: typeof o?.lane === "string" ? o.lane : null, plan: null, film: null }
+		if (camera === "director-plan") {
+			if (o?.film) spec.film = typeof o.film === "string" ? JSON.parse(o.film) : o.film
+			else if (o?.plan && typeof o.plan === "object") spec.plan = o.plan
+			else throw new RangeError("renderFrame: camera \"director-plan\" needs {plan} (a shot plan: web/export/shot-plan.schema.json) or {film} (one compiled by exportPlan)")
+		}
+		if (spec.runs && !spec.lane && !spec.film) throw new RangeError("renderFrame: with runs (one run per lane), lane names the lane whose run this view shows")
+		spec.key = [camera, spec.plan ? objId(spec.plan) : "", spec.film ? objId(spec.film) : "", focus ? objId({ s: focus.scene ?? null, h: focus.hints ?? null, c: focus.catalog ? 1 : 0 }) : "", spec.runs ? objId(spec.runs) : "", spec.lane ?? ""].join("|")
+		spec.worldKey = [focus ? objId({ s: focus.scene ?? null, h: focus.hints ?? null, c: focus.catalog ? 1 : 0 }) : "", spec.runs ? objId(spec.runs) : "", spec.lane ?? ""].join("|")
+		return spec
+	}
+	/** The solid a root of the run's group draws (a model's holder is named by its solid's id, a plain mesh carries it), or null. */
+	function rootSolid(root, ids) {
+		if (typeof root.userData?.solidId === "string") return root.userData.solidId
+		if (ids.has(root.name)) return root.name
+		let found = null
+		root.traverse((o) => {
+			if (!found && typeof o.userData?.solidId === "string") found = o.userData.solidId
+		})
+		return found
+	}
+	/** The drawn models' boxes of the run shown, once its models are in: each mover's box in its own frame (moverBoxLocal, a round part's radius),
+	 *  each still thing's world box. Shots.makeWorld takes them in place of the physics outlines (sails, fan guards, lamp heads, liquids). */
+	function planBoxes(r) {
+		if (r.planBoxes) return r.planBoxes
+		const out = new Map()
+		const ids = new Set(r.doc.solids.map((s) => s.id))
+		const kindOf = new Map(r.doc.solids.map((s) => [s.id, s.kind]))
+		updateParts(0)
+		try {
+			for (const p of r.parts) {
+				const was = p.mesh.visible
+				p.mesh.visible = true // (a body shrunk away at t = 0 still has its model's box)
+				const b = moverBoxLocal(p)
+				p.mesh.visible = was
+				if (b) out.set(p.id, b.round !== undefined ? { round: b.round, z0: b.z0, z1: b.z1 } : { x0: b.x0, x1: b.x1, y0: b.y0, y1: b.y1, z0: b.z0, z1: b.z1 })
+			}
+			const acc = new Map()
+			for (const root of r.group.children.slice(1)) {
+				// (a mount or a stand the view draws to hold a part up is not the part: a retort stand under a laser would frame the stand)
+				if (root === r.blobs || String(root.name).startsWith("plugin:") || root.userData.mount || root.userData.stand) continue
+				const sid = rootSolid(root, ids)
+				if (!sid || out.has(sid) || kindOf.get(sid) !== "static") continue
+				const pts = []
+				boxCorners(root, pts)
+				if (!pts.length) continue
+				const w = acc.get(sid) ?? [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity]
+				for (let i = 0; i < pts.length; i += 3) {
+					w[0] = Math.min(w[0], pts[i])
+					w[1] = Math.max(w[1], pts[i])
+					w[2] = Math.min(w[2], pts[i + 1])
+					w[3] = Math.max(w[3], pts[i + 1])
+					w[4] = Math.min(w[4], pts[i + 2])
+					w[5] = Math.max(w[5], pts[i + 2])
+				}
+				acc.set(sid, w)
+			}
+			for (const [sid, w] of acc) out.set(sid, { world: w })
+		} finally {
+			updateParts(lastT)
+		}
+		r.planBoxes = out
+		return out
+	}
+	/** The world a plan of the run shown can name (Shots.makeWorld): this run with its models' boxes, the scene and the caller's hints when given,
+	 *  and other lanes' runs (one run per lane). Cached per run and world key. */
+	function planWorld(spec) {
+		const c = (run.planWorlds ??= new Map())
+		if (c.has(spec.worldKey)) return c.get(spec.worldKey)
+		const boxes = planBoxes(run)
+		const env = run.plugins?.find((p) => p.environment)?.environment ?? null
+		const mine = { sim: run.sim, scene: spec.focus?.scene ?? undefined, boxes: (sid) => boxes.get(sid) ?? null, hints: spec.focus?.hints ?? {}, environment: env ? { room: env.room !== false, table: env.table !== false } : null }
+		const catalog = spec.focus?.catalog ?? viewCatalog ?? { types: [] }
+		let w
+		if (spec.runs) {
+			const runs = {}
+			for (const [lane, v] of Object.entries(spec.runs)) {
+				const sim = v?.sim ?? (v?.doc && v?.track ? v : null)
+				if (!sim) throw new RangeError(`renderFrame: runs.${lane} has no run (its sim, or its doc and track)`)
+				runs[lane] = { sim, scene: v.scene, boxes: v.boxes ?? null, hints: v.hints }
+			}
+			runs[spec.lane] = mine
+			w = Shots.makeWorld({ runs, catalog })
+		} else w = Shots.makeWorld({ ...mine, run: run.sim, catalog })
+		c.set(spec.worldKey, w)
+		return w
+	}
+	/** A directed camera's shot: its film (compiled here, or one handed in), the plan it films, and what each band leaves out. */
+	function planShot(kind, W, H, fps, spec) {
+		let film
+		let plan = null
+		let world = null
+		const env = run.plugins?.find((p) => p.environment)?.environment ?? null
+		if (spec.film) {
+			film = Shots.filmFromJSON(spec.film)
+			if (film.W !== W || film.H !== H) throw new RangeError(`renderFrame: the film was made for ${film.W} x ${film.H}, not ${W} x ${H}`)
+		} else {
+			world = planWorld(spec)
+			plan = kind === "focus" ? Shots.autoPlan(world, { width: W, height: H, fps, environment: env ? { room: env.room !== false, table: env.table !== false } : null }) : spec.plan
+			const res = Shots.resolvePlan(plan, world)
+			if (!res.ok) throw new RangeError(`renderFrame: the shot plan names what the run does not have: ${res.errors.map((e) => `${e.at}: ${e.message}${e.nearest?.length ? ` (nearest: ${e.nearest.join(", ")})` : ""}`).join("; ")}`)
+			try {
+				film = Shots.compile(plan, world, { width: W, height: H, fps, kind })
+			} catch (e) {
+				throw new RangeError(`renderFrame: ${e.message}`)
+			}
+		}
+		// the roots and contact shades of each item, for leaving another lane's things out of a band
+		const ids = new Set(run.doc.solids.map((s) => s.id))
+		const itemOf = new Map(run.doc.solids.map((s) => [s.id, s.item]))
+		const roots = new Map()
+		const add = (item, o) => {
+			if (!item || !o) return
+			if (!roots.has(item)) roots.set(item, [])
+			roots.get(item).push(o)
+		}
+		for (const root of run.group.children.slice(1)) {
+			if (root === run.blobs || String(root.name).startsWith("plugin:")) continue
+			add(itemOf.get(rootSolid(root, ids)), root)
+		}
+		for (const p of run.parts) add(itemOf.get(p.id), p.blob)
+		let report = null
+		return {
+			kind,
+			film,
+			plan,
+			world,
+			lane: spec.lane,
+			runs: !!spec.runs || film.perLaneRuns,
+			roots,
+			get report() {
+				if (!report && film._ctx) report = Shots.measure(film)
+				return report
+			},
+			/** the shot's camera at video time tau for band bi (pose of a THREE camera, as the other shots' at(t, cam)) */
+			at(tau, cam, bi = 0) {
+				const fr = Shots.frameAt(film, tau)
+				const b = fr.bands[Math.min(bi, fr.bands.length - 1)]
+				posePlanCam(cam, b.pose, b.rect[2] / b.rect[3])
+			},
+		}
+	}
+	function posePlanCam(cam, p, asp) {
+		const c = Shots.cameraOf(p)
+		setPose(cam, c.position[0], c.position[1], c.position[2], c.target[0], c.target[1], c.target[2], p.hfov, asp)
+		cam.near = Math.max(0.005, Math.min(0.5, p.d / 60))
+		cam.far = Math.max(80, 6 * p.d)
+		cam.updateProjectionMatrix()
+	}
+	/** Which bands of a frame this view draws: all of them, or, for a film of one run per lane, the bands of the lane whose run is shown (a picture
+	 *  of one or every lane: the first lane's run). */
+	function planDrawn(shot, sh) {
+		return sh.bands.map((b, i) => i).filter((i) => {
+			if (!shot.runs) return true
+			const lane = sh.bands[i].lane
+			const first = shot.film.lanes?.[0]?.id ?? null
+			return lane ? lane === shot.lane : shot.lane === first || !shot.lane
+		})
+	}
+	const STUDIO = { floor: null }
+	/** A frame's look (section 3.9), undone after the frame: studio (the room hidden, a plain backdrop in the tone), the ground drawn as a seamless
+	 *  matte studio floor at the table top's height fading into the backdrop (sweep), the table, or nothing; the modules' boards and words hidden. */
+	function applyPlanLook(look, d) {
+		const saved = { roomWanted, tableWanted, bg: scene.background, fog: scene.fog }
+		const studio = look.backdrop === "studio"
+		const back = new THREE.Color(Shots.TONES[look.tone] ?? Shots.TONES.mid)
+		if (studio) {
+			roomWanted = false
+			scene.background = back
+		} else if (look.backdrop === "room") roomWanted = true
+		if (look.ground === "sweep" || look.ground === "hidden") tableWanted = false
+		if (look.ground === "sweep") {
+			if (!STUDIO.floor) {
+				STUDIO.floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.92, metalness: 0 }))
+				STUDIO.floor.receiveShadow = true
+				STUDIO.floor.name = "studio-floor"
+				STUDIO.floor.visible = false
+				scene.add(STUDIO.floor)
+			}
+			const tb = run.table
+			const top = tb ? tb.at.y + (tb.body?.height ?? 0) / 2 : TABLE_TOP
+			STUDIO.floor.position.set(tb ? tb.at.x : 1.3, top - 0.0002, 0)
+			STUDIO.floor.material.color.set(Shots.FLOORS[look.tone] ?? Shots.FLOORS.mid)
+			STUDIO.floor.visible = true
+			scene.fog = new THREE.Fog(studio ? back : (scene.background?.isColor ? scene.background : back), d + 0.6, d + 4.5)
+		}
+		setRoomVisible(true)
+		cabinet.visible = cabinetWanted && roomWanted
+		if (run.tableMesh) run.tableMesh.visible = tableWanted
+		return () => {
+			roomWanted = saved.roomWanted
+			tableWanted = saved.tableWanted
+			scene.background = saved.bg
+			scene.fog = saved.fog
+			if (STUDIO.floor) STUDIO.floor.visible = false
+			setRoomVisible(true)
+			cabinet.visible = cabinetWanted && roomWanted
+			if (run?.tableMesh) run.tableMesh.visible = tableWanted
+		}
+	}
+	/** Leave out of the picture what a band must not show (another lane's things and their contact shades; the modules' words and boards when the
+	 *  look hides them), after the parts are posed; -> undo. */
+	function planHide(shot, items, labels) {
+		const hidden = []
+		const off = (o) => {
+			if (o && o.visible) {
+				o.visible = false
+				hidden.push(o)
+			}
+		}
+		for (const id of items ?? []) for (const o of shot.roots.get(id) ?? []) off(o)
+		if (labels)
+			run.group.traverse((o) => {
+				if (o.visible && o.layers.mask === 1 << PANE_LAYER && (o.isSprite || o.parent?.name?.startsWith?.("plugin:"))) off(o)
+			})
+		return () => {
+			for (const o of hidden) o.visible = true
+		}
+	}
+	/** The key light's shadow fitted to what the bands see (look.light "subject"): crisp contact shadows close up. -> undo. */
+	function fitShadowToShot(bands) {
+		const cam = key.shadow.camera
+		const saved = [cam.left, cam.right, cam.top, cam.bottom, cam.near, cam.far]
+		let x0 = Infinity
+		let x1 = -Infinity
+		let y0 = Infinity
+		let y1 = -Infinity
+		for (const b of bands) {
+			const p = b.pose
+			const asp = b.rect[2] / b.rect[3]
+			const hw = p.d * Math.tan(p.hfov / 2) * (1.25 + Math.abs(Math.sin(p.yaw)))
+			const hh = (hw / asp) * 1.25
+			x0 = Math.min(x0, p.L[0] - hw)
+			x1 = Math.max(x1, p.L[0] + hw)
+			y0 = Math.min(y0, p.L[1] - hh)
+			y1 = Math.max(y1, p.L[1] + hh)
+		}
+		if (!Number.isFinite(x0)) return () => {}
+		const tb = run.table?.body
+		const half = (tb?.depth ?? TABLE_DEPTH) / 2 + 0.05
+		const top = run.table ? run.table.at.y + (tb?.height ?? 0) / 2 : 0
+		// (the light comes from the front left and above: what stands left of or above the picture can throw its shadow into it)
+		const box = new THREE.Box3(new THREE.Vector3(x0 - 0.6, Math.min(y0, top) - 0.05, -half), new THREE.Vector3(x1 + 0.3, Math.max(y1, top) + 0.6, half))
+		const tmp = new THREE.OrthographicCamera()
+		tmp.position.copy(key.position)
+		tmp.lookAt(key.target.position)
+		tmp.updateMatrixWorld()
+		const inv = tmp.matrixWorldInverse
+		let a0 = Infinity
+		let a1 = -Infinity
+		let b0 = Infinity
+		let b1 = -Infinity
+		let c0 = Infinity
+		let c1 = -Infinity
+		for (const x of [box.min.x, box.max.x])
+			for (const y of [box.min.y, box.max.y])
+				for (const z of [box.min.z, box.max.z]) {
+					const v = new THREE.Vector3(x, y, z).applyMatrix4(inv)
+					a0 = Math.min(a0, v.x)
+					a1 = Math.max(a1, v.x)
+					b0 = Math.min(b0, v.y)
+					b1 = Math.max(b1, v.y)
+					c0 = Math.min(c0, v.z)
+					c1 = Math.max(c1, v.z)
+				}
+		cam.left = a0
+		cam.right = a1
+		cam.bottom = b0
+		cam.top = b1
+		cam.near = Math.max(0.1, -c1 - 0.3)
+		cam.far = -c0 + 0.3
+		cam.updateProjectionMatrix()
+		return () => {
+			;[cam.left, cam.right, cam.top, cam.bottom, cam.near, cam.far] = saved
+			cam.updateProjectionMatrix()
+		}
+	}
+	/** Pose the parts at t, leave out what the band hides, and draw the key light's shadow map for that (exportPose's pass). -> undo of the hiding. */
+	function planPose(g, t, shot, items, labels) {
+		updateParts(t)
+		const undo = planHide(shot, items, labels)
+		const tm = run.tableMesh
+		if (tm) tm.visible = false
+		setRoomVisible(false)
+		if (run.blobs) run.blobs.visible = false
+		const floorOn = STUDIO.floor?.visible
+		if (STUDIO.floor) STUDIO.floor.visible = false
+		renderer.shadowMap.needsUpdate = true
+		renderer.setRenderTarget(g.tiny)
+		renderer.render(scene, g.nullCam)
+		renderer.shadowMap.needsUpdate = false
+		setRoomVisible(true)
+		cabinet.visible = cabinetWanted && roomWanted
+		if (run.blobs) run.blobs.visible = true
+		if (tm) tm.visible = tableWanted
+		if (STUDIO.floor) STUDIO.floor.visible = !!floorOn
+		return undo
+	}
+	/** How many sub-frames a directed frame needs (blurCount, over every band drawn, between the shutter's opening and closing inside its shot). */
+	function blurCountPlan(g, tau, o, shot, drawn, lo, hi) {
+		const film = shot.film
+		const ta = Math.min(hi, Math.max(lo, tau - o.open / 2))
+		const tb = Math.min(hi, Math.max(lo, tau + o.open / 2))
+		if (!(tb > ta)) return 1
+		const fa = Shots.frameAt(film, ta)
+		const fb = Shots.frameAt(film, tb)
+		const A = exportAnalysis()
+		const ca = (g.camA ??= new THREE.PerspectiveCamera())
+		const cb = (g.camB ??= new THREE.PerspectiveCamera())
+		const pa = placementsAt(run.track, fa.t)
+		const pb = placementsAt(run.track, fb.t)
+		let px = 0
+		for (const bi of drawn) {
+			const ra = fa.bands[bi]
+			const rect = ra.rect
+			posePlanCam(ca, ra.pose, rect[2] / rect[3])
+			posePlanCam(cb, fb.bands[bi].pose, rect[2] / rect[3])
+			const move = (xa, ya, za, xb, yb, zb) => {
+				_v1.set(xa, ya, za).project(ca)
+				_v2.set(xb, yb, zb).project(cb)
+				if (_v1.z > 1 || _v2.z > 1) return
+				px = Math.max(px, Math.hypot(((_v2.x - _v1.x) * rect[2]) / 2, ((_v2.y - _v1.y) * rect[3]) / 2))
+			}
+			for (let j = 0; j < A.m; j++) {
+				if (!A.sig[j]) continue
+				const id = A.movers[j].id
+				const a = pa[id]
+				const b = pb[id]
+				if (!a || !b) continue
+				const e = A.ext[j]
+				for (let c = 0; c < 4; c++) {
+					const ang = (c * Math.PI) / 2
+					move(a.x + e * Math.cos(a.angle + ang), a.y + e * Math.sin(a.angle + ang), A.hz[j], b.x + e * Math.cos(b.angle + ang), b.y + e * Math.sin(b.angle + ang), A.hz[j])
+				}
+			}
+			ca.updateMatrixWorld()
+			for (let i = 0; i < 9; i++) {
+				_v3.set((i % 3) - 1, Math.floor(i / 3) - 1, 0.5).unproject(ca).sub(ca.position)
+				if (Math.abs(_v3.z) < 1e-9) continue
+				const k = -ca.position.z / _v3.z
+				if (!(k > 0)) continue
+				const x = ca.position.x + _v3.x * k
+				const y = ca.position.y + _v3.y * k
+				move(x, y, 0, x, y, 0)
+			}
+		}
+		const runs = fb.t > fa.t + 1e-9
+		const busy = runs && (run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(fa.t - run.tRelease) < 0.1) || (run.gates.length > 0 && fa.t > run.tRelease - 0.02 && fa.t < run.tRelease + 0.2))
+		if (px < 0.5 && !busy) return 1
+		return Math.min(o.most, Math.max(o.blur, Math.ceil(px / BLUR_STEP_PX)))
+	}
+	/** Draw one frame of a directed camera (video time tau) into g.out and read it into g.img: each band drawn with its own camera into its own part of
+	 *  the picture, the look applied, the sub-frames kept inside the frame's shot. Restores everything the canvas's picture depends on. */
+	function exportDrawPlan(g, tau, o, shot) {
+		const r = run
+		const film = shot.film
+		const fr = Shots.frameAt(film, tau)
+		const sh = film.shots[fr.shot]
+		const lo = sh.tau0
+		const hi = sh.tau0 + (sh.n - 0.5) / film.fps // (half a frame past the shot's last frame at most: never into the next shot)
+		const drawn = planDrawn(shot, sh)
+		const look = sh.look
+		const prevRt = renderer.getRenderTarget()
+		const autoClear = renderer.autoClear
+		const panes = r.panes.filter((pn) => pn.mesh.visible)
+		const tex = reflUniforms.tReflect.value
+		const mtx = reflUniforms.uReflMatrix.value
+		const full = reflTex.full
+		const base = reflTex.base
+		const k = refl.k.value
+		const undo = []
+		const clearC = new THREE.Color()
+		renderer.getClearColor(clearC)
+		const clearA = renderer.getClearAlpha()
+		try {
+			for (const pn of panes) pn.mesh.visible = false
+			reflUniforms.tReflect.value = g.refl.texture
+			reflUniforms.uReflMatrix.value = g.matrix
+			refl.k.value = refl.enabled ? 1 : 0
+			const N = o.blur > 1 ? blurCountPlan(g, tau, o, shot, drawn, lo, hi) : 1
+			xstats.blurN = N
+			undo.push(applyPlanLook(look, fr.bands[0].pose.d))
+			if (look.light === "subject") undo.push(fitShadowToShot(drawn.map((i) => fr.bands[i])))
+			// the coils' and chains' detail for the frame's first band, then the chrome balls' maps once, at the frame's moment
+			updateParts(fr.t)
+			if (drawn.length) posePlanCam(g.cam, fr.bands[drawn[0]].pose, fr.bands[drawn[0]].rect[2] / fr.bands[drawn[0]].rect[3])
+			applyLods(g.cam, drawn.length ? fr.bands[drawn[0]].rect[3] : g.H)
+			undo.push(planPose(g, fr.t, shot, [], look.labels === "hidden"))
+			exportMirrors(g)
+			if (N > 1 && !g.acc) {
+				g.acc = new THREE.WebGLRenderTarget(g.W, g.H, {
+					type: renderer.extensions.has("EXT_float_blend") ? THREE.FloatType : THREE.HalfFloatType,
+					minFilter: THREE.NearestFilter,
+					magFilter: THREE.NearestFilter,
+					generateMipmaps: false,
+					depthBuffer: false,
+					stencilBuffer: false,
+				})
+			}
+			const mirror = refl.enabled && look.ground === "table" && !!r.tableMesh
+			const hides = sh.hide ?? []
+			const sameHide = hides.every((h) => !h.length)
+			const bg = scene.background?.isColor ? scene.background : clearC
+			for (let i = 0; i < N; i++) {
+				const ti = N > 1 ? Math.min(hi, Math.max(lo, tau + ((i + 0.5) / N - 0.5) * o.open)) : tau
+				const fi = N > 1 ? Shots.frameAt(film, ti) : fr
+				// (the whole picture first takes the backdrop: a band this view does not draw, a lane filmed in another run, stays plain)
+				g.rt.viewport.set(0, 0, g.W, g.H)
+				g.rt.scissor.set(0, 0, g.W, g.H)
+				g.rt.scissorTest = false
+				renderer.setRenderTarget(g.rt)
+				renderer.setClearColor(bg, 1)
+				renderer.clear(true, true, false)
+				let undoHide = sameHide ? planPose(g, fi.t, shot, [], look.labels === "hidden") : null
+				for (const bi of drawn) {
+					const b = fi.bands[bi]
+					const [x, y, w, h] = b.rect
+					if (!sameHide) undoHide = planPose(g, fi.t, shot, hides[bi], look.labels === "hidden")
+					posePlanCam(g.cam, b.pose, w / h)
+					if (mirror) renderReflection(g.cam, false, g.refl, g.matrix, g.reflCam, r.lens > 0 ? (g.reflBase ??= mirrorBase(g.refl)) : null)
+					g.rt.viewport.set(x, g.H - y - h, w, h)
+					g.rt.scissor.set(x, g.H - y - h, w, h)
+					g.rt.scissorTest = true
+					renderer.setRenderTarget(g.rt)
+					renderer.render(scene, g.cam)
+					if (!sameHide) {
+						undoHide()
+						undoHide = null
+					}
+				}
+				undoHide?.()
+				g.rt.viewport.set(0, 0, g.W, g.H)
+				g.rt.scissor.set(0, 0, g.W, g.H)
+				g.rt.scissorTest = false
+				if (N > 1) quadPass(g, exportQuad(g).acc, g.rt.texture, g.acc, i === 0 ? THREE.NoBlending : THREE.CustomBlending, 1 / N)
+			}
+			const q = exportQuad(g)
+			if (N > 1) quadPass(g, q.enc, g.acc.texture, g.out)
+			else quadPass(g, q.copy, g.rt.texture, g.out)
+			const tr = performance.now()
+			exportRead(g)
+			xstats.readMs = performance.now() - tr
+		} finally {
+			g.rt.viewport.set(0, 0, g.W, g.H)
+			g.rt.scissor.set(0, 0, g.W, g.H)
+			g.rt.scissorTest = false
+			renderer.setClearColor(clearC, clearA)
+			for (let i = undo.length - 1; i >= 0; i--) undo[i]()
+			renderer.autoClear = autoClear
+			renderer.setRenderTarget(prevRt)
+			reflUniforms.tReflect.value = tex
+			reflUniforms.uReflMatrix.value = mtx
+			reflTex.full = full
+			reflTex.base = base
+			refl.k.value = k
+			for (const pn of panes) pn.mesh.visible = true
+			restoreMirrors()
+			renderer.shadowMap.needsUpdate = false
+			shadowKey = ""
+			if (run === r) updateParts(lastT)
+		}
+		return fr
+	}
+	/** The plan's marks and the shot's badge over a drawn frame (2D, through each band's own projection; type sized to the frame: key readings 4 % of
+	 *  its height, other words 3 %), the lines between split bands, an inset's frame, the look's vignette. */
+	function drawPlanOverlay(g, shot, fr) {
+		const film = shot.film
+		const sh = film.shots[fr.shot]
+		const marks = film.marks?.[fr.frame] ?? null
+		const drawn = planDrawn(shot, sh)
+		const ctx = g.ctx
+		const W = g.W
+		const H = g.H
+		const cam = (g.markCam ??= new THREE.PerspectiveCamera())
+		const v = new THREE.Vector3()
+		let drewAny = false
+		ctx.save()
+		ctx.lineCap = "round"
+		ctx.lineJoin = "round"
+		const font = (k) => `600 ${Math.max(10, Math.round(k * H))}px "Helvetica Neue", Helvetica, Arial, sans-serif`
+		const text = (s, x, y, anchor, key) => {
+			ctx.font = font(key ? 0.04 : 0.03)
+			const m = ctx.measureText(s)
+			const th = (key ? 0.04 : 0.03) * H
+			const pad = 0.25 * th
+			let tx = x
+			let ty = y
+			if (anchor === "above") {
+				tx = x - m.width / 2
+				ty = y - pad
+			} else if (anchor === "below") {
+				tx = x - m.width / 2
+				ty = y + th + pad
+			} else if (anchor === "right") {
+				tx = x + pad
+				ty = y + th / 2.8
+			} else {
+				tx = x - m.width / 2
+				ty = y + th / 2.8
+			}
+			ctx.lineWidth = Math.max(2, 0.16 * th)
+			ctx.strokeStyle = "rgba(10,12,16,0.85)"
+			ctx.strokeText(s, tx, ty)
+			ctx.fillStyle = "#ffffff"
+			ctx.fillText(s, tx, ty)
+		}
+		for (const bi of drawn) {
+			const b = fr.bands[bi]
+			const [x, y, w, h] = b.rect
+			const prims = marks?.[bi] ?? []
+			if (!prims.length && !b.inset) continue
+			drewAny = true
+			ctx.save()
+			ctx.beginPath()
+			ctx.rect(x, y, w, h)
+			ctx.clip()
+			posePlanCam(cam, b.pose, w / h)
+			const P = (X) => {
+				v.set(X[0], X[1], X[2] ?? 0).applyMatrix4(cam.matrixWorldInverse)
+				if (v.z >= -cam.near) return null
+				v.set(X[0], X[1], X[2] ?? 0).project(cam)
+				return [x + ((v.x + 1) / 2) * w, y + ((1 - v.y) / 2) * h]
+			}
+			const k = H / 1080
+			for (const q of prims) {
+				if (q.type === "line" || q.type === "poly") {
+					const pts = (q.type === "line" ? [q.a, q.b] : q.pts).map(P)
+					if (pts.some((p) => !p)) continue
+					ctx.strokeStyle = q.color ?? "#ffd84a"
+					ctx.lineWidth = Math.max(1.5, (q.width ?? 3) * 1.6 * k)
+					ctx.setLineDash(q.dash ? [12 * k, 9 * k] : [])
+					ctx.beginPath()
+					pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])))
+					ctx.stroke()
+				} else if (q.type === "text") {
+					const p = P(q.at)
+					if (p) {
+						ctx.setLineDash([])
+						text(q.text, p[0], p[1], q.anchor, !!q.key)
+					}
+				} else if (q.type === "screen") {
+					ctx.setLineDash([])
+					text(q.text, x + 0.03 * h + 0, y + 0.03 * h + 0.04 * H, "right", true)
+				}
+			}
+			ctx.restore()
+			if (b.inset) {
+				ctx.setLineDash([])
+				ctx.strokeStyle = "rgba(255,255,255,0.9)"
+				ctx.lineWidth = Math.max(2, 0.003 * H)
+				ctx.strokeRect(x, y, w, h)
+			}
+		}
+		// the lines between split bands
+		const main = sh.bands.filter((b) => !b.inset)
+		if (main.length > 1) {
+			drewAny = true
+			ctx.setLineDash([])
+			ctx.fillStyle = "#101215"
+			const t = Math.max(2, Math.round(0.004 * H))
+			for (const b of main.slice(1)) {
+				const [x, y, w, h] = b.rect
+				if (sh.arrange === "columns") ctx.fillRect(x - t / 2, 0, t, H)
+				else ctx.fillRect(0, y - t / 2, W, t)
+			}
+		}
+		if (sh.look?.vignette > 0) {
+			drewAny = true
+			const gr = ctx.createRadialGradient(W / 2, H / 2, 0.35 * Math.hypot(W, H), W / 2, H / 2, 0.72 * Math.hypot(W, H))
+			gr.addColorStop(0, "rgba(0,0,0,0)")
+			gr.addColorStop(1, `rgba(0,0,0,${Math.min(0.3, sh.look.vignette) * 2})`)
+			ctx.fillStyle = gr
+			ctx.fillRect(0, 0, W, H)
+		}
+		if (sh.label) {
+			drewAny = true
+			ctx.setLineDash([])
+			ctx.font = font(0.032)
+			const m = ctx.measureText(sh.label)
+			const th = 0.032 * H
+			const pad = 0.5 * th
+			const bw = m.width + 2 * pad
+			const bh = th + 1.2 * pad
+			const bx = W - bw - 0.025 * H
+			const by = 0.025 * H
+			ctx.fillStyle = "rgba(12,14,18,0.72)"
+			ctx.beginPath()
+			ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 0.3 * th) : ctx.rect(bx, by, bw, bh)
+			ctx.fill()
+			ctx.fillStyle = "#ffffff"
+			ctx.fillText(sh.label, bx + pad, by + pad * 0.6 + th * 0.85)
+		}
+		ctx.restore()
+		return drewAny
+	}
+	/** Where the machine-plane point (x, y, z) shows in a directed frame, across the whole picture (-1..1 left to right, bottom to top): through the
+	 *  band of o.lane, else the first band whose picture holds it, else the nearest. */
+	function planProject(shot, tau, x, y, z, o) {
+		const fr = Shots.frameAt(shot.film, tau)
+		const cam = (xproj.pcam ??= new THREE.PerspectiveCamera())
+		const v = new THREE.Vector3()
+		let best = null
+		const sh = shot.film.shots[fr.shot]
+		const order = fr.bands.map((b, i) => i).filter((i) => !fr.bands[i].inset)
+		for (const bi of order) {
+			const b = fr.bands[bi]
+			if (o?.lane && b.lane && b.lane !== o.lane) continue
+			const [rx, ry, rw, rh] = b.rect
+			posePlanCam(cam, b.pose, rw / rh)
+			v.set(x, y, z).applyMatrix4(cam.matrixWorldInverse)
+			if (v.z >= -cam.near) continue
+			v.set(x, y, z).project(cam)
+			if (!Number.isFinite(v.x) || !Number.isFinite(v.y)) continue
+			const X = ((rx + ((v.x + 1) / 2) * rw) / shot.film.W) * 2 - 1
+			const Y = 1 - ((ry + ((1 - v.y) / 2) * rh) / shot.film.H) * 2
+			const inside = Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1
+			const dist = Math.hypot(v.x, v.y)
+			if (inside) return { x: X, y: Y, lane: b.lane, band: bi, shot: sh.id }
+			if (!best || dist < best.dist) best = { x: X, y: Y, lane: b.lane, band: bi, shot: sh.id, dist }
+		}
+		if (!best) return null
+		delete best.dist
+		return best
+	}
 	/** The export's shot for this camera and picture size: renderFrame's and exportProject's are the same object. A path of the run (wide, follow, orbit, director)
 	 *  is made once per run; 'live' (the canvas's camera as it is) once per export session (g), else afresh. */
 	const xshots = { serial: -1, map: new Map() }
-	function exportShot(g, kind, W, H) {
+	function exportShot(g, kind, W, H, fps = 60, spec = null) {
+		if (PLAN_CAMERAS.has(kind)) {
+			if (xshots.serial !== run.serial) {
+				xshots.serial = run.serial
+				xshots.map.clear()
+			}
+			const sp = spec ?? planSpec(kind, {})
+			const k = `${kind}|${W}x${H}|${fps}|${sp.key}`
+			let s = xshots.map.get(k)
+			if (!s) {
+				s = planShot(kind, W, H, fps, sp)
+				xshots.map.set(k, s)
+			}
+			return s
+		}
 		if (kind === "live") {
 			const k = `live|${W}x${H}|${run.serial}`
 			let s = g?.shots.get(k)
@@ -7823,7 +8568,20 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		const W = Math.round(Number(o?.width ?? 1920))
 		const H = Math.round(Number(o?.height ?? 1080))
 		if (!(W > 0 && H > 0)) return null
-		const kind = EXPORT_CAMERAS.includes(o?.camera) ? o.camera : "wide"
+		const kind0 = o?.camera === "plan" ? "director-plan" : o?.camera
+		const kind = EXPORT_CAMERAS.includes(kind0) ? kind0 : "wide"
+		if (PLAN_CAMERAS.has(kind)) {
+			// (a directed camera: t is video time, and the point shows in the band of its lane: o.lane, else the band that holds it)
+			let shot
+			try {
+				shot = exportShot(xg, kind, W, H, Number(o?.fps ?? 60) > 0 ? Number(o?.fps ?? 60) : 60, planSpec(kind, o))
+			} catch {
+				return null
+			}
+			const p = planProject(shot, Math.min(shot.film.duration, Math.max(0, Number.isFinite(t) ? t : 0)), x, y, Number.isFinite(o?.z) ? o.z : 0, o)
+			if (!p) return null
+			return o?.xy ? { x: p.x, y: p.y } : p.x
+		}
 		const shot = exportShot(xg, kind, W, H)
 		const cam = (xproj.cam ??= new THREE.PerspectiveCamera(40, 16 / 9, 0.02, 80))
 		const v = (xproj.v ??= new THREE.Vector3())
@@ -7837,8 +8595,81 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		return Number.isFinite(v.x) ? v.x : null
 	}
 
+
+	/** The export's camera at moment t, for callers that draw their own overlays (the lesson compositor's camera.py): per band its rectangle in the
+	 *  picture, position, look point, up, fields (degrees), near and far, and the scene's fixed-camera spec {x0, x1, y, pitch, hfov} when the pose is
+	 *  square on (yaw 0: what camera.py projects exactly). For a directed camera t is video time and `t` in the answer the run time it shows. null
+	 *  until the run is settled. o: as renderFrame's (camera, width, height, fps, plan | film, focus, runs, lane). */
+	function exportCamera(t, o) {
+		if (disposed || !canExport() || !isSettled()) return null
+		const kind0 = o?.camera === "plan" ? "director-plan" : (o?.camera ?? "wide")
+		const kind = EXPORT_CAMERAS.includes(kind0) ? kind0 : "wide"
+		const W = Math.round(Number(o?.width ?? 1920))
+		const H = Math.round(Number(o?.height ?? 1080))
+		const fps = Number(o?.fps ?? 60) > 0 ? Number(o?.fps ?? 60) : 60
+		const out = (b, cam, rect) => {
+			const P = cam.position
+			const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion)
+			const k = Math.abs(f.z) > 1e-9 ? -P.z / f.z : 1
+			const T = [P.x + f.x * k, P.y + f.y * k, P.z + f.z * k]
+			const d = Math.hypot(P.x - T[0], P.y - T[1], P.z - T[2]) || 1
+			const u = [(P.x - T[0]) / d, (P.y - T[1]) / d, (P.z - T[2]) / d]
+			const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) * cam.aspect)
+			const pose = { L: T, d, yaw: Math.atan2(u[0], u[2]), pitch: Math.asin(Math.max(-1, Math.min(1, u[1]))), hfov }
+			return { lane: b?.lane ?? null, rect, inset: !!b?.inset, position: [P.x, P.y, P.z], target: T, up: [0, 1, 0], hfov: THREE.MathUtils.radToDeg(hfov), vfov: cam.fov, near: cam.near, far: cam.far, spec: Shots.specOf(pose) }
+		}
+		const cam = new THREE.PerspectiveCamera()
+		if (PLAN_CAMERAS.has(kind)) {
+			const shot = exportShot(xg, kind, W, H, fps, planSpec(kind, o))
+			const tau = Math.min(shot.film.duration, Math.max(0, Number.isFinite(t) ? t : 0))
+			const fr = Shots.frameAt(shot.film, tau)
+			const sh = shot.film.shots[fr.shot]
+			return {
+				tau,
+				t: fr.t,
+				frame: fr.frame,
+				shot: sh.id,
+				layout: sh.layout,
+				arrange: sh.arrange,
+				bands: fr.bands.map((b) => {
+					posePlanCam(cam, b.pose, b.rect[2] / b.rect[3])
+					return out(b, cam, b.rect)
+				}),
+			}
+		}
+		const shot = exportShot(xg, kind, W, H)
+		shot.at(Math.min(exportDuration(), Math.max(0, Number.isFinite(t) ? t : 0)), cam)
+		cam.updateMatrixWorld()
+		return { tau: t, t, frame: null, shot: kind, layout: "single", bands: [out(null, cam, [0, 0, W, H])] }
+	}
+	/** A directed camera's film as data (Shots.compile's: per frame its shot, run time and a pose per band, the marks; JSON.stringify keeps all of it),
+	 *  with the plan it films and the safety net's report: for the lesson compositor (plan once, then film each lane's run with {film}) and the AI
+	 *  steps (direct, audit). null until the run is settled. */
+	function exportPlan(o) {
+		if (disposed || !canExport() || !isSettled()) return null
+		const kind = o?.camera === "focus" ? "focus" : "director-plan"
+		const W = Math.round(Number(o?.width ?? 1920))
+		const H = Math.round(Number(o?.height ?? 1080))
+		const fps = Number(o?.fps ?? 60) > 0 ? Number(o?.fps ?? 60) : 60
+		const shot = exportShot(xg, kind, W, H, fps, planSpec(kind, o))
+		return { film: shot.film, plan: shot.plan, report: shot.report, summary: planSummary(shot) }
+	}
+	/** What a director may name in the run shown (DIRECTOR.md section 2: Shots.digest with the drawn models' boxes), as data and as the prompt's text.
+	 *  o: {focus: {scene, hints, catalog}, runs, lane} as renderFrame's. null until the run is settled. */
+	function exportDigest(o) {
+		if (disposed || !canExport() || !isSettled()) return null
+		const d = Shots.digest(planWorld(planSpec("focus", o ?? {})))
+		return { digest: d, text: Shots.digestText(d) }
+	}
+	/** The drawn models' boxes of the run shown ({solid id: {x0, x1, y0, y1, z0, z1} | {round, z0, z1} | {world: [...]}}), to plan with this run while
+	 *  another is shown (renderFrame's runs[lane].boxes). null until the run is settled. */
+	function exportBoxes() {
+		if (disposed || !canExport() || !isSettled()) return null
+		return Object.fromEntries(planBoxes(run))
+	}
+
 	// debugging handle for dev pages
-	const api = { load, render, setOptions, resize, dispose, pick, surfaceAt, setHighlight, toWorld, toScreen, pxPerMeter, setEditing, frame, setQuality, getQuality, whenSettled, renderFrame, exportInfo, endExport, exportProject }
+	const api = { load, render, setOptions, resize, dispose, pick, surfaceAt, setHighlight, toWorld, toScreen, pxPerMeter, setEditing, frame, setQuality, getQuality, whenSettled, renderFrame, exportInfo, endExport, exportProject, exportCamera, exportPlan, exportDigest, exportBoxes }
 	{
 		const q = new URLSearchParams(location.search).get("quality") // (a page can be opened with ?quality=high|medium|low|auto)
 		setQuality(["auto", "high", "medium", "low"].includes(q) ? q : "auto")
@@ -7899,6 +8730,11 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 					xstats.probe = !!on
 				},
 				fitWide: (W, H, topPx) => (run ? fitWide(frameOf(run), W, H, topPx) : null),
+				/** a directed camera's shot (its film, plan, world and report) and the world a plan names, for tests */
+				plan: (kind = "focus", W = 1920, H = 1080, fps = 60, o = {}) => (canExport() ? exportShot(null, kind, W, H, fps, planSpec(kind, o)) : null),
+				world: (o = {}) => (canExport() ? planWorld(planSpec("focus", o)) : null),
+				boxes: () => (canExport() ? planBoxes(run) : null),
+				Shots,
 			},
 		},
 	})
