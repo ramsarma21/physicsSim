@@ -5469,14 +5469,24 @@ ${GRADE}
 
 	// ----- what the wide shot frames ---------------------------------------------------------------------------------------
 	const _cv = new THREE.Vector3()
-	/** The world corners of the box of every visible mesh under `root`, as it stands now, appended to `out` as x, y, z. */
+	/** The world corners of the box of every visible mesh under `root`, as it stands now, appended to `out` as x, y, z. An instanced mesh's box is its
+	 *  instances' (InstancedMesh.computeBoundingBox, over the ones it draws): its geometry's alone is one instance at the origin, often a unit shape scaled
+	 *  down per instance (an ice sheet's 0.5 mm bubbles are a 1 m sphere each, so the sheet measured 2 m tall; a pot's boiling bubbles, none drawn yet, the
+	 *  same around the pot). */
 	function boxCorners(root, out) {
 		root.updateWorldMatrix(true, true)
 		root.traverse((o) => {
 			if (!o.isMesh || !o.visible || o.userData.blob) return
-			o.geometry.boundingBox ?? o.geometry.computeBoundingBox()
-			const b = o.geometry.boundingBox
-			if (b.isEmpty()) return
+			let b
+			if (o.isInstancedMesh) {
+				if (!(o.count > 0)) return
+				o.computeBoundingBox()
+				b = o.boundingBox
+			} else {
+				o.geometry.boundingBox ?? o.geometry.computeBoundingBox()
+				b = o.geometry.boundingBox
+			}
+			if (!b || b.isEmpty()) return
 			for (let i = 0; i < 8; i++) {
 				_cv.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(o.matrixWorld)
 				out.push(_cv.x, _cv.y, _cv.z)
