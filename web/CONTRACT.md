@@ -4681,7 +4681,9 @@ groups drew or computed the same thing, the merge decides it once:
   stands by its own weight (bowl, coffee-mug) is weighed with the grains it keeps (bowl + 100 g of sugar 485.11 g, mug 429.99 g); a fixed cup or jar
   keeps its grains and a scale under it reads 0.
 - **Generated files**: web/sim/modules/index.js from tools/gen-modules.mjs (energy and hands registered), the engine bundle (`npm run build:engine`),
-  ai/.cache/catalog-digest.json (`npm run digest:ai`).
+  ai/.cache/catalog-digest.json (`npm run digest:ai`; since 2026-10-21 keyed by what web/sim's files and ai/catalog-digest.mjs say, not their
+  times, so a checkout of a commit reads the committed digest as it is and leaves it unchanged, and ai/test/digest.test.mjs fails while it is not
+  current: before, every checkout rebuilt it, the tree showed it changed, and the committed text had fallen behind web/sim's milk).
 - **Checked on the merge**: tools/parity/run.sh (all 36 steps, python 3.13, against the merge's own server, 0 mismatches); `node tools/parity-engine.mjs
   --catalog` (348 scenes x 3 runs, node and Chromium, all identical); the 27 research/rw-validate*.ts CI runs, as it runs them (FUZZ_N 1500: p4's
   crash fuzz 0 exceptions, 0 non-finite, and so at its local 5000 too; optics' 2 ms perf gate 1.3 ms, 2.5 ms only while three validators and the parity suite ran beside it);

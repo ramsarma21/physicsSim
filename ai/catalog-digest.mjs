@@ -134,14 +134,27 @@ function volumeOf(b) {
 }
 
 // ---------------------------------------------------------------- loading the catalog
-function simFingerprint() {
+// (each file's sha1, kept while its size and time stay: the fingerprint is of what the files say, so a checkout of a commit (CI, another
+// worktree, a merge) finds the committed digest current; keyed by their times, every checkout rebuilt it and left ai/.cache/catalog-digest.json
+// changed in the tree, 2026-10-21)
+const fileHashes = new Map()
+const contentHash = (p) => {
+	const st = statSync(p)
+	const was = fileHashes.get(p)
+	if (was && was.size === st.size && was.mtimeMs === st.mtimeMs) return was.hash
+	const hash = createHash("sha1").update(readFileSync(p)).digest("hex")
+	fileHashes.set(p, { size: st.size, mtimeMs: st.mtimeMs, hash })
+	return hash
+}
+/** What the digest is made from: web/sim's files (not its engine bundle, engine-worker.js, which the catalog never reads) and this file, by
+ *  their contents, and the modules loaded. A digest whose `fingerprint` is this is current (the committed one too: ai/test/digest.test.mjs). */
+export function simFingerprint() {
 	const h = createHash("sha1")
 	h.update(`v${DIGEST_VERSION}`)
 	try {
 		for (const f of readdirSync(SIM).sort()) {
-			if (!f.endsWith(".js")) continue
-			const st = statSync(join(SIM, f))
-			h.update(`${f}:${st.size}:${st.mtimeMs}\n`)
+			if (!f.endsWith(".js") || f === "engine-worker.js") continue
+			h.update(`${f}:${contentHash(join(SIM, f))}\n`)
 		}
 	} catch {
 		h.update("no-sim")
@@ -150,22 +163,16 @@ function simFingerprint() {
 		// (the physics modules' files: their types and plug-ins are in the digest)
 		for (const f of readdirSync(join(SIM, "modules")).sort()) {
 			if (!f.endsWith(".js")) continue
-			const st = statSync(join(SIM, "modules", f))
-			h.update(`modules/${f}:${st.size}:${st.mtimeMs}\n`)
+			h.update(`modules/${f}:${contentHash(join(SIM, "modules", f))}\n`)
 		}
 	} catch {}
-	h.update(readSafe(join(HERE, "catalog-digest.mjs")).length.toString())
+	try {
+		h.update(contentHash(join(HERE, "catalog-digest.mjs")))
+	} catch {}
 	// (the module selection too: a process run with PLAYGROUND_MODULES="a,b" (a test, a module's own server) digests a smaller catalog, and must
 	// never hand it, through the shared cache file, to one that loads every module: its edits would find those modules' types unknown)
 	h.update(typeof ONLY_MODULES === "string" ? `modules=${ONLY_MODULES}` : "modules=*")
 	return h.digest("hex").slice(0, 16)
-}
-function readSafe(p) {
-	try {
-		return readFileSync(p, "utf8")
-	} catch {
-		return ""
-	}
 }
 
 async function loadRawCatalog({ catalogUrl, timeoutMs = 8000 } = {}) {

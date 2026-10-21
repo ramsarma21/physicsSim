@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { test } from "node:test"
-import { detailFor, digestFromCatalog, getCatalog, promptCatalog, _resetMemo } from "../catalog-digest.mjs"
+import { detailFor, digestFromCatalog, getCatalog, promptCatalog, simFingerprint, _resetMemo } from "../catalog-digest.mjs"
 import { sceneDigest, simText } from "../scene-digest.mjs"
 
 const PG = new URL("../../", import.meta.url)
@@ -67,6 +67,15 @@ test("the cache: written once, then reused while web/sim is unchanged", async ()
 		delete process.env.AI_CACHE_DIR
 		rmSync(dir, { recursive: true, force: true })
 	}
+})
+
+test("the committed digest (ai/.cache/catalog-digest.json) is web/sim's as it is in this commit (npm run digest:ai rebuilds it)", () => {
+	// (its fingerprint is of the files' contents: a checkout of this commit reads it as it is and leaves it unchanged; before, keyed by the
+	// files' times, every checkout rebuilt it and the tree showed it changed, and its text had fallen behind web/sim: milk did not yet mix)
+	if (typeof process.env.PLAYGROUND_MODULES === "string") return // (a process with only some modules has a digest of its own)
+	const committed = JSON.parse(readFileSync(new URL("../.cache/catalog-digest.json", import.meta.url), "utf8"))
+	assert.equal(committed.fingerprint, simFingerprint(), "ai/.cache/catalog-digest.json is stale: run npm run digest:ai and commit it")
+	assert.equal(committed.source, "web/sim")
 })
 
 test("a cup of grains in the request's words gives the planner the pitcher (the flow module) and the grains' heap (the granular module)", async () => {
