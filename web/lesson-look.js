@@ -234,13 +234,18 @@ export function lessonLiquid(m, grade = null) {
 export function lessonPass(root, grade = null, noShadow = null) {
 	let n = 0
 	root.traverse((o) => {
-		if (o.userData?.machinery === true) {
+		// (machinery, and what only the real look draws: clear water's top sheet and haze, web/models/mod-fluids.js)
+		if (o.userData?.machinery === true || o.userData?.realOnly === true) {
 			o.visible = false
 			return
 		}
 		if (!o.isMesh) return
 		if (noShadow && o.castShadow && noShadow.has(o.userData?.solidId)) o.castShadow = false
-		const c = isLiquid(o) ? lessonLiquid(o.material, grade) : isPane(o) ? lessonPane(o.material) : isStream(o) ? lessonStream(o.material, grade) : isGlass(o) ? lessonGlass(o.material) : null
+		// (a liquid drawn otherwise in the real look, clear water, is drawn as the body its hidden twin wears (`userData.lessonBody`, a child with
+		// `userData.lessonTwin`: web/models/mod-fluids.js); once it wears that body's lesson copy, or a frame hook's copy of it, it is a liquid as any other)
+		const lb = o.userData?.lessonBody === true ? (o.children.find((k) => k.userData?.lessonTwin === true)?.material ?? null) : null
+		const swap = lb && o.material !== lb && !liquidCopies.has(o.material) && !o.material?.userData?.lessonAlpha
+		const c = swap ? lessonLiquid(lb, grade) : isLiquid(o) ? lessonLiquid(o.material, grade) : isPane(o) ? lessonPane(o.material) : isStream(o) ? lessonStream(o.material, grade) : isGlass(o) ? lessonGlass(o.material) : null
 		if (c && c !== o.material) {
 			o.material = c
 			n++

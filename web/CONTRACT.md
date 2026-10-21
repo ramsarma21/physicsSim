@@ -1816,7 +1816,8 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
     Pro under load): 9.1 ms a frame in the real look, 11.0 in the lesson look without outlines, 10.8 (p90 18) with them.
 - **Release stands** (web/release-stand.js; `doc.view.release_stand`, the view's `releaseStand`; default "post" in the real look, "auto" in the lesson
   look). For a held item (`held: true`) without a starting gate:
-  - "post": the pull pin on its post, as before (the pin slides out at the release, the post stays);
+  - "post": the pull pin on its post, as before (the pin slides out at the release, the post stays); a thing held in a liquid (the mechanics
+    module's `holdFrom: "above"`) gets that module's fork on a rod from above instead ("engine6 merge" at the end);
   - "hidden": the same until the release; then, once the pin is out (release + 0.06 s), the pin and post fade out in 0.12 s while drawing back 6 cm
     (`RETREAT`; short, so a slow-motion clip shows no holder wandering off), then are not drawn; their contact shade fades with them. Their materials are
     copies (the shared ones never change). Scrubbing back before the release shows them again. In the lesson look the pin and post are slim and grey;
@@ -3992,7 +3993,8 @@ bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte 
   0°, 180° and 37°, run finite.
 - **Held from above** (build hook `_holds`, both ports; render only): a held thing whose body (a root's middle) starts in a liquid (between a
   `liquid` record's x0 and x1, over its floor, under its surface: the floor + its layers' heights) carries `holdFrom: "above"` on its moving
-  solids. web/view3d.js draws no pull pin or post for such an item; web/models/mod-mechanics.js "mechanics:holders" draws a grey plastic rod
+  solids. Where the look's stand is the pull pin and post (the real look's default; a hand, a named "hidden", "hanger" or "auto" stand and the lesson
+  look hold it their own way: "engine6 merge" at the end) web/view3d.js draws no pull pin or post for such an item; web/models/mod-mechanics.js "mechanics:holders" draws a grey plastic rod
   from a steel arm over the tank, a pad and a two-tined fork on the thing's top (the tines down its sides to its middle's height, at most
   2.5 cm), the arm running along the tank over its rim to a wooden post 4 cm past the tank's nearer end; at `doc.release.at` the arm, rod and
   fork slide up the post (0.15 s, ease-out) until the fork is 2 cm over the rim, and stay. A cork held on a tank's floor, a grape held under the
@@ -4313,3 +4315,34 @@ devices". A scene with none of these items (no rotor, no generator, no waterwhee
   nacelle's own drag is not modelled; a yawed turbine's nacelle is a solid where it stands unturned (only its drawn head, the rotor's wind and the
   spool turn); a cup hung under a waterwheel can be struck by splash; the hobby and solar motors drive wheels without a gearbox (fast and weak, as
   wired straight to an axle).
+
+## engine6 merge (2026-10-20): how the eight groups' pieces meet (branch `engine6`)
+The eight engine6 branches (hands, look, readable, matter, mechanics, ai, crossmod, energy) merged onto `integrate/engine-waves` 2cbfe0e. Where two
+groups drew or computed the same thing, the merge decides it once:
+- **One holder per held thing** (render only; web/view3d.js buildRun `heldHow`, read by view plug-ins as `ctx.heldBy(item)`: "hand" | "fork" | "gate"
+  | "hanger" | "hidden" | "post", or null): a hand (`hand` prop, or the view's `hands: "all"`) always holds it alone; else, where the look's stand is
+  the pull pin and post (the real look's default, or `release_stand` "post"), a thing held in a liquid (mod_mechanics.py `holdFrom: "above"`) gets the
+  mechanics module's fork on a rod; else a starting gate; else the look's stand (web/release-stand.js `standModeFor`: the lesson look's "auto" holds a
+  thing in or over a liquid with its hanger from above). "mechanics:holders" draws its fork only where `ctx.heldBy(item)` is "fork" (with no view that
+  says, as before). So the real look shows the fork over a tank, the lesson look the hanger, and never two holders on one thing.
+- **Clear water in the lesson look** (web/models/mod-fluids.js, web/lesson-look.js, web/lesson-outline.js): the real look draws a tank's water,
+  salt water or sea water as clear water (readable subjects: a body that only tints, a rippled top sheet, a faint haze); the lesson look draws every
+  liquid its own way, this one too: as the tinted body made lesson-style (a hidden child of the body, `userData.lessonTwin`, lends it that body's
+  material: a material kept in userData would not survive a model's clone; the body says `userData.lessonBody`), its top sheet and haze not drawn
+  (`userData.realOnly`). The fluids level hook's own copy of a lesson liquid (its drifting ripples) keeps lessonLiquid's two-sided shader, which a
+  clone drops (it is first owned after the lesson pass has swapped the body). The lesson outlines take a mesh marked `userData.liquid` as a liquid
+  whatever its material and leave a clear liquid's top sheet out, so the waterline across a tank and round a floating thing are drawn as on the look
+  branch (MA-25's apple and grape, rendered both ways: the same lesson water and waterlines; the real look keeps its clear water).
+- **Grains on a kitchen scale** (matter + crossmod, tooling/src/sim/modules/granular.ts): see "Cross-module gaps (engine6 crossmod)": a container that
+  stands by its own weight (bowl, coffee-mug) is weighed with the grains it keeps (bowl + 100 g of sugar 485.11 g, mug 429.99 g); a fixed cup or jar
+  keeps its grains and a scale under it reads 0.
+- **Generated files**: web/sim/modules/index.js from tools/gen-modules.mjs (energy and hands registered), the engine bundle (`npm run build:engine`),
+  ai/.cache/catalog-digest.json (`npm run digest:ai`).
+- **Checked on the merge**: tools/parity/run.sh (all 36 steps, python 3.13, against the merge's own server, 0 mismatches); `node tools/parity-engine.mjs
+  --catalog` (348 scenes x 3 runs, node and Chromium, all identical); the 27 research/rw-validate*.ts CI runs, as it runs them (FUZZ_N 1500: p4's
+  crash fuzz 0 exceptions, 0 non-finite, and so at its local 5000 too; optics' 2 ms perf gate 1.3 ms, 2.5 ms only while three validators and the parity suite ran beside it);
+  every tracked *.test.mjs (810 tests, AI_FIX_TIME_SCALE=4); machines/test_*.py; tooling/src/sim/energy.test.ts; tools/hands/browser.mjs (114 checks,
+  now also one holder each with the hands on and off, and the lesson look's hanger over a tank); the static build and `npm run check:vercel`; the
+  generated files (bundle, module indexes, sprites, unicode, trig) regenerate byte for byte; the 12 scenarios and 10 gallery scenes byte-identical to
+  2cbfe0e through web/sim + the bundle and through the server (documents, summaries, tracks, layouts). A pitcher of grains (the matter group's
+  contents "grains") tipped by a hand pours as the hands group's pour rig expects (its tilt_deg reading); the sand lands and stays in a glass jar.

@@ -97,6 +97,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const a = clamp(0.25 * (1 - Math.exp(-thickness / (lk.dist * tint))), 0.02, 0.08)
 		const haze = mesh(geo, clearCache(`haze|${name}|${a.toFixed(3)}`, () => new T.MeshBasicMaterial({ color: lk.color, transparent: true, opacity: a, depthWrite: false, toneMapped: false })), { cast: false })
 		haze.renderOrder = 1
+		haze.userData.realOnly = true // (the real look's: the lesson look draws the tinted body instead)
 		return haze
 	}
 	/** A clear liquid's top: a rippled, clear-coated sheet a hair over the body's top face that mirrors the room, faintly tinted; seen from a
@@ -113,6 +114,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		top.position.y = 0.5
 		top.renderOrder = 2
 		top.userData.waterSurface = true
+		top.userData.realOnly = true // (the real look's: the lesson look draws the tinted body instead)
 		// (the body is scaled by the level: its top's sheet is a plane, so a y scale leaves it as it is)
 		return top
 	}
@@ -132,6 +134,12 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const m = obj.material
 		if (m?.normalMap && a.ripple) {
 			const own = ownMaterial(obj)
+			// (the lesson look's copy of a liquid keeps its two sides' alphas, web/lesson-look.js lessonLiquid's shader, which a clone drops: a tank's
+			// clear water is put in its lesson body before this hook first owns it)
+			if (own !== m && m.userData?.lessonAlpha) {
+				own.onBeforeCompile = m.onBeforeCompile
+				own.customProgramCacheKey = m.customProgramCacheKey
+			}
 			own.normalMap = own.normalMap.clone()
 			own.normalMap.needsUpdate = true
 			obj.userData.frame.ripple = false
@@ -165,7 +173,17 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		// reading, and each layer shows where it lies)
 		const clear = !layered && !round
 		const m = mesh(g, liquidMat(name, Math.min(depth, w), tint, clear), { cast: false })
-		if (CLEAR_LIQUIDS.has(name) && clear) m.add(waterSurface(name, w, depth, round), waterHaze(name, g, Math.min(depth, w), tint))
+		if (CLEAR_LIQUIDS.has(name) && clear) {
+			// (the lesson look draws every liquid its own way, this one too: as its tinted body made lesson-style, in place of the clear water and
+			// without its top sheet and haze; a hidden twin lends it that body's material (web/lesson-look.js lessonPass: lessonBody, lessonTwin,
+			// realOnly; a material in userData would not survive a model's clone), and the lesson outlines then find the liquid and its waterline)
+			const twin = mesh(g, liquidMat(name, Math.min(depth, w), tint, false), { cast: false })
+			twin.visible = false
+			twin.userData.lessonTwin = true
+			m.add(waterSurface(name, w, depth, round), waterHaze(name, g, Math.min(depth, w), tint), twin)
+			m.userData.lessonBody = true
+			m.userData.liquid = true
+		}
 		m.position.set((x0 + x1) / 2, y0 + h0 / 2, 0)
 		m.scale.y = Math.max(1e-5, h0 - h1)
 		if (below) m.position.y = y0 + h1 + (h0 - h1) / 2

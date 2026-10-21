@@ -4444,15 +4444,28 @@ ${GRADE}
 		}
 		const gated = new Set(doc.view?.gates ?? [])
 		const gateStatics = gated.size ? solids.filter((o) => o.kind === "static" && !o.hidden_3d) : []
+		// What holds each held thing until the release: ONE holder each (the plug-ins read it as ctx.heldBy(item)): "hand" (web/hands.js: a hand
+		// always wins), "fork" (a thing held in a liquid, machines/mod_mechanics.py holdFrom "above", where the look's stand is the pull pin on its
+		// post: the real look's default; its fork on a rod over it is web/models/mod-mechanics.js's "mechanics:holders"), "gate", or the look's
+		// stand (web/release-stand.js): "hanger", "hidden" or "post" (a named "hidden", "hanger" or "auto", the lesson look's default, holds a
+		// thing in a liquid as the look says)
+		const heldHow = new Map()
 		for (const list of heldByItem.values()) {
-			if (hands.holds(list[0].item)) continue // (a hand holds it: web/hands.js)
-			// (a thing held from above, one held in a liquid: its clamp on a rod over it is web/models/mod-mechanics.js's "mechanics:holders")
-			if (list.some((o) => o.holdFrom === "above")) continue
+			const item = list[0].item
+			if (hands.holds(item)) {
+				heldHow.set(item, "hand")
+				continue
+			}
+			if (look.releaseStand === "post" && list.some((o) => o.holdFrom === "above")) {
+				heldHow.set(item, "fork")
+				continue
+			}
 			const s = postPart(list)
 			if (!s) continue
 			const id = s.id
 			const gate = gated.has(s.item) ? makeGate({ list, addMesh, steel: steelMaterial() }) : null
 			if (gate && gate.layout(poseOf, track, doc.release?.at ?? 0.5, gateStatics)) {
+				heldHow.set(item, "gate")
 				// a starting gate: the pin's post, a boom on its top whose stop touches the item's front; it lifts at the release (gate.at in updateParts)
 				const post = addMesh(group, dowel(POST_R, "post", `post-${id}`), wood)
 				post.castShadow = false // (standing behind the track, its shadow fell on the room's back wall beside the ramp: a ghost of the gate)
@@ -4481,6 +4494,7 @@ ${GRADE}
 				continue
 			}
 			const mode = standModeFor(look.releaseStand, doc, s, poseOf(s), { airborne: airborne(s, poseOf(s)), roomAbove: roomAbove(list, poseOf) })
+			heldHow.set(item, mode)
 			if (mode === "hanger") {
 				const hg = makeHanger({ list, addMesh, doc })
 				group.add(hg.root)
@@ -4777,6 +4791,7 @@ ${GRADE}
 			pins,
 			gates,
 			hands, // (web/hands.js: posed in updateParts)
+			heldHow, // item -> what holds it until the release (above)
 			hangers,
 			retreats,
 			style: look, // the look it was built in (web/lesson-look.js styleOf): {lesson, name, backdrop, table, releaseStand, outline, why}

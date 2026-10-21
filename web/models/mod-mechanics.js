@@ -862,7 +862,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 		name: "mechanics:holders",
 		load(ctx) {
 			const held = new Set(ctx.doc.release?.parts ?? [])
-			const marked = ctx.doc.solids.filter((s) => s.holdFrom === "above" && held.has(s.id))
+			// (only where the view holds it with this fork: a hand holding it, or the look's own stand, is its one holder instead: ctx.heldBy)
+			const fork = (item) => (typeof ctx.heldBy === "function" ? ctx.heldBy(item) === "fork" : true)
+			const marked = ctx.doc.solids.filter((s) => s.holdFrom === "above" && held.has(s.id) && fork(s.item))
 			if (!marked.length) return null
 			const at0 = (s) => ctx.placementAt(s.id, 0) ?? { x: s.at.x, y: s.at.y, angle: s.angle ?? 0 }
 			/** a body's outline's reach up, down and to the sides from its middle at angle a (m) */

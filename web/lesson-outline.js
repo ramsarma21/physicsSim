@@ -221,6 +221,7 @@ void main() {
 	/** What a mesh is to the ID passes: "skip" (in none), "thing" (opaque), "glass" (a see-through vessel, ice), "liquid". */
 	const kindOf = (o) => {
 		if (o.userData?.blob || o.isSprite || o.isLine || o.isPoints || o.isInstancedMesh) return "skip" // (a cloud of grains or drops, a row of links: no line round each)
+		if (o.userData?.waterSurface) return "skip" // (a clear liquid's rippled top sheet: its body, a liquid, has the surface)
 		const m = o.material
 		if (!m) return "skip"
 		let see = false
@@ -231,7 +232,8 @@ void main() {
 			const key = typeof x.customProgramCacheKey === "function" ? x.customProgramCacheKey() : ""
 			if (key === "coil" || key === "rope") return "skip" // (their shape is made in their vertex shader)
 			if (x.transparent || (x.transmission ?? 0) > 0 || x.opacity < 1) {
-				if (x.isMeshBasicMaterial || STREAM_KEY.test(x.userData?.kitKey ?? "")) return "skip" // (a glow, a beam, a board; a stream)
+				// (a glow, a beam, a board; a stream. A mesh marked a liquid is one whatever it is drawn with: clear water's body only tints, unlit)
+				if ((x.isMeshBasicMaterial && !liquid) || STREAM_KEY.test(x.userData?.kitKey ?? "")) return "skip"
 				see = true
 				if (x.userData?.liquid === true || x.userData?.lessonAlpha || LIQ_KEY.test(x.userData?.kitKey ?? "")) liquid = true
 			}
