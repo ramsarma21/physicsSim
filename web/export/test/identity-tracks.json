@@ -1,0 +1,139 @@
+{
+ "about": "sha256 of JSON.stringify of each built-in scenario's and gallery scene's run (doc, track, summary) as the engine made them at integrate/engine-waves 19947da, before the directed cameras, and the fingerprint of web/sim then (every .js/.mjs/.json under it). web/export/test/identity.test.mjs compares today's runs with these while web/sim is unchanged (the filming module is view-only); once the engine changes, regenerate them (node web/export/test/identity.test.mjs --write). Re-armed on release 2 (2026-10-21: engine6 and the resized-body repair changed web/sim): the 22 runs are byte for byte these 19947da hashes, so only the web/sim fingerprint was renewed. Re-armed again (2026-10-21, release 2 round 2: a container read for a stream that lands beside it, its grains_g, the piles goal's in, the AI's grain words): the 22 runs are still byte for byte these hashes; only the web/sim fingerprint was renewed.",
+ "base": "19947da",
+ "engine": "7975ff81a5debacd612cc1ba12f9447e9de2e5b73489f6bf85f71552907b6bb0",
+ "scenes": {
+  "web/scenarios/rube-goldberg.json": {
+   "track": "302d69002820a830810d8d949cfda196fa7aef2d2fa17117dfb7933ee396db51",
+   "doc": "f8196e23da02098f92608ec18b07d510facb9b8aa62afd4abb59c9e710b5d578",
+   "summary": "b0c0f4f9de7d976d81a3e37c690ace04d38a0cd77cafc3deb446217a40e92cbd",
+   "frames": 541
+  },
+  "web/scenarios/empty.json": {
+   "track": "53cce13120ed2976b13a9b0534947e2ddeb3abf4bb90bad6ee8afac11f1e6a78",
+   "doc": "897ed16bac19601b6eaa411a3d9a27b7e26ab2e0902398a55243ee7e33707e96",
+   "summary": "898db90628c21bfcaa83d8068d3baa0dadaa2488e4eb912da4bb2804444915c7",
+   "frames": 541
+  },
+  "web/scenarios/atwood.json": {
+   "track": "eb610d96a3aa94dd0da49987829129c6c8f3b99e51b4c422a134c612eeb67820",
+   "doc": "5004cb300fd97a91ba08a169c4f090ffab908cfbd8417ab8368d5754d8c0acb8",
+   "summary": "7fcebe2393f4d2dfae289f729644bff37889aac057e20deb73ad089ef9d794c9",
+   "frames": 361
+  },
+  "web/scenarios/ball-drop.json": {
+   "track": "0bb55df03c267823f3eaacf941bf3e1d31169cd3c6cb6ae4f8a9fcb9fa0853fe",
+   "doc": "2552101e351e699ee94a7e35684838e4f66fb0cbbd140d5e0e95e60fc0b29619",
+   "summary": "d5e9b5840c4c17bd664a949ba4014b6b8dc7bb009fd57b769704a5615ba0200f",
+   "frames": 541
+  },
+  "web/scenarios/car-ramp-dominoes.json": {
+   "track": "0318c136c929684d6870e7e5270185ab28b6c8db36f97051eadfd615b20086ec",
+   "doc": "38b37710c6d1924f0545ca3cd62006434ad1f0e315f743dae6b18f149b6bd57d",
+   "summary": "7f6d94b5ff2cbe10c0e7a83a81ee42ede30bd3b81db7688e6762160de35d749a",
+   "frames": 721
+  },
+  "web/scenarios/conveyor-delivery.json": {
+   "track": "f765f3811e7d5667a50bcb573b89de55a2815b19a1f1319b6503270e3da17f06",
+   "doc": "7c3c7eeb4e745d67a6d4c4ed777df3da2af6ed100c449db7dc834e7a91c22e8c",
+   "summary": "3a868cd6c54100c5f62ac6e76123233903fe09422d387dceb8b932d9a17cd698",
+   "frames": 721
+  },
+  "web/scenarios/newtons-cradle.json": {
+   "track": "42bbf40d709e56bdab9c784dbcdc0fb827f1576a284e026eb63d655e3a6c73a1",
+   "doc": "1a25178f961e458509f2f402d3a7ff2de2c6fcaad35a92d8067d49df8a18fcff",
+   "summary": "5d42847d2bc82d7f8b1e706662dc9d41dd8f37c87e01c689ff08576e27bc6825",
+   "frames": 541
+  },
+  "web/scenarios/pendulum-dominoes.json": {
+   "track": "9d18325ed636148dae9b48fab6c44548922a0be60d3eb221822bff3376302101",
+   "doc": "5a7374a54b4dfae4689b1b4cdeb664650da7a54340ff873d40a1a00a3b42fab9",
+   "summary": "de2c4bbf9f20bde5b2c8656ac1d55c89fe96959f30aa96060777515b0148c00e",
+   "frames": 601
+  },
+  "web/scenarios/plinko.json": {
+   "track": "cdfe59b0967100a634a75e1c75794d392b6586e827300bec97cab6e8aa533a86",
+   "doc": "ceb2c98b6a1639ebf5635b5e6cf09d2782d76376ea7a9f679313f5daebf83962",
+   "summary": "6712555cd1d68719b024ebda4fc82c5ddfd594a1a46f3cb5c345ed73a9e7f481",
+   "frames": 721
+  },
+  "web/scenarios/spring-launch.json": {
+   "track": "80c841a4c27d1d77ca62906325c3854994c20058231165a01ca8956d08fccb7d",
+   "doc": "6375060d16ec06339b81ad667a397a71f57943f15122657df8a2dfff73bbde8a",
+   "summary": "e68d8ecf8ea623b9a2b7b5117c3751267ab84797677239aeff98cff15b8321b3",
+   "frames": 481
+  },
+  "web/scenarios/trampoline.json": {
+   "track": "4c1ec7a6fd6260694f8e5bb3c269afed64592978cb905f94e80d2f9560427467",
+   "doc": "e3b18d3fa5993bb29b9813419f5bef4f6314b18c92a4d97f2a2283d3666c6c47",
+   "summary": "2afb7e307b1493d69554cdad07dc10c4a2fe672cac3f9c34377c8879ffa74c27",
+   "frames": 841
+  },
+  "web/scenarios/wrecking-ball.json": {
+   "track": "e8e3a338d181c40e0c78226a8c8090aabaf41bc2ac25c20391ed20a135b9200f",
+   "doc": "4634a3972fc3f9524dce08d62ae80f4f81649b3a703c33ceb87e5c0e43397113",
+   "summary": "ae806beca8c26cafa98e2e4ee5981212c406bf3fc6387f546b62295532b1a1d5",
+   "frames": 601
+  },
+  "web/gallery/rube-goldberg.json": {
+   "track": "0e2dee280e230b2e69d6427352e864fbb1575240957812424c4343fd1380bc2c",
+   "doc": "7d7c76d00498eaaecf9f83a462eb054f25a227944efe03412f9805c67e18e7f6",
+   "summary": "3c2b357a8eed97b02cc689d9d8e429bee8dab2f1af5bb1611d1cbc006e04dc45",
+   "frames": 721
+  },
+  "web/gallery/domino-run.json": {
+   "track": "65e760a3c509ff2fe84d698962ba4f491e9ddc0809cbb86e077dbc6aedaeb391",
+   "doc": "3eb9ee5173a32a594310686853a436c4ec0722209f22c93a0bd47c6752f93901",
+   "summary": "efc932a6bd6ed44ed7a0c447b611d3771f85c9a1739d948e1cdcf385fe13438a",
+   "frames": 841
+  },
+  "web/gallery/marble-run.json": {
+   "track": "41316de9abe55edf867cc55da03d6c8ce8dda8bf37900e92da615a03c487b45c",
+   "doc": "180d1c134fe233a339fd4ac3ea6273aea420714303f166ae8179fbc90342bb70",
+   "summary": "47df29ea1754feed90a14f9261f79d58e3a5163cdc3a884dd7ea1f057e9aa190",
+   "frames": 721
+  },
+  "web/gallery/catapult-bucket.json": {
+   "track": "21b2e914bad4eb99dd40868e1949458b43e43c84627dcd96f6d237d7c76b8df8",
+   "doc": "c3b4a621cab2b28538e3f3993928158434994bdc86097fc11bee54d42024c174",
+   "summary": "c38e8e0f5eaa5a26e86671480b80380f2fecad10331ae185a4a2d5454550de21",
+   "frames": 481
+  },
+  "web/gallery/newtons-cradle.json": {
+   "track": "f01210dca2dca655837c8225f6a113af5f8d42dfc058159e9d2259ec2c8175c3",
+   "doc": "3eb1eff0fb94174b2acf2dafcad235bf48373fed3a6b441a2c933ebfa99d15df",
+   "summary": "79757357d6fc69f149a197acfb00c876d517617851e73b20b83c7973315b3f84",
+   "frames": 721
+  },
+  "web/gallery/seesaw-launch.json": {
+   "track": "e1676e3def780f9fc005e70c7caeee99feb7ee4b34edfbd5195c19c50536f266",
+   "doc": "2893e58280351278a1d20ab322cb8347486999a6ec816c4da43dcde5c51477e4",
+   "summary": "4d7f10b8cfb83974f362686468f4a82dd3debbfe2863d402c8586999d90206ef",
+   "frames": 481
+  },
+  "web/gallery/pulley-lift.json": {
+   "track": "ec508d98552c2e2373eb806a3dd861f3ebe1c28c3f0a9bfebe1e5ac5afb77141",
+   "doc": "62d3a6d4b2ee841c79191a242ff7c4e495b6f4fbb198c1bcbcd4256760e737ac",
+   "summary": "3a9be0a1d30c9b5e246f53a626492a0fad71494e7b196249b1564fad79b4cf7a",
+   "frames": 481
+  },
+  "web/gallery/bowling-strike.json": {
+   "track": "e13d799233f1e7ce8f0b1e56f10f42709e7427e5e49833d92ee3adf4f1958cda",
+   "doc": "6359a14d6bc7bb20bd63c4132394fcfa399ee6f0a5f795bb3c9184882935ba3f",
+   "summary": "b39291d0f1b7afe2a54e591182a3f31ed35352a88c33281c6a322ef180b9bff6",
+   "frames": 601
+  },
+  "web/gallery/bounce-chain.json": {
+   "track": "ee540614d098bdefe2c36c2994afa09550ac838aebddf1e79509792de90c5d18",
+   "doc": "d71c13c4d7991f39ff2296b879c4e85b6e3f00e6b36f03a78367bc5b55646eed",
+   "summary": "1b683cf7f3c4b96a15364e9d81026d1276b2fe3877435027df981dc1942b329d",
+   "frames": 601
+  },
+  "web/gallery/wrecking-chain.json": {
+   "track": "2ec4eb91ef8679f17b182ca7b63ca7b6913608acdf3fb0819266e161b32287b0",
+   "doc": "d4ccd0c2addff9d455525492c74913fc119edf87001a2e06abe5315cc329b91b",
+   "summary": "d1d2550dc766d602cc56dc7021c4211092e971f41159f04dd548042907732e95",
+   "frames": 481
+  }
+ }
+}

@@ -1665,6 +1665,9 @@ const traceRoot = (root: Ray, si: number, s: number, bodies: readonly WBody[], s
 				if (!he && !ray.inside.includes(hb)) continue
 				// (light arriving at a clear body from outside reaches it: what it catches, for "light reaches" and its readings)
 				if (he) {
+					// a clear body of depth D takes the part of a tube within |z| < D/2, as an opaque one does: the rest passes beside it out of the plane
+					// and is not followed (a round lens cuts its own chord in refract; uncut sunlight is W per metre of height, taken below); engine6
+					beside(ray, w)
 					const arrived = ray.p.slice()
 					if (ray.env.kind === 2) scale(arrived, 2 * w.src.halfDepth)
 					deps.push(faceDeposit(hb, hp, x1, y1, ray, nx, ny, arrived, new Float64Array(NB), new Float64Array(NB), si, w))
@@ -1674,6 +1677,7 @@ const traceRoot = (root: Ray, si: number, s: number, bodies: readonly WBody[], s
 			}
 			if (role === "filter") {
 				if (he) {
+					beside(ray, w)
 					const lost = new Float64Array(NB)
 					const arrived = ray.p.slice()
 					const pass = w.src.pass ?? []
@@ -1695,6 +1699,7 @@ const traceRoot = (root: Ray, si: number, s: number, bodies: readonly WBody[], s
 			if (role === "translucent") {
 				if (!he) continue
 				const tr = w.src.transmit ?? 0.5
+				beside(ray, w)
 				// sunlight not yet cut (W per metre of height) lights the sheet over its own depth: from here it is a finite source
 				if (ray.env.kind === 2) scale(ray.p, 2 * w.src.halfDepth)
 				const inc = ray.p.slice()
@@ -1733,8 +1738,10 @@ const traceRoot = (root: Ray, si: number, s: number, bodies: readonly WBody[], s
 				break
 			}
 			if (role === "mirror" && active && he) {
-				// a round mirror cuts the tube to its own height out of the plane
+				// a round mirror cuts the tube to its own height out of the plane; a flat one to its depth (it turns back only the part of a tube it
+				// catches, |z| < D/2, sunlight too: a band its own depth tall; the rest passes beside it and is not followed; engine6 crossmod)
 				if (w.src.aperture !== undefined) clipTo(ray.env, chord(w, x1, y1), ray.p)
+				else if (height(ray.env) > w.src.halfDepth) clipTo(ray.env, w.src.halfDepth, ray.p)
 				const R = w.src.reflect ?? [0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.9, 0.92]
 				const inc = ray.p.slice()
 				const absorbed = new Float64Array(NB)
@@ -1788,6 +1795,19 @@ const traceRoot = (root: Ray, si: number, s: number, bodies: readonly WBody[], s
 
 /** A tube's half-height out of the plane (m), Infinity for uncut sunlight. */
 const height = (e: Env) => (e.kind === 2 ? Infinity : e.kind === 0 ? quad(Math.abs(e.Y) * Math.min(e.tanPsi, 1e6), e.Yc) : quad(e.Y, e.Yc))
+
+/**
+ * A clear, filtering or diffusing body without a round aperture (a glass block, a prism, water, ice, a filter, a sheet of wax paper) meets only
+ * the part of a lamp's, a flashlight's or a laser's tube within |z| < D/2 (its depth D): a tube taller than that is cut to it, its power to the
+ * share it catches (as an opaque body catches: `caught`), and the rest is taken to pass beside it out of the plane and is not followed. A tube
+ * that fits within its depth is left exactly as it is. Uncut sunlight (W per metre of height) is left to the callers, which take its depth's
+ * share of what lands and let it go on as sunlight (what passes beside a clear body is sunlight too). (engine6 crossmod: before, a 4 cm ice cube
+ * 34 cm from a lamp took the whole height of its beam, about 12 times its share.)
+ */
+const beside = (ray: Ray, w: WBody) => {
+	if (ray.env.kind === 2 || w.src.aperture !== undefined) return
+	if (height(ray.env) > w.src.halfDepth) clipTo(ray.env, w.src.halfDepth, ray.p)
+}
 
 /** The half-chord out of the plane of a round element at this point: √(r² − x²), x the point's distance from its axis. */
 const chord = (w: WBody, x: number, y: number) => {

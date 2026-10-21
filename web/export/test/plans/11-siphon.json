@@ -1,0 +1,280 @@
+{
+	"$schema": "../../shot-plan.schema.json",
+	"version": 1,
+	"title": "A siphon empties a beaker",
+	"about": "Water climbs a hose over the rim of a raised beaker and flows down into a lower one until the hose's end comes out of the water.",
+	"grade": 5,
+	"source": {
+		"kind": "demo",
+		"scene": "06-siphon",
+		"question": "How does the water get out of the high beaker?",
+		"answer": "Through the hose, up over the rim and down, as long as the hose's end is under water."
+	},
+	"story": [
+		{
+			"id": "setup",
+			"kind": "setup",
+			"says": "A full beaker up high, an empty one down low, a hose from one to the other.",
+			"evidence": [
+				{
+					"item": "up"
+				},
+				{
+					"item": "down"
+				},
+				{
+					"item": "hose"
+				}
+			]
+		},
+		{
+			"id": "climb",
+			"kind": "cause",
+			"says": "Water goes up the hose and over the rim.",
+			"evidence": [
+				{
+					"item": "hose"
+				}
+			]
+		},
+		{
+			"id": "flow",
+			"kind": "action",
+			"says": "It runs down into the low beaker.",
+			"evidence": [
+				{
+					"item": "up"
+				},
+				{
+					"item": "down"
+				}
+			]
+		},
+		{
+			"id": "stop",
+			"kind": "result",
+			"says": "It stops when the water has gone down to the hose's end.",
+			"evidence": [
+				{
+					"item": "up"
+				}
+			]
+		}
+	],
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "setup",
+			"beat": "setup",
+			"intent": "Both beakers and the hose between them, from the side where water heights read true.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.0
+			},
+			"move": "hold",
+			"subject": {
+				"items": [
+					"up",
+					"down"
+				]
+			},
+			"keep": [
+				{
+					"item": "box"
+				},
+				{
+					"item": "hose"
+				}
+			],
+			"frame": {
+				"fit": "snug"
+			},
+			"view": "side",
+			"lens": 50,
+			"audit": {
+				"question": "Can a child see a full beaker up high, an empty beaker low down, and a hose between them?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "up"
+					},
+					{
+						"item": "down"
+					}
+				]
+			}
+		},
+		{
+			"id": "climb",
+			"beat": "climb",
+			"in": "cut",
+			"intent": "Travel along the hose as the water starts through it: up from inside the high beaker, over the rim, down to the low one. The surprising part is the water going up first.",
+			"run": {
+				"from": {
+					"at": "event:siphon:hose",
+					"plus": -0.3
+				},
+				"to": {
+					"at": "event:siphon:hose",
+					"plus": 0.9
+				},
+				"rate": 0.35
+			},
+			"label": "Slow motion",
+			"move": "travel",
+			"subject": {
+				"item": "hose"
+			},
+			"travel": {
+				"path": {
+					"through": [
+						{
+							"point": [
+								0.8,
+								0.2
+							]
+						},
+						{
+							"point": [
+								0.8,
+								0.29
+							]
+						},
+						{
+							"point": [
+								1.25,
+								0.29
+							]
+						},
+						{
+							"point": [
+								1.25,
+								0.15
+							]
+						}
+					]
+				}
+			},
+			"frame": {
+				"width": 0.4
+			},
+			"view": "side",
+			"lens": 50,
+			"audit": {
+				"question": "Does the camera go along the hose: up out of the high beaker, over the rim and down into the low one?",
+				"key": "middle"
+			}
+		},
+		{
+			"id": "flow",
+			"beat": "flow",
+			"in": "cut",
+			"intent": "Both beakers again, still, while one empties and the other fills; twice as fast, because the change is slow.",
+			"run": {
+				"from": {
+					"at": "event:siphon:hose",
+					"plus": 0.9
+				},
+				"to": {
+					"at": "reading:hose.flow_ml_s:settles",
+					"plus": 0.3
+				},
+				"rate": 2
+			},
+			"label": "2 times faster",
+			"move": "hold",
+			"subject": {
+				"items": [
+					"up",
+					"down"
+				]
+			},
+			"keep": [
+				{
+					"item": "hose"
+				}
+			],
+			"frame": {
+				"fit": "snug"
+			},
+			"view": "side",
+			"lens": 50,
+			"audit": {
+				"question": "Can a child see the high beaker emptying and the low beaker filling?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "up"
+					},
+					{
+						"item": "down"
+					}
+				]
+			}
+		},
+		{
+			"id": "stop",
+			"beat": "stop",
+			"in": "continue",
+			"intent": "As the flow ends, push in on the bottom of the high beaker from just above the crate's wall and to the side: the water has gone down to the hose's end, so no more can go in, and it stops.",
+			"run": {
+				"from": {
+					"at": "reading:hose.flow_ml_s:settles",
+					"plus": 0.3
+				},
+				"to": {
+					"at": "reading:hose.flow_ml_s:settles",
+					"plus": 4.0
+				},
+				"hold_after": 1.8
+			},
+			"move": "push",
+			"ease": "gentle",
+			"move_seconds": 4.7,
+			"subject": {
+				"items": [
+					"up",
+					"down"
+				]
+			},
+			"end": {
+				"subject": {
+					"region": [
+						0.74,
+						0.86,
+						0.1,
+						0.17
+					]
+				},
+				"frame": {
+					"fit": "snug"
+				},
+				"view": {
+					"yaw": 28,
+					"pitch": 16
+				},
+				"lens": 85
+			},
+			"audit": {
+				"question": "Can a child see that the water left in the high beaker has gone down to the hose's end?",
+				"key": "end",
+				"details": [
+					{
+						"region": [
+							0.74,
+							0.86,
+							0.1,
+							0.17
+						]
+					}
+				]
+			}
+		}
+	],
+	"notes": "The scene's name says the flow stops when the two surfaces are level. The run says otherwise: the high beaker drains to the hose's inlet (15 mm) and the surfaces end 14 mm apart. The director films what the run did and draws no 'level' line; the mismatch goes back to whoever wrote the scene. The climb's path is four points read off the hose's drawn route, because the flow module does not publish the route yet (DIRECTOR.md 8)."
+}

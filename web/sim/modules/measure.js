@@ -155,6 +155,10 @@ function _lines() {
 }
 
 // ---------------------------------------------------------------- stopwatch
+// (mod_measure.py STOP_READINGS: readings another module's item has that a stopwatch may stop on; the choice is open; engine6 crossmod)
+export const STOP_READINGS = ["empty", "bottom_g", "clogged", "melted", "reading", "temp", "water_temp", "boiling", "flame", "popped", "broken", "light", "on", "lux",
+	"liquid_ml", "volume_ml", "left_ml", "flooded", "sunk", "grams", "level", "rpm", "dissolved_g"]
+
 function build_stopwatch(c, P) {
 	const face = P.face_cm / 100
 	if (P.on_table) {
@@ -163,9 +167,10 @@ function build_stopwatch(c, P) {
 	const watch = c.link("watch")
 	const [start_x] = line_x(c, "start_line", P.start_x)
 	const [stop_x] = line_x(c, "finish_line", P.stop_x)
+	const reads = P.stop === "reads" ? { stop_key: String(P.stop_reading), stop_value: r5(P.stop_value) } : {}
 	c.process("measure-stopwatch", "watch", {
 		watch, start: P.start, stop: P.stop, start_x: P.start === "crosses" ? start_x : null, stop_x: P.stop === "crosses" ? stop_x : null,
-		stop_at: r5(P.stop_at), reaction: r5(P.reaction_s), lesson: P.counts === "lesson"
+		stop_at: r5(P.stop_at), reaction: r5(P.reaction_s), lesson: P.counts === "lesson", ...reads
 	})
 }
 function _stopwatch() {
@@ -173,10 +178,12 @@ function _stopwatch() {
 		dynamic: false, module: MODULE,
 		props: [
 			P_("start", "Starts", "release", { kind: "choice", choices: ["release", "moves", "crosses"], help: "release: at the scene's release; moves: when the watched thing has moved 1 mm; crosses: when its front reaches the start line" }),
-			P_("stop", "Stops", "crosses", { kind: "choice", choices: ["crosses", "stops", "hits", "at", "never"], help: "crosses: its front reaches the finish line (or stop_x); stops: it comes to rest; hits: it first touches something new; at: after stop_at seconds; never: keeps counting" }),
+			P_("stop", "Stops", "crosses", { kind: "choice", choices: ["crosses", "stops", "hits", "at", "reads", "never"], help: "crosses: its front reaches the finish line (or stop_x); stops: it comes to rest; hits: it first touches something new; at: after stop_at seconds; reads: its reading below reaches a value (a sand timer runs out); never: keeps counting" }),
 			P_("start_x", "Start line x", 0.0, -100.0, 100.0, 0.01, "m", "Where it starts, when no start line is linked (scene x)"),
 			P_("stop_x", "Finish line x", 10.0, -100.0, 100.0, 0.01, "m", "Where it stops, when no finish line is linked (scene x)"),
 			P_("stop_at", "Stop after", 3.0, 0.0, 20.0, 0.01, "s", "For stop = at"),
+			P_("stop_reading", "Stop on its reading", "empty", { kind: "choice", choices: STOP_READINGS, open: true, help: "For stop = reads: which reading of the thing it times (a sand timer's empty, an ice cube's melted, a thermometer's reading; any reading it has)" }),
+			P_("stop_value", "Stop when it reaches", 1.0, -1000.0, 100000.0, 0.01, "", "For stop = reads: the value, reached from either side (empty 1: the timer has run out; melted 1; flame 0: the candle went out)", { slider_max: 100.0 }),
 			P_("reaction_s", "Hand timing delay", 0.0, 0.0, 0.3, 0.01, "s", "0 = an electronic timer; a person presses about 0.2 s late"),
 			P_("counts", "Shows", "run", { kind: "choice", choices: ["run", "lesson"], help: "lesson: the time-lapse clock (1 h 32 min) when the scene runs time-lapsed" }),
 			P_("face_cm", "Face size", 20.0, 6.0, 60.0, 1.0, "cm", "A real one is 6 cm; make it big to read it in a wide shot"),
@@ -192,7 +199,8 @@ function _stopwatch() {
 		tags: ["timer", "clock", "time", "seconds", "race", "timing", "watch", "stop watch", "measure"],
 		anchor: "the middle of its face",
 		description: "A digital stopwatch timing the thing it watches: it starts at the release (or when it moves, or crosses a start " +
-			"line) and stops when its front crosses the finish line (or when it stops, hits something, or after set seconds). " +
+			"line) and stops when its front crosses the finish line (or when it stops, hits something, after set seconds, or when a reading of " +
+			"the thing it times reaches a value: a sand timer runs out, ice melts, a candle goes out). " +
 			"Its big face shows the time; it touches nothing.",
 		source: "Times from the engine's 480 Hz steps, interpolated to the moment the front reaches the line; reads to 0.01 s like a " +
 			"handheld stopwatch. Hand timing adds a reaction delay of 0.2-0.25 s [HUMAN-RT] when reaction_s is set.",
@@ -704,6 +712,8 @@ export function goal_reads(ctx, g) {
 		break
 	}
 	if (want === null || key === null) return null
+	// (a stopwatch that shows the lesson clock: its time is what its face shows, the run's seconds × the time-lapse; engine6 crossmod)
+	if (key === "seconds" && t === "stopwatch" && ctx.state(iid, "lesson_s") !== null) key = "lesson_s"
 	const got = endReading(ctx, iid, key)
 	let tl = ctx.num(g.tol)
 	if (tl === null) tl = tol !== null ? tol : Math.max(1e-9, Math.abs(want) * 0.02)
@@ -998,8 +1008,9 @@ const HOWTO = [
 	"Instruments read the run and show their reading on their own face every frame (a stopwatch's LCD, a light gate's and a speed sign's LEDs, a kitchen scale's grams, a spring scale's pointer); after a run each one's readings are listed with the item. Their faces, painted lines, tapes, trails and boards touch nothing (display only); the spring scale's hook, the kitchen scale's platform, the pan balance and the gram masses are real things.",
 	"LINKS are props naming another item by its id: stopwatch.watch (what it times), stopwatch.start_line / finish_line (a start-line, a finish-line or a lane: a lane's finish is its finish_at mark), measuring-tape.watch (whose front it reads), speed-gate.watch (+ pair: an earlier gate, to time between them), speedometer.watch, spring-scale.hook (the thing hung on its hook by a string), protractor.watch (a ramp, pendulum or lever), motion-trail.watch, graph-board.watch/watch2/watch3 (lines), data-table.watch…watch4 (instruments whose readings it lists).",
 	"A lane is a long floor 1-60 m (a static board 2 cm thick) with a mark every metre (or as set), big upright metre numbers, a white start line at start_at and a chequered finish line at finish_at; its anchor is its 0 m mark on its top surface, so the d-metre mark is at x = lane.x + d and things race on y = lane.y. Two lanes one above the other (y 0.02 and 0.82, the upper one stands on legs) compare two racers without them meeting.",
-	"Stopwatch: start = release (the scene's release) | moves (the watched thing has moved 1 mm) | crosses (its front reaches start_line or start_x); stop = crosses (its front reaches finish_line or stop_x) | stops (it comes to rest) | hits (it first touches something new) | at (stop_at seconds after the start) | never. It reads to 0.01 s; meters = how far the thing moved while it ran. face_cm sets how big its face is drawn (a real one is 6 cm; 30-40 cm reads in a wide 12 m shot).",
-	"Readings: stopwatch seconds, meters, start_s, stop_s; measuring-tape meters (0 to its length; past_end 1 beyond its end); speed-gate speed (= length / blocked time), blocked_s, between_s; speedometer speed, top, mean; spring-scale newtons, grams, over (1: past its range, its hook bottomed out 5 % past full scale); kitchen-scale grams; pan-balance tilt (degrees, right pan down +), heavier (-1 left, 0 level, 1 right), left_g and right_g (what each pan holds); protractor degrees (a ramp's slope from level, a pendulum's turn from hanging straight), swing; motion-sensor distance.",
+	"Stopwatch: start = release (the scene's release) | moves (the watched thing has moved 1 mm) | crosses (its front reaches start_line or start_x); stop = crosses (its front reaches finish_line or stop_x) | stops (it comes to rest) | hits (it first touches something new) | at (stop_at seconds after the start) | reads (the watched thing's reading stop_reading reaches stop_value, from the side it started on: a sand timer runs out, hourglass empty 1; ice melts, ice-cube melted 1; a thermometer's reading reaches 50; a candle goes out, flame 0; a balloon pops, popped 1; any reading the thing has) | never. It reads to 0.01 s; meters = how far the thing moved while it ran. counts lesson: its face shows the lesson clock (the run's seconds × the time-lapse) and a reads goal's seconds are that. face_cm sets how big its face is drawn (a real one is 6 cm; 30-40 cm reads in a wide 12 m shot).",
+	"A kitchen-scale also weighs sand heaped on its platform (granular: a funnel above it, a sand-pile on it) and liquid lying on it as a puddle (flow: a tap or a pitcher spilling onto it), at about 1 g a mL of water; what falls on it pushes it only as it rests there (a stream's own push is not added).",
+	"Readings: stopwatch seconds, meters, start_s, stop_s (lesson_s with counts lesson); measuring-tape meters (0 to its length; past_end 1 beyond its end); speed-gate speed (= length / blocked time), blocked_s, between_s; speedometer speed, top, mean; spring-scale newtons, grams, over (1: past its range, its hook bottomed out 5 % past full scale); kitchen-scale grams; pan-balance tilt (degrees, right pan down +), heavier (-1 left, 0 level, 1 right), left_g and right_g (what each pan holds); protractor degrees (a ramp's slope from level, a pendulum's turn from hanging straight), swing; motion-sensor distance.",
 	"Weight and mass: a kitchen-scale and a spring-scale show WEIGHT (their grams are the force ÷ the Earth's 9.81: they are calibrated on Earth), so under settings.gravity moon a 1 kg mass reads 1.62 N and 165 g (1/6), on Mars 3.71 N and 378 g; a pan-balance compares MASSES (both pans feel the same g) and reads the same anywhere: 1 kg balances 1 kg on the Moon too.",
 	"A pan-balance's pans hang 14 cm either side of its middle under the beam: put a thing IN a pan with place {inside: the balance, x: balance.x - 0.14} (left) or {inside: the balance, x: balance.x + 0.14} (right), gram masses the same (they stack in the pan). It tips 1.5° for each gram of difference, up to its 15° stop (10 g or more), and reads level (heavier 0, |tilt| under 0.5°) within 0.3 g; it settles in a few swings of 2-5 s.",
 	"A lane has a foam bumper on its far end (end_stop): what races past the finish stops there and stays on the lane. A stopwatch with no watch link that starts at the release and stops at stop_at (or never) is a plain clock; a link that names nothing (a wrong id, itself, the wrong kind of item) is listed in the run's warnings."
@@ -1015,7 +1026,7 @@ const PLAN = [
 const EDIT = [
 	"- \"Make the red car take 4 s\" over a 10 m lane: its speed (and its start_speed, where it has one) = 10 / 4 = 2.5 m/s (× 1.016 for the tyre slip). A stopwatch's reading changes only by changing what it times or how that moves: never by moving its finish line or the lane's numbers.",
 	"- When the person changes a time, a distance, a speed or when a stopwatch stops, the scene's goals that state the OLD number are now wrong: give them the new number (set_goals with every goal: a reads goal's seconds / meters and its label, a crosses goal's before_s), and make the run long enough to show it (set_scene seconds ≥ the slowest new finish + 0.7 s; the run's release counts). Keep the goals the change leaves true as they are.",
-	"- \"Time it to 8 m\": finish_line unlinked and stop_x = lane.x + 8 (or the lane's finish_at = 8). \"Stop the watch at 3 s\": stop = at, stop_at = 3. \"Bigger stopwatch\": face_cm. \"Show the path\": add a motion-trail watching it.",
+	"- \"Time it to 8 m\": finish_line unlinked and stop_x = lane.x + 8 (or the lane's finish_at = 8). \"Stop the watch at 3 s\": stop = at, stop_at = 3. \"Bigger stopwatch\": face_cm. \"Show the path\": add a motion-trail watching it. \"Time the sand timer\" (or the ice melting, the candle going out): watch = it, stop = reads with stop_reading empty (melted, flame) and stop_value 1 (1, 0), counts lesson when the scene has a time-lapse.",
 	"- Two racers compared: change only the one thing asked (a fair test); keep the other racer, its lane and its stopwatch as they are.",
 	"- A change to the thing being tested (a harder push, a higher ramp, a heavier load, a faster car, a different mass in a pan) changes the outcome: rewrite the goal that states the old outcome to the new expected one with set_goals (a car pushed harder stops farther: stops_between {x0: the new nearer mark, x1: a farther one}; a heavier thing in a pan tips the balance its way: reads tilt ±15). Never leave the old outcome for the make-it-work search to undo the change the person asked for.",
 	"- A thing swapped in a pan for one of another mass (an orange for the apple) unbalances it: give the other pan gram masses that add up to the new thing's mass (sizes 1, 2, 5, 10, 20, 50, 100, 200, 500 g, 1 kg), or say it now tips toward the heavier."
@@ -1032,7 +1043,9 @@ const EXAMPLES = [
 	{ ask: "Does a 1 kg mass weigh less on the Moon?", how: "settings.gravity moon (air false); a kitchen-scale with a 1 kg gram-mass on it reads about 165 g (1.62 N: a scale shows weight); a pan-balance with 1 kg in each pan still balances (mass is the same); goals reads grams 165 tol 2 and reads tilt 0 tol 1" },
 	{ ask: "Measure the ramp's angle", how: "a protractor at the ramp's foot with watch = the ramp; it reads the slope in degrees" },
 	{ ask: "Time a ball dropped from 1 m", how: "a ball held at y 1 m, a stopwatch watch = the ball, start = release, stop = hits: about 0.45 s (√(2h/g))" },
-	{ ask: "Show a speed-time graph of the car", how: "a graph-board behind the scene, plot = speed, watch = the car" }
+	{ ask: "Show a speed-time graph of the car", how: "a graph-board behind the scene, plot = speed, watch = the car" },
+	{ ask: "Time a one-minute sand timer with a stopwatch", how: "an hourglass on the table (its 66 g of fine sand run out in about 60 s), settings.time_lapse 4 and seconds 20 (the run shows a lesson minute in 15 s), a stopwatch with watch = the hourglass, start = release, stop = reads (stop_reading empty, stop_value 1), counts lesson; goal reads {item: stopwatch, seconds: 60, tol: 3}" },
+	{ ask: "Weigh the sand a funnel pours onto a kitchen scale", how: "a kitchen-scale on the table and a sand-funnel standing on the table beside it with its spout over the platform (funnel x = scale x; its heap lands on the platform); the scale's grams rise as the heap grows, to the funnel's poured_g (goal reads {item: scale, grams: the funnel's sand_kg × 1000, tol: 5})" }
 ]
 
 /** A stopwatch's start/stop rules in words. */

@@ -18,6 +18,13 @@ import { frameIndex, placementsAt } from "./track.js"
 import { animates, collectHooks, framePlugins, startPlugins, stopPlugins } from "./view-plugins.js"
 import { buildModel, beginRun, endRun, modelFor, modelKey, isModelCached, pinModel, gradeShader, gradeKeyFor, gradeSat, isPlainPaint, prebake, stealPrebake, prebakeReady, stopPrebake } from "./models3d.js"
 import { makeGate } from "./start-gate.js"
+import { HAND_MODES, makeHands } from "./hands.js"
+import { styleOf, styleKey, lessonPass, lessonTableMaterial, repaintsTable, LESSON_LIGHT } from "./lesson-look.js"
+import { makeHanger, makeRetreat, retreatAt, standModeFor, mountHanger, lessonPost, RETREAT } from "./release-stand.js"
+import { makeOutliner } from "./lesson-outline.js"
+import * as Shots from "./export/shots.js"
+import { recognize, registryOf, sceneFromSim } from "./export/subjects.js"
+import { buildDigest, digestText } from "./export/digest.js"
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Constants (all lengths in meters)
@@ -1640,15 +1647,20 @@ export function createView3D(container) {
 	 *  the room and the table top, show a starry sky and dim the room's lights); every run without one gets the room back as it was. */
 	const applyEnvironment = (r) => {
 		const env = r?.plugins?.find((p) => p.environment)?.environment ?? null
-		roomWanted = env?.room !== false
+		const L = !env && r?.lesson ? r.lesson : null // (the lesson look: a plain backdrop for the room, its own light; a module's world wins over it)
+		roomWanted = env?.room !== false && !L
 		setRoomVisible(true)
 		cabinet.visible = cabinetWanted && roomWanted
 		tableWanted = env?.table !== false
 		if (r?.tableMesh) r.tableMesh.visible = tableWanted
-		scene.background = env?.background ?? ROOM_BACKGROUND
-		key.intensity = env?.key ?? 4.0
-		fill.intensity = env?.fill ?? 0.3
-		scene.environmentIntensity = env?.envIntensity ?? 0.5
+		scene.background = L ? (L.bg ??= new THREE.Color(L.backdrop)) : (env?.background ?? ROOM_BACKGROUND)
+		key.intensity = L ? LESSON_LIGHT.key : (env?.key ?? 4.0)
+		fill.intensity = L ? LESSON_LIGHT.fill : (env?.fill ?? 0.3)
+		fill.color.set(L ? LESSON_LIGHT.fillSky : 0xfff4e6)
+		fill.groundColor.set(L ? L.table : 0x6b4a2f)
+		key.shadow.intensity = L ? LESSON_LIGHT.shadow : 1
+		scene.environmentIntensity = L ? LESSON_LIGHT.envIntensity : (env?.envIntensity ?? 0.5)
+		setShadowSize(shadowSizeFor(Q.tier))
 	}
 	let cabinetWanted = true
 	const fitCabinet = (table) => {
@@ -1664,6 +1676,17 @@ export function createView3D(container) {
 	// ----- looks and materials (cached; the app hands over the catalog's looks with setOptions({looks})) -------------------
 	let looks = { ...DEFAULT_LOOKS }
 	let looksJson = JSON.stringify(looks)
+	// whose hands are drawn (web/hands.js): "scene" the items that ask for one (their `hand` prop), "all" every held thing, pusher and pitcher too, "off" none
+	// (the pins, paddles and stands as before); setOptions({hands}) or ?hands= on the page
+	let handsMode = (() => {
+		try {
+			const q = new URLSearchParams(location.search).get("hands")
+			return HAND_MODES.includes(q) ? q : "scene"
+		} catch {
+			return "scene"
+		}
+	})()
+	const styleOver = { style: null, backdrop: null, releaseStand: null, outline: null } // the look the view is told to draw (setOptions), over what the scene says (doc.view)
 	let buildNo = 0
 	const matCache = new Map() // key -> {mat, tex: [owned textures], used}
 	const geoCache = new Map() // key -> {geo, used}
@@ -2182,6 +2205,8 @@ ${GRADE}
 	const xp = { active: false, starting: null, serial: 0, saved: null, timer: 0, queue: Promise.resolve(), missed: false, resized: false, mode: null, gen: 0 }
 
 	const aspect = () => (height > 0 ? width / height : 16 / 9)
+	let outliner = null // the lesson look's outlines (web/lesson-outline.js): made on first need
+	const outlinerOf = () => (outliner ??= makeOutliner(renderer))
 
 	const _v1 = new THREE.Vector3()
 	const _v2 = new THREE.Vector3()
@@ -3356,11 +3381,13 @@ ${GRADE}
 			(d.animated ?? []).map(({ at, ...rest }) => rest),
 			d.release ?? null,
 			sim.resolved ?? null,
+			styleKey(styleOf(d, looks, styleOver)), // (the look: a scene switched to the lesson look is built again)
 		])
 	}
 
 	function buildRun(sim, progressive = false) {
 		const { doc, track } = sim
+		const look = styleOf(doc, looks, styleOver) // the real look, or the lesson look (web/lesson-look.js): what is drawn below follows it
 		const serial = ++runSerial
 		buildNo++
 		const group = new THREE.Group()
@@ -3371,7 +3398,10 @@ ${GRADE}
 		const blobs = new THREE.Group() // contact shading on the tabletop (hidden in the table's reflection)
 		group.add(blobs)
 		const frame0 = track.frames[0].placements
-		const solids = doc.solids.filter((s) => !s.hidden_3d)
+		// a person's hands (web/hands.js): which held things a hand holds (no pin, post or gate), which pusher parts a hand skin replaces (not drawn) and which fixed
+		// things a hand holds up (no stand); the hands themselves are posed with the posts (fitPosts), on what is drawn
+		const hands = makeHands({ doc, track, resolved: sim.resolved, mode: handsMode, holdPart: (list) => postPart(list), boxOf: (id) => handBox(id), bounds: () => sceneBounds(solids, track, doc.joints) })
+		const solids = doc.solids.filter((s) => !s.hidden_3d && !hands.hides(s.id))
 		// Progressive: when the models still to be built are estimated to cost more than DEFER_MS (kept ones are only cloned), those parts are drawn as plain stand-ins now
 		// and built in idle slices afterwards (see runJobs). The rest is built at once, as ever.
 		const jobs = []
@@ -3487,6 +3517,24 @@ ${GRADE}
 				}
 			}
 		}
+		// Painted lines (a model builder marked `build.paint = true`: the measure module's start and finish lines) are drawn ON whatever they lie on: the top
+		// face of the highest static slab under the line's middle, from 10 cm below where its top is meant to be to 1 cm above it (a line placed flush with
+		// a floor, or a hair off it), turned with that face; the model draws its paint just above its own top (web/models/mod-measure.js). Render only.
+		const paints = [] // their solids (placed again once every support is known)
+		const paintOn = (s, p) => {
+			const half = (s.body.height ?? 0) / 2
+			const want = p.y + half // where its top is meant to be
+			let best = null
+			for (const sp of supports) {
+				if (sp.id === s.id || Math.abs(sp.c) < 0.2 || solidById.get(sp.id)?.ghost === true) continue
+				const u = (p.x - sp.x + sp.hh * sp.s) / sp.c // (along the slab's top face, from its middle, to the line's x)
+				if (Math.abs(u) > sp.hw) continue
+				const top = sp.y + u * sp.s + sp.hh * sp.c
+				if (top > want + 0.01 || top < want - 0.1 || (best && top <= best.top)) continue
+				best = { top, angle: Math.atan2(sp.s, sp.c) }
+			}
+			return best ? { x: p.x, y: best.top - half, angle: best.angle } : p
+		}
 		const spinners = [] // model parts that turn: {obj, axis, rate, from, q0}
 		const frameHooks = [] // model parts a module's frame hook redraws by the clock (web/view-plugins.js: a glow, a dial, a level)
 		const helpers = [] // while models are deferred: the parts a model covers for its whole welded item (a jar's walls, a cone's collar), which get no stand-in of their own in the loop
@@ -3543,9 +3591,12 @@ ${GRADE}
 					if (round) parts.push({ id: s.id, mesh: holder, round: true, R: body.radius, grow: 0, ao, blob: addBlob(blobs, 0, 0, 3 * body.radius, dz + 0.05, 0) })
 					else parts.push({ id: s.id, mesh: holder, hw, hh, pts, ao, blob: addBlob(blobs, 0, 0, 0.06, dz + 0.05, 0), rest: dynRest(s, 0) })
 				} else {
-					const shade = round ? null : shadeOf(dz + 0.05)
+					const paint = mf?.paint === true && !round // (a painted line, a start or finish line, its builder says: drawn on what it lies on, no contact shade: paintOn)
+					const shade = round || paint ? null : shadeOf(dz + 0.05)
 					const at = round ? restRound(holder, body.radius, 0, 0) : restStatic(s, holder, 0)
-					const place = (p) => {
+					if (paint) paints.push(s)
+					const place = (p0) => {
+						const p = paint ? paintOn(s, p0) : p0
 						holder.position.set(p.x, p.y, 0)
 						holder.rotation.z = p.angle
 						freeze(holder)
@@ -3705,6 +3756,7 @@ ${GRADE}
 			belt?.finish(mesh)
 			pickables.push(mesh)
 			if (isTable) tableMesh = mesh
+			if (isTable && look.lesson && repaintsTable(s, looks)) mesh.material = lessonTableMaterial(look.table) // (the lesson look: one matte colour, no grain, no varnish, no mirror)
 			if (s.kind === "dynamic") parts.push({ id: s.id, mesh, hw: body.width / 2, hh: body.height / 2, ao: { k: keep }, blob: addBlob(blobs, 0, 0, 0.06, depthOf(body) + 0.05, 0), rest: dynRest(s, SKIN) })
 			else if (isTable) {
 				freeze(mesh) // (the table has no placer: moving it rebuilds the run)
@@ -3726,6 +3778,7 @@ ${GRADE}
 			}
 		}
 
+		for (const s of paints) placers.get(s.id)?.(poseOf(s)) // (the painted lines, now that every support stands where it stands)
 		const solidRoots = group.children.slice(1) // (the first child is the contact shades): every solid's mesh or holder, the table's too
 		// ----- joints: springs, ropes, hinges (+ motors), pulleys (wheels and belts were drawn with their solids above) ----------
 		for (const j of doc.joints ?? []) {
@@ -3821,7 +3874,7 @@ ${GRADE}
 		// frame of a progressive load). A post whose foot would hang past the tabletop's end is a wall bracket there; every support stands behind the deepest mover that passes by
 		// (moversDepth), and an arm that lands on a drawn panel is carried by it.
 		const mountPose = new Map() // static solid id -> its pose now (kept by a placer)
-		const supporters = solids.filter((o) => o.kind === "static")
+		const supporters = solids.filter((o) => o.kind === "static" && !hands.noMount(o.id)) // (a fixed thing a hand holds up needs no stand)
 		for (const o of supporters) {
 			mountPose.set(o.id, poseOf(o))
 			if (o !== table && placers.has(o.id)) addPlacer(o.id, (p) => mountPose.set(o.id, p))
@@ -4218,6 +4271,7 @@ ${GRADE}
 				}
 			},
 		}
+		mountBuilders.hanger = (inst) => mountHanger(inst, { mountMesh, putAt, rodsOf, boxOf: (s) => ({ ...boxOfStatic(s, mountBox) }), poseOf: (s) => mountPose.get(s.id) }) // (web/release-stand.js)
 		const setInst = (inst, v) => {
 			for (const m of inst.meshes) m.visible = v
 		}
@@ -4228,6 +4282,7 @@ ${GRADE}
 				// draw it while the part is held up by nothing; made on first need. A post whose rods would not stand on the tabletop is a wall bracket
 				let want = plan.members.some(heldUp) ? plan.kind : null
 				if (want === "post" && !rodsOf(plan.members[0]).every(onTable)) want = "wall"
+				if (look.lesson && (want === "post" || want === "wall")) want = "hanger" // (the lesson look: a slim rod from above, no retort stand or bracket)
 				if (plan.on && plan.on !== want) {
 					setInst(plan.insts[plan.on], false)
 					if (plan.on === "panel") panelRects.splice(panelRects.indexOf(plan.insts.panel.rect), 1)
@@ -4287,6 +4342,8 @@ ${GRADE}
 		const POST_GAP = 0.015 // air between the post and anything in front of it
 		const pins = []
 		const gates = [] // starting gates (web/start-gate.js) of the items doc.view.gates names (machines/mod_staging.py start_gate), drawn instead of their pins
+		const hangers = [] // holders from above (web/release-stand.js; doc.view.release_stand "hanger", or "auto" in or over a liquid), drawn instead of their pins
+		const retreats = [] // pins and posts that go away once the thing is let go ("hidden"; "auto" elsewhere)
 		const postFits = [] // (pose of a solid, obstacles) => one post and pin placed again
 		const hangOf = (o) => {
 			// the world point a part hangs from (its pivot, a rope's, spring's or pin's end on the world or on a static part), or null
@@ -4330,6 +4387,57 @@ ${GRADE}
 			const mid = list.reduce((sum, o) => sum + poseOf(o).x, 0) / list.length
 			return pick.sort((a, b) => Math.abs(poseOf(a).x - mid) - Math.abs(poseOf(b).x - mid))[0]
 		}
+		// (web/release-stand.js: a held part more than 1 cm over the top of whatever static slab is under it is held up in mid-air; the deepest static thing
+		// over a held item, a magnet over a clip, is what a holder from above comes down behind)
+		const airborne = (o, q) => {
+			const bottom = q.y - bottomOf(o, q)
+			let top = -Infinity
+			for (const sp of supports) {
+				if (Math.abs(sp.c) < 0.2 || solidById.get(sp.id)?.ghost === true) continue
+				const u = (q.x - sp.x + sp.hh * sp.s) / sp.c
+				if (Math.abs(u) > sp.hw) continue
+				const y = sp.y + u * sp.s + sp.hh * sp.c
+				if (y <= bottom + 0.005 && y > top) top = y
+			}
+			return bottom - (top === -Infinity ? 0 : top) > 0.01
+		}
+		const roomAbove = (list, pf) => {
+			// (no static thing's underside within 1.2 cm over the item's top across its width: room for a holder's pad and arm under it)
+			let x0 = Infinity
+			let x1 = -Infinity
+			let y1 = -Infinity
+			for (const o of list) {
+				const e = extentOf(o.body, pf(o))
+				x0 = Math.min(x0, e.x0)
+				x1 = Math.max(x1, e.x1)
+				y1 = Math.max(y1, e.y1)
+			}
+			for (const o of solids) {
+				if (o.kind !== "static" || o === table || o.ghost === true || isTableSolid(o)) continue
+				const e = extentOf(o.body, pf(o))
+				if (e.x1 >= x0 - 0.02 && e.x0 <= x1 + 0.02 && e.y0 >= y1 - 0.005 && e.y0 < y1 + 0.012) return false
+			}
+			return true
+		}
+		const depthAbove = (list, pf) => {
+			let x0 = Infinity
+			let x1 = -Infinity
+			let y1 = -Infinity
+			for (const o of list) {
+				const e = extentOf(o.body, pf(o))
+				x0 = Math.min(x0, e.x0)
+				x1 = Math.max(x1, e.x1)
+				y1 = Math.max(y1, e.y1)
+			}
+			let half = 0
+			for (const o of solids) {
+				if (o.kind !== "static" || o === table || o.ghost === true || isTableSolid(o)) continue
+				const e = extentOf(o.body, pf(o))
+				if (e.x1 < x0 - 0.02 || e.x0 > x1 + 0.02 || e.y0 < y1 - 0.005 || e.y0 > y1 + 3) continue // (over it: its underside above the item's top)
+				half = Math.max(half, depthOfSolid(o) / 2)
+			}
+			return half
+		}
 		const heldByItem = new Map()
 		for (const id of doc.release?.parts ?? []) {
 			const o = solids.find((x) => x.id === id)
@@ -4339,14 +4447,31 @@ ${GRADE}
 		}
 		const gated = new Set(doc.view?.gates ?? [])
 		const gateStatics = gated.size ? solids.filter((o) => o.kind === "static" && !o.hidden_3d) : []
+		// What holds each held thing until the release: ONE holder each (the plug-ins read it as ctx.heldBy(item)): "hand" (web/hands.js: a hand
+		// always wins), "fork" (a thing held in a liquid, machines/mod_mechanics.py holdFrom "above", where the look's stand is the pull pin on its
+		// post: the real look's default; its fork on a rod over it is web/models/mod-mechanics.js's "mechanics:holders"), "gate", or the look's
+		// stand (web/release-stand.js): "hanger", "hidden" or "post" (a named "hidden", "hanger" or "auto", the lesson look's default, holds a
+		// thing in a liquid as the look says)
+		const heldHow = new Map()
 		for (const list of heldByItem.values()) {
+			const item = list[0].item
+			if (hands.holds(item)) {
+				heldHow.set(item, "hand")
+				continue
+			}
+			if (look.releaseStand === "post" && list.some((o) => o.holdFrom === "above")) {
+				heldHow.set(item, "fork")
+				continue
+			}
 			const s = postPart(list)
 			if (!s) continue
 			const id = s.id
 			const gate = gated.has(s.item) ? makeGate({ list, addMesh, steel: steelMaterial() }) : null
 			if (gate && gate.layout(poseOf, track, doc.release?.at ?? 0.5, gateStatics)) {
+				heldHow.set(item, "gate")
 				// a starting gate: the pin's post, a boom on its top whose stop touches the item's front; it lifts at the release (gate.at in updateParts)
 				const post = addMesh(group, dowel(POST_R, "post", `post-${id}`), wood)
+				post.castShadow = false // (standing behind the track, its shadow fell on the room's back wall beside the ramp: a ghost of the gate)
 				group.add(gate.root)
 				gates.push(gate)
 				scenery.push(gate.root, post)
@@ -4356,6 +4481,8 @@ ${GRADE}
 					pickables.push(m)
 				}
 				const postBlob = addBlob(blobs, 0, -0.09, 0.07, 0.07, AO_OPACITY)
+				gate.post = post
+				gate.postBlob = postBlob
 				postFits.push((pf) => {
 					// the post stands just behind the item's path, on what is under it there (the ramp, a carpet, the table): start-gate.js layout
 					const L = gate.layout(pf, postTrack, doc.release?.at ?? 0.5, gateStatics)
@@ -4369,6 +4496,19 @@ ${GRADE}
 					postBlob.position.set(L.P.x, postBlob.position.y, L.zPost)
 					gate.place(L)
 				})
+				continue
+			}
+			const mode = standModeFor(look.releaseStand, doc, s, poseOf(s), { airborne: airborne(s, poseOf(s)), roomAbove: roomAbove(list, poseOf) })
+			heldHow.set(item, mode)
+			if (mode === "hanger") {
+				const hg = makeHanger({ list, addMesh, doc })
+				group.add(hg.root)
+				hangers.push(hg)
+				for (const m of hg.meshes) {
+					m.userData.solidId = id
+					pickables.push(m)
+				}
+				postFits.push((pf) => hg.layout(pf, postTrack, doc.release?.at ?? 0.5, depthAbove(list, pf)))
 				continue
 			}
 			const pin = addMesh(group, dowel(0.004, "pin", `pin-${id}`), wood)
@@ -4385,6 +4525,12 @@ ${GRADE}
 				pickables.push(m)
 			}
 			const postBlob = addBlob(blobs, 0, -0.09, 0.07, 0.07, AO_OPACITY)
+			if (look.lesson) lessonPost(pin, post, POST_R, 0.004) // (web/release-stand.js: slim and plain)
+			if (mode === "hidden") {
+				const e = makeRetreat(pin, post, postBlob)
+				retreats.push(e)
+				owned.push(...e.mats)
+			}
 			const fit = (pf, obs) => {
 				const p = pf(s)
 				const r = bottomOf(s, p)
@@ -4397,6 +4543,7 @@ ${GRADE}
 				pin.position.set(p.x, p.y - r - 0.004, -(0.02 + extra / 2)) // (its z slides with the clock: updateParts)
 				post.scale.y = postH
 				post.position.set(p.x, postH / 2, -back)
+				post.userData.z0 = -back // (where it stands: a "hidden" one slides back from here after the release)
 				freeze(post)
 				postBlob.position.set(p.x, postBlob.position.y, -back)
 			}
@@ -4550,8 +4697,21 @@ ${GRADE}
 			const sn = Math.sin(q.angle ?? 0)
 			return { x: q.x + a.x * c - a.y * sn, y: q.y + a.x * sn + a.y * c }
 		}
+		/** A solid's drawn box in its own frame (its model, stand-in or mesh), for the hands' grips (web/hands.js: a cork is drawn longer than its outline). */
+		const handBox = (id) => {
+			const root = group.children.find((c) => c.name === id || c.userData.solidId === id)
+			return root ? drawnBox(root) : null
+		}
+		if (hands.plans?.length) group.add(hands.group) // (a scene without hands draws as it did)
 		/** Place every post and pin again (after a load, a move, the mounts, the models coming in): pf = the pose of a solid at the start, trk = the run's track. */
 		const fitPosts = (pf = poseOf, trk = track) => {
+			if (hands.plans?.length) {
+				// the hands are posed again on what is drawn now (and picked as their items: userData.hand)
+				hands.fit(pf, trk)
+				for (let i = pickables.length - 1; i >= 0; i--) if (pickables[i].userData.hand) pickables.splice(i, 1)
+				pickables.push(...hands.pickables)
+				shadowKey = ""
+			}
 			if (!postFits.length) return
 			postTrack = trk
 			group.updateMatrixWorld(true)
@@ -4619,7 +4779,7 @@ ${GRADE}
 			depParts: new Array(parts.filter((p) => p.rest).length),
 			postFits,
 			fitPosts, // (pf, track): place the posts again
-			postsFinal: !progressive || !postFits.length, // the posts were placed with every model and mount in (see postsLate)
+			postsFinal: !progressive || (!postFits.length && !hands.plans?.length), // the posts (and hands) were placed with every model and mount in (see postsLate)
 			staticRest,
 			staticRound,
 			aoRecs,
@@ -4635,6 +4795,16 @@ ${GRADE}
 			pickables,
 			pins,
 			gates,
+			hands, // (web/hands.js: posed in updateParts)
+			heldHow, // item -> what holds it until the release (above)
+			hangers,
+			retreats,
+			style: look, // the look it was built in (web/lesson-look.js styleOf): {lesson, name, backdrop, table, releaseStand, outline, why}
+			lesson: look.lesson ? look : null,
+			lessonLeft: -1, // (the stand-ins left when the lesson look was last put on the whole group: lessonDraw)
+			groundIds: new Set(solids.filter(isTableSolid).map((o) => o.id)), // (the tabletop or floor: the lesson outlines' background)
+			// (the lesson look: static parts held more than 5 cm up, a funnel, a tap, a fixed magnet, cast no shadow: one out of the picture would cross it)
+			lessonNoShadow: look.lesson ? new Set(solids.filter((o) => o.kind === "static" && !isTableSolid(o) && extentOf(o.body, poseOf(o)).y0 > 0.05).map((o) => o.id)) : null,
 			table,
 			tableMesh,
 			lens, // how many lens parts it has (markLens): the table's mirror draws them in a pass of their own
@@ -5014,6 +5184,7 @@ ${GRADE}
 	}
 	function applyGlass(root) {
 		const low = !TIERS[Q.tier].glass
+		if (run) run.lessonLeft = -1 // (the lesson look's materials are put on again at the next draw: lessonDraw)
 		root.traverse((o) => {
 			if (!o.isMesh) return
 			let on = glassOn.get(o)
@@ -5032,6 +5203,20 @@ ${GRADE}
 			o.material = lowMat
 		})
 	}
+	/** The key light's shadow map side for a tier: the tier's, or the lesson look's coarser one (softer edges: web/lesson-look.js LESSON_LIGHT). */
+	function shadowSizeFor(tier) {
+		const T = TIERS[tier] ?? TIERS.high
+		return run?.lesson ? Math.min(T.shadow, LESSON_LIGHT.shadowMap) : T.shadow
+	}
+	function setShadowSize(n) {
+		if (key.shadow.mapSize.x === n) return
+		key.shadow.mapSize.set(n, n)
+		key.shadow.map?.dispose() // (made again, at the new size, by the next shadow pass)
+		key.shadow.map = null
+		key.shadow.mapPass?.dispose()
+		key.shadow.mapPass = null
+		shadowKey = ""
+	}
 	function applyTier(next, why) {
 		const changed = next !== Q.tier || !Q.applied
 		Q.tier = next
@@ -5039,14 +5224,7 @@ ${GRADE}
 		if (changed) {
 			Q.applied = true
 			Q.since = performance.now()
-			const T = TIERS[next]
-			if (key.shadow.mapSize.x !== T.shadow) {
-				key.shadow.mapSize.set(T.shadow, T.shadow)
-				key.shadow.map?.dispose() // (made again, at the new size, by the next shadow pass)
-				key.shadow.map = null
-				key.shadow.mapPass?.dispose()
-				key.shadow.mapPass = null
-			}
+			setShadowSize(shadowSizeFor(next))
 			shadowKey = ""
 			if (width > 0 && height > 0) sizeTargets(width, height)
 			reflValid = false
@@ -5466,14 +5644,24 @@ ${GRADE}
 
 	// ----- what the wide shot frames ---------------------------------------------------------------------------------------
 	const _cv = new THREE.Vector3()
-	/** The world corners of the box of every visible mesh under `root`, as it stands now, appended to `out` as x, y, z. */
+	/** The world corners of the box of every visible mesh under `root`, as it stands now, appended to `out` as x, y, z. An instanced mesh's box is its
+	 *  instances' (InstancedMesh.computeBoundingBox, over the ones it draws): its geometry's alone is one instance at the origin, often a unit shape scaled
+	 *  down per instance (an ice sheet's 0.5 mm bubbles are a 1 m sphere each, so the sheet measured 2 m tall; a pot's boiling bubbles, none drawn yet, the
+	 *  same around the pot). */
 	function boxCorners(root, out) {
 		root.updateWorldMatrix(true, true)
 		root.traverse((o) => {
 			if (!o.isMesh || !o.visible || o.userData.blob) return
-			o.geometry.boundingBox ?? o.geometry.computeBoundingBox()
-			const b = o.geometry.boundingBox
-			if (b.isEmpty()) return
+			let b
+			if (o.isInstancedMesh) {
+				if (!(o.count > 0)) return
+				o.computeBoundingBox()
+				b = o.boundingBox
+			} else {
+				o.geometry.boundingBox ?? o.geometry.computeBoundingBox()
+				b = o.geometry.boundingBox
+			}
+			if (!b || b.isEmpty()) return
 			for (let i = 0; i < 8; i++) {
 				_cv.set(i & 1 ? b.max.x : b.min.x, i & 2 ? b.max.y : b.min.y, i & 4 ? b.max.z : b.min.z).applyMatrix4(o.matrixWorld)
 				out.push(_cv.x, _cv.y, _cv.z)
@@ -5762,6 +5950,12 @@ ${GRADE}
 				part.mesh.scale.setScalar(Math.max(1e-4, k))
 				part.mesh.visible = k > 1e-3
 				if (k <= 1e-3) part.blob.visible = false
+				part.scaled = true
+			} else if (part.scaled) {
+				// (a moment before the module first changed it: its own size, shown. The track writes a scale only once a body has changed, so without
+				// this a moment drawn after a later one kept the later size: a frame was not a pure function of t)
+				part.mesh.scale.setScalar(1)
+				part.mesh.visible = true
 			}
 		}
 		for (const pose of run.joints) pose(t)
@@ -5772,6 +5966,20 @@ ${GRADE}
 			for (const pin of run.pins) pin.position.z = -(0.02 + pin.userData.extra / 2 + (0.13 - 0.02) * u2) // slides out backwards, away from the camera
 		}
 		for (const g of run.gates) g.at(t, run.tRelease) // (the starting gates swing up at the release)
+		for (const e of run.retreats) retreatAt(e, t, run.tRelease) // (web/release-stand.js: a "hidden" pin and post go away once the pin is out)
+		for (const h of run.hangers) h.at(t, run.tRelease) // (and a holder from above opens and lifts away)
+		run.hands?.at(t) // (a person's hands: holding, letting go, pushing, pouring)
+	}
+
+	/** The lesson look on what is drawn (web/lesson-look.js lessonPass: clear liquids, no machinery): over the whole run's group when models have
+	 *  come in since the last time (a progressive build), else over the modules' plug-in groups only (a module makes its liquid's meshes as it pours). */
+	function lessonDraw(r) {
+		if (!r?.lesson) return
+		if (r.lessonLeft !== r.left) {
+			lessonPass(r.group, gradeShader, r.lessonNoShadow)
+			r.lessonLeft = r.left
+			shadowKey = "" // (the shadow map is drawn again: what casts one may have changed)
+		} else for (const p of r.plugins) lessonPass(p.group, gradeShader)
 	}
 
 	/** A part that stands on no static support but on another mover is drawn with that mover's offset (the gap between the two stays the physics' own;
@@ -5847,6 +6055,7 @@ ${GRADE}
 		drawCount++
 		stats.draws++
 		updateParts(t)
+		lessonDraw(run)
 		if (mode === "follow") {
 			if (!editing || !followPlaced) {
 				const [fx, fy] = followAt(t)
@@ -5890,7 +6099,7 @@ ${GRADE}
 		// (the table keeps showing the last one in between) without the layer-REFL_SKIP meshes, and not at all when that is still too slow
 		// (the table then goes without it until the clock stops); during a drag the last one stands. Whenever a draw settles for less than
 		// a full reflection, reflStale makes render() draw once more when things stop.
-		const mirror = refl.enabled && TIERS[Q.tier].refl !== "off" && run.tableMesh
+		const mirror = refl.enabled && TIERS[Q.tier].refl !== "off" && run.tableMesh && !run.lesson // (the lesson look's table mirrors nothing)
 		let doRefl = !!mirror
 		if (doRefl && reflValid) {
 			if (editing) doRefl = false
@@ -5905,7 +6114,8 @@ ${GRADE}
 		trans.hold = hold // (the transmission pass held: see `trans` above)
 		trans.cam = camera
 		try {
-			renderer.render(scene, camera)
+			if (run.lesson?.outline && Q.tier !== "low") outlinerOf().present(scene, camera, run) // (the lesson look's outlines: web/lesson-outline.js; not on the low tier's canvas)
+			else renderer.render(scene, camera)
 		} finally {
 			trans.hold = false
 			if (trans.held) { // (three.js always ends its pass by setting the target back: this is only a safety net)
@@ -5971,7 +6181,8 @@ ${GRADE}
 		}
 		const centre = new THREE.Vector3((box.min.x + box.max.x) / 2, 0.3, 0)
 		key.target.position.copy(centre)
-		key.position.set(centre.x - 1.9, 2.7, 1.7) // front-left-above, like the Blender window light
+		const ka = run?.lesson ? LESSON_LIGHT.keyAt : [-1.9, 2.7, 1.7]
+		key.position.set(centre.x + ka[0], ka[1], ka[2]) // front-left-above, like the Blender window light (the lesson look: higher and more in front)
 		key.target.updateMatrixWorld()
 		key.updateMatrixWorld()
 		const tmp = new THREE.OrthographicCamera()
@@ -6115,6 +6326,7 @@ ${GRADE}
 
 	function setOptions(opts = {}) {
 		dirty = true
+		if (opts.catalog && typeof opts.catalog === "object") viewCatalog = opts.catalog // (the directed cameras' subject recognition reads its categories, tags and readouts)
 		if (opts.looks && typeof opts.looks === "object") {
 			const json = JSON.stringify(opts.looks)
 			if (json !== looksJson) {
@@ -6133,6 +6345,35 @@ ${GRADE}
 			}
 		}
 		if (opts.camera) setMode(opts.camera)
+		// whose hands are drawn (web/hands.js) and the look (web/lesson-look.js): a change of either builds the run again (a new runId), once
+		let rebuild = false
+		if (HAND_MODES.includes(opts.hands) && opts.hands !== handsMode) {
+			handsMode = opts.hands
+			rebuild = true
+		}
+		// the look: style "lesson" | "real" | null (null or "scene": as the scene says, doc.view.style), backdrop "#rrggbb" | "auto" | null,
+		// releaseStand "post" | "hidden" | "hanger" | "auto" | null, outline false | null (the lesson look's outlines off, or as the look says: on)
+		let restyle = false
+		for (const k of ["style", "backdrop", "releaseStand", "outline"]) {
+			if (!(k in opts)) continue
+			const v = opts[k] === "scene" ? null : (opts[k] ?? null)
+			if (styleOver[k] !== v) {
+				styleOver[k] = v
+				restyle = true
+			}
+		}
+		if (restyle && run && styleKey(styleOf(run.doc, looks, styleOver)) !== styleKey(run.style)) rebuild = true
+		if (rebuild) {
+			endExport()
+			if (run) {
+				const sim = run.sim
+				disposeRun()
+				run = buildRun(sim)
+				fitCabinet(run.table)
+				applyEnvironment(run)
+				fitShadow()
+			}
+		}
 		if (typeof opts.reflections === "boolean") refl.enabled = opts.reflections
 		if (typeof opts.exposure === "number") renderer.toneMappingExposure = opts.exposure
 		if (run && width > 0 && height > 0) draw(lastT)
@@ -6312,6 +6553,8 @@ ${GRADE}
 		clearTimeout(J.preTimer)
 		clearTimeout(swapTimer)
 		clearTimeout(trans.timer)
+		outliner?.dispose()
+		outliner = null
 		for (const done of J.settled.splice(0)) done()
 		for (const w of grainWait.values()) w.ph.dispose()
 		grainWait.clear()
@@ -6381,7 +6624,7 @@ ${GRADE}
 	// picture; anything asked meanwhile is done when it ends); it ends at endExport(), at a new load, or EXPORT_IDLE_MS after the last frame.
 	const EXPORT_IDLE_MS = 4000
 	const EXPORT_MIRROR = 256 // cube map side of a chrome ball in an export (the canvas's are 128)
-	const EXPORT_CAMERAS = ["wide", "follow", "orbit", "director", "live", "fixed"] // fixed: the scene's fixed camera (doc.view.camera), else the wide shot
+	const EXPORT_CAMERAS = ["wide", "follow", "orbit", "director", "live", "fixed", "focus", "director-plan"] // fixed: the scene's fixed camera (doc.view.camera), else the wide shot; focus and director-plan: directed cameras (web/export/shots.js, below)
 	const BLUR_MAX = 32 // most sub-frames a blurred frame takes
 	const DIRECTOR_PEAK = 2400 // px/s across a 1920 px picture: the director's moves stay under this at their fastest point (the picture's edge as it zooms; ~1.25 widths a second)
 	const BLUR_STEP_PX = 2 // ... and as many as keep anything from moving more than this between two of them (no visible steps)
@@ -6429,8 +6672,57 @@ ${GRADE}
 		})
 	}
 
-	/** What an export of the run shown can be: duration, recommended size, whether it is settled, the camera names, limits. */
-	function exportInfo() {
+	/** What an export of the run shown can be: duration, recommended size, whether it is settled, the camera names, limits. Asked with a directed
+	 *  camera (exportInfo({camera: "focus" | "director-plan", plan | film, focus, runs, lane, width, height, fps})), also that camera's film once the
+	 *  run is settled: plan {kind, duration, frameCount, fps, shots (each one's video and run window, rate, layout, bands), lanes, notes, report (the
+	 *  safety net's measured facts and checks), plan (what it films: the automatic plan for focus)}, and duration is the film's (video seconds). */
+	function exportInfo(o) {
+		const base = exportInfoBase()
+		const cam0 = o?.camera === "plan" ? "director-plan" : o?.camera
+		if (!PLAN_CAMERAS.has(cam0) || !base.ready) return base
+		if (!isSettled()) return { ...base, plan: null, planPending: true }
+		try {
+			const W = Math.round(Number(o.width ?? 1920))
+			const H = Math.round(Number(o.height ?? 1080))
+			const fps = Number(o.fps ?? 60) > 0 ? Number(o.fps ?? 60) : 60
+			const shot = exportShot(xg, cam0, W, H, fps, planSpec(cam0, o))
+			return { ...base, duration: shot.film.duration, plan: planSummary(shot) }
+		} catch (e) {
+			return { ...base, plan: null, planError: e.message }
+		}
+	}
+	function planSummary(shot) {
+		const f = shot.film
+		return {
+			kind: shot.kind,
+			duration: f.duration,
+			frameCount: f.frameCount,
+			fps: f.fps,
+			width: f.W,
+			height: f.H,
+			lanes: f.lanes,
+			perLaneRuns: f.perLaneRuns,
+			shots: f.shots.map((s) => ({ id: s.id, beat: s.beat, move: s.move, layout: s.layout, arrange: s.arrange, video: [s.tau0, s.tau0 + s.T], frames: [s.i0, s.i0 + s.n - 1], run: [s.t0, s.t1], rate: s.rate, label: s.label, in: s.in, look: s.look, bands: s.bands })),
+			notes: f.notes,
+			report: shot.report,
+			plan: shot.plan,
+		}
+	}
+	/** Whether the run shown has goals or is a comparison (the export dialog then offers its Directed camera first): the subject recognizer's lanes,
+	 *  once per run. */
+	function directedFacts() {
+		if (!run || run.cancelled) return null
+		if (run.directedFacts) return run.directedFacts
+		let lanes = 0
+		try {
+			const rec = recognize({ scene: sceneFromSim(run.sim), run: run.sim, catalog: viewCatalog ?? { types: [] }, registry: registryOf(globalThis[Symbol.for("sandbox.plugins")] ?? null), hints: {} })
+			lanes = rec.lanes?.length ?? 0
+		} catch {}
+		const goals = run.sim?.summary?.goals ?? []
+		run.directedFacts = { goals: goals.length, comparison: lanes >= 2 || goals.some((g) => g && g.a !== undefined && g.b !== undefined), lanes }
+		return run.directedFacts
+	}
+	function exportInfoBase() {
 		const ok = canExport()
 		const low = softwareGL
 		return {
@@ -6451,6 +6743,13 @@ ${GRADE}
 			softwareGL,
 			lastFrameMs: xstats.lastMs,
 			fixed: ok ? (run.doc.view?.camera ?? null) : null, // the scene's fixed camera {x0, x1, y, pitch, hfov} (the wide and fixed cameras), or null
+			// the look it is drawn in (web/lesson-look.js): {name: "lesson" | "real", backdrop, table (#rrggbb in the lesson look, else null), releaseStand, outline, why}
+			style: run ? { name: run.style.name, backdrop: run.style.backdrop, table: run.style.table, releaseStand: run.style.releaseStand, outline: run.style.outline, why: run.style.why } : null,
+			// {goals, comparison, lanes}: a scene with goals or a comparison is filmed "focus" by default (the export dialog's Directed); worked out
+			// when read (the subject recognizer, once per run), so a caller that only wants the runId (a library thumbnail) does not pay for it
+			get directed() {
+				return ok ? directedFacts() : null
+			},
 		}
 	}
 
@@ -6460,7 +6759,7 @@ ${GRADE}
 		const H = Math.round(Number(o.height ?? 1080))
 		const max = exportMaxSize()
 		if (!(W >= 16 && H >= 16 && W <= max && H <= max)) throw new RangeError(`renderFrame: width and height must be whole numbers from 16 to ${max} (got ${o.width} x ${o.height})`)
-		const camera = o.camera ?? "wide"
+		const camera = o.camera === "plan" ? "director-plan" : (o.camera ?? "wide") // ("plan": DIRECTOR.md's name for it)
 		if (!EXPORT_CAMERAS.includes(camera)) throw new RangeError(`renderFrame: camera must be one of ${EXPORT_CAMERAS.join(", ")} (got ${camera})`)
 		const mb = o.motionBlur
 		const n = mb === true ? 6 : typeof mb === "number" ? mb : mb && typeof mb === "object" ? (mb.samples ?? 6) : 1
@@ -6470,19 +6769,13 @@ ${GRADE}
 		const angle = Number((mb && typeof mb === "object" ? mb.shutter : undefined) ?? o.shutter ?? 180)
 		const open = (Math.min(360, Math.max(0, Number.isFinite(angle) ? angle : 180)) / 360) / fps // s the shutter stays open
 		const samples = Math.max(0, Math.min(renderer.capabilities.maxSamples ?? 4, Math.round(Number(o.samples ?? exportSamples(W, H)))))
-		return { W, H, camera, blur, most, open, samples, runId: o.runId, output: o.output === "imagedata" ? "imagedata" : "canvas" }
+		return { W, H, camera, blur, most, open, samples, runId: o.runId, output: o.output === "imagedata" ? "imagedata" : "canvas", fps, plan: planSpec(camera, o) }
 	}
 
 	/** The canvas's tier state on the GPU side (applyTier's, without the drawing buffer, the event and the auto-quality bookkeeping): for the export's hold on high. */
 	function tierGpu() {
 		const T = TIERS[Q.tier]
-		if (key.shadow.mapSize.x !== T.shadow) {
-			key.shadow.mapSize.set(T.shadow, T.shadow)
-			key.shadow.map?.dispose()
-			key.shadow.map = null
-			key.shadow.mapPass?.dispose()
-			key.shadow.mapPass = null
-		}
+		setShadowSize(shadowSizeFor(Q.tier))
 		shadowKey = ""
 		if (run) applyGlass(run.group)
 		if (!T.chrome) releaseMirrors(false)
@@ -6851,7 +7144,8 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			move(x, y, 0, x, y, 0)
 		}
 		// what moves without being a body: a turning fan or rotor, a running belt, the pull pins sliding out at the release (no shortcut to one sub-frame then)
-		const busy = run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(t - run.tRelease) < 0.1) || (run.gates.length > 0 && t > run.tRelease - 0.02 && t < run.tRelease + 0.2)
+		const busy = run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(t - run.tRelease) < 0.1) || (run.gates.length > 0 && t > run.tRelease - 0.02 && t < run.tRelease + 0.2) ||
+			(run.retreats.length > 0 && t > run.tRelease && t < run.tRelease + RETREAT.delay + RETREAT.seconds + 0.02) || (run.hangers.length > 0 && t > run.tRelease - 0.02 && t < run.tRelease + 0.7) || !!run.hands?.busy(t) // (a pin and post going away, a holder from above lifting; a hand)
 		if (px < 0.5 && !busy) return 1
 		return Math.min(o.most, Math.max(o.blur, Math.ceil(px / BLUR_STEP_PX)))
 	}
@@ -6876,6 +7170,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			xstats.blurN = N
 			// the coils' and chains' detail, for the camera at moment t (as the canvas picks it for its own camera and drawing buffer), before the shadow map is drawn
 			updateParts(t)
+			lessonDraw(r)
 			shot.at(t, g.cam)
 			applyLods(g.cam, g.H)
 			exportPose(g, t)
@@ -6890,19 +7185,23 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 					stencilBuffer: false,
 				})
 			}
+			let src = g.rt.texture // (what the picture is read from: the main pass's, or its outlined copy)
 			for (let i = 0; i < N; i++) {
 				// motion blur: N moments spread evenly over the open shutter, centred on t (a 180 degree shutter at 60 fps: t - 1/240 .. t + 1/240)
 				const ti = N > 1 ? Math.min(dur, Math.max(0, t + ((i + 0.5) / N - 0.5) * o.open)) : t
 				if (N > 1) exportPose(g, ti)
+				if (N > 1) lessonDraw(r) // (a module's liquid made for this sub-frame)
 				shot.at(ti, g.cam)
-				if (refl.enabled) renderReflection(g.cam, false, g.refl, g.matrix, g.reflCam, r.lens > 0 ? (g.reflBase ??= mirrorBase(g.refl)) : null)
+				if (refl.enabled && !r.lesson) renderReflection(g.cam, false, g.refl, g.matrix, g.reflCam, r.lens > 0 ? (g.reflBase ??= mirrorBase(g.refl)) : null)
 				renderer.setRenderTarget(g.rt)
 				renderer.render(scene, g.cam)
-				if (N > 1) quadPass(g, exportQuad(g).acc, g.rt.texture, g.acc, i === 0 ? THREE.NoBlending : THREE.CustomBlending, 1 / N)
+				// (the lesson look's outlines: web/lesson-outline.js, drawn on each sub-frame's picture)
+				src = r.lesson?.outline ? outlinerOf().draw(scene, g.cam, g.rt.texture, g.W, g.H, r).texture : g.rt.texture
+				if (N > 1) quadPass(g, exportQuad(g).acc, src, g.acc, i === 0 ? THREE.NoBlending : THREE.CustomBlending, 1 / N)
 			}
 			const q = exportQuad(g)
 			if (N > 1) quadPass(g, q.enc, g.acc.texture, g.out)
-			else quadPass(g, q.copy, g.rt.texture, g.out)
+			else quadPass(g, q.copy, src, g.out)
 			let tr = performance.now()
 			if (xstats.probe) {
 				renderer.readRenderTargetPixels(g.out, 0, 0, 1, 1, g.probe ??= new Uint8Array(4))
@@ -6955,13 +7254,21 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		const t0 = performance.now()
 		const g = exportGpu()
 		exportTargets(g, o)
-		const shot = exportShot(g, o.camera, o.W, o.H)
-		const T = Math.min(exportDuration(), Math.max(0, Number.isFinite(t) ? t : 0))
+		const shot = exportShot(g, o.camera, o.W, o.H, o.fps, o.plan)
+		const directed = !!shot.film
+		const T = Math.min(directed ? shot.film.duration : exportDuration(), Math.max(0, Number.isFinite(t) ? t : 0))
 		const t1 = performance.now()
-		exportDraw(g, T, o, shot)
+		const fr = directed ? exportDrawPlan(g, T, o, shot) : (exportDraw(g, T, o, shot), null)
 		if (renderer.getContext().isContextLost()) throw new Error("renderFrame: the GPU context was lost")
 		const t2 = performance.now()
 		g.ctx.putImageData(g.img, 0, 0)
+		if (fr && drawPlanOverlay(g, shot, fr) && o.output === "imagedata") {
+			const marked = g.ctx.getImageData(0, 0, g.W, g.H)
+			xstats.frames++
+			xstats.lastMs = performance.now() - t0
+			xstats.ms += xstats.lastMs
+			return marked
+		}
 		xstats.frames++
 		xstats.lastMs = performance.now() - t0
 		xstats.split = { prep: t1 - t0, draw: t2 - t1 - xstats.readMs, read: xstats.readMs, put: performance.now() - t2 }
@@ -7788,10 +8095,760 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			},
 		}
 	}
+	// ----- directed cameras: a shot plan filmed exactly (web/export/shots.js; CONTRACT.md "Filming module: directed cameras") --------------------------------
+	// camera "director-plan" films a shot plan ({plan}, or {film}: one compiled elsewhere, the lesson compositor's lanes) and camera "focus" the plan
+	// the engine makes when there is no director (Shots.autoPlan: what the subject recognizer says the run is about, big, cut by moment). For both, t is
+	// VIDEO time: a plan may slow the run down, hold a moment or cut back to it, so each frame's run time comes from the film (the focus plan plays
+	// the run at its own pace from 0 to its end: its video time is the run time). A film is planned once per run, picture size, fps and plan, from
+	// the run's track and the drawn models' boxes, measured once the models are in; its frames are drawn band by band (a comparison's lanes, an
+	// inset) with the look the plan asks for (a plain studio backdrop and floor instead of the room and the table: no wood, no wall), the other
+	// lanes' things left out of each band, the key light's shadow fitted to the shot, motion-blur sub-frames kept inside their own shot (never across
+	// a cut), and the plan's marks drawn over the frame through the same projection.
+	let viewCatalog = null
+	const PLAN_CAMERAS = new Set(["focus", "director-plan"])
+	const planIds = new WeakMap() // object -> its content's hash (a plan, a film or another lane's run passed as the same object every frame is hashed once)
+	const objId = (o) => {
+		if (!o || typeof o !== "object") return String(o)
+		let k = planIds.get(o)
+		if (!k) {
+			const j = JSON.stringify(o)
+			k = `${hashStr(j)}.${j.length}`
+			planIds.set(o, k)
+		}
+		return k
+	}
+	/** a 53-bit hash of a string (cyrb53), as hex */
+	function hashStr(str) {
+		let h1 = 0xdeadbeef
+		let h2 = 0x41c6ce57
+		for (let i = 0; i < str.length; i++) {
+			const ch = str.charCodeAt(i)
+			h1 = Math.imul(h1 ^ ch, 2654435761)
+			h2 = Math.imul(h2 ^ ch, 1597334677)
+		}
+		h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+		h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+		return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)
+	}
+	/** The directed cameras' options, normalised: {plan | film, focus: {scene, catalog, hints}, runs (other lanes' runs: {lane: {sim | doc+track,
+	 *  boxes, scene}}), lane (the lane whose run this view shows), key}. Throws a RangeError for a plan camera without what it needs. */
+	function planSpec(camera, o) {
+		if (!PLAN_CAMERAS.has(camera)) return null
+		const focus = o?.focus && typeof o.focus === "object" ? o.focus : null
+		const spec = { focus, runs: o?.runs && typeof o.runs === "object" ? o.runs : null, lane: typeof o?.lane === "string" ? o.lane : null, plan: null, film: null }
+		if (camera === "director-plan") {
+			if (o?.film) spec.film = typeof o.film === "string" ? JSON.parse(o.film) : o.film
+			else if (o?.plan && typeof o.plan === "object") spec.plan = o.plan
+			else throw new RangeError("renderFrame: camera \"director-plan\" needs {plan} (a shot plan: web/export/shot-plan.schema.json) or {film} (one compiled by exportPlan)")
+		}
+		if (spec.runs && !spec.lane && !spec.film) throw new RangeError("renderFrame: with runs (one run per lane), lane names the lane whose run this view shows")
+		spec.key = [camera, spec.plan ? objId(spec.plan) : "", spec.film ? objId(spec.film) : "", focus ? objId({ s: focus.scene ?? null, h: focus.hints ?? null, c: focus.catalog ? 1 : 0 }) : "", spec.runs ? objId(spec.runs) : "", spec.lane ?? ""].join("|")
+		spec.worldKey = [focus ? objId({ s: focus.scene ?? null, h: focus.hints ?? null, c: focus.catalog ? 1 : 0 }) : "", spec.runs ? objId(spec.runs) : "", spec.lane ?? ""].join("|")
+		return spec
+	}
+	/** The solid a root of the run's group draws (a model's holder is named by its solid's id, a plain mesh carries it), or null. */
+	function rootSolid(root, ids) {
+		if (typeof root.userData?.solidId === "string") return root.userData.solidId
+		if (ids.has(root.name)) return root.name
+		let found = null
+		root.traverse((o) => {
+			if (!found && typeof o.userData?.solidId === "string") found = o.userData.solidId
+		})
+		return found
+	}
+	/** The drawn models' boxes of the run shown, once its models are in: each mover's box in its own frame (moverBoxLocal, a round part's radius),
+	 *  each still thing's world box. Shots.makeWorld takes them in place of the physics outlines (sails, fan guards, lamp heads, liquids). */
+	function planBoxes(r) {
+		if (r.planBoxes) return r.planBoxes
+		const out = new Map()
+		const ids = new Set(r.doc.solids.map((s) => s.id))
+		const kindOf = new Map(r.doc.solids.map((s) => [s.id, s.kind]))
+		updateParts(0)
+		try {
+			for (const p of r.parts) {
+				const was = p.mesh.visible
+				p.mesh.visible = true // (a body shrunk away at t = 0 still has its model's box)
+				const b = moverBoxLocal(p)
+				p.mesh.visible = was
+				if (b) out.set(p.id, b.round !== undefined ? { round: b.round, z0: b.z0, z1: b.z1 } : { x0: b.x0, x1: b.x1, y0: b.y0, y1: b.y1, z0: b.z0, z1: b.z1 })
+			}
+			const acc = new Map()
+			for (const root of r.group.children.slice(1)) {
+				// (a mount or a stand the view draws to hold a part up is not the part: a retort stand under a laser would frame the stand; nor is a
+				// person's hand, web/hands.js, whose arm runs out of the picture: a magnet in a fist would frame the arm)
+				if (root === r.blobs || root === r.hands?.group || String(root.name).startsWith("plugin:") || root.userData.mount || root.userData.stand) continue
+				const sid = rootSolid(root, ids)
+				if (!sid || out.has(sid) || kindOf.get(sid) !== "static") continue
+				const pts = []
+				boxCorners(root, pts)
+				if (!pts.length) continue
+				const w = acc.get(sid) ?? [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity]
+				for (let i = 0; i < pts.length; i += 3) {
+					w[0] = Math.min(w[0], pts[i])
+					w[1] = Math.max(w[1], pts[i])
+					w[2] = Math.min(w[2], pts[i + 1])
+					w[3] = Math.max(w[3], pts[i + 1])
+					w[4] = Math.min(w[4], pts[i + 2])
+					w[5] = Math.max(w[5], pts[i + 2])
+				}
+				acc.set(sid, w)
+			}
+			for (const [sid, w] of acc) out.set(sid, { world: w })
+		} finally {
+			updateParts(lastT)
+		}
+		r.planBoxes = out
+		return out
+	}
+	/** The world a plan of the run shown can name (Shots.makeWorld): this run with its models' boxes, the scene and the caller's hints when given,
+	 *  and other lanes' runs (one run per lane). Cached per run and world key. */
+	function planWorld(spec) {
+		const c = (run.planWorlds ??= new Map())
+		if (c.has(spec.worldKey)) return c.get(spec.worldKey)
+		const boxes = planBoxes(run)
+		const env = run.plugins?.find((p) => p.environment)?.environment ?? null
+		const mine = { sim: run.sim, scene: spec.focus?.scene ?? undefined, boxes: (sid) => boxes.get(sid) ?? null, hints: spec.focus?.hints ?? {}, environment: env ? { room: env.room !== false, table: env.table !== false } : null }
+		const catalog = spec.focus?.catalog ?? viewCatalog ?? { types: [] }
+		let w
+		if (spec.runs) {
+			const runs = {}
+			for (const [lane, v] of Object.entries(spec.runs)) {
+				const sim = v?.sim ?? (v?.doc && v?.track ? v : null)
+				if (!sim) throw new RangeError(`renderFrame: runs.${lane} has no run (its sim, or its doc and track)`)
+				runs[lane] = { sim, scene: v.scene, boxes: v.boxes ?? null, hints: v.hints }
+			}
+			runs[spec.lane] = mine
+			w = Shots.makeWorld({ runs, catalog })
+		} else w = Shots.makeWorld({ ...mine, run: run.sim, catalog })
+		c.set(spec.worldKey, w)
+		return w
+	}
+	/** A directed camera's shot: its film (compiled here, or one handed in), the plan it films, and what each band leaves out. */
+	function planShot(kind, W, H, fps, spec) {
+		let film
+		let plan = null
+		let world = null
+		const env = run.plugins?.find((p) => p.environment)?.environment ?? null
+		if (spec.film) {
+			film = Shots.filmFromJSON(spec.film)
+			if (film.W !== W || film.H !== H) throw new RangeError(`renderFrame: the film was made for ${film.W} x ${film.H}, not ${W} x ${H}`)
+		} else {
+			world = planWorld(spec)
+			plan = kind === "focus" ? Shots.autoPlan(world, { width: W, height: H, fps, environment: env ? { room: env.room !== false, table: env.table !== false } : null }) : spec.plan
+			const res = Shots.resolvePlan(plan, world)
+			if (!res.ok) throw new RangeError(`renderFrame: the shot plan names what the run does not have: ${res.errors.map((e) => `${e.at}: ${e.message}${e.nearest?.length ? ` (nearest: ${e.nearest.join(", ")})` : ""}`).join("; ")}`)
+			try {
+				film = Shots.compile(plan, world, { width: W, height: H, fps, kind })
+			} catch (e) {
+				throw new RangeError(`renderFrame: ${e.message}`)
+			}
+		}
+		// the roots and contact shades of each item, for leaving another lane's things out of a band
+		const ids = new Set(run.doc.solids.map((s) => s.id))
+		const itemOf = new Map(run.doc.solids.map((s) => [s.id, s.item]))
+		const roots = new Map()
+		const add = (item, o) => {
+			if (!item || !o) return
+			if (!roots.has(item)) roots.set(item, [])
+			roots.get(item).push(o)
+		}
+		for (const root of run.group.children.slice(1)) {
+			if (root === run.blobs || root === run.hands?.group || String(root.name).startsWith("plugin:")) continue // (the hands: planHide, each with its item)
+			add(itemOf.get(rootSolid(root, ids)), root)
+		}
+		for (const p of run.parts) add(itemOf.get(p.id), p.blob)
+		// (what a module's view plug-in draws for an item it names as its own, userData.item: a lane's legs, a display's pole, a trail)
+		for (const g of run.group.children) if (String(g.name).startsWith("plugin:")) g.traverse((o) => o !== g && typeof o.userData?.item === "string" && add(o.userData.item, o))
+		let report = null
+		return {
+			kind,
+			film,
+			plan,
+			world,
+			lane: spec.lane,
+			runs: !!spec.runs || film.perLaneRuns,
+			roots,
+			ids,
+			itemOf,
+			get report() {
+				if (!report && film._ctx) report = Shots.measure(film)
+				return report
+			},
+			/** the shot's camera at video time tau for band bi (pose of a THREE camera, as the other shots' at(t, cam)) */
+			at(tau, cam, bi = 0) {
+				const fr = Shots.frameAt(film, tau)
+				const b = fr.bands[Math.min(bi, fr.bands.length - 1)]
+				posePlanCam(cam, b.pose, b.rect[2] / b.rect[3])
+			},
+		}
+	}
+	function posePlanCam(cam, p, asp) {
+		const c = Shots.cameraOf(p)
+		setPose(cam, c.position[0], c.position[1], c.position[2], c.target[0], c.target[1], c.target[2], p.hfov, asp)
+		cam.near = Math.max(0.005, Math.min(0.5, p.d / 60))
+		cam.far = Math.max(80, 6 * p.d)
+		cam.updateProjectionMatrix()
+	}
+	/** Which bands of a frame this view draws: all of them, or, for a film of one run per lane, the bands of the lane whose run is shown (a picture
+	 *  of one or every lane: the first lane's run). */
+	function planDrawn(shot, sh) {
+		return sh.bands.map((b, i) => i).filter((i) => {
+			if (!shot.runs) return true
+			const lane = sh.bands[i].lane
+			const first = shot.film.lanes?.[0]?.id ?? null
+			return lane ? lane === shot.lane : shot.lane === first || !shot.lane
+		})
+	}
+	const STUDIO = { floor: null }
+	/** A frame's look (section 3.9), undone after the frame: studio (the room hidden, a plain backdrop in the tone), the ground drawn as a seamless
+	 *  matte studio floor at the table top's height fading into the backdrop (sweep), the table, or nothing; the modules' boards and words hidden.
+	 *  A run drawn in the lesson look (web/lesson-look.js; no module's world) keeps its own colours: its backdrop for studio and room alike (the
+	 *  lesson look has no room), the sweep in its table's colour and finish (lessonTableMaterial), fogged into its backdrop. */
+	function applyPlanLook(look, d) {
+		const saved = { roomWanted, tableWanted, bg: scene.background, fog: scene.fog }
+		const L = run.lesson && !run.plugins?.find((p) => p.environment) ? run.lesson : null // (as applyEnvironment: a module's world wins over the lesson look)
+		const studio = look.backdrop === "studio" || (!!L && look.backdrop === "room")
+		const back = L ? (L.bg ??= new THREE.Color(L.backdrop)) : new THREE.Color(Shots.TONES[look.tone] ?? Shots.TONES.mid)
+		if (studio) {
+			roomWanted = false
+			scene.background = back
+		} else if (look.backdrop === "room") roomWanted = true
+		if (look.ground === "sweep" || look.ground === "hidden") tableWanted = false
+		if (look.ground === "sweep") {
+			if (!STUDIO.floor) {
+				STUDIO.floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.92, metalness: 0 }))
+				STUDIO.floor.receiveShadow = true
+				STUDIO.floor.name = "studio-floor"
+				STUDIO.floor.visible = false
+				scene.add(STUDIO.floor)
+			}
+			const tb = run.table
+			const top = tb ? tb.at.y + (tb.body?.height ?? 0) / 2 : TABLE_TOP
+			STUDIO.floor.position.set(tb ? tb.at.x : 1.3, top - 0.0002, 0)
+			const fm = STUDIO.floor.material
+			fm.color.set(L ? L.table : (Shots.FLOORS[look.tone] ?? Shots.FLOORS.mid))
+			fm.roughness = L ? 0.93 : 0.92
+			fm.envMapIntensity = L ? 0.4 : 1
+			STUDIO.floor.visible = true
+			scene.fog = new THREE.Fog(studio ? back : (scene.background?.isColor ? scene.background : back), d + 0.6, d + 4.5)
+		}
+		setRoomVisible(true)
+		cabinet.visible = cabinetWanted && roomWanted
+		if (run.tableMesh) run.tableMesh.visible = tableWanted
+		return () => {
+			roomWanted = saved.roomWanted
+			tableWanted = saved.tableWanted
+			scene.background = saved.bg
+			scene.fog = saved.fog
+			if (STUDIO.floor) STUDIO.floor.visible = false
+			setRoomVisible(true)
+			cabinet.visible = cabinetWanted && roomWanted
+			if (run?.tableMesh) run.tableMesh.visible = tableWanted
+		}
+	}
+	/** Leave out of the picture what a band must not show (another lane's things and their contact shades; the modules' words and boards when the
+	 *  look hides them), after the parts are posed; -> undo. */
+	function planHide(shot, items, labels) {
+		const hidden = []
+		const off = (o) => {
+			if (o && o.visible) {
+				o.visible = false
+				hidden.push(o)
+			}
+		}
+		for (const id of items ?? []) for (const o of shot.roots.get(id) ?? []) off(o)
+		// (a person's hand and arm, web/hands.js, go with the item it holds, pushes or tips: each rig looked up now, as the hands are built again
+		// whenever the posts are placed again)
+		if (items?.length && run.hands?.group) for (const c of run.hands.group.children) if (items.includes(shot.itemOf.get(rootSolid(c, shot.ids)))) off(c)
+		if (labels)
+			run.group.traverse((o) => {
+				if (o.visible && o.layers.mask === 1 << PANE_LAYER && (o.isSprite || o.parent?.name?.startsWith?.("plugin:"))) off(o)
+			})
+		return () => {
+			for (const o of hidden) o.visible = true
+		}
+	}
+	/** The key light's shadow fitted to what the bands see (look.light "subject"): crisp contact shadows close up. -> undo. */
+	function fitShadowToShot(bands) {
+		const cam = key.shadow.camera
+		const saved = [cam.left, cam.right, cam.top, cam.bottom, cam.near, cam.far]
+		let x0 = Infinity
+		let x1 = -Infinity
+		let y0 = Infinity
+		let y1 = -Infinity
+		for (const b of bands) {
+			const p = b.pose
+			const asp = b.rect[2] / b.rect[3]
+			const hw = p.d * Math.tan(p.hfov / 2) * (1.25 + Math.abs(Math.sin(p.yaw)))
+			const hh = (hw / asp) * 1.25
+			x0 = Math.min(x0, p.L[0] - hw)
+			x1 = Math.max(x1, p.L[0] + hw)
+			y0 = Math.min(y0, p.L[1] - hh)
+			y1 = Math.max(y1, p.L[1] + hh)
+		}
+		if (!Number.isFinite(x0)) return () => {}
+		const tb = run.table?.body
+		const half = (tb?.depth ?? TABLE_DEPTH) / 2 + 0.05
+		const top = run.table ? run.table.at.y + (tb?.height ?? 0) / 2 : 0
+		// (the light comes from the front left and above: what stands left of or above the picture can throw its shadow into it)
+		const box = new THREE.Box3(new THREE.Vector3(x0 - 0.6, Math.min(y0, top) - 0.05, -half), new THREE.Vector3(x1 + 0.3, Math.max(y1, top) + 0.6, half))
+		const tmp = new THREE.OrthographicCamera()
+		tmp.position.copy(key.position)
+		tmp.lookAt(key.target.position)
+		tmp.updateMatrixWorld()
+		const inv = tmp.matrixWorldInverse
+		let a0 = Infinity
+		let a1 = -Infinity
+		let b0 = Infinity
+		let b1 = -Infinity
+		let c0 = Infinity
+		let c1 = -Infinity
+		for (const x of [box.min.x, box.max.x])
+			for (const y of [box.min.y, box.max.y])
+				for (const z of [box.min.z, box.max.z]) {
+					const v = new THREE.Vector3(x, y, z).applyMatrix4(inv)
+					a0 = Math.min(a0, v.x)
+					a1 = Math.max(a1, v.x)
+					b0 = Math.min(b0, v.y)
+					b1 = Math.max(b1, v.y)
+					c0 = Math.min(c0, v.z)
+					c1 = Math.max(c1, v.z)
+				}
+		cam.left = a0
+		cam.right = a1
+		cam.bottom = b0
+		cam.top = b1
+		cam.near = Math.max(0.1, -c1 - 0.3)
+		cam.far = -c0 + 0.3
+		cam.updateProjectionMatrix()
+		return () => {
+			;[cam.left, cam.right, cam.top, cam.bottom, cam.near, cam.far] = saved
+			cam.updateProjectionMatrix()
+		}
+	}
+	/** Pose the parts at t, leave out what the band hides, and draw the key light's shadow map for that (exportPose's pass). -> undo of the hiding. */
+	function planPose(g, t, shot, items, labels) {
+		updateParts(t)
+		lessonDraw(run) // (the lesson look on what is drawn: a module's liquid made for this moment)
+		const undo = planHide(shot, items, labels)
+		const tm = run.tableMesh
+		if (tm) tm.visible = false
+		setRoomVisible(false)
+		if (run.blobs) run.blobs.visible = false
+		const floorOn = STUDIO.floor?.visible
+		if (STUDIO.floor) STUDIO.floor.visible = false
+		renderer.shadowMap.needsUpdate = true
+		renderer.setRenderTarget(g.tiny)
+		renderer.render(scene, g.nullCam)
+		renderer.shadowMap.needsUpdate = false
+		setRoomVisible(true)
+		cabinet.visible = cabinetWanted && roomWanted
+		if (run.blobs) run.blobs.visible = true
+		if (tm) tm.visible = tableWanted
+		if (STUDIO.floor) STUDIO.floor.visible = !!floorOn
+		return undo
+	}
+	/** How many sub-frames a directed frame needs (blurCount, over every band drawn, between the shutter's opening and closing inside its shot). */
+	function blurCountPlan(g, tau, o, shot, drawn, lo, hi) {
+		const film = shot.film
+		const ta = Math.min(hi, Math.max(lo, tau - o.open / 2))
+		const tb = Math.min(hi, Math.max(lo, tau + o.open / 2))
+		if (!(tb > ta)) return 1
+		const fa = Shots.frameAt(film, ta)
+		const fb = Shots.frameAt(film, tb)
+		const A = exportAnalysis()
+		const ca = (g.camA ??= new THREE.PerspectiveCamera())
+		const cb = (g.camB ??= new THREE.PerspectiveCamera())
+		const pa = placementsAt(run.track, fa.t)
+		const pb = placementsAt(run.track, fb.t)
+		let px = 0
+		for (const bi of drawn) {
+			const ra = fa.bands[bi]
+			const rect = ra.rect
+			posePlanCam(ca, ra.pose, rect[2] / rect[3])
+			posePlanCam(cb, fb.bands[bi].pose, rect[2] / rect[3])
+			const move = (xa, ya, za, xb, yb, zb) => {
+				_v1.set(xa, ya, za).project(ca)
+				_v2.set(xb, yb, zb).project(cb)
+				if (_v1.z > 1 || _v2.z > 1) return
+				px = Math.max(px, Math.hypot(((_v2.x - _v1.x) * rect[2]) / 2, ((_v2.y - _v1.y) * rect[3]) / 2))
+			}
+			for (let j = 0; j < A.m; j++) {
+				if (!A.sig[j]) continue
+				const id = A.movers[j].id
+				const a = pa[id]
+				const b = pb[id]
+				if (!a || !b) continue
+				const e = A.ext[j]
+				for (let c = 0; c < 4; c++) {
+					const ang = (c * Math.PI) / 2
+					move(a.x + e * Math.cos(a.angle + ang), a.y + e * Math.sin(a.angle + ang), A.hz[j], b.x + e * Math.cos(b.angle + ang), b.y + e * Math.sin(b.angle + ang), A.hz[j])
+				}
+			}
+			ca.updateMatrixWorld()
+			for (let i = 0; i < 9; i++) {
+				_v3.set((i % 3) - 1, Math.floor(i / 3) - 1, 0.5).unproject(ca).sub(ca.position)
+				if (Math.abs(_v3.z) < 1e-9) continue
+				const k = -ca.position.z / _v3.z
+				if (!(k > 0)) continue
+				const x = ca.position.x + _v3.x * k
+				const y = ca.position.y + _v3.y * k
+				move(x, y, 0, x, y, 0)
+			}
+		}
+		const runs = fb.t > fa.t + 1e-9
+		const busy = runs && (run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(fa.t - run.tRelease) < 0.1) || (run.gates.length > 0 && fa.t > run.tRelease - 0.02 && fa.t < run.tRelease + 0.2) ||
+			(run.retreats.length > 0 && fa.t > run.tRelease && fa.t < run.tRelease + RETREAT.delay + RETREAT.seconds + 0.02) || (run.hangers.length > 0 && fa.t > run.tRelease - 0.02 && fa.t < run.tRelease + 0.7) || !!run.hands?.busy(fa.t) || !!run.hands?.busy(fb.t)) // (as blurCount: a pin and post going away, a holder from above lifting; a hand)
+		if (px < 0.5 && !busy) return 1
+		return Math.min(o.most, Math.max(o.blur, Math.ceil(px / BLUR_STEP_PX)))
+	}
+	/** Draw one frame of a directed camera (video time tau) into g.out and read it into g.img: each band drawn with its own camera into its own part of
+	 *  the picture, the look applied, the sub-frames kept inside the frame's shot. Restores everything the canvas's picture depends on. */
+	function exportDrawPlan(g, tau, o, shot) {
+		const r = run
+		const film = shot.film
+		const fr = Shots.frameAt(film, tau)
+		const sh = film.shots[fr.shot]
+		const lo = sh.tau0
+		const hi = sh.tau0 + (sh.n - 0.5) / film.fps // (half a frame past the shot's last frame at most: never into the next shot)
+		const drawn = planDrawn(shot, sh)
+		const look = sh.look
+		const prevRt = renderer.getRenderTarget()
+		const autoClear = renderer.autoClear
+		const panes = r.panes.filter((pn) => pn.mesh.visible)
+		const tex = reflUniforms.tReflect.value
+		const mtx = reflUniforms.uReflMatrix.value
+		const full = reflTex.full
+		const base = reflTex.base
+		const k = refl.k.value
+		const undo = []
+		const clearC = new THREE.Color()
+		renderer.getClearColor(clearC)
+		const clearA = renderer.getClearAlpha()
+		try {
+			for (const pn of panes) pn.mesh.visible = false
+			reflUniforms.tReflect.value = g.refl.texture
+			reflUniforms.uReflMatrix.value = g.matrix
+			refl.k.value = refl.enabled ? 1 : 0
+			const N = o.blur > 1 ? blurCountPlan(g, tau, o, shot, drawn, lo, hi) : 1
+			xstats.blurN = N
+			undo.push(applyPlanLook(look, fr.bands[0].pose.d))
+			// (a starting gate shows what holds a toy until its release; a held picture of the setup, nothing moving, shows the toy as the lesson draws
+			// it, no bar across it: the gate and its post are drawn only in shots that play, where it lifts)
+			if (sh.rate === 0 && fr.t <= (run.tRelease ?? 0) + 1e-6 && run.gates?.length) {
+				const off = []
+				for (const gt of run.gates) for (const o of [gt.root, gt.post, gt.postBlob]) if (o?.visible) (o.visible = false), off.push(o)
+				undo.push(() => {
+					for (const o of off) o.visible = true
+				})
+			}
+			if (look.light === "subject") undo.push(fitShadowToShot(drawn.map((i) => fr.bands[i])))
+			// the coils' and chains' detail for the frame's first band, then the chrome balls' maps once, at the frame's moment
+			updateParts(fr.t)
+			if (drawn.length) posePlanCam(g.cam, fr.bands[drawn[0]].pose, fr.bands[drawn[0]].rect[2] / fr.bands[drawn[0]].rect[3])
+			applyLods(g.cam, drawn.length ? fr.bands[drawn[0]].rect[3] : g.H)
+			undo.push(planPose(g, fr.t, shot, [], look.labels === "hidden"))
+			exportMirrors(g)
+			if (N > 1 && !g.acc) {
+				g.acc = new THREE.WebGLRenderTarget(g.W, g.H, {
+					type: renderer.extensions.has("EXT_float_blend") ? THREE.FloatType : THREE.HalfFloatType,
+					minFilter: THREE.NearestFilter,
+					magFilter: THREE.NearestFilter,
+					generateMipmaps: false,
+					depthBuffer: false,
+					stencilBuffer: false,
+				})
+			}
+			const mirror = refl.enabled && look.ground === "table" && !!r.tableMesh && !r.lesson // (the lesson look's table mirrors nothing)
+			const outline = !!r.lesson?.outline // (the lesson look's outlines, web/lesson-outline.js: each band's inside its own rectangle)
+			let src = g.rt.texture // (what the picture is read from: the main pass's, or its outlined copy)
+			const hides = sh.hide ?? []
+			const sameHide = hides.every((h) => !h.length)
+			const bg = scene.background?.isColor ? scene.background : clearC
+			for (let i = 0; i < N; i++) {
+				const ti = N > 1 ? Math.min(hi, Math.max(lo, tau + ((i + 0.5) / N - 0.5) * o.open)) : tau
+				const fi = N > 1 ? Shots.frameAt(film, ti) : fr
+				// (the whole picture first takes the backdrop: a band this view does not draw, a lane filmed in another run, stays plain)
+				g.rt.viewport.set(0, 0, g.W, g.H)
+				g.rt.scissor.set(0, 0, g.W, g.H)
+				g.rt.scissorTest = false
+				renderer.setRenderTarget(g.rt)
+				renderer.setClearColor(bg, 1)
+				renderer.clear(true, true, false)
+				let undoHide = sameHide ? planPose(g, fi.t, shot, [], look.labels === "hidden") : null
+				const job = outline ? outlinerOf().begin(g.W, g.H) : null
+				for (const bi of drawn) {
+					const b = fi.bands[bi]
+					const [x, y, w, h] = b.rect
+					if (!sameHide) undoHide = planPose(g, fi.t, shot, hides[bi], look.labels === "hidden")
+					posePlanCam(g.cam, b.pose, w / h)
+					if (mirror) renderReflection(g.cam, false, g.refl, g.matrix, g.reflCam, r.lens > 0 ? (g.reflBase ??= mirrorBase(g.refl)) : null)
+					g.rt.viewport.set(x, g.H - y - h, w, h)
+					g.rt.scissor.set(x, g.H - y - h, w, h)
+					g.rt.scissorTest = true
+					renderer.setRenderTarget(g.rt)
+					renderer.render(scene, g.cam)
+					job?.band(scene, g.cam, g.rt.texture, b.rect, r) // (its outlines while its things are hidden as it hides them)
+					if (!sameHide) {
+						undoHide()
+						undoHide = null
+					}
+				}
+				undoHide?.()
+				g.rt.viewport.set(0, 0, g.W, g.H)
+				g.rt.scissor.set(0, 0, g.W, g.H)
+				g.rt.scissorTest = false
+				src = job?.target?.texture ?? g.rt.texture
+				if (N > 1) quadPass(g, exportQuad(g).acc, src, g.acc, i === 0 ? THREE.NoBlending : THREE.CustomBlending, 1 / N)
+			}
+			const q = exportQuad(g)
+			if (N > 1) quadPass(g, q.enc, g.acc.texture, g.out)
+			else quadPass(g, q.copy, src, g.out)
+			const tr = performance.now()
+			exportRead(g)
+			xstats.readMs = performance.now() - tr
+		} finally {
+			g.rt.viewport.set(0, 0, g.W, g.H)
+			g.rt.scissor.set(0, 0, g.W, g.H)
+			g.rt.scissorTest = false
+			renderer.setClearColor(clearC, clearA)
+			for (let i = undo.length - 1; i >= 0; i--) undo[i]()
+			renderer.autoClear = autoClear
+			renderer.setRenderTarget(prevRt)
+			reflUniforms.tReflect.value = tex
+			reflUniforms.uReflMatrix.value = mtx
+			reflTex.full = full
+			reflTex.base = base
+			refl.k.value = k
+			for (const pn of panes) pn.mesh.visible = true
+			restoreMirrors()
+			renderer.shadowMap.needsUpdate = false
+			shadowKey = ""
+			if (run === r) updateParts(lastT)
+		}
+		return fr
+	}
+	/** The plan's marks and the shot's badge over a drawn frame (2D, through each band's own projection; type sized to the frame: key readings 5 % of
+	 *  its height (their letters 3.5 %), other words 3.5 %, corner readouts 6 %), the lines between split bands, an inset's frame, the look's vignette. */
+	function drawPlanOverlay(g, shot, fr) {
+		const film = shot.film
+		const sh = film.shots[fr.shot]
+		const marks = film.marks?.[fr.frame] ?? null
+		const drawn = planDrawn(shot, sh)
+		const ctx = g.ctx
+		const W = g.W
+		const H = g.H
+		const cam = (g.markCam ??= new THREE.PerspectiveCamera())
+		const v = new THREE.Vector3()
+		let drewAny = false
+		ctx.save()
+		ctx.lineCap = "round"
+		ctx.lineJoin = "round"
+		const font = (k) => `600 ${Math.max(10, Math.round(k * H))}px "Helvetica Neue", Helvetica, Arial, sans-serif`
+		// (the words already written in this band: a label that would land on one moves away from its anchor, up for above, down otherwise, so two
+		// marks on one thing never print over each other)
+		let placed = []
+		let inBand = [0, 0, W, H] // (the band being written in: words are kept whole inside it, never cut by its edge)
+		const text = (s, x, y, anchor, key) => {
+			// (a key reading, a measured number the answer hangs on: its letters about 3.5 % of the picture's height (type 5 %); words 3.5 %)
+			ctx.font = font(key ? 0.05 : 0.035)
+			const m = ctx.measureText(s)
+			const th = (key ? 0.05 : 0.035) * H
+			const pad = 0.25 * th
+			let tx = x
+			let ty = y
+			if (anchor === "above") {
+				tx = x - m.width / 2
+				ty = y - pad
+			} else if (anchor === "below") {
+				tx = x - m.width / 2
+				ty = y + th + pad
+			} else if (anchor === "right") {
+				tx = x + pad
+				ty = y + th / 2.8
+			} else {
+				tx = x - m.width / 2
+				ty = y + th / 2.8
+			}
+			const dir = anchor === "above" ? -1 : 1
+			const [bx, by, bw, bh] = inBand
+			// (what it names is out of this band's picture: no words for it here; words anchored just above or below the band's edge, a bar's number over
+			// a bar drawn near the top, are pulled inside it)
+			if (x < bx || x > bx + bw || y < by - 0.15 * bh || y > by + bh + 0.15 * bh) return
+			tx = Math.min(Math.max(tx, bx + pad), Math.max(bx + pad, bx + bw - m.width - pad))
+			ty = Math.min(Math.max(ty, by + th + pad), Math.max(by + th + pad, by + bh - pad))
+			const hits = (r) => placed.find((o) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h)
+			for (let n = 0; n < 8; n++) {
+				const o = hits({ x: tx - pad, y: ty - th - pad, w: m.width + 2 * pad, h: th + 2 * pad })
+				if (!o) break
+				ty = dir < 0 ? o.y - pad : o.y + o.h + th + pad
+			}
+			placed.push({ x: tx - pad, y: ty - th - pad, w: m.width + 2 * pad, h: th + 2 * pad })
+			ctx.lineWidth = Math.max(2, 0.16 * th)
+			ctx.strokeStyle = "rgba(10,12,16,0.85)"
+			ctx.strokeText(s, tx, ty)
+			ctx.fillStyle = "#ffffff"
+			ctx.fillText(s, tx, ty)
+		}
+		for (const bi of drawn) {
+			const b = fr.bands[bi]
+			const [x, y, w, h] = b.rect
+			const prims = marks?.[bi] ?? []
+			if (!prims.length && !b.inset) continue
+			drewAny = true
+			placed = []
+			inBand = b.rect
+			ctx.save()
+			ctx.beginPath()
+			ctx.rect(x, y, w, h)
+			ctx.clip()
+			posePlanCam(cam, b.pose, w / h)
+			let screenDy = 0
+			const P = (X) => {
+				v.set(X[0], X[1], X[2] ?? 0).applyMatrix4(cam.matrixWorldInverse)
+				if (v.z >= -cam.near) return null
+				v.set(X[0], X[1], X[2] ?? 0).project(cam)
+				return [x + ((v.x + 1) / 2) * w, y + ((1 - v.y) / 2) * h]
+			}
+			const k = H / 1080
+			for (const q of prims) {
+				if (q.type === "line" || q.type === "poly") {
+					const pts = (q.type === "line" ? [q.a, q.b] : q.pts).map(P)
+					if (pts.some((p) => !p)) continue
+					ctx.strokeStyle = q.color ?? "#ffd84a"
+					ctx.lineWidth = Math.max(1.5, (q.width ?? 3) * 1.6 * k)
+					ctx.setLineDash(q.dash ? [12 * k, 9 * k] : [])
+					ctx.beginPath()
+					pts.forEach((p, i) => (i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])))
+					ctx.stroke()
+				} else if (q.type === "text") {
+					const p = P(q.at)
+					if (p) {
+						ctx.setLineDash([])
+						text(q.text, p[0], p[1], q.anchor, !!q.key)
+					}
+				} else if (q.type === "screen") {
+					// (a corner readout: a measured number the answer hangs on is big, 6 % of the picture's height, on a dark plate; words 4 %; two
+					// readouts in one band stack downward)
+					ctx.setLineDash([])
+					const k2 = q.big ? 0.06 : 0.04
+					ctx.font = font(k2)
+					const tw = ctx.measureText(q.text).width
+					const th = k2 * H
+					const px = x + 0.03 * h
+					const py = y + 0.03 * h + screenDy
+					ctx.fillStyle = "rgba(12,14,18,0.62)"
+					ctx.beginPath()
+					ctx.roundRect?.(px - 0.3 * th, py, tw + 0.6 * th, 1.45 * th, 0.25 * th)
+					if (ctx.roundRect) ctx.fill()
+					else ctx.fillRect(px - 0.3 * th, py, tw + 0.6 * th, 1.45 * th)
+					ctx.lineWidth = Math.max(2, 0.12 * th)
+					ctx.strokeStyle = "rgba(10,12,16,0.85)"
+					ctx.strokeText(q.text, px, py + 1.08 * th)
+					ctx.fillStyle = "#ffffff"
+					ctx.fillText(q.text, px, py + 1.08 * th)
+					screenDy += 1.6 * th
+				}
+			}
+			ctx.restore()
+			if (b.inset) {
+				ctx.setLineDash([])
+				ctx.strokeStyle = "rgba(255,255,255,0.9)"
+				ctx.lineWidth = Math.max(2, 0.003 * H)
+				ctx.strokeRect(x, y, w, h)
+			}
+		}
+		// the lines between split bands
+		const main = sh.bands.filter((b) => !b.inset)
+		if (main.length > 1) {
+			drewAny = true
+			ctx.setLineDash([])
+			ctx.fillStyle = "#101215"
+			const t = Math.max(2, Math.round(0.004 * H))
+			for (const b of main.slice(1)) {
+				const [x, y, w, h] = b.rect
+				if (sh.arrange === "columns") ctx.fillRect(x - t / 2, 0, t, H)
+				else ctx.fillRect(0, y - t / 2, W, t)
+			}
+		}
+		if (sh.look?.vignette > 0) {
+			drewAny = true
+			const gr = ctx.createRadialGradient(W / 2, H / 2, 0.35 * Math.hypot(W, H), W / 2, H / 2, 0.72 * Math.hypot(W, H))
+			gr.addColorStop(0, "rgba(0,0,0,0)")
+			gr.addColorStop(1, `rgba(0,0,0,${Math.min(0.3, sh.look.vignette) * 2})`)
+			ctx.fillStyle = gr
+			ctx.fillRect(0, 0, W, H)
+		}
+		if (sh.label) {
+			drewAny = true
+			ctx.setLineDash([])
+			ctx.font = font(0.032)
+			const m = ctx.measureText(sh.label)
+			const th = 0.032 * H
+			const pad = 0.5 * th
+			const bw = m.width + 2 * pad
+			const bh = th + 1.2 * pad
+			// (top right, or top left when an inset sits in the top right corner)
+			const topRight = sh.bands.some((b) => b.inset && b.rect[0] + b.rect[2] > W - bw - 0.05 * H && b.rect[1] < bh + 0.05 * H)
+			const bx = topRight ? 0.025 * H : W - bw - 0.025 * H
+			const by = 0.025 * H
+			ctx.fillStyle = "rgba(12,14,18,0.72)"
+			ctx.beginPath()
+			ctx.roundRect ? ctx.roundRect(bx, by, bw, bh, 0.3 * th) : ctx.rect(bx, by, bw, bh)
+			ctx.fill()
+			ctx.fillStyle = "#ffffff"
+			ctx.fillText(sh.label, bx + pad, by + pad * 0.6 + th * 0.85)
+		}
+		ctx.restore()
+		return drewAny
+	}
+	/** Where the machine-plane point (x, y, z) shows in a directed frame, across the whole picture (-1..1 left to right, bottom to top): through the
+	 *  band of o.lane, else the first band whose picture holds it, else the nearest. */
+	function planProject(shot, tau, x, y, z, o) {
+		const fr = Shots.frameAt(shot.film, tau)
+		const cam = (xproj.pcam ??= new THREE.PerspectiveCamera())
+		const v = new THREE.Vector3()
+		let best = null
+		const sh = shot.film.shots[fr.shot]
+		const order = fr.bands.map((b, i) => i).filter((i) => !fr.bands[i].inset)
+		for (const bi of order) {
+			const b = fr.bands[bi]
+			if (o?.lane && b.lane && b.lane !== o.lane) continue
+			const [rx, ry, rw, rh] = b.rect
+			posePlanCam(cam, b.pose, rw / rh)
+			v.set(x, y, z).applyMatrix4(cam.matrixWorldInverse)
+			if (v.z >= -cam.near) continue
+			v.set(x, y, z).project(cam)
+			if (!Number.isFinite(v.x) || !Number.isFinite(v.y)) continue
+			const X = ((rx + ((v.x + 1) / 2) * rw) / shot.film.W) * 2 - 1
+			const Y = 1 - ((ry + ((1 - v.y) / 2) * rh) / shot.film.H) * 2
+			const inside = Math.abs(v.x) <= 1 && Math.abs(v.y) <= 1
+			const dist = Math.hypot(v.x, v.y)
+			if (inside) return { x: X, y: Y, lane: b.lane, band: bi, shot: sh.id }
+			if (!best || dist < best.dist) best = { x: X, y: Y, lane: b.lane, band: bi, shot: sh.id, dist }
+		}
+		if (!best) return null
+		delete best.dist
+		return best
+	}
 	/** The export's shot for this camera and picture size: renderFrame's and exportProject's are the same object. A path of the run (wide, follow, orbit, director)
 	 *  is made once per run; 'live' (the canvas's camera as it is) once per export session (g), else afresh. */
 	const xshots = { serial: -1, map: new Map() }
-	function exportShot(g, kind, W, H) {
+	function exportShot(g, kind, W, H, fps = 60, spec = null) {
+		if (PLAN_CAMERAS.has(kind)) {
+			if (xshots.serial !== run.serial) {
+				xshots.serial = run.serial
+				xshots.map.clear()
+			}
+			const sp = spec ?? planSpec(kind, {})
+			const k = `${kind}|${W}x${H}|${fps}|${sp.key}`
+			let s = xshots.map.get(k)
+			if (!s) {
+				s = planShot(kind, W, H, fps, sp)
+				xshots.map.set(k, s)
+			}
+			return s
+		}
 		if (kind === "live") {
 			const k = `live|${W}x${H}|${run.serial}`
 			let s = g?.shots.get(k)
@@ -7823,7 +8880,20 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		const W = Math.round(Number(o?.width ?? 1920))
 		const H = Math.round(Number(o?.height ?? 1080))
 		if (!(W > 0 && H > 0)) return null
-		const kind = EXPORT_CAMERAS.includes(o?.camera) ? o.camera : "wide"
+		const kind0 = o?.camera === "plan" ? "director-plan" : o?.camera
+		const kind = EXPORT_CAMERAS.includes(kind0) ? kind0 : "wide"
+		if (PLAN_CAMERAS.has(kind)) {
+			// (a directed camera: t is video time, and the point shows in the band of its lane: o.lane, else the band that holds it)
+			let shot
+			try {
+				shot = exportShot(xg, kind, W, H, Number(o?.fps ?? 60) > 0 ? Number(o?.fps ?? 60) : 60, planSpec(kind, o))
+			} catch {
+				return null
+			}
+			const p = planProject(shot, Math.min(shot.film.duration, Math.max(0, Number.isFinite(t) ? t : 0)), x, y, Number.isFinite(o?.z) ? o.z : 0, o)
+			if (!p) return null
+			return o?.xy ? { x: p.x, y: p.y } : p.x
+		}
 		const shot = exportShot(xg, kind, W, H)
 		const cam = (xproj.cam ??= new THREE.PerspectiveCamera(40, 16 / 9, 0.02, 80))
 		const v = (xproj.v ??= new THREE.Vector3())
@@ -7837,8 +8907,84 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		return Number.isFinite(v.x) ? v.x : null
 	}
 
+
+	/** The export's camera at moment t, for callers that draw their own overlays (the lesson compositor's camera.py): per band its rectangle in the
+	 *  picture, position, look point, up, fields (degrees), near and far, and the scene's fixed-camera spec {x0, x1, y, pitch, hfov} when the pose is
+	 *  square on (yaw 0: what camera.py projects exactly). For a directed camera t is video time and `t` in the answer the run time it shows. null
+	 *  until the run is settled. o: as renderFrame's (camera, width, height, fps, plan | film, focus, runs, lane). */
+	function exportCamera(t, o) {
+		if (disposed || !canExport() || !isSettled()) return null
+		const kind0 = o?.camera === "plan" ? "director-plan" : (o?.camera ?? "wide")
+		const kind = EXPORT_CAMERAS.includes(kind0) ? kind0 : "wide"
+		const W = Math.round(Number(o?.width ?? 1920))
+		const H = Math.round(Number(o?.height ?? 1080))
+		const fps = Number(o?.fps ?? 60) > 0 ? Number(o?.fps ?? 60) : 60
+		const out = (b, cam, rect) => {
+			const P = cam.position
+			const f = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion)
+			const k = Math.abs(f.z) > 1e-9 ? -P.z / f.z : 1
+			const T = [P.x + f.x * k, P.y + f.y * k, P.z + f.z * k]
+			const d = Math.hypot(P.x - T[0], P.y - T[1], P.z - T[2]) || 1
+			const u = [(P.x - T[0]) / d, (P.y - T[1]) / d, (P.z - T[2]) / d]
+			const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) * cam.aspect)
+			const pose = { L: T, d, yaw: Math.atan2(u[0], u[2]), pitch: Math.asin(Math.max(-1, Math.min(1, u[1]))), hfov }
+			return { lane: b?.lane ?? null, rect, inset: !!b?.inset, position: [P.x, P.y, P.z], target: T, up: [0, 1, 0], hfov: THREE.MathUtils.radToDeg(hfov), vfov: cam.fov, near: cam.near, far: cam.far, spec: Shots.specOf(pose) }
+		}
+		const cam = new THREE.PerspectiveCamera()
+		if (PLAN_CAMERAS.has(kind)) {
+			const shot = exportShot(xg, kind, W, H, fps, planSpec(kind, o))
+			const tau = Math.min(shot.film.duration, Math.max(0, Number.isFinite(t) ? t : 0))
+			const fr = Shots.frameAt(shot.film, tau)
+			const sh = shot.film.shots[fr.shot]
+			return {
+				tau,
+				t: fr.t,
+				frame: fr.frame,
+				shot: sh.id,
+				layout: sh.layout,
+				arrange: sh.arrange,
+				bands: fr.bands.map((b) => {
+					posePlanCam(cam, b.pose, b.rect[2] / b.rect[3])
+					return out(b, cam, b.rect)
+				}),
+			}
+		}
+		const shot = exportShot(xg, kind, W, H)
+		shot.at(Math.min(exportDuration(), Math.max(0, Number.isFinite(t) ? t : 0)), cam)
+		cam.updateMatrixWorld()
+		return { tau: t, t, frame: null, shot: kind, layout: "single", bands: [out(null, cam, [0, 0, W, H])] }
+	}
+	/** A directed camera's film as data (Shots.compile's: per frame its shot, run time and a pose per band, the marks; JSON.stringify keeps all of it),
+	 *  with the plan it films and the safety net's report: for the lesson compositor (plan once, then film each lane's run with {film}) and the AI
+	 *  steps (direct, audit). null until the run is settled. */
+	function exportPlan(o) {
+		if (disposed || !canExport() || !isSettled()) return null
+		const kind = o?.camera === "focus" ? "focus" : "director-plan"
+		const W = Math.round(Number(o?.width ?? 1920))
+		const H = Math.round(Number(o?.height ?? 1080))
+		const fps = Number(o?.fps ?? 60) > 0 ? Number(o?.fps ?? 60) : 60
+		const shot = exportShot(xg, kind, W, H, fps, planSpec(kind, o))
+		return { film: shot.film, plan: shot.plan, report: shot.report, summary: planSummary(shot) }
+	}
+	/** What a director may name in the run shown (DIRECTOR.md section 2): the director's own timeline digest (web/export/digest.js, as the AI step
+	 *  `direct` builds it) with the moments and the recognizer's answer of the world this view films, as data and as the prompt's text.
+	 *  o: {focus: {scene, hints, catalog}, runs, lane} as renderFrame's. null until the run is settled. */
+	function exportDigest(o) {
+		if (disposed || !canExport() || !isSettled()) return null
+		const world = planWorld(planSpec("focus", o ?? {}))
+		const runs = [...world.runs.entries()].map(([lane, R]) => ({ lane, scene: R.scene ?? sceneFromSim(R.sim), run: R.sim, recog: R.recog, moments: { index: Object.fromEntries(R.M), what: Object.fromEntries(R.WHAT) } }))
+		const d = buildDigest({ runs })
+		return { digest: d, text: digestText(d) }
+	}
+	/** The drawn models' boxes of the run shown ({solid id: {x0, x1, y0, y1, z0, z1} | {round, z0, z1} | {world: [...]}}), to plan with this run while
+	 *  another is shown (renderFrame's runs[lane].boxes). null until the run is settled. */
+	function exportBoxes() {
+		if (disposed || !canExport() || !isSettled()) return null
+		return Object.fromEntries(planBoxes(run))
+	}
+
 	// debugging handle for dev pages
-	const api = { load, render, setOptions, resize, dispose, pick, surfaceAt, setHighlight, toWorld, toScreen, pxPerMeter, setEditing, frame, setQuality, getQuality, whenSettled, renderFrame, exportInfo, endExport, exportProject }
+	const api = { load, render, setOptions, resize, dispose, pick, surfaceAt, setHighlight, toWorld, toScreen, pxPerMeter, setEditing, frame, setQuality, getQuality, whenSettled, renderFrame, exportInfo, endExport, exportProject, exportCamera, exportPlan, exportDigest, exportBoxes }
 	{
 		const q = new URLSearchParams(location.search).get("quality") // (a page can be opened with ?quality=high|medium|low|auto)
 		setQuality(["auto", "high", "medium", "low"].includes(q) ? q : "auto")
@@ -7899,6 +9045,11 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 					xstats.probe = !!on
 				},
 				fitWide: (W, H, topPx) => (run ? fitWide(frameOf(run), W, H, topPx) : null),
+				/** a directed camera's shot (its film, plan, world and report) and the world a plan names, for tests */
+				plan: (kind = "focus", W = 1920, H = 1080, fps = 60, o = {}) => (canExport() ? exportShot(null, kind, W, H, fps, planSpec(kind, o)) : null),
+				world: (o = {}) => (canExport() ? planWorld(planSpec("focus", o)) : null),
+				boxes: () => (canExport() ? planBoxes(run) : null),
+				Shots,
 			},
 		},
 	})

@@ -1,0 +1,711 @@
+{
+	"about": "The direct step's live run of the design example '03-salt-ice' (20 Oct 2026): Opus 5.5 (claude-opus-5-5) through the gateway, measured by the engine's executor (web/export/shots.js checkPlan). Each round: the plan the model answered, and what the executor's checks said of it.",
+	"case": "melting",
+	"payload": {
+		"kind": "lesson",
+		"lesson": {
+			"question": "Is this a valid experiment to test salt?",
+			"answer": "Valid. Both cubes are on plates, so the plates are the same. Only the salt is different.",
+			"words": [
+				"We are testing salt.",
+				"Now the cubes sit on white plates."
+			],
+			"pauses": [
+				{
+					"where": "setup"
+				}
+			],
+			"grade": 3
+		},
+		"concept": "a fair test changes only one thing: salt on one ice cube",
+		"scene": "web/export/test/scenes/ft_melt_plates_salt6_plain.json"
+	},
+	"model": "claude-group/claude-opus-5-5",
+	"usd": 0.1832108,
+	"ms": 64278,
+	"rounds": [
+		{
+			"round": 0,
+			"ok": false,
+			"failed": [
+				"nosalt-close cut: a cut: the picture moves 0.221 widths, scale x1, turns 0 deg: a jump cut (change more, or glide)"
+			],
+			"usd": 0.10250340000000001,
+			"ms": 41614,
+			"plan": {
+				"version": 1,
+				"title": "Is it a fair test? Salt on one ice cube",
+				"about": "Two equal ice cubes sit on two equal white plates, and only one has salt on it, so the test changes just one thing: the salt.",
+				"grade": 3,
+				"source": {
+					"kind": "lesson",
+					"question": "Is this a valid experiment to test salt?",
+					"answer": "Valid. Both cubes are on plates, so the plates are the same. Only the salt is different.",
+					"words": [
+						"We are testing salt.",
+						"Now the cubes sit on white plates."
+					],
+					"scene": "ft_melt_plates_salt6_plain"
+				},
+				"story": [
+					{
+						"id": "setup",
+						"kind": "setup",
+						"says": "Two ice cubes, each on its own white plate.",
+						"evidence": [
+							{
+								"item": "left_cube"
+							},
+							{
+								"item": "right_cube"
+							},
+							{
+								"item": "left_plate"
+							},
+							{
+								"item": "right_plate"
+							}
+						]
+					},
+					{
+						"id": "salt",
+						"kind": "variable",
+						"says": "The left cube has a little pile of salt on top.",
+						"evidence": [
+							{
+								"item": "left_salt"
+							},
+							{
+								"item": "left_cube"
+							}
+						]
+					},
+					{
+						"id": "nosalt",
+						"kind": "compare",
+						"says": "The right cube is the same, but it has no salt.",
+						"evidence": [
+							{
+								"item": "right_cube"
+							}
+						]
+					},
+					{
+						"id": "pause",
+						"kind": "pause",
+						"says": "Same cubes, same plates: only the salt is different.",
+						"evidence": [
+							{
+								"role": "cube"
+							},
+							{
+								"role": "plate"
+							},
+							{
+								"item": "left_salt"
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"lanes": {
+					"arrange": "columns",
+					"list": [
+						{
+							"id": "left",
+							"label": "Salt",
+							"cast": {
+								"cube": "left_cube",
+								"plate": "left_plate",
+								"salt": "left_salt"
+							}
+						},
+						{
+							"id": "right",
+							"label": "No salt",
+							"cast": {
+								"cube": "right_cube",
+								"plate": "right_plate"
+							}
+						}
+					]
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "both",
+						"beat": "setup",
+						"layout": "single",
+						"intent": "Open on the whole setup before anything happens: two ice cubes, each on a white plate, seen a little from above so the plates and the cube tops show.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 2.5
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"left_cube",
+								"right_cube"
+							]
+						},
+						"keep": [
+							{
+								"item": "left_plate"
+							},
+							{
+								"item": "right_plate"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 20
+						},
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see two ice cubes, each sitting on its own white plate?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "left_cube"
+								},
+								{
+									"item": "right_cube"
+								}
+							],
+							"details": [
+								{
+									"item": "left_plate"
+								},
+								{
+									"item": "right_plate"
+								}
+							]
+						}
+					},
+					{
+						"id": "salt-close",
+						"beat": "salt",
+						"in": "cut",
+						"intent": "Cut in close on the left cube so the small white pile of salt on its top is big and easy to see: this is the one thing being tested.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 2.2
+						},
+						"move": "hold",
+						"subject": {
+							"item": "left_salt"
+						},
+						"keep": [
+							{
+								"item": "left_cube"
+							}
+						],
+						"frame": {
+							"width": 0.14
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 15
+						},
+						"lens": 85,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "left_salt"
+								},
+								"text": "salt",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see a little pile of salt sitting on top of the left ice cube?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "left_cube"
+								}
+							],
+							"details": [
+								{
+									"item": "left_salt"
+								}
+							]
+						}
+					},
+					{
+						"id": "nosalt-close",
+						"beat": "nosalt",
+						"in": "cut",
+						"intent": "The same close look at the right cube, at the same size and angle, so the child sees it is the same kind of cube but with a bare top: no salt.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 1.8
+						},
+						"move": "hold",
+						"subject": {
+							"item": "right_cube"
+						},
+						"frame": {
+							"width": 0.14
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 15
+						},
+						"lens": 85,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "right_cube"
+								},
+								"text": "no salt",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that the right ice cube has nothing on top of it?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "right_cube"
+								}
+							]
+						}
+					},
+					{
+						"id": "pair",
+						"beat": "pause",
+						"layout": "split",
+						"arrange": "columns",
+						"align": "plate",
+						"in": "cut",
+						"intent": "For the question, put the two cubes side by side, one column each at one scale, each on its whole plate: same cubes, same plates, salt on one only, labelled. Hold still so the child can compare.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 3.6
+						},
+						"move": "hold",
+						"subject": {
+							"role": "cube"
+						},
+						"keep": [
+							{
+								"role": "plate"
+							},
+							{
+								"item": "left_salt"
+							}
+						],
+						"frame": {
+							"width": 0.24
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 15
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "left_salt"
+								},
+								"text": "salt",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "right_cube"
+								},
+								"text": "no salt",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"role": "plate"
+								},
+								"text": "white plate",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a Grade 3 child see two same ice cubes on two same white plates, with salt on only one cube?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "cube"
+								}
+							],
+							"details": [
+								{
+									"item": "left_salt"
+								},
+								{
+									"role": "plate"
+								}
+							]
+						}
+					}
+				],
+				"notes": "The lesson pauses at the setup, so every shot freezes pause:setup (t=0): the salt dissolves by 0.2 s and the cubes melt in the time-lapse afterwards, so none of the run's motion is shown. The two plates stand 0.37 m apart, so the pause uses split columns at one scale (0.24 m per band) instead of one wide picture where the salt would be too small. The salt is in the left lane's cast only and is named by its item id."
+			}
+		},
+		{
+			"round": 1,
+			"ok": true,
+			"failed": [],
+			"usd": 0.0807074,
+			"ms": 22640,
+			"plan": {
+				"version": 1,
+				"title": "Is it a fair test? Salt on one ice cube",
+				"about": "Two equal ice cubes sit on two equal white plates, and only one has salt on it, so the test changes just one thing: the salt.",
+				"grade": 3,
+				"source": {
+					"kind": "lesson",
+					"question": "Is this a valid experiment to test salt?",
+					"answer": "Valid. Both cubes are on plates, so the plates are the same. Only the salt is different.",
+					"words": [
+						"We are testing salt.",
+						"Now the cubes sit on white plates."
+					],
+					"scene": "ft_melt_plates_salt6_plain"
+				},
+				"story": [
+					{
+						"id": "setup",
+						"kind": "setup",
+						"says": "Two ice cubes, each on its own white plate.",
+						"evidence": [
+							{
+								"item": "left_cube"
+							},
+							{
+								"item": "right_cube"
+							},
+							{
+								"item": "left_plate"
+							},
+							{
+								"item": "right_plate"
+							}
+						]
+					},
+					{
+						"id": "salt",
+						"kind": "variable",
+						"says": "The left cube has a little pile of salt on top.",
+						"evidence": [
+							{
+								"item": "left_salt"
+							},
+							{
+								"item": "left_cube"
+							}
+						]
+					},
+					{
+						"id": "nosalt",
+						"kind": "compare",
+						"says": "The right cube is the same, but it has no salt.",
+						"evidence": [
+							{
+								"item": "right_cube"
+							}
+						]
+					},
+					{
+						"id": "pause",
+						"kind": "pause",
+						"says": "Same cubes, same plates: only the salt is different.",
+						"evidence": [
+							{
+								"role": "cube"
+							},
+							{
+								"role": "plate"
+							},
+							{
+								"item": "left_salt"
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"lanes": {
+					"arrange": "columns",
+					"list": [
+						{
+							"id": "left",
+							"label": "Salt",
+							"cast": {
+								"cube": "left_cube",
+								"plate": "left_plate",
+								"salt": "left_salt"
+							}
+						},
+						{
+							"id": "right",
+							"label": "No salt",
+							"cast": {
+								"cube": "right_cube",
+								"plate": "right_plate"
+							}
+						}
+					]
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "both",
+						"beat": "setup",
+						"layout": "single",
+						"intent": "Open on the whole setup before anything happens: two ice cubes, each on a white plate, seen a little from above so the plates and the cube tops show.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 2.5
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"left_cube",
+								"right_cube"
+							]
+						},
+						"keep": [
+							{
+								"item": "left_plate"
+							},
+							{
+								"item": "right_plate"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 20
+						},
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see two ice cubes, each sitting on its own white plate?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "left_cube"
+								},
+								{
+									"item": "right_cube"
+								}
+							],
+							"details": [
+								{
+									"item": "left_plate"
+								},
+								{
+									"item": "right_plate"
+								}
+							]
+						}
+					},
+					{
+						"id": "salt-close",
+						"beat": "salt",
+						"in": "cut",
+						"intent": "Cut in close on the left cube so the small white pile of salt on its top is big and easy to see: this is the one thing being tested.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 2.2
+						},
+						"move": "hold",
+						"subject": {
+							"item": "left_salt"
+						},
+						"keep": [
+							{
+								"item": "left_cube"
+							}
+						],
+						"frame": {
+							"width": 0.14
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 15
+						},
+						"lens": 85,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "left_salt"
+								},
+								"text": "salt",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see a little pile of salt sitting on top of the left ice cube?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "left_cube"
+								}
+							],
+							"details": [
+								{
+									"item": "left_salt"
+								}
+							]
+						}
+					},
+					{
+						"id": "nosalt-close",
+						"beat": "nosalt",
+						"layout": "single",
+						"in": "cut",
+						"intent": "A close look at the right cube from higher up, looking down onto its top, so the child sees it is the same kind of cube with a bare top: no salt.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 1.8
+						},
+						"move": "hold",
+						"subject": {
+							"item": "right_cube"
+						},
+						"frame": {
+							"width": 0.14
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 40
+						},
+						"lens": 85,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "right_cube"
+								},
+								"text": "no salt",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that the right ice cube has nothing on top of it?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "right_cube"
+								}
+							]
+						}
+					},
+					{
+						"id": "pair",
+						"beat": "pause",
+						"layout": "split",
+						"arrange": "columns",
+						"align": "plate",
+						"in": "cut",
+						"intent": "For the question, put the two cubes side by side, one column each at one scale, each on its whole plate: same cubes, same plates, salt on one only, labelled. Hold still so the child can compare.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 3.6
+						},
+						"move": "hold",
+						"subject": {
+							"role": "cube"
+						},
+						"keep": [
+							{
+								"role": "plate"
+							},
+							{
+								"item": "left_salt"
+							}
+						],
+						"frame": {
+							"width": 0.24
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 15
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "left_salt"
+								},
+								"text": "salt",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "right_cube"
+								},
+								"text": "no salt",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"role": "plate"
+								},
+								"text": "white plate",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a Grade 3 child see two same ice cubes on two same white plates, with salt on only one cube?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "cube"
+								}
+							],
+							"details": [
+								{
+									"item": "left_salt"
+								},
+								{
+									"role": "plate"
+								}
+							]
+						}
+					}
+				],
+				"notes": "The lesson pauses at the setup, so every shot freezes pause:setup (t=0): the salt dissolves by 0.2 s and the cubes melt in the time-lapse afterwards, so none of the run's motion is shown. The two plates stand 0.37 m apart, so the pause uses split columns at one scale (0.24 m per band) instead of one wide picture where the salt would be too small. The salt is in the left lane's cast only and is named by its item id. The right cube's close-up looks down from higher (pitch 40) so the cut from the salt close-up is not a jump cut and its bare top reads clearly; nothing is measured in that shot."
+			}
+		}
+	]
+}

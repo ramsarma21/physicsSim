@@ -71,6 +71,8 @@ export function bounce_e(fit, kpa) {
 	const p = pymax(0.0, kpa)
 	return e_flat + ((e_top - e_flat) * p) / (p + half)
 }
+// the foams a foam ball can be, and the share of its landing speed it leaves the floor with (mod_softbody.py FOAMS [D3574], approximate)
+const FOAMS = { "stress ball": 0.55, "slow foam": 0.2 }
 const FOAM = ["Foam ball", 0.07, 0.022, 100000.0, 0.3, 0.55,
 	"A squishy foam stress ball (7 cm). Squeeze it and it springs back.",
 	"Flexible polyurethane foam ball, 7 cm, about 22 g (≈ 120 kg/m³): E about 0.1 MPa, ν 0.3 [GIBSON]; Hertz contact [JOHNSON]; bounce e ≈ 0.55 (approximate)."]
@@ -213,19 +215,24 @@ function _balls() {
 	const build_foam = (c, P) => {
 		const R = P.diameter / 2
 		const vol = (4.0 / 3.0) * Math.PI * R * R * R
-		const sid = c.ball("ball", R, 0.0, 0.0, { material: c.mat({ density: pyRound(P.mass / vol, 3) }), look: "foam ball", words: "a foam stress ball" })
-		c.process("softbody", "soft", { role: "ball", solid: sid, law: "hertz", R: pyRound(R, 5), E: pyRound(P.stiffness * 1000.0, 1), nu, e, hard: pyRound(0.6 * R, 5) })
+		const slow = P.foam === "slow foam"
+		const sid = c.ball("ball", R, 0.0, 0.0, { material: c.mat({ density: pyRound(P.mass / vol, 3) }), look: "foam ball", words: slow ? "a slow-foam ball" : "a foam stress ball" })
+		c.process("softbody", "soft", { role: "ball", solid: sid, law: "hertz", R: pyRound(R, 5), E: pyRound(P.stiffness * 1000.0, 1), nu, e: FOAMS[P.foam], hard: pyRound(0.6 * R, 5) })
 	}
 	register(new ItemType("foam-ball", name, CATEGORY, build_foam, {
 		material: "polyurethane foam", materials: ["polyurethane foam"], module: MODULE,
 		props: [new Prop("diameter", "Diameter", d0, 0.03, 0.2, 0.002, "m"),
 			new Prop("mass", "Weight", m0, 0.005, 0.2, 0.001, "kg"),
-			new Prop("stiffness", "Foam stiffness", pyRound(E / 1000.0, 1), 20.0, 1000.0, 5.0, "kPa", "Its foam's Young's modulus: softer squashes more")],
+			new Prop("stiffness", "Foam stiffness", pyRound(E / 1000.0, 1), 20.0, 1000.0, 5.0, "kPa", "Its foam's Young's modulus: softer squashes more"),
+			new Prop("foam", "Foam", "stress ball", { kind: "choice", choices: Object.keys(FOAMS),
+				help: "stress ball: springy polyurethane foam, it leaves the floor at 0.55 of the speed it lands with; slow foam: " +
+					"memory foam that barely bounces (0.2: a soft ball that lands and stays)" })],
 		readouts: [new Readout("squash_mm", "Squash", { unit: "mm", digits: 1, help: "How flat it is pressed where it touches, now" }),
 			new Readout("force_n", "Pushing force", { unit: "N", digits: 2, help: "What presses on it where it touches" }),
 			new Readout("energy_j", "Stored energy", { unit: "J", digits: 4, help: "The energy its squash holds" })],
-		tags: ["stress ball", "foam", "squishy", "squeeze", "elastic", "springs back", "soft", "sponge ball", "deform"],
-		description, source: source + " tooling/src/sim/softbody.ts law hertz.",
+		tags: ["stress ball", "foam", "squishy", "squeeze", "elastic", "springs back", "soft", "sponge ball", "deform", "soft ball", "memory foam"],
+		description: description + " Slow foam (memory foam) barely bounces: a soft ball that lands and stays.",
+		source: source + " Slow foam e ≈ 0.2 [D3574]. tooling/src/sim/softbody.ts law hertz.",
 		anchor: "its middle", facts: "7 cm · 22 g · soft foam", edit: [{ kind: "radius", prop: "diameter" }]
 	}))
 }
@@ -966,8 +973,8 @@ export const plugin = {
 			if (d !== null) out.push(`in the last run its deepest dent ${trimNum(d, 1)} mm (it squashed ${trimNum(maxOf(run, item.id, "squash_mm") ?? 0, 1)} mm at most; pressed with ${trimNum(endOf(run, item.id, "force_n") ?? 0, 1)} N at the end)`)
 		} else if (BALL_TYPES.includes(item.type)) {
 			const s = maxOf(run, item.id, "squash_mm")
-			const e = item.type === "foam-ball" ? 0.55 : eOf(item.type, P.pressure ?? BALLS[item.type][4] / 1000)
-			out.push(item.type === "foam-ball" ? `soft foam (E ${trimNum(P.stiffness ?? 100, 0)} kPa): it squashes where pressed and springs back; it leaves the floor at about 0.55 of the speed it lands with` : `inflated to ${trimNum(P.pressure ?? 0, 1)} kPa: it flattens where it presses (force = pressure × the flat's area) and springs back; it leaves the floor at ${trimNum(e, 2)} of the speed it lands with (more air: higher)`)
+			const e = item.type === "foam-ball" ? FOAMS[P.foam ?? "stress ball"] ?? 0.55 : eOf(item.type, P.pressure ?? BALLS[item.type][4] / 1000)
+			out.push(item.type === "foam-ball" ? `${P.foam === "slow foam" ? "slow (memory) foam" : "soft foam"} (E ${trimNum(P.stiffness ?? 100, 0)} kPa): it squashes where pressed and springs back; it leaves the floor at about ${trimNum(e, 2)} of the speed it lands with` : `inflated to ${trimNum(P.pressure ?? 0, 1)} kPa: it flattens where it presses (force = pressure × the flat's area) and springs back; it leaves the floor at ${trimNum(e, 2)} of the speed it lands with (more air: higher)`)
 			if (s !== null) out.push(`in the last run it squashed ${trimNum(s, 1)} mm at most (${trimNum(endOf(run, item.id, "squash_mm") ?? 0, 1)} mm at the end), pushing up to ${trimNum(maxOf(run, item.id, "force_n") ?? 0, 1)} N`)
 			const b = run?.track?.frames?.length ? bounce_height(runCtx(run), item.id) : null
 			if (b) out.push(`its first bounce (landing at ${trimNum(b[1], 2)} s) rose ${trimNum(b[0], 2)} m above what it landed on`)

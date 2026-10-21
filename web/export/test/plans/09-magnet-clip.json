@@ -1,0 +1,338 @@
+{
+	"$schema": "../../shot-plan.schema.json",
+	"version": 1,
+	"title": "A clip jumps to a magnet",
+	"about": "A magnet held just above a steel clip pulls it up; a clip farther away does not move.",
+	"grade": 3,
+	"source": {
+		"kind": "demo",
+		"scene": "g1-clip-jumps",
+		"question": "What does the magnet do to the clips?",
+		"answer": "It pulls up the near clip; the far clip is too far away."
+	},
+	"story": [
+		{
+			"id": "setup",
+			"kind": "setup",
+			"says": "A magnet is just above one clip; another clip lies farther away.",
+			"evidence": [
+				{
+					"item": "magnet"
+				},
+				{
+					"item": "clip"
+				},
+				{
+					"item": "far"
+				}
+			]
+		},
+		{
+			"id": "gap",
+			"kind": "variable",
+			"says": "There is a small gap between the magnet and the near clip.",
+			"evidence": [
+				{
+					"item": "clip"
+				}
+			]
+		},
+		{
+			"id": "jump",
+			"kind": "key",
+			"says": "The clip jumps up and sticks.",
+			"evidence": [
+				{
+					"item": "clip"
+				},
+				{
+					"item": "magnet"
+				}
+			]
+		},
+		{
+			"id": "both",
+			"kind": "compare",
+			"says": "The near clip is on the magnet; the far clip has not moved.",
+			"evidence": [
+				{
+					"role": "clip"
+				}
+			]
+		},
+		{
+			"id": "far",
+			"kind": "reveal",
+			"says": "The far clip is too far away.",
+			"evidence": [
+				{
+					"items": [
+						"magnet",
+						"clip",
+						"far"
+					]
+				}
+			]
+		}
+	],
+	"lanes": {
+		"arrange": "columns",
+		"list": [
+			{
+				"id": "near",
+				"label": "near clip",
+				"cast": {
+					"clip": "clip"
+				}
+			},
+			{
+				"id": "faraway",
+				"label": "far clip",
+				"cast": {
+					"clip": "far"
+				}
+			}
+		]
+	},
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "setup",
+			"beat": "setup",
+			"layout": "single",
+			"intent": "From high and a little to the side, so the clips lying flat show their loops: the magnet standing over one clip, the other clip farther off. The geography first; the detail comes next.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.2
+			},
+			"move": "hold",
+			"subject": {
+				"items": [
+					"magnet",
+					"clip",
+					"far"
+				]
+			},
+			"frame": {
+				"fit": "tight"
+			},
+			"view": {
+				"yaw": 20,
+				"pitch": 42
+			},
+			"lens": 50,
+			"audit": {
+				"question": "Can a child see a magnet just above one clip, and another clip farther away?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "magnet"
+					}
+				],
+				"details": [
+					{
+						"item": "clip"
+					},
+					{
+						"item": "far"
+					}
+				]
+			},
+			"context": [
+				{
+					"gap": [
+						"magnet",
+						"far"
+					]
+				}
+			]
+		},
+		{
+			"id": "gap",
+			"beat": "gap",
+			"layout": "single",
+			"in": "continue",
+			"intent": "A slow push down to the clip's own level, square on, with a long lens (the run is held): the magnet's end and the clip under it, a slit of backdrop between them. The slowness is the build-up.",
+			"run": {
+				"freeze": "start",
+				"seconds": 5.0
+			},
+			"move": "push",
+			"ease": "gentle",
+			"subject": {
+				"items": [
+					"magnet",
+					"clip"
+				]
+			},
+			"end": {
+				"subject": {
+					"region": [
+						0.97,
+						1.03,
+						-0.002,
+						0.03
+					]
+				},
+				"frame": {
+					"fit": "snug"
+				},
+				"view": {
+					"yaw": 0,
+					"pitch": 1
+				},
+				"lens": 100
+			},
+			"audit": {
+				"question": "Can a child see the small gap between the magnet's end and the clip below it?",
+				"key": "end",
+				"must_see": [
+					{
+						"item": "clip"
+					}
+				]
+			}
+		},
+		{
+			"id": "jump",
+			"beat": "jump",
+			"layout": "single",
+			"in": "continue",
+			"intent": "The jump takes a hundredth of a second, so it plays 20 times slower, from the same still close-up: the slit closes as the clip leaps up.",
+			"run": {
+				"from": {
+					"at": "release",
+					"plus": -0.04
+				},
+				"to": {
+					"at": "release",
+					"plus": 0.07
+				},
+				"rate": 0.05,
+				"hold_after": 1.2
+			},
+			"label": "Slow motion: 20 times slower",
+			"move": "hold",
+			"subject": {
+				"region": [
+					0.97,
+					1.03,
+					-0.002,
+					0.03
+				]
+			},
+			"audit": {
+				"question": "Can a child see the clip jump up and stick to the magnet's end?",
+				"key": "end",
+				"must_see": [
+					{
+						"item": "clip"
+					}
+				]
+			}
+		},
+		{
+			"id": "both",
+			"beat": "both",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Side by side at one scale, from a little above: the near clip held up under the magnet's end in one half, the far clip still lying on the floor in the other, each labelled below.",
+			"run": {
+				"freeze": "end",
+				"seconds": 3.0
+			},
+			"move": "hold",
+			"subject": {
+				"role": "clip"
+			},
+			"frame": {
+				"size": 0.52
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 20
+			},
+			"lens": 100,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "clip"
+					},
+					"text": "{label}",
+					"at": "below"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the clip stuck to the magnet in one picture and the far clip still on the floor in the other?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "clip"
+					}
+				]
+			}
+		},
+		{
+			"id": "far",
+			"beat": "far",
+			"layout": "single",
+			"in": "cut",
+			"intent": "Last, the whole of it again from high and to the side, now with the distance from the magnet to the far clip written on the floor: the pull only reaches so far.",
+			"run": {
+				"freeze": "end",
+				"seconds": 3.0
+			},
+			"move": "hold",
+			"subject": {
+				"items": [
+					"magnet",
+					"clip",
+					"far"
+				]
+			},
+			"frame": {
+				"fit": "tight"
+			},
+			"view": {
+				"yaw": 20,
+				"pitch": 42
+			},
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "distance",
+					"on": {
+						"gap": [
+							"magnet",
+							"far"
+						]
+					},
+					"text": "{value} cm"
+				}
+			],
+			"audit": {
+				"question": "Can a child see that the far clip lies a long way from the magnet?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "magnet"
+					}
+				],
+				"details": [
+					{
+						"item": "clip"
+					},
+					{
+						"item": "far"
+					}
+				]
+			}
+		}
+	]
+}

@@ -174,6 +174,15 @@ def _lines():
 
 
 # ---------------------------------------------------------------- stopwatch
+# readings another module's item has that a stopwatch may stop on (stop = reads; the choice is open: any other reading key of the watched item
+# works too): a sand timer runs out (empty 1), sand piles up (bottom_g), ice melts (melted 1), a thermometer or a pot reaches a temperature, water
+# boils, a candle goes out (flame 0), a balloon pops, an egg or a glass breaks, a bulb or a lamp lights, a light meter's lux, a container fills
+# (liquid_ml, volume_ml) or a pitcher empties (left_ml), a boat floods or a thing sinks, a scale's grams, a sound meter's level, a motor's rpm, sugar
+# dissolving (engine6 crossmod)
+STOP_READINGS = ["empty", "bottom_g", "clogged", "melted", "reading", "temp", "water_temp", "boiling", "flame", "popped", "broken", "light", "on", "lux",
+                 "liquid_ml", "volume_ml", "left_ml", "flooded", "sunk", "grams", "level", "rpm", "dissolved_g"]
+
+
 def build_stopwatch(c, P):
     face = P["face_cm"] / 100
     if P["on_table"]:
@@ -185,20 +194,25 @@ def build_stopwatch(c, P):
     watch = c.link("watch")
     start_x, start_line = _line_x(c, "start_line", P["start_x"])
     stop_x, finish_line = _line_x(c, "finish_line", P["stop_x"])
+    reads = {"stop_key": str(P["stop_reading"]), "stop_value": _r5(P["stop_value"])} if P["stop"] == "reads" else {}
     c.process("measure-stopwatch", "watch", watch=watch, start=P["start"], stop=P["stop"],
               start_x=start_x if P["start"] == "crosses" else None, stop_x=stop_x if P["stop"] == "crosses" else None,
-              stop_at=_r5(P["stop_at"]), reaction=_r5(P["reaction_s"]), lesson=P["counts"] == "lesson")
+              stop_at=_r5(P["stop_at"]), reaction=_r5(P["reaction_s"]), lesson=P["counts"] == "lesson", **reads)
 
 
 def _stopwatch():
     register(ItemType("stopwatch", "Stopwatch", CAT, build_stopwatch, dynamic=False, module=MODULE,
                       props=[Prop("start", "Starts", "release", kind="choice", choices=["release", "moves", "crosses"],
                                   help="release: at the scene's release; moves: when the watched thing has moved 1 mm; crosses: when its front reaches the start line"),
-                             Prop("stop", "Stops", "crosses", kind="choice", choices=["crosses", "stops", "hits", "at", "never"],
-                                  help="crosses: its front reaches the finish line (or stop_x); stops: it comes to rest; hits: it first touches something new; at: after stop_at seconds; never: keeps counting"),
+                             Prop("stop", "Stops", "crosses", kind="choice", choices=["crosses", "stops", "hits", "at", "reads", "never"],
+                                  help="crosses: its front reaches the finish line (or stop_x); stops: it comes to rest; hits: it first touches something new; at: after stop_at seconds; reads: its reading below reaches a value (a sand timer runs out); never: keeps counting"),
                              Prop("start_x", "Start line x", 0.0, -100.0, 100.0, 0.01, "m", "Where it starts, when no start line is linked (scene x)"),
                              Prop("stop_x", "Finish line x", 10.0, -100.0, 100.0, 0.01, "m", "Where it stops, when no finish line is linked (scene x)"),
                              Prop("stop_at", "Stop after", 3.0, 0.0, 20.0, 0.01, "s", "For stop = at"),
+                             Prop("stop_reading", "Stop on its reading", "empty", kind="choice", choices=STOP_READINGS, open=True,
+                                  help="For stop = reads: which reading of the thing it times (a sand timer's empty, an ice cube's melted, a thermometer's reading; any reading it has)"),
+                             Prop("stop_value", "Stop when it reaches", 1.0, -1000.0, 100000.0, 0.01, "", "For stop = reads: the value, reached from either side (empty 1: the timer has run out; melted 1; flame 0: the candle went out)",
+                                  slider_max=100.0),
                              Prop("reaction_s", "Hand timing delay", 0.0, 0.0, 0.3, 0.01, "s", "0 = an electronic timer; a person presses about 0.2 s late"),
                              Prop("counts", "Shows", "run", kind="choice", choices=["run", "lesson"], help="lesson: the time-lapse clock (1 h 32 min) when the scene runs time-lapsed"),
                              Prop("face_cm", "Face size", 20.0, 6.0, 60.0, 1.0, "cm", "A real one is 6 cm; make it big to read it in a wide shot"),
@@ -211,7 +225,8 @@ def _stopwatch():
                       tags=["timer", "clock", "time", "seconds", "race", "timing", "watch", "stop watch", "measure"],
                       anchor="the middle of its face",
                       description="A digital stopwatch timing the thing it watches: it starts at the release (or when it moves, or crosses a start "
-                                  "line) and stops when its front crosses the finish line (or when it stops, hits something, or after set seconds). "
+                                  "line) and stops when its front crosses the finish line (or when it stops, hits something, after set seconds, or when a reading of "
+                                  "the thing it times reaches a value: a sand timer runs out, ice melts, a candle goes out). "
                                   "Its big face shows the time; it touches nothing.",
                       source="Times from the engine's 480 Hz steps, interpolated to the moment the front reaches the line; reads to 0.01 s like a "
                              "handheld stopwatch. Hand timing adds a reaction delay of 0.2-0.25 s [HUMAN-RT] when reaction_s is set.",
@@ -715,6 +730,9 @@ def goal_reads(ctx, g):
         break
     if want is None or key is None:
         return None
+    if key == "seconds" and t == "stopwatch" and ctx.state(iid, "lesson_s") is not None:
+        # (a stopwatch that shows the lesson clock: its time is what its face shows, the run's seconds × the time-lapse; engine6 crossmod)
+        key = "lesson_s"
     got = _end_reading(ctx, iid, key)
     tl = ctx.num(g.get("tol"))
     if tl is None:

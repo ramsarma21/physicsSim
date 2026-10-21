@@ -216,19 +216,24 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 	})
 
 	// ============================================================== start and finish lines
+	// (the line's solid is a 2 mm slab whose top, at y = +1 mm in its frame, is the floor's top: its paint is drawn 1.4 to 2.4 mm above that, clear of
+	// the 1 mm the view grows every drawn surface by, so it shows on a table, a floor, a lane or a ramp alike; the view lays it on whatever it lies on:
+	// the builder's `paint` flag, web/view3d.js paintOn)
+	const LINE_Y = 0.001 + 0.0019
+	const linePaint = (hex, key) => kit.mat(`measure|line-${key}`, { color: hex, roughness: 0.5, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
 	for (const kind of ["start-line", "finish-line"]) {
-		addModel(kind, "line", ({ d, props }) => {
+		const build = ({ d, props }) => {
 			const P = props ?? {}
 			const fin_ = kind === "finish-line"
 			const g = kit.group()
-			const band = kit.mesh(kit.box(fin_ ? 0.1 : 0.05, 0.0012, d), kit.mat("measure|white-paint", { color: "#fbfbf8", roughness: 0.5, metalness: 0 }), { cast: false })
-			at(band, 0, 0.0004, 0)
+			const band = kit.mesh(kit.box(fin_ ? 0.1 : 0.05, 0.001, d, 0.0003), linePaint("#fbfbf8", "white"), { cast: false })
+			at(band, 0, LINE_Y, 0)
 			g.add(band)
 			if (fin_) {
 				const list = []
 				const nz = Math.max(2, Math.round(d / 0.05))
-				for (let r = 0; r < 2; r++) for (let k = 0; k < nz; k++) if ((r + k) % 2 === 0) list.push(new THREE.BoxGeometry(0.05, 0.0013, d / nz).translate(-0.025 + r * 0.05, 0.0006, -d / 2 + (k + 0.5) * (d / nz)))
-				g.add(kit.mesh(kit.merge(list, `finish-line|${d.toFixed(3)}`), kit.mat("measure|black-paint", { color: "#121212", roughness: 0.5 }), { cast: false }))
+				for (let r = 0; r < 2; r++) for (let k = 0; k < nz; k++) if ((r + k) % 2 === 0) list.push(new THREE.BoxGeometry(0.05, 0.001, d / nz).translate(-0.025 + r * 0.05, LINE_Y + 0.0002, -d / 2 + (k + 0.5) * (d / nz)))
+				g.add(kit.mesh(kit.merge(list, `finish-line2|${d.toFixed(3)}`), linePaint("#121212", "black"), { cast: false }))
 			}
 			if (P.sign !== false) {
 				const word = fin_ ? "FINISH" : "START"
@@ -245,7 +250,9 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 				}
 			}
 			return g
-		})
+		}
+		build.paint = true // (web/view3d.js: drawn on the top face of what it lies on)
+		addModel(kind, "line", build)
 	}
 
 	// ============================================================== stopwatch (a big LCD stopwatch)
@@ -785,6 +792,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 					arm.position.set(x, bottom - 0.01, 0)
 					const foot = kit.mesh(kit.box(0.08, 0.008, 0.08, 0.002), legMat)
 					foot.position.set(x, g + 0.004, zb)
+					for (const o of [leg, arm, foot]) o.userData.item = f.item // (whose they are: a directed camera's band leaves another lane's out)
 					ctx.group.add(leg, arm, foot)
 				}
 			}
@@ -803,6 +811,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 				arm.position.set(s.at.x, s.at.y, zb / 2 - 0.01)
 				const foot = kit.mesh(kit.cylinderY(0.09, 0.012, 32), black)
 				foot.position.set(s.at.x, g + 0.006, zb)
+				for (const o of [pole, arm, foot]) o.userData.item = id
 				ctx.group.add(pole, arm, foot)
 			}
 			// a plumb line hangs from a retort stand's arm: a steel rod behind it (out of the motion plane) on a heavy cast foot on what is under
@@ -810,7 +819,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 			const darkMetal = kit.metal("#2b2f34", { roughness: 0.55, key: "standfoot" })
 			/** A retort stand behind (x, top): a steel rod out of the motion plane on a heavy cast foot on what is under it, a boss head at `top`,
 			 *  and an arm forward to what it holds (a plumb line's clamp, a spring scale's ring). */
-			const retortStand = (x, top) => {
+			const retortStand = (x, top, item) => {
 				const zb = -0.12
 				const g = groundAt(x, top, zb, null)
 				const len = top + 0.05 - g
@@ -829,16 +838,17 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 				const arm = kit.mesh(kit.cylinderY(0.005, Math.abs(zb) - 0.01, 16), steel)
 				arm.rotation.x = Math.PI / 2
 				arm.position.set(x, top + 0.004, zb / 2 - 0.005)
+				for (const o of [rod, cap, foot, boss, knob, arm]) o.userData.item = item
 				ctx.group.add(rod, cap, foot, boss, knob, arm)
 			}
 			for (const id of plumbs) {
 				const s = ctx.solidsOf(id).find((q) => q.ghost)
-				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.5) / 2)
+				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.5) / 2, id)
 			}
 			// a spring scale hangs by its ring from a stand's arm (its ring is 1.4 cm over its tube's top: the model's)
 			for (const id of nms) {
 				const s = ctx.solidsOf(id).find((q) => q.part === "case")
-				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.25) / 2 + 0.026)
+				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.25) / 2 + 0.026, id)
 			}
 			ctx.group.traverse((o) => {
 				if (o.isMesh) {
@@ -891,6 +901,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 					geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(Math.max(2, pts.length) * 3 * 2), 3))
 					const tube = new THREE.Mesh(geo, mat)
 					tube.frustumCulled = false
+					tube.userData.item = tr.watch
 					rec.line = tube
 					ctx.group.add(tube)
 				} else {
@@ -903,6 +914,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 							dot.position.set(p.x, p.y, rec.z)
 							dot.visible = false
 							dot.userData.t = t
+							dot.userData.item = tr.watch
 							rec.dots.push(dot)
 							ctx.group.add(dot)
 						} else {
@@ -922,6 +934,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 							}
 							ghost.visible = false
 							ghost.userData.t = t
+							ghost.userData.item = tr.watch
 							rec.ghosts.push(ghost)
 							ctx.group.add(ghost)
 						}

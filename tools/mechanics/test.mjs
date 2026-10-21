@@ -88,7 +88,9 @@ const runs = [
 	{ items: [{ id: "book", type: "hardcover-book", x: 1.3, y: 0.0, props: { arrows: pick(["all", "all+net", "gravity+support"]), ...(rnd() < 0.5 ? { arrow_scale: 0.05 } : {}) } }], goals: [{ kind: "net_force", item: "book" }, { kind: "net_force", item: "book", at_least_n: 1 }, { kind: "net_force", item: "book", at_most_n: 0.5, at_least_n: 0.1 }] },
 	{ items: [{ id: "cart", type: "dynamics-cart", x: 1.3, y: 0, props: { load: 0.75, arrows: "net" } }, { id: "l", type: "puller", x: 0.3, y: 0, props: { pulls: "cart", faces: "right", force: 5 } }, { id: "r", type: "puller", x: 2.3, y: 0, props: { pulls: "cart", faces: "left", force: pick([3, 5]) } }], goals: [{ kind: "net_force", item: "cart", at_least_n: 1.5 }, { kind: "net_force", item: "cart" }] },
 	{ settings: { air: pick([false, true]) }, items: [{ id: "pend", type: "pendulum", x: 1.3, y: 1.5, props: { show_energy: true, arrows: "all" } }], goals: [{ kind: "energy_kept", item: "pend" }, { kind: "energy_kept", item: "pend", tol: 0.0001 }, { kind: "energy_to_heat", item: "pend", at_least_pct: 1 }, { kind: "net_force", item: "pend", at_most_n: 1 }] },
-	{ items: [{ id: "fl", type: "floor", x: 1.3, y: 0, props: { length: 2.5, material: "carpet" } }, { id: "ball", type: "steel-ball", x: 0.4, y: 0.03, props: { start_speed: pick([0.5, 1.0]) } }, { id: "bars", type: "energy-bars", x: 1.3, y: 0.3, props: { watch: "ball", zero: pick(["lowest", "floor"]) } }], goals: [{ kind: "energy_to_heat", item: "ball" }, { kind: "energy_kept", item: "ball" }, { kind: "energy_to_heat", item: "ball", at_least_pct: 99 }] }
+	{ items: [{ id: "fl", type: "floor", x: 1.3, y: 0, props: { length: 2.5, material: "carpet" } }, { id: "ball", type: "steel-ball", x: 0.4, y: 0.03, props: { start_speed: pick([0.5, 1.0]) } }, { id: "bars", type: "energy-bars", x: 1.3, y: 0.3, props: { watch: "ball", zero: pick(["lowest", "floor"]) } }], goals: [{ kind: "energy_to_heat", item: "ball" }, { kind: "energy_kept", item: "ball" }, { kind: "energy_to_heat", item: "ball", at_least_pct: 99 }] },
+	// (a "moves" goal measures the rigid body that moved most: an Atwood machine's weights; a pulley lift's pail and what rides in it)
+	{ items: [{ id: "a", type: "atwood-machine", x: 0.8, y: 0.9, props: { left_mass: pick([0.3, 0.5]) } }, { id: "lift", type: "pulley-lift", x: 2.0, y: 1.25, props: { weight: 1.2, cup_width: 0.14, cup_height: 0.1, drop: 0.6 } }, { id: "apple", type: "apple", x: 2.13657, y: 0.5185 }], goals: [{ kind: "moves", item: "a", min_m: 0.1 }, { kind: "moves", item: "lift", min_m: 0.3 }, { kind: "walls", item: "apple", container: "lift" }] }
 ]
 const summ = []
 for (const r of runs) {
@@ -144,13 +146,24 @@ summ.forEach((s, i) => {
 const REGRESSIONS = [
 	{ version: 2, id: "fuzz-454", name: "fuzz 454", seconds: 2, release: 0.5, items: [{ id: "i2", type: "parachute", x: 1.5789327566977591, y: 0.5536018480081111, angle: 0, props: { canopy: -0.85, load_mass: -0.995, canopy_mass: -0.03377405468351208, lines: -0.9, material: "nylon canopy", bounce: -1000, friction: -1, rolling: -0.09957194479648024, side: -1000, color: "orange", glow: true, start_speed: -25.25979246944189, start_dir: -486.24674691818655, start_spin: "none" }, held: true }, { id: "i15", type: "cup", x: 1.6533645458053798, y: 0.5852492657024413, angle: 80.6, props: { width: -1.1812222137046047, wall: -0.98, thickness: -0.0026326472386717795, depth: 0.019999999, bottom_ratio: 0.07461977459024638, material: "cardboard", bounce: -1000000000, friction: -1000, rolling: -1000, side: -1000000000, color: "green", glow: true } }, { id: "i20", type: "edge-pulley", x: 1.6538329426199199, y: 0.5765766256256029, angle: 0, props: { hanging_mass: 0.916305112738628, drop: 0.16186493785120545, glow: true, pulls: "i2" }, held: true }], goals: [] }
 ]
-const regressions = [...REGRESSIONS, ...REGRESSIONS.map((r) => ({ ...r, id: `${r.id}-vacuum`, settings: { air: false } })), ...REGRESSIONS.map((r) => ({ ...r, id: `${r.id}-puller`, items: [...r.items.filter((i) => i.type !== "edge-pulley"), { id: "w", type: "puller", x: 2.2, y: 0, props: { pulls: "i2", force: 20 } }] }))]
+// engine6 (2026-10-20): the pusher's rod on its housing's rail at any height, stroke and paddle (and turned to push left), and things held in
+// a liquid held from above (holdFrom "above": a cork on a tank's floor, a grape under the water; not a ball held over it, nor in an empty tank)
+const TANK = { id: "tank", type: "water-tank", x: 1.3, y: 0, props: { style: "aquarium", length: 0.24, height: 0.24, depth: 0.16, fill: 0.14 } }
+const ENGINE6 = [
+	...[[0.015, 0.03, 0.02], [0.03, 0.15, 0.06], [0.11, 0.15, 0.14], [0.5, 0.5, 0.3], [0.2, 0.03, 0.02]].map(([height, stroke, paddle], k) => ({ version: 2, id: `pusher-${k}`, seconds: 1, release: 0.2, items: [{ id: "p", type: "pusher", x: 0.8, y: 0, angle: k === 4 ? 180 : 0, props: { height, stroke, paddle, force: 8, push_time: 0.3 } }, { id: "b", type: "wooden-block", x: k === 4 ? 0.75 : 0.88, y: 0.0255, props: {} }], goals: [] })),
+	{ version: 2, id: "held-cork", seconds: 1.5, release: 0.3, items: [TANK, { id: "cork", type: "cork", x: 1.3, y: 0.018, held: true }], goals: [] },
+	{ version: 2, id: "held-grape", seconds: 1.5, release: 0.3, items: [TANK, { id: "grape", type: "grape", x: 1.25, y: 0.09, held: true }, { id: "ball", type: "tennis-ball", x: 1.35, y: 0.45, held: true }], goals: [] },
+	{ version: 2, id: "held-dry", seconds: 1, release: 0.3, items: [{ ...TANK, props: { ...TANK.props, fill: 0 } }, { id: "cork", type: "cork", x: 1.3, y: 0.018, held: true }], goals: [] }
+]
+const HELD_ABOVE = { "held-cork": ["cork/cork"], "held-grape": ["grape/grape"], "held-dry": [] }
+const regressions = [...REGRESSIONS, ...REGRESSIONS.map((r) => ({ ...r, id: `${r.id}-vacuum`, settings: { air: false } })), ...REGRESSIONS.map((r) => ({ ...r, id: `${r.id}-puller`, items: [...r.items.filter((i) => i.type !== "edge-pulley"), { id: "w", type: "puller", x: 2.2, y: 0, props: { pulls: "i2", force: 20 } }] })), ...ENGINE6]
 const RP = JSON.parse(execFileSync("python3", [join(PG, "tools/mechanics/py_build.py")], { input: JSON.stringify({ scenes: regressions.map((r) => sim.clean(r)) }), maxBuffer: 1 << 30 }).toString())
 regressions.forEach((r, i) => {
 	const sc = sim.clean(r)
 	const js = sim.layout(sc)
 	const py = RP.builds[i]
 	if (py.error || js.error || !same(py.doc, js.doc)) diff(`regression ${r.id}: document`, py.doc ?? py.error, js.doc ?? js.error)
+	if (HELD_ABOVE[r.id] && !same(js.doc?.solids.filter((x) => x.holdFrom === "above").map((x) => x.id), HELD_ABOVE[r.id])) diff(`regression ${r.id}: held from above`, HELD_ABOVE[r.id], js.doc?.solids.filter((x) => x.holdFrom).map((x) => x.id))
 	try {
 		simulate(admitDocument(js.doc).scene, 120)
 	} catch (e) {

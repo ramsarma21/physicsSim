@@ -544,7 +544,7 @@ def save_scenario(scene):
     return {"id": sid, "name": name}
 
 
-# ---------------------------------------------------------------- AI steps: POST /api/ai/<observe|plan|refine|edit|imagine>
+# ---------------------------------------------------------------- AI steps: POST /api/ai/<observe|plan|refine|edit|imagine|direct>
 # Body {payload, client?: {requestId}} (at most 12 MB) -> the answer of `node ai/cli.mjs` for that step: {ok: true, result, model, ms, usage, ...}
 # or {ok: false, error, code, retryable} with the status it names (400 bad input, 403 not this app, 413 too large, 415 not JSON, 429 busy,
 # 502 the models failed, 504 out of time). Each request runs in its own process, which loads the key itself (`source ~/.config/truefoundry/env`):
@@ -558,20 +558,20 @@ def save_scenario(scene):
 # CLI's progress lines), done; GET /api/ai/progress alone says how many run and wait, in all and per step. Numbers and model names only.
 # Only this app may call these routes: a JSON body (so another site's page needs a CORS preflight, which this server never grants), a Host of
 # this server (no DNS rebinding) and, when the browser sends one, an Origin of this server.
-AI_STEPS = ("observe", "plan", "refine", "edit", "imagine")   # imagine: a concept picture from words (ai/DESIGN.md §15)
+AI_STEPS = ("observe", "plan", "refine", "edit", "imagine", "direct")   # imagine: a concept picture from words (ai/DESIGN.md §15); direct: a video's shot plan (§21)
 AI_MAX_BODY = 12 << 20
 AI_MARGIN = 15            # s on top of the step's budgetMs in ai/models.json
 AI_CMD = ["zsh", "-c", "source ~/.config/truefoundry/env && exec node ai/cli.mjs"]
 # Sized to the gateway: the benchmark ran up to 24 Opus calls at once through it without a 429 (ai/research/benchmark.md §13); one build has at
 # most one step in flight, so 12 slots serve 12 builds at once. Size them to the expected audience before a demo (env AI_SLOTS, AI_STEP_SLOTS).
 AI_SLOT_COUNT = max(1, int(os.environ.get("AI_SLOTS") or 12))   # AI steps running at once, in all
-AI_STEP_SLOTS = {"observe": 4, "plan": 6, "refine": 8, "edit": 8, "imagine": 4}   # ... and of each step (a step's cap never exceeds the total)
+AI_STEP_SLOTS = {"observe": 4, "plan": 6, "refine": 8, "edit": 8, "imagine": 4, "direct": 4}   # ... and of each step (a step's cap never exceeds the total)
 for _k, _v in (kv.split("=", 1) for kv in (os.environ.get("AI_STEP_SLOTS") or "").split(",") if "=" in kv):
     if _k.strip() in AI_STEP_SLOTS and _v.strip().isdigit():
         AI_STEP_SLOTS[_k.strip()] = max(1, int(_v))
 AI_QUEUE_WAIT = float(os.environ.get("AI_QUEUE_WAIT") or 90)   # s a step may wait for a free slot
 AI_QUEUE_MAX = max(1, int(os.environ.get("AI_QUEUE_MAX") or 48))   # steps that may wait at once; one more is told "busy" at once
-AI_TYPICAL_S = {"observe": 30.0, "plan": 30.0, "refine": 15.0, "edit": 6.0, "imagine": 25.0}   # a step's usual duration until some have been measured
+AI_TYPICAL_S = {"observe": 30.0, "plan": 30.0, "refine": 15.0, "edit": 6.0, "imagine": 25.0, "direct": 90.0}   # a step's usual duration until some have been measured
 AI_RID = re.compile(r"^[\w.:-]{1,80}$")
 
 

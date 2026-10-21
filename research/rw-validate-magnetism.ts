@@ -13,6 +13,8 @@
 //   sphere    a small steel ball near a magnet: the engine's pull against the induced-dipole law F = ½µ0 χ_eff V ∇|H|², χ_eff = 1/(⅓ + 1/χ) for a
 //             sphere [JACKSON §5.11, FURLANI]; long soft rods (a nail, a clip's wire, a 10 cm rod) in a uniform field against a volume-integral
 //             solve (VIS: the rod in 120 uniformly magnetized cells), and a nail end-on to a pole: the engine's rows (24 cells, `rowModel`)
+//   upright   an upright nail under a ceramic bar lying flat against a converged solve with both components of magnetization (VIS2): the engine
+//             within 0.8-1.25; the bar stood on its end lifts it from 15 mm, not 20 mm; a flat nail past the pole's corner (known limit, said)
 //   chain     clips end to end: two and four in a uniform field, and the electromagnet's nail (10, 50, 200 turns) with a chain under its point,
 //             against the converged VIS of the whole chain (1 mm cells, every body's charge sheets): each body's magnetization, the pulls
 //   nonmag    G3: plastic, aluminium foil, brass, wood and copper beside a neodymium magnet: no magnetism record at all, they never move; the steel
@@ -460,6 +462,225 @@ const sections: Record<string, () => void> = {
 			nail.push(`${g * 1000} mm ${g4(fx)} vs ${g4(ref)} N`)
 		}
 		check(lo > NAIL_LO && hi < NAIL_HI, `a nail end-on to an N42 pole 2-20 mm away: the engine's pull within ${NAIL_LO}-${NAIL_HI} × the converged solve`, `${nail.join("; ")}; ratio ${lo.toFixed(2)}-${hi.toFixed(2)}`)
+	},
+	upright() {
+		// engine6 (2026-10-20, the FO-13 lesson's "an upright nail under the magnet"): the catalog's 51 × 2.9 mm nail (2.76 g) under a 15 cm ceramic bar
+		// lying flat, in its true field, against a converged volume-integral solve with BOTH in-plane components of magnetization in every cell
+		// (VIS2: 96 cells, each cell's axial sheets and side sheets, the sheets' field averaged at 4 × 3 × 3 Gauss points, χ 1000, M_s 1.6 MA/m;
+		// its force µ0·σ·A·<H> over every sheet, the co-energy's derivative to the digit). Upright, its top 3-15 mm under the bar 4-15 mm in
+		// from its end face: the engine = VIS2 within 0.8-1.25 (so the weak pull the bench saw is real: under a bar lying flat the field runs
+		// along the bar, across the upright nail, and turns up into the pole face only at the corner). Stood on its end over the nail (its pole
+		// face down, along the nail): VIS2 lifts the nail from 15 mm, not from 20 mm (the lesson's "a finger's width"). Known limit, said:
+		// a flat nail along the bar with its end 10 mm past the pole's corner, where the field it lies in turns, is pulled 0.35-0.75 of VIS2
+		// (a row's pull is reckoned on its four coarse pieces, which lump a charge that gathers within a few millimetres; its cells'
+		// magnetization is right: VIS2's own, lumped the same way, gives the engine's number)
+		const SIG = 0.39 / MU0
+		const L = 0.051
+		const A = 0.0029
+		const VOL = Math.PI * (A / 2) * (A / 2) * (L - 0.00267)
+		const MS = 1.6e6
+		const chi = 1000
+		// (its weight: the catalog's iron nail as web/sim builds it, its shank and head)
+		const built = web.prepare(scene([{ id: "nail", type: "iron-nail", x: 1.3, y: 0.2, angle: 90 }])).doc as unknown as { solids: { item: string; material: string; body: { kind: string; points?: { x: number; y: number }[]; width?: number; height?: number; depth: number } }[]; materials: Record<string, { density: number }> }
+		const W =
+			G *
+			built.solids
+				.filter((x) => x.item === "nail")
+				.reduce((m, x) => {
+					const b = x.body
+					const area = b.kind === "polygon" ? Math.abs((b.points ?? []).reduce((a, p, i, ps) => a + p.x * (ps[(i + 1) % ps.length] as { y: number }).y - (ps[(i + 1) % ps.length] as { x: number }).x * p.y, 0)) / 2 : (b.width ?? 0) * (b.height ?? 0)
+					return m + (built.materials[x.material]?.density ?? 0) * area * b.depth
+				}, 0)
+		const o = new Float64Array(3)
+		const magAt = { x: 0.15, y: 0.3 }
+		let magA = 0
+		const Hext = (x: number, y: number, z: number): [number, number] => {
+			const c = Math.cos(magA)
+			const n = Math.sin(magA)
+			const lx = (x - magAt.x) * c + (y - magAt.y) * n
+			const ly = -(x - magAt.x) * n + (y - magAt.y) * c
+			let hx = 0
+			let hy = 0
+			for (const [cx, sg] of [[0.075, -SIG], [-0.075, SIG]] as const) {
+				rectField(0.0095, 0.00475, ly, z, lx - cx, o)
+				hx += (sg * (o[2] as number)) / (4 * Math.PI)
+				hy += (sg * (o[0] as number)) / (4 * Math.PI)
+			}
+			return [hx * c - hy * n, hx * n + hy * c]
+		}
+		const gx = [-0.861136, -0.339981, 0.339981, 0.861136]
+		const wx = [0.347855, 0.652145, 0.652145, 0.347855]
+		const g3 = [-0.774597, 0, 0.774597]
+		const w3 = [0.555556, 0.888889, 0.555556]
+		/** VIS2: the rod (axis at angle th, middle (xc, yc)) in n cells, each (Mu, Mv); its force (N, world) and the same magnetization lumped
+		 *  into the engine's four coarse pieces (0, 3.8 %, 50 %, 96.2 %, 100 % of its length) */
+		const vis2 = (xc: number, yc: number, th: number, n: number) => {
+			const cu = Math.cos(th)
+			const su = Math.sin(th)
+			const ext = (u: number, v: number, z: number): [number, number] => {
+				const [hx, hy] = Hext(xc + u * cu - v * su, yc + u * su + v * cu, z)
+				return [hx * cu + hy * su, -hx * su + hy * cu]
+			}
+			const l = L / n
+			const us = Array.from({ length: n + 1 }, (_, k) => -L / 2 + l * k)
+			const H0 = Array.from({ length: n }, () => [0, 0])
+			const D = [0, 1, 2, 3].map(() => Array.from({ length: n }, () => new Float64Array(n)))
+			for (let i = 0; i < n; i++) {
+				const ci = (us[i] as number) + l / 2
+				for (let a = 0; a < 4; a++)
+					for (let b = 0; b < 3; b++)
+						for (let e = 0; e < 3; e++) {
+							const u = ci + ((gx[a] as number) * l) / 2
+							const v = ((g3[b] as number) * A) / 2
+							const z = ((g3[e] as number) * A) / 2
+							const w = ((wx[a] as number) * (w3[b] as number) * (w3[e] as number)) / 8
+							const [hu, hv] = ext(u, v, z)
+							;(H0[i] as number[])[0] += w * hu
+							;(H0[i] as number[])[1] += w * hv
+							for (let j = 0; j < n; j++) {
+								const cj = (us[j] as number) + l / 2
+								let uu = 0
+								let vu = 0
+								for (const [kk, sg] of [[j + 1, 1], [j, -1]] as const) {
+									rectField(A / 2, A / 2, v, z, u - (us[kk] as number), o)
+									uu += (sg * (o[2] as number)) / (4 * Math.PI)
+									vu += (sg * (o[0] as number)) / (4 * Math.PI)
+								}
+								let uv = 0
+								let vv = 0
+								for (const [yy, sg] of [[A / 2, 1], [-A / 2, -1]] as const) {
+									rectField(l / 2, A / 2, u - cj, z, v - yy, o)
+									vv += (sg * (o[2] as number)) / (4 * Math.PI)
+									uv += (sg * (o[0] as number)) / (4 * Math.PI)
+								}
+								;(D[0] as Float64Array[])[i]![j] += w * uu
+								;(D[1] as Float64Array[])[i]![j] += w * vu
+								;(D[2] as Float64Array[])[i]![j] += w * uv
+								;(D[3] as Float64Array[])[i]![j] += w * vv
+							}
+						}
+			}
+			const Mu = new Float64Array(n)
+			const Mv = new Float64Array(n)
+			for (let it = 0; it < 20000; it++) {
+				let delta = 0
+				let big = 0
+				for (let i = 0; i < n; i++) {
+					let hu = (H0[i] as number[])[0] as number
+					let hv = (H0[i] as number[])[1] as number
+					for (let j = 0; j < n; j++) {
+						if (j === i) continue
+						hu += D[0]![i]![j]! * Mu[j]! + D[2]![i]![j]! * Mv[j]!
+						hv += D[1]![i]![j]! * Mu[j]! + D[3]![i]![j]! * Mv[j]!
+					}
+					const a11 = 1 / chi - D[0]![i]![i]!
+					const a12 = -D[2]![i]![i]!
+					const a21 = -D[1]![i]![i]!
+					const a22 = 1 / chi - D[3]![i]![i]!
+					const det = a11 * a22 - a12 * a21
+					let mu = (a22 * hu - a12 * hv) / det
+					let mv = (-a21 * hu + a11 * hv) / det
+					const m = Math.hypot(mu, mv)
+					if (m > MS) {
+						mu *= MS / m
+						mv *= MS / m
+					}
+					const nu = Mu[i]! + 0.7 * (mu - Mu[i]!)
+					const nv = Mv[i]! + 0.7 * (mv - Mv[i]!)
+					delta = Math.max(delta, Math.abs(nu - Mu[i]!), Math.abs(nv - Mv[i]!))
+					big = Math.max(big, Math.abs(nu), Math.abs(nv))
+					Mu[i] = nu
+					Mv[i] = nv
+				}
+				if (delta < 1e-8 * (1 + big)) break
+			}
+			const force = (cuts: number[], mu: (q: number) => number, mv: (q: number) => number) => {
+				let Fu = 0
+				let Fv = 0
+				const P = cuts.length - 1
+				for (let q = 0; q <= P; q++) {
+					const sig = (q > 0 ? mu(q - 1) : 0) - (q < P ? mu(q) : 0)
+					if (sig !== 0)
+						for (let b = 0; b < 3; b++)
+							for (let e = 0; e < 3; e++) {
+								const [hu, hv] = ext(cuts[q] as number, ((g3[b] as number) * A) / 2, ((g3[e] as number) * A) / 2)
+								const w = ((w3[b] as number) * (w3[e] as number)) / 4
+								Fu += MU0 * sig * A * A * w * hu
+								Fv += MU0 * sig * A * A * w * hv
+							}
+				}
+				for (let q = 0; q < P; q++) {
+					const len = (cuts[q + 1] as number) - (cuts[q] as number)
+					const c = ((cuts[q] as number) + (cuts[q + 1] as number)) / 2
+					for (const [yy, sg] of [[A / 2, 1], [-A / 2, -1]] as const)
+						for (let b = 0; b < 3; b++)
+							for (let e = 0; e < 3; e++) {
+								const [hu, hv] = ext(c + ((g3[b] as number) * len) / 2, yy, ((g3[e] as number) * A) / 2)
+								const w = ((w3[b] as number) * (w3[e] as number)) / 4
+								Fu += MU0 * sg * mv(q) * len * A * w * hu
+								Fv += MU0 * sg * mv(q) * len * A * w * hv
+							}
+				}
+				const k = VOL / (L * A * A)
+				return { fx: k * (Fu * cu - Fv * su), fy: k * (Fu * su + Fv * cu) }
+			}
+			const exact = force(us, (q) => Mu[q] as number, (q) => Mv[q] as number)
+			const cuts = [0, 0.03806, 0.5, 0.96194, 1].map((f) => -L / 2 + f * L)
+			const mean = (q: number, M: Float64Array) => {
+				let s = 0
+				let c = 0
+				for (let i = 0; i < n; i++) {
+					const m = (us[i] as number) + l / 2
+					if (m >= (cuts[q] as number) && m < (cuts[q + 1] as number)) {
+						s += M[i] as number
+						c++
+					}
+				}
+				return c ? s / c : 0
+			}
+			return { ...exact, lumped: force(cuts, (q) => mean(q, Mu), (q) => mean(q, Mv)) }
+		}
+		const faces: FaceSpec[] = [{ x: 0.075, y: 0, angle: 0, width: 0.019, depth: 0.0095, sigma: -SIG }, { x: -0.075, y: 0, angle: Math.PI, width: 0.019, depth: 0.0095, sigma: SIG }]
+		const engineFy = (xc: number, yc: number, th: number) => {
+			const f = createFields({ magnets: [{ solid: "mag", faces }], soft: [{ solid: "nail", x: 0, y: 0, w: L, h: A, d: A, volume: VOL, ms: MS, chi }] })
+			const pose = (id: string) => (id === "mag" ? { x: magAt.x, y: magAt.y, angle: magA } : { x: xc, y: yc, angle: th })
+			f.settle(0, pose)
+			let fy = 0
+			f.step(0, pose, (sid, _x, y) => {
+				if (sid === "nail") fy += y
+			})
+			return fy
+		}
+		const N = 96
+		const bottom = magAt.y - 0.0095
+		let lo = Infinity
+		let hi = 0
+		const rows: string[] = []
+		for (const gap of [0.003, 0.008, 0.015])
+			for (const dx of [0.004, 0.008, 0.015]) {
+				const xc = magAt.x + 0.075 - dx
+				const yc = bottom - gap - L / 2
+				const e = engineFy(xc, yc, Math.PI / 2)
+				const r = vis2(xc, yc, Math.PI / 2, N)
+				lo = Math.min(lo, e / r.fy)
+				hi = Math.max(hi, e / r.fy)
+				rows.push(`${gap * 1000}/${dx * 1000} mm ${(e * 1000).toFixed(1)} vs ${(r.fy * 1000).toFixed(1)} mN`)
+			}
+		check(lo > NAIL_LO && hi < NAIL_HI, `an upright nail under a ceramic bar lying flat (its top 3-15 mm under the bar, 4-15 mm in from the end): the engine's pull within ${NAIL_LO}-${NAIL_HI} × VIS2`, `gap/in from the end: ${rows.join("; ")}; ratio ${lo.toFixed(2)}-${hi.toFixed(2)}; its weight ${(W * 1000).toFixed(1)} mN`)
+		magA = Math.PI / 2
+		const endOn = (gap: number) => vis2(magAt.x, magAt.y - 0.075 - gap - L / 2, Math.PI / 2, N).fy
+		const e15 = endOn(0.015)
+		const e20 = endOn(0.02)
+		check(e15 > W && e20 < W, `the bar stood on its end over the upright nail (${(W / G * 1000).toFixed(2)} g; its pole face down, along the nail): VIS2 lifts it from 15 mm, not from 20 mm`, `${(e15 * 1000).toFixed(1)} and ${(e20 * 1000).toFixed(1)} mN against its weight ${(W * 1000).toFixed(1)} mN; the engine ${(engineFy(magAt.x, magAt.y - 0.075 - 0.015 - L / 2, Math.PI / 2) * 1000).toFixed(1)} mN at 15 mm (its contact skins: SKIN)`)
+		magA = 0
+		const flat: string[] = []
+		for (const gap of [0.003, 0.008, 0.015]) {
+			const yc = bottom - gap - A / 2
+			const e = engineFy(0.21, yc, 0)
+			const r = vis2(0.21, yc, 0, N)
+			flat.push(`${gap * 1000} mm: ${(e * 1000).toFixed(1)} vs ${(r.fy * 1000).toFixed(1)} mN (${(e / r.fy).toFixed(2)}; lumped ${(r.lumped.fy * 1000).toFixed(1)})`)
+		}
+		console.log(`info  known limit: a flat nail along the bar, its end 10 mm past the pole's corner: the engine against VIS2 and VIS2 lumped into the engine's four coarse pieces: ${flat.join("; ")}`)
 	},
 	chain() {
 		// clips end to end (0.1 mm between their faces, where the contact skins leave resting faces), and the electromagnet's 51 × 2.9 mm nail

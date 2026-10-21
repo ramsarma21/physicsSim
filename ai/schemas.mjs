@@ -6,7 +6,8 @@
 //   const r = validate("plan", value, { catalog: cat.index, stage })
 //   r.ok, r.errors (plain sentences with a path, for the repair prompt), r.warnings (small fixes made), r.value (the normalised copy)
 //
-// Steps: "observe" (observation), "plan", "refine" (critique + patches to the plan), "edit" (patches or a whole new plan).
+// Steps: "observe" (observation), "plan", "refine" (critique + patches to the plan), "edit" (patches or a whole new plan), "direct" (the
+// director's shot plan: ai/shot-plan.mjs, against the run's timeline digest in ctx.digest).
 // Patch ops (refine and edit): move, set_props, add, remove, replace_type, set_place, set_item, set_scene, set_goals, set_tune, set_stages;
 // move and set_props may name several items at once with `ids` (expanded here into one patch per item, so a client applies them as single
 // patches). Plans of a chain may list `stages` (2026-10-15, round 2): each stage's expectation (`does`), its own check (a goal: in, falls,
@@ -20,11 +21,12 @@
 // goals' results in the run being judged, from ai/goals.mjs checkGoals: a failing goal caps the score and keeps done false).
 import { GOAL_KINDS, allGoalKinds, goalItems, goalKind, goalLabel, moduleGoal, moduleGoalProblem } from "./goals.mjs"
 import { clashText, goalClash, statesNewOutcome } from "./edit-outcome.mjs"
+import { validateShotPlan } from "./shot-plan.mjs"
 
 export const RESERVED_IDS = ["table", "air"]
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
 /** Containers an "in" goal is judged by their own walls in the run (ai/goals.mjs wallsInside): the engine's summary does not check them. */
-export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug"]
+export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug", "pulley-lift"]
 export const LIMITS = { items: 150, idLength: 40, goals: 10, tune: 12, patches: 150, missing: 30, observedObjects: 60, relations: 120, covers: 60, differences: 20, stages: 12, stageKnobs: 6 }
 /** Types that count as several things (a domino row's dominoes): the prop that says how many. */
 export const MULTI_UNIT = { "domino-row": "count", "newtons-cradle": "count" }
@@ -170,7 +172,11 @@ const settingsSchema = {
 		room_temp: num(-60, 60), // °C
 		time_lapse: num(1, 100000), // seconds of slow processes (heat, melting) in each second of the run
 		// a fixed side camera (render only; machines/mod_staging.py): x0..x1 m across the picture at height y m, pitch° down, hfov° across
-		camera: { type: "object", required: ["x0", "x1"], additionalProperties: false, properties: { x0: num(-1000, 1000), x1: num(-1000, 1000), y: num(-10, 100), pitch: num(-20, 80), hfov: num(5, 120) } }
+		camera: { type: "object", required: ["x0", "x1"], additionalProperties: false, properties: { x0: num(-1000, 1000), x1: num(-1000, 1000), y: num(-10, 100), pitch: num(-20, 80), hfov: num(5, 120) } },
+		// the lesson look (render only; machines/mod_staging.py, web/lesson-look.js): a scene that has one keeps it through an edit
+		style: { enum: ["lesson", "real"] },
+		backdrop: { type: "string", maxLength: 7 }, // "auto" or #rrggbb
+		release_stand: { enum: ["post", "hidden", "hanger", "auto"] }
 	}
 }
 
@@ -607,6 +613,59 @@ function tidyGoals(goals, path, warnings) {
 		cutStr(g, "label", 200, at, warnings)
 	}
 }
+/**
+ * The item a goal's label names for one of its fields (a module goal kind's `fromLabel`, web/sim/plugins.js: piles' `in`, "the sugar piles up
+ * inside the jar"): an item of those types whose name's, id's or type's last word ("glass-jar": jar) comes after one of the words (in, inside,
+ * into, within) with at most an article and two more words between ("in the tall glass jar"); of several of that kind, the one whose words
+ * include those before it ("the blue jar"), else none. -> its id, or null.
+ */
+export function labelRef(label, items, spec) {
+	const sing = (w) => (w.length > 3 && /(?:x|ch|sh|ss)es$/.test(w) ? w.slice(0, -2) : w.length > 3 && /[^s]s$/.test(w) ? w.slice(0, -1) : w)
+	const toks = (s) => String(s ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(sing)
+	const after = new Set((spec?.after ?? []).map((w) => String(w).toLowerCase()))
+	const types = new Set(spec?.types ?? [])
+	const cands = (Array.isArray(items) ? items : []).filter((it) => isObj(it) && typeof it.id === "string" && types.has(it.type))
+	if (!cands.length || !after.size) return null
+	const heads = cands.map((it) => new Set([toks(it.name).at(-1), toks(it.id).at(-1), toks(it.type).at(-1)].filter(Boolean)))
+	const words = cands.map((it) => new Set([...toks(it.name), ...toks(it.id), ...toks(it.type)]))
+	const ART = new Set(["the", "a", "an", "its", "their", "his", "her", "this", "that", "same", "one"])
+	const said = String(label ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+	for (let i = 0; i < said.length; i++) {
+		if (!after.has(said[i])) continue
+		let k = i + 1
+		while (k < said.length && ART.has(said[k])) k++
+		const before = []
+		for (let n = 0; n < 3 && k + n < said.length && !after.has(said[k + n]); n++) {
+			const w = sing(said[k + n])
+			const hit = cands.map((_, j) => j).filter((j) => heads[j].has(w))
+			if (hit.length) {
+				const by = hit.length > 1 && before.length ? hit.filter((j) => before.every((b) => words[j].has(b))) : hit
+				return by.length === 1 ? cands[by[0]].id : null
+			}
+			before.push(w)
+		}
+	}
+	return null
+}
+/** A goal of a module kind that names an item in its label but leaves that field out (`fromLabel`: "piles up inside the jar" without `in`)
+ *  gets it, said in a warning, so the run checks what the card says (a heap on the table beside an empty jar met "piles up inside the jar":
+ *  2026-10-21). items: the plan's or the scene's. */
+function goalRefsFromLabels(goals, items, path, warnings) {
+	if (!Array.isArray(goals) || !Array.isArray(items)) return
+	for (const [i, g] of goals.entries()) {
+		if (!isObj(g) || typeof g.label !== "string" || GOAL_KINDS.includes(g.kind)) continue
+		const mod = moduleGoal(g.kind)
+		if (!isObj(mod?.fromLabel)) continue
+		const own = new Set(goalItems({ ...g, kind: mod.kind }))
+		for (const [field, spec] of Object.entries(mod.fromLabel)) {
+			if (g[field] !== undefined || !Object.hasOwn(mod.fields ?? {}, field)) continue
+			const id = labelRef(g.label, items, spec)
+			if (id === null || own.has(id)) continue
+			g[field] = id
+			warnings.push(`${path}[${i}].${field} "${id}" added: its label says so ("${g.label.slice(0, 80)}")`)
+		}
+	}
+}
 function tidyPlanText(plan, warnings, path = "plan") {
 	if (!isObj(plan)) return
 	tidyReply(plan, path, warnings)
@@ -775,6 +834,8 @@ export function validatePlan(value, ctx = {}) {
 	if (plan.notes === undefined) plan.notes = ""
 	tidyPlanText(plan, warnings)
 	if (Array.isArray(plan.items)) for (const [i, it] of plan.items.entries()) normaliseItem(it, `items[${i}]`, catalog, warnings)
+	// (a goal whose label names a container it leaves out: "piles up inside the jar" checks the jar)
+	goalRefsFromLabels(plan.goals, plan.items, "goals", warnings)
 	checkSchema(planSchema, plan, "plan", errors)
 	// the semantic checks run even when the structure is off (as far as it lets them), so one repair can fix everything at once
 	bestEffort(() => checkPlanSemantics(plan, ctx, errors, warnings), errors.length > 0)
@@ -1258,6 +1319,7 @@ export function checkPatches(patches, basePlan, ctx, path = "patches") {
 		if (p.op === "set_place" && isObj(p.place)) normaliseItem({ place: p.place }, at, catalog, warnings)
 		if (p.op === "replace_type") p.type = normTypeKey(p.type, catalog)
 		if (p.op === "set_goals") tidyGoals(p.goals, `${at}.goals`, warnings)
+		if (p.op === "set_goals") goalRefsFromLabels(p.goals, plan.items, `${at}.goals`, warnings)
 		const errs = []
 		checkSchema(patchSchemas[p.op], p, at, errs)
 		if (errs.length) {
@@ -2111,13 +2173,16 @@ function dropHeightMissing(list, path, warnings) {
 function outcomeGoalSoft(v, ctx) {
 	if (v?.mode !== "patch" || !["change", "fix"].includes(v?.kind) || !statesNewOutcome(ctx?.text)) return []
 	if ((Array.isArray(v.patches) ? v.patches : []).some((p) => isObj(p) && p.op === "set_goals")) return []
+	// (a race: "add a second car next to it, so the two race" added the car and no goal for it, V2 release)
+	const race = /\brac(?:e|es|ing)\b/i.test(String(ctx.text ?? "")) ? ` For a race: faster {a: the one that wins, b: the other} and moves {item, min_m} for each racer, each in a lane of its own with room to finish (the energy and measuring modules' lines).` : ""
 	return [
-		`The request asks for an outcome of its own ("${String(ctx.text).trim().slice(0, 160)}"), but the answer sets no goal for it: add set_goals with every goal the scene keeps plus one for that outcome, of the goal kind that checks it (the core kinds or a physics module's: deforms_more {a, b} for "squashes more than", melts_first, floats, lights, farther, faster…). Leave out a goal of the scene that the new outcome makes untrue, and say so in the reply. If no goal kind can check it, or the scene already has that goal, keep the answer as it is`
+		`The request asks for an outcome of its own ("${String(ctx.text).trim().slice(0, 160)}"), but the answer sets no goal for it: add set_goals with every goal the scene keeps plus one for that outcome, of the goal kind that checks it (the core kinds or a physics module's: deforms_more {a, b} for "squashes more than", melts_first, floats, lights, farther, faster…).${race} Leave out a goal of the scene that the new outcome makes untrue, and say so in the reply. If no goal kind can check it, or the scene already has that goal, keep the answer as it is`
 	]
 }
 
 // ---------------------------------------------------------------- per step
-export const VALIDATORS = { observe: validateObservation, plan: validatePlan, refine: validateRefine, rate: validateRate, edit: validateEdit }
+// direct: the director's shot plan (web/export/shot-plan.schema.json), resolved against ctx.digest (the run's timeline digest: ai/shot-plan.mjs)
+export const VALIDATORS = { observe: validateObservation, plan: validatePlan, refine: validateRefine, rate: validateRate, edit: validateEdit, direct: validateShotPlan }
 export function validate(step, value, ctx) {
 	const f = VALIDATORS[step]
 	if (!f) throw new Error(`no validator for step ${step}`)

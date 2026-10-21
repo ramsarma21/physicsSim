@@ -3,7 +3,7 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { before, test } from "node:test"
 import { getCatalog } from "../catalog-digest.mjs"
-import { applyPatches, checkSchema, planFromScene, planSchema, validate } from "../schemas.mjs"
+import { applyPatches, checkSchema, labelRef, planFromScene, planSchema, validate } from "../schemas.mjs"
 
 let catalog
 before(async () => {
@@ -690,4 +690,54 @@ test("edit: words that send a new thing off the table make its goal an 'off' goa
 	// (without such words, a "moves" goal stays one)
 	const r2 = validate("edit", { ...K(), mode: "patch", reply: "Added a ping-pong ball.", patches }, { catalog, scene, text: "Add a ping-pong ball that the fan blows along the table." })
 	assert.equal(r2.value.patches.find((p) => p.op === "set_goals").goals[1].kind, "moves")
+})
+
+test("a piles goal whose label says the heap ends inside a container names it (in), in a plan and in an edit's set_goals (V2 release round 2: 'The sugar piles up into a heap inside the jar' held over an empty jar)", () => {
+	const items = (extra = []) => [
+		{ id: "jar", type: "glass-jar", name: "Glass jar", place: { on: "table", x: 1.2 } },
+		{ id: "funnel", type: "sand-funnel", name: "Funnel of sugar", props: { grain: "sugar", sand_kg: 0.15 }, place: { on: "table", x: 1.2 } },
+		...extra
+	]
+	const plan = (goal, extra) => ({ title: "Sugar into a jar", seconds: 10, release: 0.5, items: items(extra), missing: [], goals: [goal], tune: [], notes: "" })
+	const r = validate("plan", plan({ kind: "piles", item: "funnel", label: "The sugar piles up into a heap inside the jar" }), { catalog })
+	assert.deepEqual(r.errors, [])
+	assert.equal(r.value.goals[0].in, "jar")
+	assert.ok(r.warnings.some((w) => /goals\[0\]\.in "jar" added: its label says so/.test(w)), r.warnings.join("\n"))
+	// (one the plan names stays as it is; a label that puts the heap beside the jar names nothing)
+	assert.equal(validate("plan", plan({ kind: "piles", item: "funnel", in: "jar", label: "The sugar piles up inside the jar" }), { catalog }).value.goals[0].in, "jar")
+	assert.equal(validate("plan", plan({ kind: "piles", item: "funnel", label: "The sugar piles up next to the jar" }), { catalog }).value.goals[0].in, undefined)
+	assert.equal(validate("plan", plan({ kind: "steeper", a: "funnel", b: "funnel", label: "The heap in the jar is steeper" }), { catalog }).value.goals[0].in, undefined, "a kind without in")
+	// (two jars: the words before its kind tell which; none, and nothing is guessed)
+	const two = [{ id: "jar2", type: "glass-jar", name: "Blue jar", place: { on: "table", x: 2.0 } }]
+	assert.equal(validate("plan", plan({ kind: "piles", item: "funnel", label: "The sugar piles up in the blue jar" }, two), { catalog }).value.goals[0].in, "jar2")
+	assert.equal(validate("plan", plan({ kind: "piles", item: "funnel", label: "The sugar piles up in the jar" }, two), { catalog }).value.goals[0].in, undefined)
+	// (the word's forms: "inside the glass" for a jar named "Tall glass", "into the bowls", a cup by its type's word)
+	const its = [{ id: "g", type: "glass-jar", name: "Tall glass" }, { id: "b", type: "bowl", name: "Bowl" }, { id: "c", type: "plastic-cup", name: "Party" }]
+	const spec = { after: ["in", "inside", "into", "within"], types: ["glass-jar", "bowl", "plastic-cup"] }
+	assert.equal(labelRef("Rice heaps up inside the glass", its, spec), "g")
+	assert.equal(labelRef("Sugar pours into the two bowls", its, spec), "b")
+	assert.equal(labelRef("The salt ends in a heap in the cup", its, spec), "c")
+	assert.equal(labelRef("The salt piles up on the table", its, spec), null)
+	// an edit's set_goals gets it too, from the scene's items
+	const scene = { version: 2, name: "s", seconds: 10, release: 0.5, items: [{ id: "table", type: "table", x: 1.3, y: 0 }, { id: "jar", type: "glass-jar", name: "Glass jar", x: 1.2, y: 0 }, { id: "funnel", type: "sand-funnel", name: "Funnel of sugar", x: 1.2, y: 0, props: { grain: "sugar", sand_kg: 0.15 } }], goals: [] }
+	const e = validate("edit", { ...K(), mode: "patch", reply: "Set the goal.", patches: [{ op: "set_goals", goals: [{ kind: "piles", item: "funnel", label: "The sugar piles up inside the jar" }] }] }, { catalog, scene, text: "The sugar must pile up inside the jar." })
+	assert.deepEqual(e.errors, [])
+	assert.equal(e.value.patches.find((p) => p.op === "set_goals").goals[0].in, "jar")
+})
+
+test("a pulley lift's pail is a container: a thing may go inside it, and an \"in\" goal may name it (judged by the pail's walls in the run); a hanging machine's note says it hangs over the table", () => {
+	const plan = {
+		title: "A pail lifts an apple",
+		seconds: 3,
+		items: [
+			{ id: "lift", type: "pulley-lift", props: { weight: 1.2, cup_width: 0.14, cup_height: 0.1 }, place: { on: "air", x: 1.3, y_m: 1.25 } },
+			{ id: "apple", type: "apple", place: { inside: "lift" } }
+		],
+		goals: [{ kind: "in", item: "apple", container: "lift", label: "the apple rides up in the pail" }]
+	}
+	const r = validate("plan", plan, { catalog })
+	assert.deepEqual(r.errors, [])
+	assert.equal(catalog.types["pulley-lift"].container, true)
+	assert.equal(catalog.types["pulley-lift"].goalContainer, true)
+	assert.match(catalog.types["atwood-machine"].note, /never resting on it/)
 })

@@ -17,6 +17,10 @@
  *     {role: "meter", solid, at, weighting "A" | "Z", response (s), floor (dB), listen "air" | "touch"}
  *     {role: "wall", solid, a, b, absorption}   a surface that reflects sound (the segment a–b)
  *     {role: "carrier", solid, a, b, half, speed, gain, material}   a solid that carries sound to a meter that touches it
+ *     {role: "telephone", solid, a, b (its cups' mouths), length, diameter, rho, E, eta, tension, pinched, cup: {r, m, f, v}, reach, sag?}   a string telephone
+ *       (engine6 crossmod): a source within reach of one cup's mouth is heard by a meter within reach of the other's, along the string
+ *       (waves.ts telephoneOf: Ernst's sagging-string modulus, a lumped cup-string-cup two-port at 1 kHz); readings on its item: carries (0/1),
+ *       sag_mm, string_ms and, while it carries, loss_db (how much quieter at the ear on the far cup than at the near cup's mouth)
  *     {role: "buzzer", solid, at, f0, lp1, on: [reading keys]}   circuits' buzzer: sounds while one of its readings is above zero
  *   Readings: a source's item: sounding (dB 1 m away now, 0 when silent), pitch (Hz), struck (strikes so far), strike_t (s, −1 before any),
  *   strike_level, amp_mm (its vibrating part's amplitude now, mm); a meter's item: peak (dB), level (dB), pitch (Hz heard most now),
@@ -36,7 +40,7 @@
  * Both use the run's gravity (settings.gravity): sag, and the water waves' dispersion.
  */
 import type { Process, ProcessContext, ProcessKind, ProcessRecord, SolidHandle } from "#sim/plugins.ts"
-import { airSpeed, type Carrier, type FieldMeter, type FieldSource, Line, LINE_MAX_SEGMENTS, type LineRec, Ripples, SoundField, type TankRec, toSegment, type Wall, type Water } from "#sim/waves.ts"
+import { airSpeed, type Carrier, type FieldMeter, type FieldSource, Line, LINE_MAX_SEGMENTS, type LineRec, log10, Ripples, SoundField, type TankRec, telephoneOf, type Telephone, toSegment, type Wall, type Water } from "#sim/waves.ts"
 
 interface P {
 	readonly x: number
@@ -66,8 +70,8 @@ const worldOf = (ctx: ProcessContext, solid: unknown, at: P): P => {
 
 // ---------------------------------------------------------------- the sound field
 
-const ROLES = ["source", "meter", "wall", "carrier", "buzzer", "water"] as const
-const NEEDS_SOLID = new Set(["source", "meter", "wall", "carrier", "buzzer"])
+const ROLES = ["source", "meter", "wall", "carrier", "buzzer", "water", "telephone"] as const
+const NEEDS_SOLID = new Set(["source", "meter", "wall", "carrier", "buzzer", "telephone"])
 
 /** One run's sound: its records (in document order) and, once started, the field and what each source and meter needs. */
 class SoundWorld {
@@ -132,6 +136,36 @@ class SoundWorld {
 		this.field.waters = this.records
 			.filter((r) => r.role === "water")
 			.map((r): Water => ({ x0: num(r.x0, 0), x1: num(r.x1, 0), floor: num(r.floor, 0), top: num(r.top, 0), speed: num(r.speed, 1481), item: String(r.item ?? r.id) }))
+		// string telephones: their strings' carrying (under the run's gravity: a string sags less on the Moon), and what they read
+		const phones: Telephone[] = []
+		for (const r of this.records) {
+			if (r.role !== "telephone") continue
+			const cup = (r.cup ?? {}) as { r?: unknown; m?: unknown; f?: unknown; v?: unknown }
+			const tl = telephoneOf(
+				{
+					length: num(r.length, 1),
+					diameter: num(r.diameter, 0.001),
+					rho: num(r.rho, 764),
+					E: num(r.E, 2e9),
+					eta: Math.max(0, num(r.eta, 0.08)),
+					tension: Math.max(0, num(r.tension, 0)),
+					pinched: r.pinched === true,
+					cupR: num(cup.r, 0.0265),
+					cupM: num(cup.m, 0.00066),
+					cupF: Math.max(0, num(cup.f, 0)),
+					cupV: num(cup.v, 0.000266),
+					...(typeof r.sag === "number" && Number.isFinite(r.sag) && r.sag >= 0 ? { sag: r.sag } : {})
+				},
+				ctx.settings.gravity
+			)
+			const item = String(r.item ?? r.id)
+			phones.push({ a: worldOf(ctx, r.solid, pt(r.a)), b: worldOf(ctx, r.solid, pt(r.b)), length: num(r.length, 1), speed: tl.speed, ratio: tl.ratio, reach: Math.max(0, num(r.reach, 0.5)), item })
+			ctx.set(item, "carries", tl.carries ? 1 : 0)
+			ctx.set(item, "sag_mm", tl.sag * 1000)
+			ctx.set(item, "string_ms", tl.speed)
+			if (tl.carries) ctx.set(item, "loss_db", -20 * log10(tl.ratio))
+		}
+		this.field.telephones = phones
 		this.sources = []
 		this.buzzers = []
 		srcRecs.forEach((r, si) => {
@@ -465,6 +499,14 @@ const sound: ProcessKind = {
 		if (role === "wall" && !(finitePt(record.a) && finitePt(record.b))) return "a wall needs its two ends a and b"
 		if (role === "carrier" && !(finitePt(record.a) && finitePt(record.b) && num(record.speed, 0) > 0)) return "a carrier needs its ends and its speed"
 		if (role === "water" && !(num(record.x1, 0) > num(record.x0, 0) && num(record.top, 0) >= num(record.floor, 0) && num(record.speed, 0) > 0)) return "a body of water needs x0 < x1, floor ≤ top and its speed"
+		if (role === "telephone") {
+			if (!(finitePt(record.a) && finitePt(record.b))) return "a string telephone needs its two cups' mouths a and b"
+			for (const k of ["length", "diameter", "rho", "E"] as const) if (!(num(record[k], 0) > 0)) return `a string telephone's ${k} must be a number above 0`
+			if (!(num(record.tension, -1) >= 0) || !(num(record.eta, -1) >= 0)) return "a string telephone's tension and eta must be numbers, 0 or more"
+			const cup = record.cup as { r?: unknown; m?: unknown; f?: unknown; v?: unknown } | undefined
+			if (typeof cup !== "object" || cup === null || !(num(cup.r, 0) > 0 && num(cup.m, 0) > 0 && num(cup.v, 0) > 0 && num(cup.f, -1) >= 0))
+				return "a string telephone's cup needs its bottom's radius r, mass m, resonance f (Hz, 0 or more) and its volume v"
+		}
 		return undefined
 	},
 	create(record: ProcessRecord, ctx: ProcessContext): Process {

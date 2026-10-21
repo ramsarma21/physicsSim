@@ -1,11 +1,12 @@
 // ai/catalog-digest.mjs and ai/scene-digest.mjs: complete, sized, cached; scenes read back with true outlines and supports.
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { test } from "node:test"
-import { detailFor, digestFromCatalog, getCatalog, _resetMemo } from "../catalog-digest.mjs"
+import { detailFor, digestFromCatalog, getCatalog, promptCatalog, simFingerprint, _resetMemo } from "../catalog-digest.mjs"
 import { sceneDigest, simText } from "../scene-digest.mjs"
 
 const PG = new URL("../../", import.meta.url)
@@ -67,6 +68,65 @@ test("the cache: written once, then reused while web/sim is unchanged", async ()
 		delete process.env.AI_CACHE_DIR
 		rmSync(dir, { recursive: true, force: true })
 	}
+})
+
+test("a digest read from the cache still loads web/sim: a fresh process knows the physics modules' goal kinds after getCatalog() (2026-10-21)", async () => {
+	// (since the committed digest stays current, a process's first getCatalog() is mostly a cache hit; it never loaded web/sim, so the modules'
+	// registry was empty and validate() rejected a plan's "piles" goal: "must be one of "in", "falls", "hits", "moves", "off"")
+	const d = await getCatalog()
+	const dir = mkdtempSync(join(tmpdir(), "ai-digest-hit-"))
+	try {
+		writeFileSync(join(dir, "catalog-digest.json"), JSON.stringify(d))
+		const code = `const { getCatalog } = await import(${JSON.stringify(new URL("../catalog-digest.mjs", import.meta.url).href)})
+const { validate } = await import(${JSON.stringify(new URL("../schemas.mjs", import.meta.url).href)})
+const had = !!globalThis[Symbol.for("sandbox.plugins")]
+const cat = await getCatalog()
+const { allGoalKinds } = await import(${JSON.stringify(new URL("../goals.mjs", import.meta.url).href)})
+const plan = { title: "Sugar", seconds: 10, items: [{ id: "jar", type: "glass-jar", place: { on: "table", x: 1.2 } }, { id: "funnel", type: "sand-funnel", props: { grain: "sugar" }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "piles", item: "funnel", label: "The sugar piles up" }] }
+console.log(JSON.stringify({ had, builtAt: cat.builtAt, kinds: allGoalKinds(), errors: validate("plan", plan, { catalog: cat.index }).errors }))`
+		const out = JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", code], { cwd: fileURLToPath(PG), env: { ...process.env, AI_CACHE_DIR: dir, AI_CATALOG_URL: "http://127.0.0.1:9/none" }, maxBuffer: 1 << 24 }).toString().trim().split("\n").at(-1))
+		assert.equal(out.had, false, "the child starts without web/sim")
+		assert.equal(out.builtAt, d.builtAt, "its digest came from the cache, not rebuilt")
+		const modules = typeof process.env.PLAYGROUND_MODULES === "string" ? process.env.PLAYGROUND_MODULES.split(",").map((s) => s.trim()).filter(Boolean) : null
+		if (!modules || modules.includes("granular")) {
+			assert.ok(out.kinds.includes("piles"), `the granular module's goal kinds are known: ${out.kinds.join(", ")}`)
+			assert.deepEqual(out.errors, [], "a piles goal validates")
+		}
+		if (!modules || modules.length) assert.ok(out.kinds.length > 5, "some module's goal kinds are known")
+	} finally {
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test("the committed digest (ai/.cache/catalog-digest.json) is web/sim's as it is in this commit (npm run digest:ai rebuilds it)", () => {
+	// (its fingerprint is of the files' contents: a checkout of this commit reads it as it is and leaves it unchanged; before, keyed by the
+	// files' times, every checkout rebuilt it and the tree showed it changed, and its text had fallen behind web/sim: milk did not yet mix)
+	if (typeof process.env.PLAYGROUND_MODULES === "string") return // (a process with only some modules has a digest of its own)
+	const committed = JSON.parse(readFileSync(new URL("../.cache/catalog-digest.json", import.meta.url), "utf8"))
+	assert.equal(committed.fingerprint, simFingerprint(), "ai/.cache/catalog-digest.json is stale: run npm run digest:ai and commit it")
+	assert.equal(committed.source, "web/sim")
+})
+
+test("a cup of grains in the request's words gives the planner the pitcher (the flow module) and the grains' heap (the granular module)", async () => {
+	const cat = await getCatalog()
+	if (!cat.tiers) return // (a catalog small enough to go whole into every prompt: nothing is picked)
+	// (V2 release, 2026-10-21: "a hand tips a cup of salt" picked granular, hands and heat only, and the planner said the library had no tipping
+	// pourer for grains and used a funnel of sand; "a cup of salt is tipped over a bowl" picked heat alone, "tip a cup of grains into a glass" waves)
+	for (const text of [
+		"A hand tips a cup of salt so it pours into a round glass jar on the table, and the salt piles up inside the jar.",
+		"A hand tips a cup of sugar so it pours into a round glass jar on the table, and the sugar piles up inside the jar.",
+		"A hand tips a cup of rice so it pours into a round glass jar on the table, and the rice piles up inside the jar.",
+		"A cup of salt is tipped over a bowl.",
+		"Tip a cup of grains into a glass.",
+		"Pour flour from a cup into a bowl.",
+		"Salt pours from a mug into a jar."
+	]) {
+		const picked = promptCatalog(cat, { text }).modules
+		for (const m of ["mod_flow", "mod_granular"]) assert.ok(picked.includes(m), `${text}: picks ${m} (picked ${picked.join(", ")})`)
+	}
+	// (grains with no cup, tip or pour, and a cup with no grains, are not a cup of grains)
+	assert.ok(!promptCatalog(cat, { text: "A ball rolls down a ramp into a cup" }).modules.includes("mod_granular"))
+	assert.ok(!promptCatalog(cat, { text: "Salt on one of two ice cubes: which melts first?" }).modules.includes("mod_flow"))
 })
 
 test("scene digest: true outlines and what each item rests on (sloped supports too)", async () => {

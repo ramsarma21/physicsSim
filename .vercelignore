@@ -50,6 +50,7 @@
 /web/server.log
 /web/ai/test
 /web/account/test
+/web/export/test
 /web/sim/**/*.map
 
 # anywhere

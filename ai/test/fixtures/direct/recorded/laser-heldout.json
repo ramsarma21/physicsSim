@@ -1,0 +1,633 @@
+{
+	"about": "The direct step's live run of the design example '01-laser-mirror' with that example held out of the prompt (20 Oct 2026): Opus 5.5 (claude-opus-5-5) through the gateway, measured by the engine's executor (web/export/shots.js checkPlan). Each round: the plan the model answered, and what the executor's checks said of it.",
+	"case": "laser-heldout",
+	"payload": {
+		"kind": "demo",
+		"lesson": {
+			"question": "What happens to the light when it hits the mirror?",
+			"answer": "It bounces off. The angle going out is the same as the angle coming in.",
+			"grade": 4
+		},
+		"concept": "light reflects off a mirror: the angle in equals the angle out",
+		"scene": "demos/optics/demo-mirror.json"
+	},
+	"model": "claude-group/claude-opus-5-5",
+	"usd": 0.1848828,
+	"ms": 74591,
+	"rounds": [
+		{
+			"round": 0,
+			"ok": false,
+			"failed": [
+				"laser must-see: {\"beam\":\"laser\",\"segment\":1} s 0 (floor 0.045) margin -1.464",
+				"follow-light must-see: {\"beam\":\"laser\"} s 0.651 (floor 0.045) margin -0.838; {\"item\":\"mirror\"} s 0.381 (floor 0.045) margin -0.04"
+			],
+			"usd": 0.1103854,
+			"ms": 50242,
+			"plan": {
+				"version": 1,
+				"title": "Angle in equals angle out",
+				"about": "A laser beam bounces off a mirror, and it leaves at the same angle as it arrived: 30 degrees in, 30 degrees out.",
+				"grade": 4,
+				"source": {
+					"kind": "demo",
+					"scene": "demo-mirror",
+					"question": "What happens to the light when it hits the mirror?",
+					"answer": "It bounces off. The angle going out is the same as the angle coming in.",
+					"words": [
+						"Angle in equals angle out"
+					]
+				},
+				"story": [
+					{
+						"id": "aim",
+						"kind": "setup",
+						"says": "A laser shines a thin beam of light toward a mirror.",
+						"evidence": [
+							{
+								"item": "laser"
+							},
+							{
+								"beam": "laser",
+								"segment": 1
+							}
+						]
+					},
+					{
+						"id": "path",
+						"kind": "action",
+						"says": "The light goes straight to the mirror, turns there, and goes on straight to the target.",
+						"evidence": [
+							{
+								"beam": "laser"
+							},
+							{
+								"beam": "laser",
+								"bounce": 1
+							},
+							{
+								"item": "target"
+							}
+						]
+					},
+					{
+						"id": "whole",
+						"kind": "reveal",
+						"says": "Together the two straight pieces make a V with its corner on the mirror.",
+						"evidence": [
+							{
+								"beam": "laser"
+							},
+							{
+								"item": "mirror"
+							}
+						]
+					},
+					{
+						"id": "angles",
+						"kind": "pause",
+						"says": "The angle coming in and the angle going out are the same: 30 degrees each.",
+						"evidence": [
+							{
+								"beam": "laser",
+								"bounce": 1
+							},
+							{
+								"item": "mirror"
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 30
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "dark",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "laser",
+						"beat": "aim",
+						"intent": "Open close on the laser with its beam already shining out to the right: the child knows where the light comes from before following it.",
+						"run": {
+							"freeze": "result",
+							"seconds": 1.6
+						},
+						"move": "hold",
+						"subject": {
+							"item": "laser"
+						},
+						"frame": {
+							"width": 0.28
+						},
+						"place": "left-third",
+						"view": "eye",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the laser and the thin beam of light coming out of it?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "laser"
+								}
+							],
+							"details": [
+								{
+									"beam": "laser",
+									"segment": 1
+								}
+							]
+						}
+					},
+					{
+						"id": "follow-light",
+						"beat": "path",
+						"in": "cut",
+						"intent": "Light is instant, so on the held moment the camera travels along the beam at a walking pace: to the mirror, a short rest where it turns, then on up to the target. The child sees the whole path.",
+						"run": {
+							"freeze": "result"
+						},
+						"move": "travel",
+						"subject": {
+							"beam": "laser"
+						},
+						"travel": {
+							"path": {
+								"through": [
+									{
+										"item": "laser"
+									},
+									{
+										"beam": "laser",
+										"bounce": 1
+									},
+									{
+										"item": "target"
+									}
+								]
+							},
+							"pace": {
+								"seconds": 4
+							},
+							"dwell": 0.7
+						},
+						"frame": {
+							"width": 0.5
+						},
+						"view": "eye",
+						"lens": 50,
+						"audit": {
+							"question": "Does the camera follow the light from the laser to the mirror, see it turn there, and follow it on to the target?",
+							"key": "middle",
+							"must_see": [
+								{
+									"beam": "laser"
+								}
+							],
+							"details": [
+								{
+									"item": "mirror"
+								}
+							]
+						}
+					},
+					{
+						"id": "the-v",
+						"beat": "whole",
+						"in": "continue",
+						"intent": "From the target, ease back square on until the whole V shows at once: the path in, the corner on the mirror, the path out.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3
+						},
+						"move": "pull",
+						"ease": "gentle",
+						"move_seconds": 2.5,
+						"subject": {
+							"item": "target"
+						},
+						"end": {
+							"subject": {
+								"beam": "laser"
+							},
+							"keep": [
+								{
+									"item": "laser"
+								},
+								{
+									"item": "mirror"
+								},
+								{
+									"item": "target"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": "eye",
+							"lens": 50
+						},
+						"audit": {
+							"question": "When the camera stops, can a child see the whole path of the light shaped like a V, with its corner on the mirror?",
+							"key": "end",
+							"must_see": [
+								{
+									"beam": "laser"
+								},
+								{
+									"item": "mirror"
+								}
+							]
+						}
+					},
+					{
+						"id": "equal-angles",
+						"beat": "angles",
+						"in": "continue",
+						"intent": "Hold still on the whole V, square on so angles read true, and draw the dashed line straight out of the mirror and the two measured arcs: 30 degrees in, 30 degrees out, for the child to compare at the question.",
+						"run": {
+							"freeze": "result",
+							"seconds": 4
+						},
+						"move": "hold",
+						"subject": {
+							"beam": "laser"
+						},
+						"keep": [
+							{
+								"item": "laser"
+							},
+							{
+								"item": "mirror"
+							},
+							{
+								"item": "target"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "normal",
+								"on": {
+									"beam": "laser",
+									"bounce": 1
+								}
+							},
+							{
+								"kind": "angle",
+								"on": {
+									"beam": "laser",
+									"bounce": 1
+								}
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "mirror"
+								},
+								"text": "Mirror",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "laser"
+								},
+								"text": "Laser",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a child see the light bounce off the mirror and read the same angle on both sides of the dashed line, 30 and 30?",
+							"key": "middle",
+							"must_see": [
+								{
+									"beam": "laser",
+									"bounce": 1
+								},
+								{
+									"item": "mirror"
+								}
+							],
+							"details": [
+								{
+									"item": "laser"
+								}
+							]
+						}
+					}
+				],
+				"notes": "The run is a steady beam (1 s, the same path from 0.05 s), so every shot freezes on result and the camera does the telling. Square on (eye, pitch 3) throughout so the 30/30 angles read true. The target is small (1 x 3 cm) and appears as a detail during the travel and in the whole V; the question does not read its numbers, so module labels are hidden."
+			}
+		},
+		{
+			"round": 1,
+			"ok": true,
+			"failed": [],
+			"usd": 0.0744974,
+			"ms": 24326,
+			"plan": {
+				"version": 1,
+				"title": "Angle in equals angle out",
+				"about": "A laser beam bounces off a mirror, and it leaves at the same angle as it arrived: 30 degrees in, 30 degrees out.",
+				"grade": 4,
+				"source": {
+					"kind": "demo",
+					"scene": "demo-mirror",
+					"question": "What happens to the light when it hits the mirror?",
+					"answer": "It bounces off. The angle going out is the same as the angle coming in.",
+					"words": [
+						"Angle in equals angle out"
+					]
+				},
+				"story": [
+					{
+						"id": "aim",
+						"kind": "setup",
+						"says": "A laser shines a thin beam of light toward a mirror.",
+						"evidence": [
+							{
+								"item": "laser"
+							},
+							{
+								"beam": "laser",
+								"segment": 1
+							}
+						]
+					},
+					{
+						"id": "path",
+						"kind": "action",
+						"says": "The light goes straight to the mirror, turns there, and goes on straight to the target.",
+						"evidence": [
+							{
+								"beam": "laser"
+							},
+							{
+								"beam": "laser",
+								"bounce": 1
+							},
+							{
+								"item": "target"
+							}
+						]
+					},
+					{
+						"id": "whole",
+						"kind": "reveal",
+						"says": "Together the two straight pieces make a V with its corner on the mirror.",
+						"evidence": [
+							{
+								"beam": "laser"
+							},
+							{
+								"item": "mirror"
+							}
+						]
+					},
+					{
+						"id": "angles",
+						"kind": "pause",
+						"says": "The angle coming in and the angle going out are the same: 30 degrees each.",
+						"evidence": [
+							{
+								"beam": "laser",
+								"bounce": 1
+							},
+							{
+								"item": "mirror"
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 30
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "dark",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "laser",
+						"beat": "aim",
+						"intent": "Open close on the laser with its beam already shining out to the right: the child knows where the light comes from before following it.",
+						"run": {
+							"freeze": "result",
+							"seconds": 1.6
+						},
+						"move": "hold",
+						"subject": {
+							"item": "laser"
+						},
+						"frame": {
+							"width": 0.28
+						},
+						"place": "left-third",
+						"view": "eye",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the laser and the thin beam of light coming out of it?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "laser"
+								}
+							]
+						}
+					},
+					{
+						"id": "follow-light",
+						"beat": "path",
+						"in": "cut",
+						"intent": "Light is instant, so on the held moment the camera travels along the beam at a walking pace: to the mirror, a short rest where it turns, then on up to the target. The child sees the whole path.",
+						"run": {
+							"freeze": "result"
+						},
+						"move": "travel",
+						"subject": {
+							"beam": "laser"
+						},
+						"travel": {
+							"path": {
+								"through": [
+									{
+										"item": "laser"
+									},
+									{
+										"beam": "laser",
+										"bounce": 1
+									},
+									{
+										"item": "target"
+									}
+								]
+							},
+							"pace": {
+								"seconds": 4
+							},
+							"dwell": 0.7
+						},
+						"frame": {
+							"width": 0.7
+						},
+						"view": "eye",
+						"lens": 50,
+						"audit": {
+							"question": "Does the camera follow the light from the laser to the mirror, see it turn there, and follow it on to the target?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "mirror"
+								}
+							]
+						}
+					},
+					{
+						"id": "the-v",
+						"beat": "whole",
+						"in": "continue",
+						"intent": "From the target, ease back square on until the whole V shows at once: the path in, the corner on the mirror, the path out.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3
+						},
+						"move": "pull",
+						"ease": "gentle",
+						"move_seconds": 2.5,
+						"subject": {
+							"item": "target"
+						},
+						"end": {
+							"subject": {
+								"beam": "laser"
+							},
+							"keep": [
+								{
+									"item": "laser"
+								},
+								{
+									"item": "mirror"
+								},
+								{
+									"item": "target"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": "eye",
+							"lens": 50
+						},
+						"audit": {
+							"question": "When the camera stops, can a child see the whole path of the light shaped like a V, with its corner on the mirror?",
+							"key": "end",
+							"must_see": [
+								{
+									"beam": "laser"
+								},
+								{
+									"item": "mirror"
+								}
+							]
+						}
+					},
+					{
+						"id": "equal-angles",
+						"beat": "angles",
+						"in": "continue",
+						"intent": "Hold still on the whole V, square on so angles read true, and draw the dashed line straight out of the mirror and the two measured arcs: 30 degrees in, 30 degrees out, for the child to compare at the question.",
+						"run": {
+							"freeze": "result",
+							"seconds": 4
+						},
+						"move": "hold",
+						"subject": {
+							"beam": "laser"
+						},
+						"keep": [
+							{
+								"item": "laser"
+							},
+							{
+								"item": "mirror"
+							},
+							{
+								"item": "target"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "normal",
+								"on": {
+									"beam": "laser",
+									"bounce": 1
+								}
+							},
+							{
+								"kind": "angle",
+								"on": {
+									"beam": "laser",
+									"bounce": 1
+								}
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "mirror"
+								},
+								"text": "Mirror",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "laser"
+								},
+								"text": "Laser",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a child see the light bounce off the mirror and read the same angle on both sides of the dashed line, 30 and 30?",
+							"key": "middle",
+							"must_see": [
+								{
+									"beam": "laser",
+									"bounce": 1
+								},
+								{
+									"item": "mirror"
+								}
+							],
+							"details": [
+								{
+									"item": "laser"
+								}
+							]
+						}
+					}
+				],
+				"notes": "The run is a steady beam (1 s, the same path from 0.05 s), so every shot freezes on result and the camera does the telling. Square on (eye, pitch 3) throughout so the 30/30 angles read true. The opening close-up shows only the start of the beam (its first piece is 0.53 m long, too long for a close shot), so it is not audited as a whole there. The travel is framed 0.7 m wide so the mirror stays whole as the camera passes the bounce; the whole beam is audited in the V shots, not during the travel. The target is small (1 x 3 cm) and the question does not read its numbers, so module labels are hidden."
+			}
+		}
+	]
+}

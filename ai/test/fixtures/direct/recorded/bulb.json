@@ -1,0 +1,443 @@
+{
+	"about": "The direct step's live run of the design example '08-switch-bulb' (20 Oct 2026): Opus 5.5 (claude-opus-5-5) through the gateway, measured by the engine's executor (web/export/shots.js checkPlan). Each round: the plan the model answered, and what the executor's checks said of it.",
+	"case": "bulb",
+	"payload": {
+		"kind": "demo",
+		"lesson": {
+			"question": "What makes the bulb light?",
+			"answer": "Closing the switch makes the loop complete.",
+			"grade": 4
+		},
+		"concept": "a complete circuit: closing the switch lights the bulb",
+		"scene": "demos/circuits/board-switch-bulb.json"
+	},
+	"model": "claude-group/claude-opus-5-5",
+	"usd": 0.2443828,
+	"ms": 98868,
+	"rounds": [
+		{
+			"round": 0,
+			"ok": true,
+			"failed": [],
+			"usd": 0.2443828,
+			"ms": 98835,
+			"plan": {
+				"version": 1,
+				"title": "Close the switch, light the bulb",
+				"about": "A bulb lights only when the switch is closed, because closing the switch completes the loop from the battery through the bulb and back.",
+				"grade": 4,
+				"source": {
+					"kind": "demo",
+					"scene": "board-switch-bulb",
+					"question": "What makes the bulb light?",
+					"answer": "Closing the switch makes the loop complete.",
+					"words": [
+						"On the circuit board: a battery, a switch and a bulb in one loop",
+						"The switch closes at 1 s and the bulb lights"
+					]
+				},
+				"story": [
+					{
+						"id": "loop",
+						"kind": "setup",
+						"says": "A battery, a switch and a bulb sit in one loop. The switch is open and the bulb is dark.",
+						"evidence": [
+							{
+								"item": "bat"
+							},
+							{
+								"item": "sw"
+							},
+							{
+								"item": "bulb"
+							}
+						]
+					},
+					{
+						"id": "close",
+						"kind": "key",
+						"says": "The switch closes, and at that same moment the bulb lights.",
+						"evidence": [
+							{
+								"item": "sw",
+								"event": "closes"
+							},
+							{
+								"item": "bulb",
+								"event": "lights"
+							}
+						]
+					},
+					{
+						"id": "around",
+						"kind": "action",
+						"says": "With the switch closed, the path goes all the way round: battery, switch, bulb and back.",
+						"evidence": [
+							{
+								"through": [
+									{
+										"item": "bat"
+									},
+									{
+										"item": "sw"
+									},
+									{
+										"item": "bulb"
+									},
+									{
+										"item": "bat"
+									}
+								]
+							}
+						]
+					},
+					{
+						"id": "whole",
+						"kind": "reveal",
+						"says": "Switch closed, loop complete, bulb glowing.",
+						"evidence": [
+							{
+								"items": [
+									"bat",
+									"sw",
+									"bulb"
+								]
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"lanes": {
+					"arrange": "columns",
+					"list": [
+						{
+							"id": "switch",
+							"label": "switch",
+							"cast": {
+								"part": "sw"
+							}
+						},
+						{
+							"id": "bulb",
+							"label": "bulb",
+							"cast": {
+								"part": "bulb"
+							}
+						}
+					]
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "dark",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "loop",
+						"beat": "loop",
+						"layout": "single",
+						"intent": "Open on the whole loop square on. The battery, the open switch and the dark bulb are labelled, so the child knows every part before anything happens.",
+						"run": {
+							"freeze": "start",
+							"seconds": 2.6
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"bat",
+								"sw",
+								"bulb"
+							]
+						},
+						"keep": [
+							{
+								"item": "bat"
+							},
+							{
+								"item": "sw"
+							},
+							{
+								"item": "bulb"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 3
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "bat"
+								},
+								"text": "battery",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "sw"
+								},
+								"text": "switch: open",
+								"at": "beside"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "bulb"
+								},
+								"text": "bulb",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see the battery, the switch standing open and the bulb not glowing?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "bat"
+								},
+								{
+									"item": "sw"
+								},
+								{
+									"item": "bulb"
+								}
+							],
+							"min_size": 0.045,
+							"small_because": "a setup shot of the whole loop: three small parts on one board"
+						}
+					},
+					{
+						"id": "close",
+						"beat": "close",
+						"layout": "split",
+						"arrange": "columns",
+						"in": "cut",
+						"intent": "The switch and the bulb are 0.25 m apart and act together. Each gets its own half at one scale, slowed, so the child sees the switch close and the bulb light at the same moment.",
+						"run": {
+							"from": {
+								"at": "event:closes:sw",
+								"plus": -0.4
+							},
+							"to": {
+								"at": "reading:bulb.light:settles",
+								"plus": 0.3
+							},
+							"rate": 0.2,
+							"hold_after": 1
+						},
+						"label": "Slow motion",
+						"move": "hold",
+						"subject": {
+							"role": "part"
+						},
+						"keep": [
+							{
+								"role": "part"
+							}
+						],
+						"frame": {
+							"width": 0.2
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 3
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "part"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a child see the switch close and, right then, the bulb start to glow?",
+							"key": "event:lights:bulb",
+							"must_see": [
+								{
+									"role": "part",
+									"lane": "switch"
+								},
+								{
+									"role": "part",
+									"lane": "bulb"
+								}
+							]
+						}
+					},
+					{
+						"id": "around",
+						"beat": "around",
+						"layout": "single",
+						"in": "cut",
+						"intent": "Ride around the loop at a walking pace over the held, lit moment: battery to closed switch to glowing bulb and back. The child sees the path is now unbroken all the way round.",
+						"run": {
+							"freeze": "result"
+						},
+						"move": "travel",
+						"subject": {
+							"through": [
+								{
+									"item": "bat"
+								},
+								{
+									"item": "sw"
+								},
+								{
+									"item": "bulb"
+								},
+								{
+									"item": "bat"
+								}
+							]
+						},
+						"travel": {
+							"path": {
+								"through": [
+									{
+										"item": "bat"
+									},
+									{
+										"item": "sw"
+									},
+									{
+										"item": "bulb"
+									},
+									{
+										"item": "bat"
+									}
+								]
+							},
+							"pace": {
+								"speed": 0.2
+							}
+						},
+						"frame": {
+							"width": 0.4
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 3
+						},
+						"lens": 50,
+						"audit": {
+							"question": "Does the camera go from the battery to the closed switch to the glowing bulb and back to the battery?",
+							"key": "middle"
+						}
+					},
+					{
+						"id": "whole",
+						"beat": "whole",
+						"layout": "single",
+						"in": "continue",
+						"intent": "Back up from the battery until the whole loop fills the picture, square on. Labels then say the switch is closed and the bulb is lit, and the picture holds still for the question.",
+						"run": {
+							"freeze": "result",
+							"seconds": 2.2,
+							"hold_after": 3.4
+						},
+						"move": "pull",
+						"ease": "gentle",
+						"subject": {
+							"item": "bat"
+						},
+						"end": {
+							"subject": {
+								"items": [
+									"bat",
+									"sw",
+									"bulb"
+								]
+							},
+							"keep": [
+								{
+									"item": "bat"
+								},
+								{
+									"item": "sw"
+								},
+								{
+									"item": "bulb"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": {
+								"yaw": 0,
+								"pitch": 3
+							},
+							"lens": 50
+						},
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "sw"
+								},
+								"text": "switch: closed",
+								"at": "beside",
+								"appear": "settled"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "bulb"
+								},
+								"text": "bulb: lit",
+								"at": "above",
+								"appear": "settled"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "bat"
+								},
+								"text": "battery",
+								"at": "below",
+								"appear": "settled"
+							}
+						],
+						"audit": {
+							"question": "With the switch closed, can a child see the whole loop of battery, switch and bulb, with the bulb glowing?",
+							"key": "end",
+							"must_see": [
+								{
+									"item": "bat"
+								},
+								{
+									"item": "sw"
+								},
+								{
+									"item": "bulb"
+								}
+							],
+							"details": [
+								{
+									"item": "sw"
+								}
+							],
+							"min_size": 0.045,
+							"small_because": "a reveal of the whole loop after each part was shown big"
+						}
+					}
+				],
+				"notes": "The cause and the effect happen 0.023 s apart and 0.25 m apart, so the key shot uses two director's lanes (switch, bulb) as split columns at one 0.2 m scale. Each band frames its own part. No positions are compared, and both lanes come from the same single run. That shot is slowed 5x and labelled. The wires (w1..w3) have no cast boxes, so the travel goes through the three parts in loop order instead of along the wires. The video ends on the whole loop, switch closed and bulb lit, held still for the question."
+			}
+		}
+	]
+}

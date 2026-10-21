@@ -7,6 +7,7 @@
 // transmissive one), so the liquid behind it still shows through it.
 // Frames (web/models3d.js): a container's floor slab is centred on its own origin, t thick: its inner floor is at y = t/2.
 import { makeLib } from "./surfaces-lib.js"
+import { registerRings } from "./fluids-rings.js"
 
 // what each liquid looks like: its tint, and how far one sees into it before that tint is all one sees (m: the deeper the body of it, the
 // stronger its colour), as an alpha-blended body, so what is in it (a glass marble, an ice cube, which are themselves see-through) shows
@@ -18,12 +19,19 @@ const LIQUID_LOOK = {
 	"corn syrup": { color: "#ead190", dist: 0.18 },
 	honey: { color: "#c47a08", dist: 0.025 },
 	"dish soap": { color: "#3fa54e", dist: 0.035 },
-	"rubbing alcohol": { color: "#e0566a", dist: 0.12 } // (tinted, as a density column's alcohol is dyed to be seen)
+	"rubbing alcohol": { color: "#e0566a", dist: 0.12 }, // (tinted, as a density column's alcohol is dyed to be seen)
+	// (milk and chocolate milk are opaque: one sees their colour, never through them; machines/mod_fluids.py's 2026-10-20 liquids)
+	milk: { color: "#f3f0e8", dist: 0.002, opaque: true },
+	"chocolate milk": { color: "#6e4631", dist: 0.002, opaque: true }
 }
 const liquidName = (words) => Object.keys(LIQUID_LOOK).find((k) => words === k || words.startsWith(k)) ?? "water"
+// liquids drawn as clear water (a tinting body under a reflecting top) rather than a see-through coloured body
+const CLEAR_LIQUIDS = new Set(["water", "salt water", "sea water"])
 const COLORS = { blue: "#3f7fd0", white: "#eef0ec", grey: "#9aa0a6", green: "#4fa35a", red: "#c8443a", yellow: "#e8c13a", orange: "#e8823a", black: "#2a2a2a" }
 
 export default function register({ addModel, addViewPlugin, addFrameHook, ownMaterial, kit, THREE }) {
+	// (ring waves and entry splashes on liquids' tops: web/models/fluids-rings.js, render only)
+	registerRings({ addViewPlugin, THREE })
 	const L = makeLib(kit, THREE)
 	const { T, TAU, M, V2, f5, mesh, put, clamp } = L
 	const group = (...c) => kit.group(...c)
@@ -32,12 +40,20 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	/** A vessel's glass: a faint pane with a clear coat (alpha-blended, no depth write), so a liquid drawn behind it still shows. */
 	const pane = (tint = "#eef6f4", opacity = 0.14) =>
 		M(`fl-pane|${tint}|${opacity}`, { color: tint, roughness: 0.03, metalness: 0, transparent: true, opacity, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.02, specularIntensity: 1, envMapIntensity: 1.3, side: T.DoubleSide })
+	/** A tank's big front and back panes: clear float glass, a faint reflection of the room and almost no veil (pane() lays 14 % of a pale colour
+	 *  over what is behind it; two of them greyed a tank's water and all in it). */
+	const clearPane = () =>
+		M("fl-pane-clear", { color: "#9fb3ae", roughness: 0.02, metalness: 0, transparent: true, opacity: 0.05, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.02, specularIntensity: 1, envMapIntensity: 1.5, side: T.DoubleSide })
 	/** A glass edge (seen end-on a pane is green-tinted and bright). */
 	const edge = () => M("fl-glass-edge", { color: "#bfe0d2", roughness: 0.05, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false, clearcoat: 1 })
 	/** A liquid: an alpha-blended, clear-coated body tinted by how deep it is (1 − e^(−depth/dist), at least 0.16 so a thin column still shows),
-	 *  drawn after everything solid and see-through in it (no depth write). `tint` < 1 deepens it (a narrow vessel). */
-	function liquidMat(name, thickness, tint = 1) {
+	 *  drawn after everything solid and see-through in it (no depth write). `tint` < 1 deepens it (a narrow vessel). Clear liquids (water and
+	 *  salt or sea water: CLEAR_LIQUIDS) in a tank or a boat (`clear`) are drawn as clear water instead (clearWaterMat): what is in and behind
+	 *  them is tinted, not veiled. (A measuring vessel's column and a density column's layers keep this tinted body: their level is the reading.) */
+	function liquidMat(name, thickness, tint = 1, clear = true) {
+		if (CLEAR_LIQUIDS.has(name) && clear) return clearWaterMat(name, thickness, tint)
 		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
+		if (lk.opaque) return M(`fl-liquid-opaque|${name}`, { color: lk.color, roughness: 0.2, metalness: 0, clearcoat: 0.7, clearcoatRoughness: 0.08, specularIntensity: 0.8, envMapIntensity: 1.1, normalMap: ripples(), normalScale: V2(0.03) })
 		const opacity = clamp(1 - Math.exp(-thickness / (lk.dist * tint)), 0.16, 0.9)
 		return M(`fl-liquid2|${name}|${f5(thickness)}|${tint}`, {
 			color: lk.color, roughness: 0.05, metalness: 0, transparent: true, opacity, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.03,
@@ -56,6 +72,53 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	}
 	const plastic = (hex, gloss = 0.4) => L.plasticMat(hex, gloss)
 	const black = () => M("fl-trim", { color: "#1d1f22", roughness: 0.45, metalness: 0, clearcoat: 0.3 })
+	/** Clear water (CLEAR_LIQUIDS): its body does not veil what is in it and behind it (an alpha-blended, lit body laid a pale haze over them:
+	 *  a cork under water came out nearly white). Real clear water only absorbs, a little more red than blue, over the depth light crosses: the
+	 *  body multiplies what is behind it by its transmittance, mix(white, its colour, 1 − e^(−depth/dist)), at most 0.32 of its colour, unlit
+	 *  (absorption does not depend on the light). Its top surface (waterSurface) carries the reflections that make it read as water. */
+	function clearWaterMat(name, thickness, tint = 1) {
+		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
+		const k = clamp(1 - Math.exp(-thickness / (lk.dist * tint)), 0.06, 0.32)
+		const c = new T.Color("#ffffff").lerp(new T.Color(lk.color), k)
+		return clearCache(`${name}|${f5(thickness)}|${tint}`, () =>
+			new T.MeshBasicMaterial({ color: c, transparent: true, blending: T.MultiplyBlending, premultipliedAlpha: true, depthWrite: false, toneMapped: false, side: T.FrontSide })
+		)
+	}
+	const clearMats = new Map()
+	const clearCache = (key, make) => {
+		let m = clearMats.get(key)
+		if (!m) clearMats.set(key, (m = make()))
+		return m
+	}
+	/** A clear liquid's faint haze: the same body, a little of its colour laid over what is behind it (8 % at most, where the alpha-blended body
+	 *  laid half), so a tank seen from the side still reads as holding water while what is in it stays clear. A child of the body. */
+	function waterHaze(name, geo, thickness, tint = 1) {
+		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
+		const a = clamp(0.25 * (1 - Math.exp(-thickness / (lk.dist * tint))), 0.02, 0.08)
+		const haze = mesh(geo, clearCache(`haze|${name}|${a.toFixed(3)}`, () => new T.MeshBasicMaterial({ color: lk.color, transparent: true, opacity: a, depthWrite: false, toneMapped: false })), { cast: false })
+		haze.renderOrder = 1
+		haze.userData.realOnly = true // (the real look's: the lesson look draws the tinted body instead)
+		return haze
+	}
+	/** A clear liquid's top: a rippled, clear-coated sheet a hair over the body's top face that mirrors the room, faintly tinted; seen from a
+	 *  camera a little above it, it is the band that says "water". A child of the body (local y 0.5 = the body's top at any level). */
+	function waterSurface(name, w, depth, round) {
+		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
+		const g = round ? kit.geo(`fl-watertop-c|${f5(w)}`, () => new T.CircleGeometry(w / 2, 64).rotateX(-Math.PI / 2)) : kit.geo(`fl-watertop|${f5(w)}|${f5(depth)}`, () => new T.PlaneGeometry(w, depth, 1, 1).rotateX(-Math.PI / 2))
+		// (its own blue shows through its reflections: seen from a low camera a sheet that only mirrored the room read as grey, not as water)
+		const mat = M(`fl-watertop2|${name}`, {
+			color: lk.color, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.5, depthWrite: false, clearcoat: 0.6, clearcoatRoughness: 0.04,
+			specularIntensity: 0.6, envMapIntensity: 0.7, normalMap: ripples(), normalScale: V2(0.06), side: T.DoubleSide
+		})
+		const top = mesh(g, mat, { cast: false })
+		top.position.y = 0.5
+		top.renderOrder = 2
+		top.userData.waterSurface = true
+		top.userData.realOnly = true // (the real look's: the lesson look draws the tinted body instead)
+		// (the body is scaled by the level: its top's sheet is a plane, so a y scale leaves it as it is)
+		return top
+	}
+
 
 	// ------------------------------------------------------------- the level hook: a liquid body's top follows the reading
 	// args: {key: "level_mm" | "layer2_mm" ..., below: "layer1_mm" | null, y0 (its floor in the part's frame), h0 (its depth as built), h1 (the
@@ -66,29 +129,64 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const h = Math.max(1e-5, top - bot)
 		obj.scale.y = h
 		obj.position.y = a.y0 + bot + h / 2
-		obj.visible = top - bot > 2e-5
+		// (a container's one liquid that milk poured in has made one that is not seen into (its tint_o, the flow module's reading): the flow
+		// module's view draws it, its colour up to this level (web/models/mod-flow.js), and this body, the liquid it began with, is not drawn)
+		obj.visible = top - bot > 2e-5 && !(a.key === "level_mm" && f.state?.tint_o >= 0.5)
 		// (the ripples drift slowly: 2 cm a second, the same picture for the same t)
 		const m = obj.material
 		if (m?.normalMap && a.ripple) {
 			const own = ownMaterial(obj)
+			// (the lesson look's copy of a liquid keeps its two sides' alphas, web/lesson-look.js lessonLiquid's shader, which a clone drops: a tank's
+			// clear water is put in its lesson body before this hook first owns it)
+			if (own !== m && m.userData?.lessonAlpha) {
+				own.onBeforeCompile = m.onBeforeCompile
+				own.customProgramCacheKey = m.customProgramCacheKey
+			}
 			own.normalMap = own.normalMap.clone()
 			own.normalMap.needsUpdate = true
 			obj.userData.frame.ripple = false
 			obj.userData.rippleMap = own.normalMap
 		}
 		if (obj.userData.rippleMap) obj.userData.rippleMap.offset.set((f.t * 0.02) % 1, (f.t * 0.013) % 1)
+		// (a clear liquid's rippled top is its child: its own ripples drift the same way)
+		const surf = obj.children?.find((c) => c.userData.waterSurface)
+		if (surf && a.ripple !== undefined) {
+			if (!surf.userData.rippleMap && surf.material?.normalMap) {
+				const own = ownMaterial(surf)
+				own.normalMap = own.normalMap.clone()
+				own.normalMap.needsUpdate = true
+				surf.userData.rippleMap = own.normalMap
+			}
+			surf.userData.rippleMap?.offset.set((f.t * 0.02) % 1, (f.t * 0.013) % 1)
+		}
 	})
 	addFrameHook("fluids:surface", (obj, f, a) => {
 		if (!Number.isFinite(f.state?.[a.key])) return
 		obj.position.y = a.y0 + f.state[a.key] / 1000
-		// (the meniscus of an empty vessel shows once liquid stands in it)
-		obj.visible = f.state[a.key] > 0.02
+		// (the meniscus of an empty vessel shows once liquid stands in it; not once milk poured in has made it a liquid one does not see into:
+		// its tint_o, the flow module's reading; web/models/mod-flow.js then draws that liquid, its top the reading line)
+		obj.visible = f.state[a.key] > 0.02 && !(f.state.tint_o >= 0.5)
 	})
-	/** A unit-high box of liquid (x0…x1 by z depth) on a floor at y0: the hook sets its height. `tint` < 1 deepens its colour (a narrow vessel). */
-	function liquidBody(name, x0, x1, depth, y0, key, h0, { below = null, h1 = 0, round = false, tint = 1 } = {}) {
+	/** A unit-high box of liquid (x0…x1 by z depth) on a floor at y0: the hook sets its height. `tint` < 1 deepens its colour (a narrow vessel).
+	 *  A clear liquid's body only tints; its top is a separate rippled surface (a child at the box's top, so the level hook carries it). */
+	function liquidBody(name, x0, x1, depth, y0, key, h0, { below = null, h1 = 0, round = false, tint = 1, layered = false } = {}) {
 		const w = x1 - x0
 		const g = round ? kit.geo(`fl-liqcyl|${f5(w)}`, () => new T.CylinderGeometry(w / 2, w / 2, 1, 64, 1)) : kit.geo(`fl-liqbox|${f5(w)}|${f5(depth)}`, () => new T.BoxGeometry(w, 1, depth))
-		const m = mesh(g, liquidMat(name, Math.min(depth, w), tint), { cast: false })
+		// (clear water in a tank; a round measuring vessel's column and a density column's layers keep their tinted bodies: the level is the
+		// reading, and each layer shows where it lies)
+		const clear = !layered && !round
+		const m = mesh(g, liquidMat(name, Math.min(depth, w), tint, clear), { cast: false })
+		if (CLEAR_LIQUIDS.has(name) && clear) {
+			// (the lesson look draws every liquid its own way, this one too: as its tinted body made lesson-style, in place of the clear water and
+			// without its top sheet and haze; a hidden twin lends it that body's material (web/lesson-look.js lessonPass: lessonBody, lessonTwin,
+			// realOnly; a material in userData would not survive a model's clone), and the lesson outlines then find the liquid and its waterline)
+			const twin = mesh(g, liquidMat(name, Math.min(depth, w), tint, false), { cast: false })
+			twin.visible = false
+			twin.userData.lessonTwin = true
+			m.add(waterSurface(name, w, depth, round), waterHaze(name, g, Math.min(depth, w), tint), twin)
+			m.userData.lessonBody = true
+			m.userData.liquid = true
+		}
 		m.position.set((x0 + x1) / 2, y0 + h0 / 2, 0)
 		m.scale.y = Math.max(1e-5, h0 - h1)
 		if (below) m.position.y = y0 + h1 + (h0 - h1) / 2
@@ -115,10 +213,11 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		if (style === "aquarium") {
 			const glass = pane()
 			const g = 0.006
-			// floor, end panes and the front and back panes (the front one faint, so the water shows)
+			// floor, end panes and the front and back panes (the front and back ones clear: what is in the water and behind the tank shows,
+			// tinted by the water only; real float glass passes 92 % of the light, its 8 % a reflection of the room, not a white veil)
 			parts.push(put(mesh(kit.box(Lin + 2 * t, t, D, 0.001), pane("#e6f2ee", 0.3)), 0, 0, 0))
 			for (const sx of [-1, 1]) parts.push(put(mesh(kit.box(t, wallH, D, 0.001), glass, { cast: false }), sx * (Lin / 2 + t / 2), y0 + wallH / 2, 0))
-			for (const sz of [-1, 1]) parts.push(put(mesh(kit.box(Lin + 2 * t, wallH, g, 0.001), glass, { cast: false }), 0, y0 + wallH / 2, sz * (D / 2 - g / 2)))
+			for (const sz of [-1, 1]) parts.push(put(mesh(kit.box(Lin + 2 * t, wallH, g, 0.001), clearPane(), { cast: false }), 0, y0 + wallH / 2, sz * (D / 2 - g / 2)))
 			// black plastic trims round the top and the bottom (as a real aquarium's): 2 cm tall, a little proud of the glass
 			const trim = black()
 			const tw = 0.004
@@ -273,7 +372,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const area = Math.PI * r * r
 		const h = Math.min((P.layer_ml ?? 100) / 1e6 / area, (H - t) / order.length)
 		order.forEach((name, i) => {
-			parts.push(liquidBody(name, -r * 0.995, r * 0.995, 2 * r * 0.995, y0, `layer${i + 1}_mm`, h * (i + 1), { below: i ? `layer${i}_mm` : null, h1: h * i, round: true }))
+			parts.push(liquidBody(name, -r * 0.995, r * 0.995, 2 * r * 0.995, y0, `layer${i + 1}_mm`, h * (i + 1), { below: i ? `layer${i}_mm` : null, h1: h * i, round: true, layered: true }))
 		})
 		return group(...parts)
 	})
@@ -332,15 +431,60 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const pts = ctx.body.points.map((p) => [p.x, p.y])
 		return group(mesh(kit.extrude(pts, ctx.body.depth, { bevel: 0.0008, key: `fl-keel|${JSON.stringify(pts)}` }), plastic("#2a2a2a", 0.4)))
 	})
+	/** How a sailboat's sail is drawn (render only, its props sail_shape and sail_face_on): {triangle, faceOn}. */
+	const sailLook = (P) => ({ triangle: P?.sail_shape === "triangle", faceOn: P?.sail_face_on === true })
+	/** A triangular sail of the square w × h's area: its luff on the mast from the boom (y = -h/2) up 1.5 h, its foot 4/3 w aft along the boom
+	 *  (x from 0 to -4w/3), a gentle belly; drawn in the sail's frame as the square sheet is (luff at x = 0). */
+	const sailTriangle = (w, h, faceOn) =>
+		kit.geo(`fl-sailtri|${f5(w)}|${f5(h)}|${faceOn ? 1 : 0}`, () => {
+			const luff = 1.5 * h
+			const foot = (4 * w) / 3
+			const n = 12
+			const pos = []
+			const idx = []
+			const belly = (faceOn ? 0.05 : 0.12) * w
+			// rows from the foot (k = 0) to the head (k = n): row k runs from the luff (x = 0) aft to the leech, (n - k) / n of the foot
+			for (let k = 0; k <= n; k++) {
+				const v = k / n
+				const span = foot * (1 - v)
+				const cols = n - k
+				for (let i = 0; i <= Math.max(cols, 0); i++) {
+					const u = cols > 0 ? i / cols : 0
+					pos.push(-span * u, -h / 2 + luff * v, belly * Math.sin(Math.PI * u) * Math.sin(Math.PI * Math.min(1, 0.15 + 0.85 * v)) * (1 - v))
+				}
+			}
+			const rowStart = (k) => {
+				let a = 0
+				for (let j = 0; j < k; j++) a += n - j + 1
+				return a
+			}
+			for (let k = 0; k < n; k++) {
+				const a = rowStart(k)
+				const b = rowStart(k + 1)
+				const cols = n - k
+				for (let i = 0; i < cols; i++) {
+					idx.push(a + i, a + i + 1, b + i)
+					if (i < cols - 1) idx.push(a + i + 1, b + i + 1, b + i)
+				}
+			}
+			const geo = new T.BufferGeometry()
+			geo.setAttribute("position", new T.Float32BufferAttribute(pos, 3))
+			geo.setIndex(idx)
+			geo.computeVertexNormals()
+			return geo
+		})
 	addModel("sailboat", "mast", (ctx) => {
 		const wood = kit.wood("#c9a06a", { roughness: 0.5, varnish: 0.6 })
-		const m = mesh(kit.cylinderY(0.002, ctx.h, 16), wood)
+		// (a triangular sail's head stands half the square's height above the square's top: the mast is drawn up to 1 cm over it)
+		const ext = sailLook(ctx.props).triangle ? Math.max(0, 0.5 * (Number(ctx.props?.sail_height) || 0) - 0.005) : 0
+		const m = mesh(kit.cylinderY(0.002, ctx.h + ext, 16), wood)
+		m.position.y = ext / 2
 		// a small pennant at the top, streaming downwind (+x)
 		const flag = mesh(kit.geo("fl-pennant", () => {
 			const s = new T.Shape([new T.Vector2(0, 0), new T.Vector2(0.03, -0.006), new T.Vector2(0, -0.012)])
 			return new T.ShapeGeometry(s)
 		}), M("fl-pennant", { color: "#e8823a", roughness: 0.8, metalness: 0, side: T.DoubleSide }))
-		flag.position.set(0.002, ctx.h / 2, 0)
+		flag.position.set(0.002, ctx.h / 2 + ext, 0)
 		return group(m, flag)
 	})
 	addModel("sailboat", "sail", (ctx) => {
@@ -353,25 +497,31 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 			color: col, roughness: stuff === "plastic" ? 0.25 : stuff === "cloth" ? 0.95 : 0.8, metalness: 0, side: T.DoubleSide,
 			sheen: stuff === "cloth" ? 1 : 0, sheenColor: new T.Color(col), clearcoat: stuff === "plastic" ? 0.6 : 0, transmission: stuff === "plastic" ? 0.3 : 0, thickness: 0.0005
 		})
-		// the sail let out 45° from the boat's line (as the catalog says), filled by the wind: a gentle belly downwind
-		const g = kit.geo(`fl-sailsheet|${f5(w)}|${f5(h)}`, () => {
+		// the sail let out 45° from the boat's line (as the catalog says), filled by the wind: a gentle belly downwind. Drawn facing the camera
+		// (sail_face_on) it is square to the picture with a shallower belly; a triangle (sail_shape) has the square's area, its luff 1.5 h up the
+		// mast from the boom and its foot 4/3 w along it, so its middle (its centroid, a third of the way up) is where the square's middle is
+		const look = sailLook(P)
+		const g = look.triangle ? sailTriangle(w, h, look.faceOn) : kit.geo(`fl-sailsheet|${f5(w)}|${f5(h)}|${look.faceOn ? 1 : 0}`, () => {
 			const geo = new T.PlaneGeometry(w, h, 12, 12)
 			const pos = geo.attributes.position
+			const belly = look.faceOn ? 0.05 : 0.12
 			for (let i = 0; i < pos.count; i++) {
 				const u = (pos.getX(i) + w / 2) / w
 				const v = (pos.getY(i) + h / 2) / h
-				pos.setZ(i, 0.12 * w * Math.sin(Math.PI * u) * Math.sin(Math.PI * (0.15 + 0.85 * v)))
+				pos.setZ(i, belly * w * Math.sin(Math.PI * u) * Math.sin(Math.PI * (0.15 + 0.85 * v)))
 			}
 			geo.translate(-w / 2, 0, 0) // its luff (front edge) at the mast
 			geo.computeVertexNormals()
 			return geo
 		})
+		const turn = look.faceOn ? 0 : Math.PI / 4
 		const sheet = mesh(g, mat)
-		sheet.rotation.y = Math.PI / 4 // the leech swings out toward the camera, the sail's face toward the wind (+x)
+		sheet.rotation.y = turn // (let out: the leech swings out toward the camera, the sail's face toward the wind (+x))
 		sheet.position.x = 0.0025
 		// the boom along its foot
-		const boom = mesh(kit.geo(`fl-boom|${f5(w)}`, () => new T.CylinderGeometry(0.0015, 0.0015, w, 10).rotateZ(Math.PI / 2).translate(-w / 2, 0, 0)), kit.wood("#c9a06a", { roughness: 0.5, varnish: 0.6 }))
-		boom.rotation.y = Math.PI / 4
+		const foot = look.triangle ? (4 * w) / 3 : w
+		const boom = mesh(kit.geo(`fl-boom|${f5(foot)}`, () => new T.CylinderGeometry(0.0015, 0.0015, foot, 10).rotateZ(Math.PI / 2).translate(-foot / 2, 0, 0)), kit.wood("#c9a06a", { roughness: 0.5, varnish: 0.6 }))
+		boom.rotation.y = turn
 		boom.position.set(0.0025, -h / 2 - 0.002, 0)
 		return group(sheet, boom)
 	})
@@ -477,8 +627,10 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		return group(s, stem)
 	})
 	addModel("cork", "cork", (ctx) => {
-		const len = ctx.solid.length ?? 0.044
 		const m = L.corkMat ? L.corkMat() : M("fl-cork", { color: "#c89a62", roughness: 0.9, metalness: 0 })
+		// (lying across: its body is a slab L × D, drawn as the round cylinder along x it is; else a cylinder through the depth, its round end to the camera)
+		if (ctx.body.kind === "slab") return group(mesh(kit.geo(`fl-cork-across|${f5(ctx.w)}|${f5(ctx.h)}`, () => new T.CylinderGeometry(ctx.h / 2, ctx.h / 2, ctx.w, 40).rotateZ(Math.PI / 2)), m))
+		const len = ctx.solid.length ?? 0.044
 		return group(mesh(kit.cylinderZ(ctx.r, len, 40), m))
 	})
 	addModel("plastic-bead", "bead", (ctx) => {

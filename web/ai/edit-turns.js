@@ -108,6 +108,49 @@ export function headsUpLines({ lost = [], contacts = [], said = "", targets = []
 }
 export const headsUpText = (lines) => (lines?.length ? `Heads-up, in the new run: ${and(lines)}.` : "")
 
+/** A physics module's happenings that are a thing going wrong (their `kind`): a lead pulled off, a bulb or an LED burnt out, a short circuit, a
+ *  thing that breaks. */
+export const MISHAP_KINDS = new Set(["pulled-off", "burns-out", "short", "breaks"])
+/**
+ * What went wrong in the new run to the things a change ADDED (ids the scene before it did not have): they ran into an invisible wall at the
+ * table's end (they drove or rolled off its end: one line for the things that hit one wall together; not when a goal names that wall), or a
+ * module says one went wrong (MISHAP_KINDS: "Black lead 2 pulled off"; not for a thing a goal names, `skip`: every id the goals name, whose goal
+ * may want it so). -> [{text, t, ids}] in time order. The edit's lead never says "everything still works" over them (V2 release: a second
+ * battery car added "so the two race" hit the table's end at 3.85 s, its battery thrown off and both its leads pulled off, under "Done —
+ * everything still works ✓").
+ */
+export function mishapLines({ after = null, beforeScene = null, afterScene = null, skip = [], say = null } = {}) {
+	const old = new Set((beforeScene?.items ?? []).filter(isObj).map((i) => i.id))
+	const items = new Map((afterScene?.items ?? []).filter(isObj).map((i) => [i.id, i]))
+	const skipped = new Set(skip)
+	const added = (id) => typeof id === "string" && items.has(id) && !old.has(id)
+	const fresh = (id) => added(id) && !skipped.has(id)
+	const endWall = (id) => items.get(id)?.type === "wall" && items.get(id)?.props?.invisible_in_3d === true && !skipped.has(id)
+	// (`say`: how a sentence names a thing, "the hobby-motor car", "Battery 2"; else its name on screen)
+	const nameOf = (id) => String((typeof say === "function" ? say(id) : null) ?? items.get(id)?.name ?? id)
+	const out = []
+	// (into a table end's wall: the first thing added to hit it, and those that hit it within 0.2 s of it)
+	const walls = new Map()
+	for (const e of Array.isArray(after?.summary?.events) ? after.summary.events : []) {
+		const who = added(e?.a) && endWall(e?.b) ? e.a : added(e?.b) && endWall(e?.a) ? e.b : null
+		if (!who || !Number.isFinite(e.t)) continue
+		const w = endWall(e.a) ? e.a : e.b
+		const hit = walls.get(w) ?? walls.set(w, { t: e.t, ids: [] }).get(w)
+		if (e.t <= hit.t + 0.2 && !hit.ids.includes(who)) hit.ids.push(who)
+	}
+	for (const { t, ids } of walls.values()) out.push({ text: `${and(ids.map(nameOf))} ${ids.length > 1 ? "run" : "runs"} into the end of the table`, t, ids })
+	const said = new Set()
+	for (const e of Array.isArray(after?.summary?.happenings) ? after.summary.happenings : []) {
+		if (!MISHAP_KINDS.has(e?.kind)) continue
+		const ids = Array.isArray(e.items) ? e.items.map(String) : []
+		const text = String(e.text ?? "").replace(/[.!]+$/, "").trim()
+		if (!text || !ids.some(fresh) || ids.some((id) => skipped.has(id)) || said.has(text)) continue
+		said.add(text)
+		out.push({ text, t: Number(e.t) || 0, ids })
+	}
+	return out.sort((p, q) => p.t - q.t)
+}
+
 /** The user's turn before this one (history: [{role, text}]). */
 export const lastUserTurn = (history) => [...(Array.isArray(history) ? history : [])].reverse().find((h) => h?.role === "user")?.text ?? ""
 /** Did that turn name the thing (by its name's first word, or its id)? A container the user just changed is never aimed. */

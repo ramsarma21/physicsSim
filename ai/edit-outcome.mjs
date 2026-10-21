@@ -9,9 +9,10 @@ import { goalKind, goalLabel, moduleGoal } from "./goals.mjs"
 // what a thing does (an outcome), as a verb: the core goals' and the physics modules' (a bare verb after "make <the thing>", or before
 // "more than" / "first"); never "work" ("make it work" asks for the scene's own goals again)
 const VERBS =
-	"land|fall|topple|tip|roll|go|travel|move|slide|fly|bounce|hit|reach|knock|spin|swing|stop|win|finish|cross|arrive|break|crack|smash|shatter|survive|squash|squeeze|bend|stretch|compress|dent|sag|melt|freeze|boil|dissolve|cool|warm|heat|glow|light|shine|ring|sound|buzz|beep|pour|drain|fill|empty|float|sink|rise|lift|sail|drift|attract|repel|stick|orbit|launch|overtake|beat|tick|balance|turn"
+	"land|fall|topple|tip|roll|go|travel|move|slide|fly|bounce|hit|reach|knock|spin|swing|stop|win|finish|cross|arrive|break|crack|smash|shatter|survive|squash|squeeze|bend|stretch|compress|dent|sag|melt|freeze|boil|dissolve|cool|warm|heat|glow|light|shine|ring|sound|buzz|beep|pour|drain|fill|empty|float|sink|rise|lift|sail|drift|attract|repel|stick|orbit|launch|overtake|beat|race|tick|balance|turn"
 const FORMS = `(?:${VERBS})(?:s|es|ed|ing)?`
 const AFTER = "more|less|farther|further|faster|slower|higher|lower|longer|sooner|earlier|later|first|last|before|after|up|over|off|out|into|onto|in|through|across|past|again|completely|apart|together|away|down|the most|the least|at all"
+// ("race": "add a second car next to it, so the two race" asks for a race the run must show, checked by a goal: faster, farther, crosses)
 // "make <up to 6 words> <verb>" followed by what says how (more, first, up, off...) or by the end of the clause
 const MAKE_RE = new RegExp(`\\bmake\\s+(?:[\\w'’%.-]+\\s+){1,6}?${FORMS}(?:\\s+(?:${AFTER})\\b|\\s*(?:[,.;:!?]|$)|\\s+(?:and|but|so|without|while|when|than|instead)\\b)`, "i")
 // "<verb> more than", "<verb> first", "<verb> before the …"

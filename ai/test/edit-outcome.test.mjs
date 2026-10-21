@@ -118,6 +118,19 @@ test("an edit that asks for an outcome of its own but sets no goal gets the soft
 	assert.deepEqual(ok.soft, [])
 })
 
+test("a race asked for in an edit (V2 release: \"so the two race\") gets the soft repair, naming the race's goals and its room to finish", async () => {
+	const { readFileSync } = await import("node:fs")
+	const sc = JSON.parse(readFileSync(new URL("../../web/ai/test/fixtures/race/batterycar-build.scene.json", import.meta.url), "utf8"))
+	const T = "Add a second battery car next to it with a hobby motor instead, so the two race."
+	const r = run(edit([{ op: "set_props", id: "motor", props: { kind: "hobby" } }]), sc, T)
+	assert.equal(r.soft.length, 1, JSON.stringify(r.soft))
+	assert.match(r.soft[0], /asks for an outcome of its own/)
+	assert.match(r.soft[0], /For a race: faster \{a: the one that wins, b: the other\} and moves \{item, min_m\} for each racer, each in a lane of its own with room to finish/)
+	// (an answer that sets the race's goals is left as it is)
+	const ok = run(edit([{ op: "set_props", id: "motor", props: { kind: "hobby" } }, { op: "set_goals", goals: [...sc.goals, { kind: "moves", item: "car", min_m: 0.5 }] }]), sc, T)
+	assert.deepEqual(ok.soft, [])
+})
+
 test("goals an edit leaves that go round in a circle are refused, naming the scene's goals the new outcome overrides", () => {
 	const T = "now make the 100 g spring squash more than the 300 g spring"
 	const goals = [...springs().goals, { kind: "deforms_more", a: "spring1", b: "spring3", label: "The 100 g spring squashes more than the 300 g one" }]
@@ -144,9 +157,12 @@ test("what asks for an outcome of its own: the server's and the browser's words 
 		"make the red car go farther than the blue car",
 		"make the stopwatch read 3 s",
 		"put salt on it so that it melts faster",
-		"the plain cube should melt first"
+		"the plain cube should melt first",
+		"Add a second battery car next to it with a hobby motor instead, so the two race.",
+		"put a toy car on each lane so they race",
+		"make the hobby car race faster than the geared one"
 	]
-	const no = ["make it work", "fix it", "Make it work again so that the ball lands in the box, keeping the red ball.", "make the ball bigger", "make the ramp steeper", "drop them from 6 m instead", "make the light bulb brighter", "replace the dominoes with soda cans", "make the lighter load 3 kg", "make it work without moving the box"]
+	const no = ["make it work", "fix it", "Make it work again so that the ball lands in the box, keeping the red ball.", "make the ball bigger", "make the ramp steeper", "drop them from 6 m instead", "make the light bulb brighter", "replace the dominoes with soda cans", "make the lighter load 3 kg", "make it work without moving the box", "add a race car", "paint the race car red"]
 	for (const t of yes) assert.ok(statesNewOutcome(t) && browserStates(t), t)
 	for (const t of no) assert.ok(!statesNewOutcome(t) && !browserStates(t), t)
 })

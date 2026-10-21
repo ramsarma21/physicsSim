@@ -220,6 +220,9 @@ export function startPlugins(run) {
 			placementAt: (id, t) => placementAt(run.track, id, t),
 			solidsOf: (item) => run.doc.solids.filter((s) => s.item === item),
 			itemsOfType: (type) => [...new Set(run.doc.solids.filter((s) => s.itemType === type).map((s) => s.item))],
+			/** What holds a held item until the release, as the view drew it: "hand" | "fork" | "gate" | "hanger" | "hidden" | "post", or null (not
+			 *  held, or no view that says: web/view3d.js buildRun's heldHow). */
+			heldBy: (item) => run.heldHow?.get(item) ?? null,
 			label: (o) => makeLabel(o),
 			beam: (o) => makeBeam(o),
 			graph: (o) => makeGraph(o),

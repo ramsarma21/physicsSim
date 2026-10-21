@@ -35,7 +35,10 @@ export const LIQUIDS = {
 	honey: [1420.0, 10.0, "Honey: about 1420 kg/m³; 2-20 Pa·s by its water, 10 used [YANNIOTIS] (approximate)."],
 	"corn syrup": [1380.0, 2.5, "Light corn syrup: about 1380 kg/m³, about 2.5 Pa·s (approximate: brands differ)."],
 	"dish soap": [1050.0, 0.5, "Liquid dish soap: about 1050 kg/m³, about 0.5 Pa·s (manufacturers' data; approximate)."],
-	"rubbing alcohol": [880.0, 0.0025, "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."]
+	"rubbing alcohol": [880.0, 0.0025, "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."],
+	milk: [1030.5, 0.0021, "Whole milk at 20 °C: 1030.5 kg/m³ [MILK-RHO], 2.1 mPa·s [MILK-MU]; white and opaque (its fat droplets and casein scatter light)."],
+	"chocolate milk": [1065.0, 0.008, "Chocolate milk at 20 °C: about 1065 kg/m³ (provisional); about 8 mPa·s as it pours (7.1 at 150 1/s, 13.2 at " +
+		"10 1/s: it thins as it flows [DRINKS-RHEO]); brown and opaque."]
 }
 export const LIQUID_NAMES = Object.keys(LIQUIDS)
 const SALT = [
@@ -76,15 +79,21 @@ export function liquid_of(P) {
 }
 
 // Food colouring, as absorbance per centimetre of light path (red, green, blue): what shows through is exp(−a·path) (provisional strengths).
-export const DYES = { none: [0.0, 0.0, 0.0], red: [0.0, 0.5, 0.25], orange: [0.0, 0.18, 0.5], yellow: [0.0, 0.02, 0.5], green: [0.45, 0.02, 0.4], blue: [0.5, 0.08, 0.005], purple: [0.2, 0.5, 0.05] }
+// White colouring scatters light instead: its fourth number, scattering per cm (machines/mod_flow.py DYES: the same).
+export const DYES = {
+	none: [0.0, 0.0, 0.0], red: [0.0, 0.5, 0.25], orange: [0.0, 0.18, 0.5], yellow: [0.0, 0.02, 0.5], green: [0.45, 0.02, 0.4], blue: [0.5, 0.08, 0.005], purple: [0.2, 0.5, 0.05],
+	white: [0.0, 0.0, 0.0, 20.0], brown: [0.22, 0.38, 0.6]
+}
 export const DYE_NAMES = Object.keys(DYES)
 // The named colours a mixture is told by (goal "mixes_to"): shares of brightness (r, g, b over their sum) through 5 cm of water.
 export const COLOR_REF = { red: [0.7275, 0.0605, 0.212], orange: [0.6688, 0.2753, 0.0558], yellow: [0.5001, 0.4582, 0.0418], green: [0.0909, 0.7903, 0.1187], blue: [0.0468, 0.3872, 0.5659], purple: [0.2959, 0.0669, 0.6372] }
-export const COLOR_NAMES = ["clear", "brown", ...Object.keys(COLOR_REF)]
+export const COLOR_NAMES = ["clear", "brown", ...Object.keys(COLOR_REF), "white"]
 
-/** The name of a transmitted colour (each 0…1). */
-export function color_name(r, g, b) {
-	if (Math.min(r, g, b) >= 0.85) return "clear"
+/** The name of a liquid's colour (each 0…1): what shows through it, or, for one that scatters back half the light or more (o, its tint_o
+ *  reading: milk, white colouring), what it looks like: "white" when every channel is 0.7 or more. */
+export function color_name(r, g, b, o = 0.0) {
+	if (o >= 0.5 && Math.min(r, g, b) >= 0.7) return "white"
+	if (o < 0.5 && Math.min(r, g, b) >= 0.85) return "clear"
 	if (Math.max(r, g, b) < 0.4) return "brown"
 	const s = r + g + b
 	if (!(s > 0)) return "brown"
@@ -105,9 +114,9 @@ export function color_name(r, g, b) {
 
 function _liquid_props(def = "water") {
 	return [
-		new Prop("liquid", "Liquid", def, { kind: "choice", choices: LIQUID_NAMES, help: "What is in it (each at 20 °C): honey and syrup pour slowly, water and alcohol fast" }),
+		new Prop("liquid", "Liquid", def, { kind: "choice", choices: LIQUID_NAMES, help: "What is in it (each at 20 °C): honey and syrup pour slowly, water, milk and alcohol fast" }),
 		new Prop("salt_pct", "Salt", 10.0, 0.0, SALT_MAX, 0.5, "%", "Salt water only: grams of salt in 100 g of it"),
-		new Prop("dye", "Food colouring", "none", { kind: "choice", choices: DYE_NAMES, help: "A few drops of food colouring: liquids of two colours mix (blue and yellow make green)" })
+		new Prop("dye", "Food colouring", "none", { kind: "choice", choices: DYE_NAMES, help: "A few drops of food colouring: liquids of two colours mix (blue and yellow make green); white makes water look like milk" })
 	]
 }
 
@@ -144,9 +153,17 @@ function _pour_readouts() {
 	return [
 		new Readout("left_ml", "Left in it", { unit: "mL", digits: 1 }), new Readout("poured_ml", "Poured out", { unit: "mL", digits: 1 }),
 		new Readout("flow_ml_s", "Pouring", { unit: "mL/s", digits: 1, help: "How fast it pours now" }), new Readout("tilt_deg", "Tipped", { unit: "°", digits: 0 }),
-		new Readout("lands_x", "Stream lands at", { unit: "m", digits: 3, help: "Where along the table its stream comes down (x)" })
+		new Readout("lands_x", "Stream lands at", { unit: "m", digits: 3, help: "Where along the table its stream comes down (x)" }),
+		new Readout("left_g", "Grains left in it", { unit: "g", digits: 0, help: "A cup of grains (sugar, salt, rice, sand): what is still in it" }),
+		new Readout("poured_g", "Grains poured", { unit: "g", digits: 0, help: "A cup of grains: what has poured out over its lip" }),
+		new Readout("heap_mm", "Heap height", { unit: "mm", digits: 0, help: "A cup of grains: the heap its grains make where they land (in a jar or glass, over its floor)" }),
+		new Readout("heap_deg", "Heap slope", { unit: "°", digits: 1, help: "A cup of grains: the heap's sides (in a jar or glass it fills, from its top down to the wall)" }),
+		new Readout("outside_g", "Grains outside", { unit: "g", digits: 0, help: "A cup of grains: what landed outside the jar, glass or box it pours into" })
 	]
 }
+
+// the grains a pitcher, jug or cup can hold (machines/mod_granular.py GRAINS: the granular module pours them; its names)
+export const POUR_GRAINS = ["sugar", "salt", "rice", "sand", "fine sand", "coarse sand", "gravel", "soil", "flour"]
 
 // ---------------------------------------------------------------- pitchers, jugs and cups that a hand tips to pour
 // inner width (round: its diameter), inner height, wall, spout width, material, look, default mL, words, handle
@@ -165,6 +182,7 @@ function _pourers() {
 		const D = (Math.PI / 4) * w
 		const cap = w * h * D * 1e6
 		const fill = pymin(P.fill_ml, 0.97 * cap)
+		const grains = P.contents === "grains"
 		const side = P.pour_to === "right" ? 1.0 : -1.0
 		const m = c.mat({ base: mat, overrides: {} })
 		// the root is the pour lip at the item's anchor (the hand turns the whole pitcher about it); the rest welded to it
@@ -175,11 +193,18 @@ function _pourers() {
 		if (handle) _child(c, "handle", root, _slab(0.012, 0.6 * h, 0.014), [-side * (w + t + 0.03), -0.45 * h], m, look, `${words}'s handle`)
 		const inside = side > 0 ? _box(-w, -h, 0.0, 0.0) : _box(0.0, -h, w, 0.0)
 		// (more than fits: filled to the brim, and the record keeps what was asked, so the run says "only 355 mL fits in it")
-		const asked = P.fill_ml > 0.97 * cap + 1e-9 ? { asked: pyRound(P.fill_ml, 1) } : {}
+		let asked = P.fill_ml > 0.97 * cap + 1e-9 ? { asked: pyRound(P.fill_ml, 1) } : {}
+		// (a cup of grains: this module tips it and pours no liquid; web/sim/modules/granular.js's build hook pours its grains: `grains` m³ packed)
+		let extra = {}
+		if (grains) {
+			extra = { contents: "grains", grain: P.grain, grains: pyRound(fill / 1e6, 9) }
+			if (Object.keys(asked).length) extra.grains_asked = asked.asked
+			asked = {}
+		}
 		c.process("flow-pour", "pour", {
 			solid: root, inside, depth: pyRound(D, 6), lip, wall: t, liquid: liquid_of(P), dye: [...DYES[P.dye]],
-			volume: pyRound(fill / 1e6, 9), tilt: pyRound(-side * P.tilt * D2R, 6), at: P.pour_at, turn: P.tip_s,
-			back: P.back_at > 0 ? P.back_at : null, ...asked
+			volume: grains ? 0.0 : pyRound(fill / 1e6, 9), tilt: pyRound(-side * P.tilt * D2R, 6), at: P.pour_at, turn: P.tip_s,
+			back: P.back_at > 0 ? P.back_at : null, ...asked, ...extra
 		})
 		P.capacity_ml = pyRound(cap, 1)
 		P.inner_width = w
@@ -191,7 +216,15 @@ function _pourers() {
 		props: [
 			new Prop("vessel", "Kind", "pitcher", { kind: "choice", choices: Object.keys(VESSELS),
 				help: "pitcher: a 1.3 L glass pitcher; jug: a 2.9 L plastic jug; measuring cup: 0.85 L; cup: a 0.37 L plastic cup" }),
-			new Prop("fill_ml", "Liquid in it", 750.0, 0.0, 2900.0, 5.0, "mL", "How much it holds at the start (follows the kind until you set it)", { auto: ["vessel"] }),
+			new Prop("contents", "Holds", "liquid", {
+				kind: "choice", choices: ["liquid", "grains"],
+				help: "liquid (its Liquid below) or grains (its Grains: sugar, salt, rice, sand...), which pour out once it is tipped past " + "their angle of repose and heap up where they land"
+			}),
+			new Prop("grain", "Grains", "sugar", {
+				kind: "choice", choices: POUR_GRAINS,
+				help: "What grains it holds when it holds grains: sugar 0.5 mm, salt 0.4 mm, rice (long grains), sand, fine sand, coarse sand, " + "gravel, soil, flour"
+			}),
+			new Prop("fill_ml", "Amount in it", 750.0, 0.0, 2900.0, 5.0, "mL", "How much it holds at the start, liquid or grains (200 mL of " + "sugar is about 160 g; follows the kind until you set it)", { auto: ["vessel"] }),
 			..._liquid_props(),
 			new Prop("pour_to", "Pours to the", "right", { kind: "choice", choices: ["right", "left"], help: "The side its spout faces and it tips toward" }),
 			new Prop("pour_at", "Starts tipping at", 1.0, 0.0, 20.0, 0.1, "s"),
@@ -200,11 +233,13 @@ function _pourers() {
 			new Prop("back_at", "Tips back at", 0.0, 0.0, 30.0, 0.1, "s", "When the hand stands it up again (0: never)")
 		],
 		links: [], readouts: _pour_readouts(),
-		tags: ["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill"],
+		tags: ["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill",
+			"chocolate milk", "cup of sugar", "pour sugar", "cup of rice", "pour rice", "cup of salt", "pour salt", "pour sand", "cup of sand"],
 		description: "A pitcher, jug or cup of liquid that a hand tips to pour, from the moment you set and as far as you set. Its item position is " +
 			"its pour lip, where the stream starts: put the lip above the container to fill (a few cm to its side the stream lands a " +
 			"little further). The level inside stays flat as it tips; it pours over the lip like water over a weir, so honey pours far " +
-			"slower than water.",
+			"slower than water. Set it to hold grains (sugar, salt, rice, sand) and they stay put until it is tipped past their angle " +
+			"of repose, then slide out over the lip and heap up where they land.",
 		source: "Pouring over a lip: a sharp-crested weir, q = 0.62·⅔·√(2g)·H^1.5 per metre of lip, and a viscous film's g·H³/(3ν) for thick " +
 			"liquids (Henderson 1966; Nusselt 1916). A glass pitcher 10 cm across, 17 cm deep inside; spout widths approximate.",
 		anchor: "its pour lip (the spout's top edge): the stream starts there", facts: "1.3 L glass pitcher, 750 mL of water, tips at 1 s",
@@ -476,11 +511,14 @@ function fills(ctx, g) {
 function empties(ctx, g) {
 	if (!ctx.known(g.item)) return null
 	const by = ctx.num(g.before_s)
-	const v = ctx.state(g.item, "left_ml")
+	// (a pitcher of grains reads grams: its left_g)
+	const lm = ctx.state(g.item, "left_ml")
+	const key = lm && lm.length ? "left_ml" : "left_g"
+	const v = ctx.state(g.item, key)
 	let t = null
 	if (v && v.length) {
 		const lim = pymax(1.0, 0.01 * v[0])
-		t = ctx.first_time(g.item, "left_ml", (x) => x <= lim)
+		t = ctx.first_time(g.item, key, (x) => x <= lim)
 	}
 	return { label: label_of(g, `${ctx.name(g.item)} empties${when_text(by)}`), ok: t !== null && (by === null || t <= by), kind: "empties", item: g.item, t: t === null ? null : pyRound(t, 3) }
 }
@@ -679,7 +717,8 @@ function mixes_to(ctx, g) {
 	const r = last(ctx, cid, "tint_r")
 	const gg = last(ctx, cid, "tint_g")
 	const b = last(ctx, cid, "tint_b")
-	const got = r === null || gg === null || b === null ? null : color_name(r, gg, b)
+	const o = last(ctx, cid, "tint_o")
+	const got = r === null || gg === null || b === null ? null : color_name(r, gg, b, o === null ? 0.0 : o)
 	return { label: label_of(g, `the liquid in ${ctx.name(cid)} ends ${want}`), ok: got === want, kind: "mixes_to", container: cid, color: got }
 }
 
@@ -802,6 +841,9 @@ function surfaceUnder(run, x, y) {
 }
 /** The run's events about an item, of a kind ("jam", "inside", "brim", "holes", "capped", "siphon"). */
 const eventsOf = (run, iid, kind) => (run?.track?.events ?? []).filter((e) => e?.kind === kind && Array.isArray(e.items) && e.items.includes(iid))
+// (a cup of grains in a request's words: a cup, a tip or a pour, and the grains a pitcher holds (GRAINS): words.picks below)
+const POURS = "cups?|mugs?|jugs?|pitchers?|scoops?|tip(?:s|ped|ping)?|tilt(?:s|ed|ing)?|pour(?:s|ed|ing)?"
+const GRAIN_WORDS = "sugar|salt|rice|grains?|sand|flour|gravel|soil"
 
 export const plugin = {
 	// (the words a teacher uses: pour, tap, faucet, spill, overflow, siphon, puddle, jet, waterwheel; the digest's tiers pick this module's
@@ -810,8 +852,9 @@ export const plugin = {
 	howto: [
 		"Liquids that MOVE: pitcher (a pitcher/jug/measuring cup/cup of `fill_ml` of `liquid` that a hand tips: from `pour_at` s it turns over `tip_s` s to `tilt` degrees toward `pour_to`; `back_at` stands it up again; more than fits is filled to the brim and the run says so). Its item position IS ITS POUR LIP (the spout's top edge), held in the air: the stream starts there, leaves the lip sideways toward pour_to (about 0.4 m/s from a cup, 0.5 from a 500 mL pitcher, 0.8 from a 1.5 L jug) and falls, so it LANDS PAST THE LIP, the farther the fuller the vessel and the higher the lip (water, the middle of the pour; its strongest gush lands 1-5 cm farther still): a cup of 180 mL about 6 cm past it for a 10 cm drop, 7.5 cm for 20 cm, 9 cm for 30 cm; a pitcher of 500 mL 7.5 / 10 / 11.5 cm; a full pitcher (750 mL) 9 / 11 / 13 cm; a 1.5 L jug 11 / 14 / 16 cm; honey and syrup about 3 cm. The pitcher's BODY hangs below and behind the lip (pour_to right: to the LEFT of the lip): pitcher 17 cm tall × 10 cm wide (plus a 3 cm handle), jug 22 × 13, measuring cup 12 × 9.5, cup 9.5 × 7 (no handle). To fill a container put the lip that landing distance BEFORE the middle of its opening (pour_to right: lip x = opening middle − that distance, 7-9 cm for a cup or a 500 mL pitcher; pour_to left: + it) and HIGH ENOUGH THAT ITS BODY CLEARS THE RIM: where the body is over the opening (a bowl, a bucket, a box: wider than about 15 cm) the lip goes at least the body's height + 2 cm above the rim (pitcher 19, jug 24, measuring cup 14, cup 12 cm); over a narrow mug, jar or beaker the body hangs beside it and 8-15 cm above the rim is enough, and lower is more forgiving: the pour spreads as it falls, so from higher up its strongest part can go over the far rim of an opening 10 cm wide (place {on: \"air\", x, y_m}; the solver raises a pitcher that would start inside something). Its lands_x reading says where the stream came down. Water empties a pitcher tipped 110° in about 1-3 s. Honey (10 Pa·s) and corn syrup (2.5 Pa·s) pour 2-3× slower than water when tipped 70-85° (they ooze over the lip as a thick film); tipped past about 100° an open cup of honey falls out nearly as fast as the hand turns it, so to COMPARE liquids tip both the same moderate amount (tilt 75-80).",
 		"tap (a faucet): a wall tap whose water falls STRAIGHT DOWN from its item position (the outlet's mouth, in the air: place {on: \"air\", x, y_m}) at `flow_ml_s` (kitchen tap 100-140, trickle 10-20) from `on_at` to `off_at` (0: stays on); the run says when it turns on and off. leaky-bottle: a 2 L bottle (10.2 cm inside, 23 cm body) standing on a wooden block `stand_cm` high (its item position is the block's bottom, on the table), with `holes` holes up the side it is `facing` from `lowest_cm` every `spacing_cm` (holes that would be above its 23 cm body are left off, and the run says so); they open at `open_at`; jets: the lowest is deepest, so fastest (v = 0.97·√(2g·depth)) and lands farthest; leave 40-60 cm clear on that side for the jets, ON the table (a jet that goes past the table's edge falls to the floor: its reach is still measured at the block's level); `kept_full` keeps them steady; `cap` on stops all flow (no air gets in). hose: a siphon: link `from` (and `to`) containers; a filled hose flows from the HIGHER surface to the lower whichever end is called from (named the other way round it runs from `to` to `from`, and says so) and stops when they are level; without `to` it pours from its free end (the hose's item position) while from's surface is above that end. waterwheel: a wheel on a fixed axle at its item position (in the air: place {on: \"air\", x, y_m}; a fixed machine: no start speed); a stream falling on the paddles on ONE side of the axle (x offset 0.3-0.45 × diameter from the axle) turns it; nothing else may be within its paddles' circle (a bucket's wall there jams it: the run says so).",
-		"Catching: every cup, plastic-cup, glass-jar, coffee-mug, bucket, bowl and box catches liquid poured into it (inside: cup 7 cm wide × 10 cm deep, 0.32 L; plastic-cup 9 × 12.5 cm, 0.53 L; glass-jar 8 × 8.6 cm, 0.44 L; coffee-mug 7.3 × 8.7 cm, 0.37 L; bowl 14 × 6 cm, 0.56 L; box 24 × 13 cm, 3.7 L; bucket 27 × 27 cm, 12.5 L; readings liquid_ml, level_mm, overflow_ml (what went over its rim) and tint_r/g/b, its colour) once the scene has a pitcher, tap, leaky-bottle or hose; a fixed beaker, measuring-jug, graduated-cylinder or water-tank (fluids module) does too (its volume_ml rises; received_ml). What a container holds WEIGHS: a coffee-mug or bowl on a kitchen-scale reads the mug plus its water (about 1 g per mL: measure's goal reads {item: scale, grams}). Things FLOAT in it: a cork, a toy duck or a ball put inside a jar or bucket that a tap fills rises with the water and floats (fluids' goals floats / sinks {item}; readings submerged, afloat). Liquid that misses runs over the table: on a level surface it stops as a puddle (puddle_ml of that surface's item); on a slope steeper than about 6° (a plank as a ramp or slide, 10-30°) it RUNS DOWN and spills off the low end: put the low end over a container's opening, above its rim, to catch it. Food colouring (`dye`: red, orange, yellow, green, blue, purple) mixes in the container when poured into the SAME liquid: blue + yellow → green, red + blue → purple, red + yellow → orange. Liquids at 20 °C: water 998 kg/m³ 0.001 Pa·s, vegetable oil 920 / 0.06, dish soap 1050 / 0.5, corn syrup 1380 / 2.5, honey 1420 / 10; a different liquid poured into a container becomes its own layer and does not mix (oil floats on water, honey sinks): the container's colour is its biggest layer's.",
-		"Readings: pitcher left_ml, poured_ml, flow_ml_s, tilt_deg; tap flowed_ml, flow_ml_s; leaky-bottle left_ml, level_mm, flow_ml_s, poured_ml, jet1_ms…jet4_ms (1 = lowest hole), reach1_m…reach4_m (where each jet lands, measured out from the hole at the level the bottle stands on); hose moved_ml, flow_ml_s; waterwheel rpm, turns. Events: '<tap> turns on (100 mL/s)', '<tap> turns off after 400 mL', '<pitcher> starts pouring', '<pitcher> is empty', \"<bottle>'s jets start\", \"<bottle>'s holes open, but its cap is on\", '<hose> starts siphoning', '<container> overflows', '<container> fills to N mL', \"<bottle>'s hole k stops spurting\", '<wheel> starts turning', '<hose> stops: the two surfaces are level'; at the start: 'only N mL fits in <pitcher>', '<pitcher> starts inside <thing>', '<thing> is in the way of <wheel>'s paddles'. FAIR TESTS (is this a valid experiment?): two set-ups side by side that differ in ONE thing only (the same containers, the same heights and distances), compared with a two-item goal: reaches_farther (two bottles' jets), turns_faster (two waterwheels), fills_faster (two containers), pours_faster (two pitchers or bottles)."
+		"Catching: every cup, plastic-cup, glass-jar, coffee-mug, bucket, bowl and box catches liquid poured into it (inside: cup 7 cm wide × 10 cm deep, 0.32 L; plastic-cup 9 × 12.5 cm, 0.53 L; glass-jar 8 × 8.6 cm, 0.44 L; coffee-mug 7.3 × 8.7 cm, 0.37 L; bowl 14 × 6 cm, 0.56 L; box 24 × 13 cm, 3.7 L; bucket 27 × 27 cm, 12.5 L; readings liquid_ml, level_mm, overflow_ml (what went over its rim) and tint_r/g/b, its colour) once the scene has a pitcher, tap, leaky-bottle or hose; a fixed beaker, measuring-jug, graduated-cylinder or water-tank (fluids module) does too (its volume_ml rises; received_ml). What a container holds WEIGHS: a coffee-mug or bowl on a kitchen-scale reads the mug plus its water (about 1 g per mL: measure's goal reads {item: scale, grams}). Things FLOAT in it: a cork, a toy duck or a ball put inside a jar or bucket that a tap fills rises with the water and floats (fluids' goals floats / sinks {item}; readings submerged, afloat). Liquid that misses runs over the table: on a level surface it stops as a puddle (puddle_ml of that surface's item; a puddle on a kitchen-scale's platform is weighed: about 1 g a mL); on a slope steeper than about 6° (a plank as a ramp or slide, 10-30°) it RUNS DOWN and spills off the low end: put the low end over a container's opening, above its rim, to catch it. Food colouring (`dye`: red, orange, yellow, green, blue, purple) mixes in the container when poured into the SAME liquid: blue + yellow → green, red + blue → purple, red + yellow → orange. Liquids at 20 °C: water 998 kg/m³ 0.001 Pa·s, vegetable oil 920 / 0.06, dish soap 1050 / 0.5, corn syrup 1380 / 2.5, honey 1420 / 10; a different liquid poured into a container becomes its own layer and does not mix (oil floats on water, honey sinks), except milk and chocolate milk, which mix with water (and water into them) as one cloudy liquid, white or brown: the container's colour is its biggest layer's.",
+		"Readings: pitcher left_ml, poured_ml, flow_ml_s, tilt_deg; tap flowed_ml, flow_ml_s; leaky-bottle left_ml, level_mm, flow_ml_s, poured_ml, jet1_ms…jet4_ms (1 = lowest hole), reach1_m…reach4_m (where each jet lands, measured out from the hole at the level the bottle stands on); hose moved_ml, flow_ml_s; waterwheel rpm, turns. Events: '<tap> turns on (100 mL/s)', '<tap> turns off after 400 mL', '<pitcher> starts pouring', '<pitcher> is empty', \"<bottle>'s jets start\", \"<bottle>'s holes open, but its cap is on\", '<hose> starts siphoning', '<container> overflows', '<container> fills to N mL', \"<bottle>'s hole k stops spurting\", '<wheel> starts turning', '<hose> stops: the two surfaces are level'; at the start: 'only N mL fits in <pitcher>', '<pitcher> starts inside <thing>', '<thing> is in the way of <wheel>'s paddles'. FAIR TESTS (is this a valid experiment?): two set-ups side by side that differ in ONE thing only (the same containers, the same heights and distances), compared with a two-item goal: reaches_farther (two bottles' jets), turns_faster (two waterwheels), fills_faster (two containers), pours_faster (two pitchers or bottles).",
+		"Milk (1030 kg/m³, 2.1 mPa·s) and chocolate milk (1065, 8 mPa·s) pour as water does and are opaque: milk white, chocolate milk brown (mixes_to colours \"white\", \"brown\"); `dye` white makes water look like milk, brown like cocoa. A pitcher, measuring cup or cup can hold GRAINS instead (contents \"grains\", `grain` sugar | salt | rice | sand | fine sand | coarse sand | gravel | soil | flour; fill_ml is then the grains' volume: 200 mL of sugar is 160 g, of salt 240 g, of rice 154 g): they do NOT pour until the tilt passes their angle of repose (a full cup about 35°, a half-full cup about 85°), then slide out over the lip and fall almost straight down (they land only 1-2 cm past the lip: put the lip over the opening, 1-2 cm before its middle) and heap up where they land; tip it to 130° or more to empty it (at 110-115° a little stays on its spout wall). A jar, glass, cup, mug, bowl, beaker, bucket or box under the stream keeps every grain inside it. Readings: left_g, poured_g, heap_mm, heap_deg (the heap's slope, its angle of repose), outside_g (grains that missed the container: a stream that comes down beside a jar, on its wall or past it is read against it, and the run says \"<cup> spills <grain> outside <jar>\"); the container's grains_g (the grains inside it); goals piles {item: the pitcher, in: the container it pours into} (its heap, at least 90 % of its grains inside that container: give in whenever the heap must end in a container) and empties {item}. The same cup with liquid or grains is the lesson's \"liquids lie flat, grains pile up\" pair: change only `contents`."
 	].join(" "),
 	prompt: {
 		plan: [
@@ -982,7 +1025,22 @@ export const plugin = {
 		const P = run?.resolved?.[item.id] ?? item.props ?? {}
 		const doc = run?.doc
 		const recs = (doc?.processes ?? []).filter((p) => p.item === item.id)
-		if (item.type === "pitcher") {
+		if (item.type === "pitcher" && P.contents === "grains") {
+			// (a cup of grains: the granular module pours them; their readings in grams)
+			const rec = recs.find((p) => p.kind === "flow-pour")
+			out.push(`a ${P.vessel ?? "pitcher"} of ${trimNum(P.fill_ml ?? 0, 0)} mL of ${P.grain ?? "sugar"} (${trimNum(startOf(run, item.id, "left_g") ?? 0, 0)} g); its lip at x ${trimNum(item.x ?? 0, 3)}, y ${trimNum(item.y ?? 0, 3)} m; it tips to ${trimNum(P.tilt ?? 110, 0)}° toward the ${P.pour_to ?? "right"} from ${trimNum(P.pour_at ?? 1, 2)} s over ${trimNum(P.tip_s ?? 1.5, 2)} s`)
+			const start = eventsOf(run, item.id, "pours")[0]
+			const left = endOf(run, item.id, "left_g")
+			if (left !== null) out.push(`it poured ${trimNum(endOf(run, item.id, "poured_g") ?? 0, 0)} g${start ? ` from ${trimNum(start.t, 2)} s (${/tipped \d+°/.exec(start.text ?? "")?.[0] ?? "tipped"})` : " (it never poured: grains stay until it is tipped past their angle of repose; tip it further)"}; ${trimNum(left, 0)} g left${left > 0.5 && (P.tilt ?? 110) < 125 ? " (some rests on its spout wall: tip it to 130° to empty it)" : ""}`)
+			const hm = endOf(run, item.id, "heap_mm")
+			const og = endOf(run, item.id, "outside_g") ?? 0
+			if (hm !== null && hm > 0) out.push(`its grains' heap: ${trimNum(hm, 0)} mm tall, sides at ${trimNum(endOf(run, item.id, "heap_deg") ?? 0, 1)}°${og > 0.5 ? `; ${trimNum(og, 0)} g landed OUTSIDE the container under it` : ""}`)
+			// (a stream that came down beside the container: nothing is in it, every gram outside, said as plainly)
+			else if (og > 0.5) out.push(`none of its grains is in the container beside it: all ${trimNum(og, 0)} g landed OUTSIDE it (no heap inside it): put its lip over the opening, 1-2 cm before its middle`)
+			if (rec && Number.isFinite(rec.grains_asked)) out.push(`only ${trimNum(rec.grains * 1e6, 0)} mL fits in it (fill_ml ${trimNum(rec.grains_asked, 0)} asked): it is filled to the brim`)
+			const land = landingLine(run, item, h?.nameOf)
+			if (land) out.push(land.replace("its stream", "its grains"))
+		} else if (item.type === "pitcher") {
 			const rec = recs.find((p) => p.kind === "flow-pour")
 			const l0 = startOf(run, item.id, "left_ml")
 			const l1 = endOf(run, item.id, "left_ml")
@@ -1051,18 +1109,25 @@ export const plugin = {
 		/** what one added thing is called on the card */
 		added(item) {
 			const P = item?.props ?? {}
+			if (item?.type === "pitcher" && P.contents === "grains") return `a ${P.vessel ?? "pitcher"} of ${P.fill_ml ?? (VESSELS[P.vessel ?? "pitcher"] ?? VESSELS.pitcher)[6]} mL of ${P.grain ?? "sugar"}`
 			if (item?.type === "pitcher") return `a ${P.vessel ?? "pitcher"} of ${P.fill_ml ?? (VESSELS[P.vessel ?? "pitcher"] ?? VESSELS.pitcher)[6]} mL of ${P.dye && P.dye !== "none" ? `${P.dye} ` : ""}${P.liquid ?? "water"}`
 			if (item?.type === "tap") return `a tap running ${P.flow_ml_s ?? 100} mL/s`
 			if (item?.type === "leaky-bottle") return `a bottle with ${P.holes ?? 3} holes`
 			return null
 		},
+		// (grains with a cup, a tip or a pour, in either order within a sentence, pick this module whatever its other words: its pitcher is the cup
+		// of grains a hand tips. "A hand tips a cup of salt into a jar" picked only the granular, hands and heat modules, and the planner said
+		// the library had no tipping pourer for grains and used a funnel of sand, 2026-10-21)
+		picks: `\\b(?:${POURS})\\b[^.!?;\\n]{0,60}?\\b(?:${GRAIN_WORDS})\\b|\\b(?:${GRAIN_WORDS})\\b[^.!?;\\n]{0,60}?\\b(?:${POURS})\\b`,
 		/** the words in a request that name a setting (the person's own choice: a fix never offers it back) */
 		keys: {
 			"pitcher.tilt": "tip\\w*|tilt\\w*|angle",
 			"pitcher.fill_ml": "full|fill\\w*|how much|ml|millilit\\w*",
 			"pitcher.pour_at": "sooner|later|start\\w* pour\\w*|when",
-			liquid: "honey|syrup|oil|water|soap|alcohol|liquid|thick\\w*|thin\\w*",
-			dye: "colou?r\\w*|dye|food colou?ring|blue|red|yellow|green|purple|orange",
+			liquid: "honey|syrup|oil|water|soap|alcohol|milk|chocolate milk|liquid|thick\\w*|thin\\w*",
+			dye: "colou?r\\w*|dye|food colou?ring|blue|red|yellow|green|purple|orange|white|brown",
+			"pitcher.contents": "grains?|sugar|salt|rice|sand",
+			"pitcher.grain": "sugar|salt|rice|sand|fine sand|coarse sand|gravel|soil|flour",
 			"tap.flow_ml_s": "flow|faster|slower|harder|trickle|full on",
 			"leaky-bottle.hole_mm": "hole size|bigger holes?|smaller holes?|wider holes?",
 			"leaky-bottle.fill_cm": "water level|deeper|fuller|depth|how full",
@@ -1078,6 +1143,8 @@ export const plugin = {
 			if (type === "pitcher" && key === "pour_at") return `starts pouring at ${trimNum(a, 1)} → ${trimNum(b, 1)} s`
 			if (["pitcher", "tap", "leaky-bottle"].includes(type) && key === "liquid") return `${a} → ${b} (${trimNum(nu(a) * 1e6, 0)} → ${trimNum(nu(b) * 1e6, 0)} mm²/s: ${nu(b) > nu(a) ? "thicker, flows slower" : "thinner, flows faster"})`
 			if (["pitcher", "tap", "leaky-bottle"].includes(type) && key === "dye") return `colour ${a} → ${b}`
+			if (type === "pitcher" && key === "contents") return `holds ${a} → ${b}`
+			if (type === "pitcher" && key === "grain") return `grains ${a} → ${b}`
 			if (type === "tap" && key === "flow_ml_s") return `flow ${trimNum(a, 0)} → ${trimNum(b, 0)} mL/s`
 			if (type === "leaky-bottle" && key === "fill_cm") return `water ${trimNum(a, 1)} → ${trimNum(b, 1)} cm deep (lowest jet ${trimNum(0.97 * Math.sqrt(2 * 9.81 * Math.max(0, a / 100 - 0.03)), 2)} → ${trimNum(0.97 * Math.sqrt(2 * 9.81 * Math.max(0, b / 100 - 0.03)), 2)} m/s)`
 			if (type === "leaky-bottle" && key === "hole_mm") return `holes ${trimNum(a, 1)} → ${trimNum(b, 1)} mm (flow × ${trimNum((b * b) / (a * a), 2)})`

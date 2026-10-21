@@ -146,37 +146,53 @@ export default function register({ addModel, addViewPlugin, kit, THREE }) {
 	addModel("magnet-cart", "magnet", ({ w, h, d, props }) => barMagnet(w, h, d, props ?? {}))
 
 	// ============================================================== paper clips
-	/** A Gem clip's wire path, lying in the x-z plane (33 × 8 mm), as a tube. */
+	/** A Gem clip's wire path, lying in the x-z plane (L × W, its wire `wire` thick), as a tube: two and a half loops, the wire never crossing itself.
+	 *  From its inner free end it runs along the inner lower line, round the small inner bend at the right, back along the inner upper line, round
+	 *  the left end (inner line to outer), along the outer lower line, round the big right end, and back along the outer upper line to its other end. */
 	const clipGeo = (L, W, wire) =>
-		kit.geo(`mag|clip|${L}|${W}|${wire}`, () => {
-			const a = L / 2 - W / 2
+		kit.geo(`mag|clip2|${L}|${W}|${wire}`, () => {
+			const R1 = (W - wire) / 2 // the outer lines' half-spacing (wire centres)
+			const r2 = Math.max(wire, R1 - 2 * wire) // the inner lines' (a wire's width of air between)
+			const xR = L / 2 - wire / 2 - R1 // the big right bend's centre
+			const xRi = xR - (R1 - r2) - 2 * wire // the small inner bend's
+			const rl = (r2 + R1) / 2 // the left bend joins the inner upper line to the outer lower one
+			const yl = (r2 - R1) / 2
+			const xl = -L / 2 + wire / 2 + rl
 			const pts = []
-			const arc = (cx, r, from, to, n = 10) => {
-				for (let k = 0; k <= n; k++) {
-					const u = from + ((to - from) * k) / n
-					pts.push(new THREE.Vector3(cx + r * Math.cos(u), 0, r * Math.sin(u)))
+			const line = (x0, z0, x1, z1) => {
+				const n = Math.max(1, Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.0015))
+				for (let k = pts.length ? 1 : 0; k <= n; k++) pts.push(new THREE.Vector3(x0 + ((x1 - x0) * k) / n, 0, z0 + ((z1 - z0) * k) / n))
+			}
+			const arc = (cx, cz, r, a0, a1) => {
+				const n = Math.max(4, Math.ceil(Math.abs(a1 - a0) / 0.2))
+				for (let k = 1; k <= n; k++) {
+					const u = a0 + ((a1 - a0) * k) / n
+					pts.push(new THREE.Vector3(cx + r * Math.cos(u), 0, cz + r * Math.sin(u)))
 				}
 			}
-			const r1 = W / 2 - wire / 2
-			const r2 = r1 * 0.72
-			const r3 = r1 * 0.48
-			// outer loop: from the inner leg's end, around the right end, back along the bottom, around the left end, then the inner loops
-			pts.push(new THREE.Vector3(-a + L * 0.22, 0, r3))
-			pts.push(new THREE.Vector3(a, 0, r1))
-			arc(a, r1, Math.PI / 2, -Math.PI / 2)
-			pts.push(new THREE.Vector3(-a, 0, -r1))
-			arc(-a, r1, -Math.PI / 2, -Math.PI * 1.5)
-			pts.push(new THREE.Vector3(a - L * 0.12, 0, r1 - (r1 - r2)))
-			arc(a - L * 0.12, r2, Math.PI / 2, -Math.PI / 2)
-			pts.push(new THREE.Vector3(-a + L * 0.1, 0, -r2))
-			const curve = new THREE.CatmullRomCurve3(pts, false, "centripetal", 0.4)
-			return new THREE.TubeGeometry(curve, 220, wire / 2, 8, false)
+			line(-L / 2 + 0.3 * L, -r2, xRi, -r2)
+			arc(xRi, 0, r2, -Math.PI / 2, Math.PI / 2)
+			line(xRi, r2, xl, r2)
+			arc(xl, yl, rl, Math.PI / 2, 1.5 * Math.PI)
+			line(xl, yl - rl, xR, -R1)
+			arc(xR, 0, R1, -Math.PI / 2, Math.PI / 2)
+			line(xR, R1, -L / 2 + 0.28 * L, R1)
+			const curve = new THREE.CatmullRomCurve3(pts, false, "centripetal", 0.5)
+			return new THREE.TubeGeometry(curve, 260, wire / 2, 8, false)
 		})
 	const clipMesh = (props, plastic = false) => {
 		const P = props ?? {}
 		const c = COLOURS[P.color] ?? null
 		const mat = plastic ? kit.plastic(c ?? COLOURS.blue, { gloss: 0.5, key: "clip" }) : c ? kit.plastic(c, { gloss: 0.6, key: "vinyl" }) : zinc
-		return kit.mesh(clipGeo(0.033, 0.008, plastic ? 0.0012 : 0.0009), mat)
+		const m = kit.mesh(clipGeo(0.033, 0.008, plastic ? 0.0012 : 0.0009), mat)
+		// (facing "face-on": the clip stands on its edge, its loops in the picture's plane, toward the camera: the physics outline is its face)
+		if (P.facing === "face-on") return faceOn(m)
+		return m
+	}
+	/** A thin thing drawn lying in the x-z plane, turned a quarter turn about its length so its face looks at the camera (+z). */
+	const faceOn = (m) => {
+		m.rotation.x = -Math.PI / 2
+		return kit.group(m)
 	}
 	addModel("paper-clip", "*", ({ props }) => clipMesh(props))
 	addModel("plastic-clip", "clip", ({ props }) => clipMesh(props, true))
@@ -235,7 +251,16 @@ export default function register({ addModel, addViewPlugin, kit, THREE }) {
 	})
 
 	// ============================================================== washers, cans, test objects
-	addModel("steel-washer", "washer", ({ w, h }) => {
+	addModel("steel-washer", "washer", ({ w, h, props }) => {
+		const P = props ?? {}
+		if (P.facing === "face-on") {
+			// on its edge, its face toward the camera: the ring about the z axis (its physics outline is the octagon through its rim)
+			const R = (Number(P.diameter) || 0.016) / 2
+			const t = Number(P.thickness) || 0.0016
+			const rr = R * 0.525
+			const c = 0.0002
+			return kit.mesh(kit.latheZ([[rr + c, -t / 2], [R - c, -t / 2], [R, -t / 2 + c], [R, t / 2 - c], [R - c, t / 2], [rr + c, t / 2], [rr, t / 2 - c], [rr, -t / 2 + c], [rr + c, -t / 2]], 64, `mag-washer-face|${R.toFixed(5)}|${t.toFixed(5)}`), zinc)
+		}
 		const R = w / 2
 		const rr = R * 0.525
 		return kit.mesh(kit.lathe([[rr, -h / 2], [R, -h / 2], [R, h / 2], [rr, h / 2], [rr, -h / 2]], 48), zinc)

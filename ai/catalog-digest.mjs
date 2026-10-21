@@ -28,7 +28,7 @@ const DIGEST_VERSION = 10 // bump when the digest's format or notes change (inva
 /** Container types whose "in" goal the engine's summary can check (machines/items.py inside()). */
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
 /** Containers whose "in" goal is judged by their own walls in the run (ai/goals.mjs wallsInside), not by the engine's summary. */
-export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug"]
+export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug", "pulley-lift"]
 /** Prop keys every type has: the surface material and its tunable contact numbers. */
 export const MATERIAL_KEYS = ["material", "bounce", "friction", "rolling", "side"]
 /** The default stage and table (web/scenarios/empty.json). */
@@ -134,14 +134,27 @@ function volumeOf(b) {
 }
 
 // ---------------------------------------------------------------- loading the catalog
-function simFingerprint() {
+// (each file's sha1, kept while its size and time stay: the fingerprint is of what the files say, so a checkout of a commit (CI, another
+// worktree, a merge) finds the committed digest current; keyed by their times, every checkout rebuilt it and left ai/.cache/catalog-digest.json
+// changed in the tree, 2026-10-21)
+const fileHashes = new Map()
+const contentHash = (p) => {
+	const st = statSync(p)
+	const was = fileHashes.get(p)
+	if (was && was.size === st.size && was.mtimeMs === st.mtimeMs) return was.hash
+	const hash = createHash("sha1").update(readFileSync(p)).digest("hex")
+	fileHashes.set(p, { size: st.size, mtimeMs: st.mtimeMs, hash })
+	return hash
+}
+/** What the digest is made from: web/sim's files (not its engine bundle, engine-worker.js, which the catalog never reads) and this file, by
+ *  their contents, and the modules loaded. A digest whose `fingerprint` is this is current (the committed one too: ai/test/digest.test.mjs). */
+export function simFingerprint() {
 	const h = createHash("sha1")
 	h.update(`v${DIGEST_VERSION}`)
 	try {
 		for (const f of readdirSync(SIM).sort()) {
-			if (!f.endsWith(".js")) continue
-			const st = statSync(join(SIM, f))
-			h.update(`${f}:${st.size}:${st.mtimeMs}\n`)
+			if (!f.endsWith(".js") || f === "engine-worker.js") continue
+			h.update(`${f}:${contentHash(join(SIM, f))}\n`)
 		}
 	} catch {
 		h.update("no-sim")
@@ -150,22 +163,16 @@ function simFingerprint() {
 		// (the physics modules' files: their types and plug-ins are in the digest)
 		for (const f of readdirSync(join(SIM, "modules")).sort()) {
 			if (!f.endsWith(".js")) continue
-			const st = statSync(join(SIM, "modules", f))
-			h.update(`modules/${f}:${st.size}:${st.mtimeMs}\n`)
+			h.update(`modules/${f}:${contentHash(join(SIM, "modules", f))}\n`)
 		}
 	} catch {}
-	h.update(readSafe(join(HERE, "catalog-digest.mjs")).length.toString())
+	try {
+		h.update(contentHash(join(HERE, "catalog-digest.mjs")))
+	} catch {}
 	// (the module selection too: a process run with PLAYGROUND_MODULES="a,b" (a test, a module's own server) digests a smaller catalog, and must
 	// never hand it, through the shared cache file, to one that loads every module: its edits would find those modules' types unknown)
 	h.update(typeof ONLY_MODULES === "string" ? `modules=${ONLY_MODULES}` : "modules=*")
 	return h.digest("hex").slice(0, 16)
-}
-function readSafe(p) {
-	try {
-		return readFileSync(p, "utf8")
-	} catch {
-		return ""
-	}
 }
 
 async function loadRawCatalog({ catalogUrl, timeoutMs = 8000 } = {}) {
@@ -317,8 +324,8 @@ const TYPE_NOTES = {
 	"pinball-flipper": "The flipper points right from its hinge, resting at rest_angle; at the release it swings counter-clockwise through sweep, flicking up whatever rests on it.",
 	"spring-bumper": "Mounted on a wall at its left; the plate faces right.",
 	"motor-spinner": "Turns on a gear motor's shaft at its middle (a fixed hub, drawn on a stand behind it) and is driven: positive rpm turns counter-clockwise.",
-	"atwood-machine": "The pulley is fixed at the anchor; the two weights hang below it.",
-	"pulley-lift": "The pulley is fixed at the anchor; the weight and the pail hang below it; things put in the pail ride up.",
+	"atwood-machine": "The pulley is fixed at the anchor; the two weights hang below it. Hang it in the air (on \"air\", y_m about 2 × drop + 0.1: its weights clear of the table); put on the table, it is hung with its weights `drop` (at most 1 m) over it, never resting on it. start_speed with start_dir -90 starts its left weight down and its right one up at that speed (equal weights then go on steadily: balanced forces).",
+	"pulley-lift": "The pulley is fixed at the anchor; the weight and the pail hang below it; things put in the pail ride up (place them inside it: {inside: <its id>}; an \"in\" goal with it as the container checks they stay in the pail). Hang it in the air, or on the table: it is hung with its pail `drop` (at most 1 m) over it.",
 	"hanging-spring": "Hangs below its anchor (the top of the spring).",
 	"hanging-chain": "Two fixed posts at the anchor's height, span apart; the chain sags between them.",
 	trampoline: "Stands on the surface below it (the anchor is the floor under its middle); drop things onto the mat from above.",
@@ -788,16 +795,35 @@ export function digestFromCatalog(raw, { source = "given", fingerprint = "given"
 
 // ---------------------------------------------------------------- the cache
 let memo = null
+let simP = null
 
-/** The digest: from memory, else the disk cache (when web/sim is unchanged), else built anew (and cached). */
+/** web/sim loaded in this process when no physics module is registered yet (best effort): its modules' registry (web/sim/plugins.js, kept on
+ *  globalThis) is what ai/goals.mjs, ai/schemas.mjs and the steps read the modules' goal kinds from, so a plan's "piles" or "melts" goal is known
+ *  after any getCatalog(). Building the digest loads web/sim; a digest read from the cache did not, and since the cache stays current across
+ *  checkouts (b3d2e36) a process whose first digest came from it validated plans against no module goal kinds at all ("plan.goals[0].kind must be
+ *  one of "in", "falls", "hits", "moves", "off", not "piles"", 2026-10-21). A registry another copy of web/sim filled is left as it is. */
+async function withModules() {
+	const S = globalThis[Symbol.for("sandbox.plugins")]
+	if (S && S.modules.size) return
+	try {
+		await (simP ??= import(pathToFileURL(join(SIM, "index.js")).href))
+	} catch {} // (web/sim mid-edit, or no engine files: the digest still serves; module goal kinds are then unknown, as before)
+}
+
+/** The digest: from memory, else the disk cache (when web/sim is unchanged), else built anew (and cached). Either way web/sim is loaded in this
+ *  process when it can be (withModules). */
 export async function getCatalog({ rebuild = false, catalogUrl } = {}) {
 	const fp = simFingerprint()
 	if (!rebuild && memo && memo.fingerprint === fp) return memo
 	if (!rebuild) {
+		let c = null
 		try {
-			const c = JSON.parse(readFileSync(CACHE_FILE, "utf8"))
-			if (c.version === DIGEST_VERSION && c.fingerprint === fp && c.index?.types) return (memo = c)
+			c = JSON.parse(readFileSync(CACHE_FILE, "utf8"))
 		} catch {}
+		if (c && c.version === DIGEST_VERSION && c.fingerprint === fp && c.index?.types) {
+			await withModules()
+			return (memo = c)
+		}
 	}
 	let raw
 	try {

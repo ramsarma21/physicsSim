@@ -196,17 +196,36 @@ const circuit: ProcessKind = {
 		const set = (p: Part, k: string, v: number) => {
 			if (p.item !== undefined && Number.isFinite(v)) ctx.set(p.item, key(p, k), v)
 		}
-		const shaftOmega = (p: Part): number => {
-			if (p.kind === "generator") {
-				const t = ctx.time()
-				return t >= p.from && (p.to === undefined || t < p.to) ? p.speed : 0
-			}
-			if (p.kind !== "motor") return 0
-			if (p.fan !== undefined) return fanOmega.get(p.id) ?? 0
+		/** A shaft body's turning against its stator (rad/s), in the part's own sense (energy module: a wheel driving a car forward turns clockwise). */
+		const bodyOmega = (p: Part & { readonly rotor?: string; readonly stator?: string; readonly sense?: number }): number => {
 			if (p.rotor === undefined) return 0
 			const r = ctx.solid(p.rotor)
 			const s = p.stator === undefined ? undefined : ctx.solid(p.stator)
-			return (r?.spin() ?? 0) - (s?.spin() ?? 0)
+			return (p.sense ?? 1) * ((r?.spin() ?? 0) - (s?.spin() ?? 0))
+		}
+		/** The rotational inertia a shaft turns with about its own middle (kg·m²): its whole weld group's (a waterwheel's hub with its paddles), as the
+		 *  engine moves it (planck's mass and inertia), from where its centre of mass is. */
+		const groupInertia = (h: SolidHandle): number => {
+			const b = h.body()
+			const q = h.pose()
+			const dx = b.center.x - q.x
+			const dy = b.center.y - q.y
+			return Math.max(1e-12, b.inertia + b.mass * (dx * dx + dy * dy))
+		}
+		/** A motor that drives a car's wheel through its axle joint (energy module): the planck joint, found at the start. */
+		const axles = new Map<string, { enableMotor(on: boolean): void; setMotorSpeed(w: number): void; setMaxMotorTorque(t: number): void }>()
+		/** planck's torque units per N·m (its lengths are the engine's lengthScale per metre) */
+		let axleScale = 100
+		const shaftOmega = (p: Part): number => {
+			if (p.kind === "generator" && p.rotor === undefined) {
+				const t = ctx.time()
+				return t >= (p.from ?? 0) && (p.to === undefined || t < p.to) ? (p.speed ?? 0) : 0
+			}
+			if (p.kind === "generator") return (p.ratio ?? 1) * bodyOmega(p)
+			if (p.kind !== "motor") return 0
+			if (p.fan !== undefined) return fanOmega.get(p.id) ?? 0
+			if (p.rotor === undefined) return 0
+			return bodyOmega(p)
 		}
 		/** What rests on a button: the weight (N) of the moving solids touching it whose middle is above its top. */
 		const load = (solid: string): number => {
@@ -484,6 +503,28 @@ const circuit: ProcessKind = {
 		return {
 			start() {
 				for (const p of parts) {
+					if (p.kind === "motor" && p.rotor !== undefined && p.wheel !== undefined) {
+						// (a battery car's motor: its wheel's axle joint, made by the engine from the car's doc joint, between the chassis and the wheel)
+						const E = ctx.engine()
+						if (E !== undefined) axleScale = E.lengthScale * E.lengthScale
+						const A = E?.bodyOf(p.stator ?? null)
+						const B = E?.bodyOf(p.rotor)
+						type J = { getBodyA(): unknown; getBodyB(): unknown; getNext(): J | null; enableMotor?(on: boolean): void; setMotorSpeed?(w: number): void; setMaxMotorTorque?(t: number): void }
+						for (let j = (E?.world as { getJointList(): J | null } | undefined)?.getJointList() ?? null; j !== null; j = j.getNext()) {
+							if (j.getBodyA() !== A || j.getBodyB() !== B || typeof j.enableMotor !== "function" || typeof j.setMotorSpeed !== "function" || typeof j.setMaxMotorTorque !== "function") continue
+							axles.set(p.id, j as never)
+							break
+						}
+						continue
+					}
+					if (p.kind === "generator" && p.rotor !== undefined) {
+						// (a generator a body's shaft turns: the inertia its implicit drive turns with, at the shaft, the generator's own reflected in it)
+						const r = ctx.solid(p.rotor)
+						if (r === undefined) continue
+						inertia.set(p.id, groupInertia(r) + (p.inertia ?? 0))
+						crank.set(p.id, 0)
+						continue
+					}
 					if (p.kind === "motor" && p.rotor !== undefined) {
 						const r = ctx.solid(p.rotor)
 						if (r === undefined) continue
@@ -592,10 +633,45 @@ const circuit: ProcessKind = {
 					}
 				}
 				for (const p of parts) {
+					if (p.kind === "generator" && p.rotor !== undefined) {
+						// a generator turned by a body's shaft is held back by its current: k·I at the generator, ratio × that at the shaft, implicit in the
+						// shaft's turning as a motor's drive is (τ = k_s·(a − b·k_s·ω)/(1 + k_s²·b·h/J), k_s = ratio·k, J the shaft's whole inertia)
+						const line = sim.line(p.id)
+						const r = ctx.solid(p.rotor)
+						if (line === undefined || r === undefined) continue
+						const s = p.stator === undefined ? undefined : ctx.solid(p.stator)
+						const sense = p.sense ?? 1
+						const ks = (p.ratio ?? 1) * p.k
+						const w = sense * (r.spin() - (s?.spin() ?? 0))
+						const J = inertia.get(p.id) ?? 1e-6
+						const tau = (sense * ks * (line.a - line.b * ks * w)) / (1 + (ks * ks * line.b * h) / J)
+						if (!Number.isFinite(tau)) continue
+						r.twist(tau)
+						if (s !== undefined && s.dynamic) s.twist(-tau)
+						continue
+					}
 					if (p.kind !== "motor") continue
 					const line = sim.line(p.id)
 					if (line === undefined) continue
 					const eta = p.efficiency ?? 1
+					const axle = axles.get(p.id)
+					if (axle !== undefined) {
+						// a car's wheel: its torque-speed line through the axle joint's own motor, a constraint planck solves with the tyre's grip (the
+						// wheel turns with the car's whole weight behind it while it grips, alone while it spins): up to the torque the line gives at the
+						// wheel's turning now, toward the speed where that torque (less the gearbox's friction) is nothing
+						const w = bodyOmega(p)
+						const fr = p.friction ?? 0
+						const start = eta * p.k * line.a
+						const slope = eta * p.k * p.k * line.b
+						const drive = start - slope * w
+						// (where the drive less the friction is nothing; standing, a drive under the friction cannot start it, and the gearbox holds it)
+						const target = start > fr && slope > 0 ? (start - fr) / slope : start < -fr && slope > 0 ? (start + fr) / slope : 0
+						const most = Math.abs(w) > 1e-6 ? Math.abs(drive - fr * Math.sign(w)) : Math.max(fr, Math.abs(drive) - fr)
+						axle.enableMotor(true)
+						axle.setMotorSpeed((p.sense ?? 1) * target)
+						axle.setMaxMotorTorque(Number.isFinite(most) ? most * axleScale : 0)
+						continue
+					}
 					if (p.rotor !== undefined && p.fan === undefined) {
 						const r = ctx.solid(p.rotor)
 						if (r === undefined) continue

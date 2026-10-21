@@ -529,6 +529,7 @@ view.endExport()                            // optional: end the export session 
     Newton's cradle, pendulum dominoes do). Never loses the action: everything moving faster than 20 cm/s (that the wide shot holds) and every impact within 0.1 s
     stays inside the picture; where the close shot would leave some out it eases back toward wide (a limit held 0.75 s either side and eased).
   - `"live"`: the canvas's camera as it is now, held for the whole export (for comparing a frame with the canvas).
+  - `"focus"` and `"director-plan"` (2026-10-20): directed cameras, a shot plan filmed exactly (t is video time): "Filming module: directed cameras".
 - Measured (Apple M5 Pro, ANGLE Metal, headless Chromium; Rube Goldberg 4.5 s = 271 frames at 60 fps, `VideoFrame` made from each): 1080p wide 5–8 ms a frame
   (2.1 s for the run), 1080p director with `motionBlur: 6` 11.5 ms (6.4 sub-frames on average; 3.1 s), follow + blur 14 ms (10 sub-frames), 1440p director + blur
   18 ms, 4K wide 15.5 ms, 4K director + blur 35 ms (9.4 s); the first frame of a session 30–60 ms more. Readback is a pixel-pack buffer kept for the session (8 MB at
@@ -705,8 +706,9 @@ stepping at 4800 Hz), and in p3's launcher, pad and trampoline rows.
     at least half their smaller side and 2 cm (not a body on wheels). Label "<name> falls over", or "all N of a, b, c… fall over".
   - `{kind: "hits", item, target, before_s?}` → `{label, ok, kind: "hits", item, target, t}`: ok when one of the item's solids strikes one of the
     target's (track.impacts), by before_s if given; t the first strike (s, 3 decimals) or null. Label "<name> hits <target>[ by <s> s]".
-  - `{kind: "moves", item, min_m?}` → `{label, ok, kind: "moves", item, moved_m}`: ok when the mean of its moving parts ends at least min_m (default
-    0.05 m) from where it started; moved_m to 4 decimals. Label "<name> moves at least 5 cm" (ai/goals.mjs's lengths: 1.25 m, 12.3 cm).
+  - `{kind: "moves", item, min_m?}` → `{label, ok, kind: "moves", item, moved_m}`: ok when its rigid body that moved most (each weld group's moving
+    parts averaged, the most of those: engine6, "Mechanics fixes" at the end) ends at least min_m (default 0.05 m) from where it started; moved_m
+    to 4 decimals. Label "<name> moves at least 5 cm" (ai/goals.mjs's lengths: 1.25 m, 12.3 cm).
   A goal's own `label` wins; a goal naming an item the scene does not have, or of no known kind, is left out (as before). The domino row's story
   ("N of M fall") counts by the same rule (it turned past 57° before; the 12 scenarios and the starter tell the same stories: rube-goldberg "7 of 7 fall").
 - machines/check.py runs the engine through research/poc/worker.ts (the server's own worker; tooling/sim.ts left with the edullm link): `python3
@@ -868,7 +870,8 @@ of 2026-10-19 16:43, in Python and in web/sim). How to write one: the guide and 
   submerged volume (`submerged`: a sphere's cap, an outline below a line × depth), readings (`set`/`get`) and events. Admission refuses an unknown kind,
   two processes with one id, settings out of range, and whatever a kind's `check` says. The track gains `state: {item: {key: [value per frame]}}`
   (5 decimals), `events: [{t, items, text, kind?}]` and a resized solid's placement `scale` (its body against the document's: depth too, so its volume
-  and mass go as scale³; below 1 % it is a sensor that no longer falls) — each only when a process made one. Gravity and the air's density are per run
+  and mass go as scale³; below 1 % it is a sensor that no longer falls; a lone moving body resting on something keeps resting on it as it is
+  resized, and what rests on it alone with it: "Engine repair (2026-10-21)" at the end) — each only when a process made one. Gravity and the air's density are per run
   (`runGravity`, `airDensity` in physics.ts): exactly 9.81 and 1.2 without settings. Engine modules use only the deterministic math (+ − × ÷, sqrt, abs,
   min, max, floor, ceil, round, sign, trunc and the engine's sin, cos, atan2, exp, hypot, pow): the bundle and the server compute the same bits.
   A run's track depends on its document alone, never on what ran before in the same process: planck's contact pool is bypassed (physics.ts
@@ -1092,9 +1095,8 @@ scene without a liquid container, a sailboat, a hull boat or a breeze (the 22 sc
     rim reaches the water (theory ρV_env − m: 565), it floods and sinks at 10 s; a foam bowl never sinks; the stoneware mug (330 g, its handle 15 %)
     floats tipped toward its handle and floods (2D statics: GM 3 mm against the handle's 9 mm lever), a light one floats on its side, as real light
     cups do. The solver's `place.float` starts a vessel at its height. The catalog's cup, plastic-cup, jar, bucket and box are fixed: never float.
-    Not yet: a tap's or a pitcher's stream into a vessel that floats in a tank joins the TANK's water (tooling/src/sim/modules/flow.ts `land()`
-    gives a particle to a RegionStore once it is below the tank's surface, though it is inside a BasinStore's inside): the flow module's change; the
-    how-to and the edit digest say so and build the hose version.
+    A tap's or a pitcher's stream into a vessel that floats in a tank fills it too since engine6 (flow.ts `land()` gives a particle to the innermost
+    container and leaves one over a floating vessel's opening to it: see "Cross-module gaps (engine6 crossmod)"; the hose version still works).
   - *Goal* `floats_then_sinks {item, by_s?}` (Python == JS, aliases fills_and_sinks, fills_then_sinks, sinks_when_full…): it floats first (afloat 1),
     later sinks (sunk 1) and rests on the bottom at the end; never met by a thing that sank at once (entry `floated_s`, `sank_s`, `flooded`).
   - *Surface tension* (records `surface`, `soap`; layers get `tension` N/m and `wets` (the largest contact angle it allows, °) only in a scene with
@@ -1170,7 +1172,7 @@ Files: `machines/mod_measure.py` (catalog, goal kinds), `web/sim/modules/measure
   one; a `measure-mark` process record {zero, start, finish} (world x of its marks; no engine work) lets a goal check that has only the document
   find its finish); `start-line` / `finish-line` (painted bands, `sign`, `gate` posts; a `measure-mark` record {x});
   `stopwatch` (links `watch`, `start_line`, `finish_line` (a line or a lane); `start` release | moves | crosses (`start_x`); `stop` crosses (`stop_x`) |
-  stops | hits | at (`stop_at`) | never; `reaction_s` 0…0.3 (a hand's delay on presses that answer something seen); `counts` run | lesson (seconds ×
+  stops | hits | at (`stop_at`) | reads (`stop_reading`, `stop_value`: engine6, "Cross-module gaps") | never; `reaction_s` 0…0.3 (a hand's delay on presses that answer something seen); `counts` run | lesson (seconds ×
   the scene's time-lapse); `face_cm` 6…60 (drawn only); `on_table` a real 6 × 8 × 1.5 cm 60 g one; readouts seconds, meters, start_s, stop_s, running,
   lesson_s; with nothing to watch (no watch link, or one that names nothing) a watch that starts at the release and stops `at` or `never` runs as
   a plain clock, any other reads 0); `measuring-tape` (`watch`, `point` front | back | centre, `from` left end | right end, `length` 0.3…30 m: meters =
@@ -1188,7 +1190,7 @@ Files: `machines/mod_measure.py` (catalog, goal kinds), `web/sim/modules/measure
   on Earth: under `settings.gravity` moon a 1 kg mass reads 165 g, on Mars 378 g; `over` past capacity_kg × 9.81 N), smoothed over
   0.05 s from what rests on it at the release; tare takes off the weight Σ m·g of what rests on it at the release (the first step that sees contacts),
   never what lands on it later: a tared bowl reads an egg dropped into it, smashed or whole; the frames before that step read that first reading, so it
-  shows what was set on it from 0 s); `pan-balance`
+  shows what was set on it from 0 s; since engine6 it also weighs grains heaped and liquid lying as a puddle on its platform: "Cross-module gaps"); `pan-balance`
   (a 30 cm beam on a pin with ±`stop_deg` limits and `damping` (0.02 N·m·s), pans hung on pins 12 cm under its ends (the hangers' bodies are the top 2 cm of
   their bows; the model draws them down to the pans): tilt (right pan down +), heavier −1 | 0 (within 0.5°) | 1, left_g and right_g (what rests in each
   pan, as the kitchen scale finds it); its beam, pointer and a 46.6 g brass gravity bob 9 cm under the pivot are ghosts (what is dropped into a pan
@@ -1765,6 +1767,301 @@ and the server: the same bytes). Files: `machines/mod_staging.py` and its port `
 - **Tests**: `node tools/staging/test.mjs [--server <port>]` (catalog entries Python == JS, documents and errors alike, tracks unchanged with and without
   doc.view on the bundle and the server, the AI registry, digest and schema).
 
+### Filming module: directed cameras (2026-10-20): shot plans filmed exactly (web/export/shots.js, web/export/subjects.js, web/view3d.js)
+
+Every video gets a camera directed for what it teaches: a **shot plan** (`web/export/shot-plan.schema.json`, JSON Schema 2020-12; the language is
+DIRECTOR.md section 3: shots with a story beat and an intent, a run window at a speed, a move, a subject, a framing, a join, a look, marks) is
+written by a director (the AI step `direct`, a person, or `autoPlan` when there is none) and the engine films it exactly: every target is resolved
+from the scene and its finished run before a frame is drawn, the camera of every frame of every band is planned once (non-causally, like follow and
+director), and a safety net measures it. View only: no body, contact or track changes (`web/export/test/identity.test.mjs`: the 12 scenarios and 10
+gallery scenes run byte for byte as before; filming a run never changes it).
+
+**The pure module** (`web/export/shots.js`; node and page alike; imports only `web/track.js`, the optics tracer `web/sim/optics.js` and the
+recognizer `web/export/subjects.js`):
+```js
+import * as Shots from "web/export/shots.js"
+const world = Shots.makeWorld({run, scene, catalog, registry, hints, boxes, environment})   // or {runs: {lane: {sim, scene, boxes}}, ...}
+Shots.resolvePlan(plan, world)  -> {ok, errors: [{at, message, nearest}], warnings}          // every id and target exists (DIRECTOR.md 7.1)
+Shots.compile(plan, world, {width, height, fps, kind}) -> film                              // throws PlanError {message, shot, nearest}
+Shots.measure(film)             -> report {ok, shots: [measured facts], checks: [{shot, check, ok, why}], failed: [sentences]}
+Shots.checkPlan(plan, world, {width, height, fps}) -> {ok, errors, report, film, messages}  // resolve + compile + measure, for the director's repair
+Shots.autoPlan(world, {width, height, fps, moves, environment}) -> plan                     // the plan with no director (camera "focus")
+Shots.frameAt(film, tau) -> {frame, shot, u, t, bands: [{lane, rect, inset, pose}], look, label}
+Shots.runTimeAt(film, tau), Shots.videoTimesOf(film, t), Shots.retime(film, impacts), Shots.cameraOf(pose), Shots.specOf(pose), Shots.filmFromJSON(json)
+Shots.NET, Shots.VIEWS, Shots.TONES, Shots.FLOORS, Shots.DEFAULT_LOOK, Shots.VERSION (1), Shots.PlanError
+import { buildDigest, digestText } from "web/export/digest.js"   // the director's timeline digest (DIRECTOR.md section 2): the one the AI step
+                                                                  // `direct` writes plans from; buildDigest({runs: [{lane, scene, run, recog,
+                                                                  // moments: {index, what} (the world's R.M, R.WHAT)}]})
+import { validateShotPlan } from "ai/shot-plan.mjs"             // the language checked (no library) and every name resolved against a digest
+```
+- **The world**: `run` is an `/api/simulate` answer `{doc, track, summary}` (or the view's `run.sim`); `scene` the scene JSON (better words and goals
+  for the recognizer; `sceneFromSim(run)` without it); `boxes(solidId)` (or an object of them) the drawn models' boxes: `{x0, x1, y0, y1, z0, z1}` in a
+  mover's own frame, `{round: R, z0, z1}`, or `{world: [x0, x1, y0, y1, z0, z1]}` for a still thing (the view's `exportBoxes()`); without them a solid's
+  physics outline (a polygon's corners, a ball's circle, a slab's rectangle) times its depth stands in. `runs` instead of `run`: one run per lane
+  (the lesson compositor's lanes), each lane's id the plan's lane id. `environment`: a module's world (space: `{room: false, table: false}`).
+- **Moments** (section 3.4) come from the run: `start release result end pause:setup pause:result t=<s>`, `start: stop: exit: landing:<item>`,
+  `apex: turn:<item>[#n]` (a swing's turn back: odd n on the far side), `contact:<a>+<b>[#n]` (both orders), `event:<kind>:<item>[#n]`,
+  `reading:<item>.<key>:<starts|settles|peak|max|min|crosses=v>`, `beam:<source>:on`, `cue:<n>` and `step:<n>` (the skill's cues); `{at, plus}`;
+  `@lane` for one lane's run; a lane role's name in `start:`/`stop:`/`contact:` ids means each lane's own item (the latest of them).
+- **Targets** (3.5) resolve to box corners at a run time: `{item[, part]}` (the drawn model's box), `{items}`, `{role[, lane]}`, `{point}`,
+  `{region}`, `{contact: [a, b], nth}` (where they touch at that impact), `{item, event}`, `{item, reading}` (its `face` part), `{beam}` /
+  `{beam, segment}` / `{beam, bounce}` (the turn and both rays 12 cm either way, and the face normal) / `{beam, from, to}` (`source`, `bounce:<n>`,
+  `hit:<item>`, `end`) from the optics tracer's own trace at that moment (the levels, drives and liquid levels the view draws with), `{trail, from,
+  to}`, `{through}`, `{gap}`, `{mark, m}` (a lane's metre mark, on its floor: `measure-mark` zero + m). `pad` grows a box by that much each way (a
+  mark: along its lane). `{path}` (a module's drawn route) is refused: no module publishes one yet.
+- **A film** is plain data (JSON.stringify keeps all of it): `{version, kind, W, H, fps, duration, frameCount, runSeconds, lanes, perLaneRuns,
+  shots: [{id, beat, move, layout, arrange, i0, n, tau0, T, t0, t1, rate, holdAfter, playT, label, look, bands: [{lane, rect: [x, y, w, h] px from
+  the top left, inset?}], hide: [[item ids each band leaves out]], in, notes}], frames: [{s (shot), t (run time), b: [[Lx, Ly, Lz, d, yaw, pitch,
+  hfov] per band]}], marks: {frame index: [[primitives] per band]}, notes}`. A pose: the camera at L + d (sin yaw cos pitch, sin pitch, cos yaw cos
+  pitch) looking at L, +y up, no roll, hfov radians. Shots are whole frames at the film's fps; tau (video time) i / fps is frame i; `frameAt`
+  interpolates between two frames of one shot only (never across a cut). Run time per shot: `clamp(rate ? min(t1, t0 + rate u) : t0, 0, run's end)`
+  (a window reaching past the run's end plays its whole length, the run held at its end).
+- **Execution** (DIRECTOR.md 4): `fit` (tight 6 %, snug 10 %, loose 18 % margins, centred on subject + keep by iterating the projected box), `size`
+  (the subject's larger side that share of the picture; backs off for keep), `width` (metres across at the look point); `place`; `view` (side, eye,
+  low, high, top-down, three-quarter-left/right, macro, or `{yaw, pitch}`) and `lens` (mm). hold: the union over its run window, still (a `continue`
+  hold that names no new framing keeps exactly the last pose); push/pull: the director's straight dolly line from the start framing (or the last
+  pose) to `end`, eased (smooth, gentle, linear) over `move_seconds`; arc: yaw, pitch, look point and log-distance together; follow: the subject's
+  centre at 60 Hz over the shot and a second beyond each end, clamped at `stop_at`, zero-phase critically damped (omega 3), steady horizon for axis
+  x, room ahead along the motion faded in with the speed, distance backed off for `keep` (an envelope 0.6 s wide), `per_lane` each band its own;
+  travel: the look point along the path at a trapezoid pace (or leg by leg with `dwell` rests). Joins: cut; continue (from the last pose; a 0.5 s
+  glide when the shot's own start differs); `{ease: s}`. A join across a change of layout or arrangement is filmed as a cut (a note). Lanes:
+  split (rows or columns, one camera shifted by each lane's offset, the median shift of paired start boxes or `align` on one role), together, single;
+  one run per lane: the same pose in every band. A thing no lane's cast names that stands on or in one lane's things, far from the others'
+  (the salt on the salted cube), is that lane's too: drawn, framed, marked and measured in its own band only. Insets: a corner band with its
+  own still camera.
+- **The safety net** (`Shots.NET`, DIRECTOR.md 7.2): keep-in (2 % inside, every frame, every band), subject-size (each hero 0.09 and 0.10 high unless
+  flat or thin; 0.045 in a setup or reveal shot), must-see and details (their floors; `min_size` raises a must-see thing's; with `small_because`
+  it sets must-see and detail floors alike, never under 0.03), fill (a held moment's picture, `freeze`, not a follow, travel, reveal, light or
+  space: at most 0.82 backdrop, the scene's drawn things counted, unless what the shot names spans half the picture's longer side and covers 0.6
+  of the box round it: FRAMING_RULE gate 4), present (a playing shot's subject out of the picture at most 0.5 s after it leaves, 1.5 s before it
+  first comes in), repeat (never the very same still twice in a row: the same camera, moment, marks and badge), speed (0.5 widths/s;
+  a travel 1.25; a follow 1.5 while its subject is steady in the picture, 1.25 while not), zoom 0.7/s, turn 15 deg/s, no jump (3 widths/s), no jump
+  cut, holds still and at least 0.8 s, the last shot (and a pause beat's last) still for its last 0.5 s, shots at least 0.8 s, a rate other than 1
+  labelled, the beam's core 1.5 px and glow 6 px, an instrument face 18 % of the height, lane parity (one scale: picture widths per metre at each
+  lane's own subject within 10 %). The report's facts per shot: sizes per band, heroes, must-see, faces, closest keep margin and when, peak picture,
+  subject, zoom and turn speeds, the beam's widths, parity, travel length, notes.
+- **autoPlan** (the "focus" camera): the recognizer's primaries (local supports and scenery never framed), its lanes as a split at one scale (rows
+  for horizontal action, columns otherwise), a setup hold until 0.35 s before the first start, the action held still and snug (tight when that
+  reaches the floors) or, when it does not, cut link by link at each next start (a chain) or a lone traveller followed at the closest width a calm
+  follow allows, the result held to the end, a follow that runs to the end handed to a still; jump cuts become glides; the run plays at its own pace
+  from 0 to its end (video time = run time, so every caller that films t = i / fps films it). A hero no framing gets to its floor is named in the
+  plan's notes (framing-infeasible: the scene's to change). The studio look unless a module's world says otherwise. `moves: false`: the safe plan
+  (holds and cuts only).
+
+**The view** (`web/view3d.js`): two more export cameras, `"director-plan"` (alias `"plan"`) and `"focus"`; the others unchanged.
+```js
+view.renderFrame(tau, {camera: "director-plan", plan | film, width, height, fps, motionBlur, runId, output, runs?, lane?, focus?})
+view.renderFrame(t,   {camera: "focus", focus: {scene, hints, catalog}, width, height, fps, motionBlur, runId, output})
+view.exportProject(tau, x, y, {camera, plan | film | focus, width, height, fps, lane?, xy, z}) -> across the whole picture, through the point's band
+view.exportInfo({camera, plan | film | focus, width, height, fps, runs?, lane?}) -> {..., duration (the film's), plan: {kind, duration, frameCount,
+     fps, width, height, lanes, perLaneRuns, shots: [{id, beat, move, layout, arrange, video: [tau0, tau1], frames: [i0, i1], run: [t0, t1], rate, label,
+     in, look, bands}], notes, report, plan}} (plan: null and planPending while the models load; planError when the plan cannot be filmed)
+view.exportCamera(tau, o) -> {tau, t, frame, shot, layout, arrange, bands: [{lane, rect, inset, position, target, up, hfov, vfov, near, far, spec}]}
+view.exportPlan(o) -> {film, plan, report, summary}      view.exportDigest(o) -> {digest, text}      view.exportBoxes() -> {solid id: box}
+view.setOptions({catalog})   // the app hands its catalog over: the recognizer reads its categories, tags and readouts
+```
+- For both cameras t is **video time** (a plan may slow the run, hold a moment, cut back); each frame's run time comes from the film. The focus film
+  plays the run at its own pace, so its video time is the run time. `exportInfo().directed` = `{goals, comparison, lanes}` for the run shown.
+- Films are made once per run, picture size, fps and plan (cache keys hash the plan, film and focus options by content), from the run's track and
+  the drawn models' boxes, measured once the models are in (the mounts and stands the view adds to hold parts up are not part of a part's box).
+  A plan naming what the run does not have is a RangeError with the resolver's messages and the nearest ids.
+- Each frame draws its bands (viewport and scissor on the export's MSAA target), each with its own camera; in a split band of one run the other
+  lanes' things (their roots, contact shades, mounts and stands, and what a module's view plug-in draws for them: a plug-in names an object's item
+  as `obj.userData.item`, as the measure module's lane legs, display poles, retort stands and trails do) are left out and the key light's shadow map is drawn again for that band; motion
+  blur sub-frames stay inside the frame's own shot (half a frame past its last frame at most, never across a cut), their count measured over every
+  band (camera and bodies). The look per shot: backdrop `studio` (the room hidden, a plain backdrop in `tone`: dark #1b1e23, mid #3b4048, light
+  #8d929b) / `room` / `scene` (a module's world, space's stars); ground `sweep` (the table top not drawn; an 80 m matte studio floor at its height in
+  the tone, #15171b / #2c3036 / #6f747c, receiving shadows, fogged into the backdrop from d + 0.6 to d + 4.5 m: no wood, no edge, no wall), `table`,
+  `hidden`; light `subject` (the key light's shadow frustum fitted to what the bands see) or `room`; labels `hidden` (the modules' sprites and boards);
+  vignette. Not drawn yet: depth `soft` (no depth of field), a beam drawn only as far as a travel has gone (`travel.reveal`; noted in the film).
+  A run drawn in the lesson look keeps its own colours, light and outlines in every band, and hands are drawn in their own lane's bands: "Directed
+  exports with the lesson look and hands" (after the lesson look's section).
+- Over each frame (2D, after the picture is read back; `output: "imagedata"` included): the plan's marks through each band's own camera (lines,
+  dashed normals, angle arcs with the tracer's measured angles, distance bars, labels with `{label}` `{value}` `{m}` `{dt}` `{s}`; key readings 4 %
+  of the frame's height, other words 3 %, white with a dark edge), a line between split bands, an inset's frame, and the shot's badge (`label`,
+  top right). The overlay is deterministic in one browser build.
+- One run per lane (the compositor): load each other lane, keep its `sim` and `exportBoxes()`; load the first lane, `film = exportPlan({camera:
+  "director-plan", plan, runs: {other: {sim, boxes, scene}}, lane: first, width, height, fps}).film`; film every lane's run with `{film, lane}` (a
+  band of another lane stays plain backdrop; a single or together shot comes from the first lane's run) and put the bands together by
+  `film.shots[s].bands[].rect` (`web/export/test/film-plans.mjs` does exactly this). `exportCamera(tau, o).bands[].spec` is the fixed-camera spec
+  `camera.py` projects (square-on poses: yaw 0), for its own overlays.
+- `updateParts` fix (CAMERA_INTERNALS 9.4): a frame with no `scale` for a part a module has resized shows it at its own size, so a frame is a pure
+  function of t on melting, dissolving or swelling runs too (a moment drawn after a later one used to keep the later size).
+- `_debug.export`: `plan(kind, W, H, fps, o)` (the shot: film, plan, world, report), `world(o)`, `boxes()`, `Shots`.
+
+**The export dialog** (`web/export/export-ui.js`): a **Directed** camera, the default for a scene with goals or a comparison
+(`exportInfo().directed`) unless the person picked a camera (`cameraChosen` is remembered, the camera with it). Choosing it (or opening the
+dialog on it) asks the AI director once per run (`o.direct`: app.js's AI client, `POST /api/ai/direct` with the scene, the person's optional
+words "What should the video show?" or else the scene's name as the concept, and the page's `exportBoxes()`), where the AI can be used
+(`o.aiState()`, web/ai/access.js); until the plan lands, and where there is no AI or the director fails, the view's automatic camera films it
+(`camera: "focus", focus: {scene}`). The director's plan films with `camera: "director-plan", plan` everywhere (preview, frames, `exportInfo`,
+the sound's `exportProject`); its cut is filmed whole (video time, no trim: it may slow, hold or replay a moment), the sound's hits at the
+video times `retime(film, impacts)` gives (`audio.js` places a hit by its `runT`), and an export started while the director works waits for
+it ("Directing the camera…"). `app.js` hands the view its catalog.
+
+**For the AI step and the pipelines**: `direct` (ai/director.mjs, ai/DESIGN.md §21) runs the scene(s) (`runScene`), builds `makeWorld` once
+(on the caller's `boxes` when sent: the page's `exportBoxes()`, else physics outlines), shows the director `digestText(buildDigest(...))` with
+the world's moments, validates the answer (`validateShotPlan`), then `checkPlan(plan, world)`; failed checks go back to the director (up to 3
+repair turns); its best try is filmed unless it still breaks a hard check (then an automatic plan). A caller (the skill, the compositor):
+1. load each run in the page and keep its `exportBoxes()` (and, one run per lane, its `sim`);
+2. `POST /api/ai/direct {payload: {scene | runs: {lane: scene}, lesson: {question, answer, words, pauses, grade} | text, concept, kind,
+   hints: {roles, brief, cues}, boxes: boxes | {lane: boxes}, aspect}}` (the local server or the hosted function: the same answer) ->
+   `result.plan` (`result.source`, `result.report`, `result.soft`, `result.warnings` say how it was measured);
+3. one run: `renderFrame(i / fps, {camera: "director-plan", plan, width, height, fps, ...})` for i < `exportInfo({camera:
+   "director-plan", plan, width, height, fps}).plan.frameCount`; one run per lane: `film = exportPlan({camera: "director-plan", plan, runs:
+   {other: {sim, boxes, scene}}, lane: first, width, height, fps}).film`, each lane's run filmed with `{film, lane}`, the bands put together by
+   `film.shots[s].bands[].rect` (web/export/test/direct-e2e.mjs and film-plans.mjs do exactly this);
+4. sound: `retime(film, sim.track.impacts)` into `synthesizeImpacts(..., {duration: film.duration, panAt: (t, x, y) => view.exportProject(t, x,
+   y, {camera: "director-plan", plan, width, height, fps})})`; lane labels and 2D overlays through `exportProject` / `exportCamera(tau).bands[].spec`
+   (square-on poses: camera.py's fixed-camera spec); the video's length is `exportInfo(...).plan.duration`.
+`audit` (not built yet) would read the frames with the plan's audits.
+
+**Tests**: `node --test web/export/test/shots.test.mjs` (executor on synthetic runs; the safety net's checks; the twelve plans of
+`web/export/test/plans` on this repository's scenes and the lesson compositor's lane scenes copied into `web/export/test/scenes`, every check
+passing; the automatic plan on the 22 scenes, every motion and comfort check passing, video time = run time), `node --test
+web/export/test/subjects.test.mjs` (recognition: precision and recall on hand labels; `FOCUS_TESTSET=` the scout's 180-scene set), `node --test
+web/export/test/identity.test.mjs` (view only), the headless filming of the twelve plans through this export: `node
+web/export/test/film-plans.mjs --server http://127.0.0.1:<port> --out <dir>` (stills per shot, today's Wide beside them, contact sheets; every
+check passing in the page on the drawn models' boxes; frames byte-identical when drawn again after a later one; `exportProject` exact to 1e-15 in
+every band), and the end-to-end run with the live director: `node web/export/test/direct-e2e.mjs ask|film --server http://127.0.0.1:<port>
+--out <dir>` (plans/lessons.json: the twelve examples' lessons; each plan asked with the page's boxes, its MP4 made by the page's encoder with
+its sound retimed, a contact sheet from the MP4's frames).
+
+## The lesson look, release stands and painted lines (engine6 "look", 2026-10-20): web/lesson-look.js, web/release-stand.js, web/lesson-outline.js
+
+Render only: nothing here changes a body, a contact or a track (`tools/staging/test.mjs`: a scene with the lesson look and a hanger runs to the same
+bytes as without, on the bundle and the server). For a lesson picture that reads like the flat EduLLM pictures and is still the real 3D run.
+- **Scene settings** (the staging module, machines/mod_staging.py `look_of` and its port web/sim/modules/staging.js: the same documents, the same
+  words): `settings.style` "lesson" | "real" (default; writes nothing), `settings.backdrop` "auto" | "#rrggbb" (kept lower-case), `settings.release_stand`
+  "post" | "hidden" | "hanger" | "auto" → `doc.view.style` ("lesson" only), `doc.view.backdrop`, `doc.view.release_stand`. Written only when set, so every
+  other scene builds the very document it did before (`style: "real"` and nulls included). Refused (HTTP 400, both sides): `settings.style must be
+  "lesson" or "real"`, `settings.backdrop must be "auto" or a colour #rrggbb`, `settings.release_stand must be one of post, hidden, hanger, auto`.
+  `ai/schemas.mjs` settings take the three (a scene that has them keeps them through an AI edit). The inspector's Scene settings list **Look** (Real,
+  Lesson), **Backdrop** (while Lesson: Auto, Pale, Cream, Sky blue, Blue-grey, or the scene's own hex) and **Release** (web/inspector-plugins.js `lookRows`).
+- **The view**: `view.setOptions({style: "lesson" | "real" | null, backdrop: "#rrggbb" | "auto" | null, releaseStand: ... | null, outline: false | null})`
+  overrides what the scene says (null or "scene": as the scene says); a change of what is drawn builds the run again (a new `runId`). The look is in the
+  layout signature too, so a scene switched to Lesson in the inspector is built anew. `exportInfo().style` = `{name, backdrop, table, releaseStand,
+  outline, why}` (the colours in effect: pass the first screen's backdrop to every screen of a lesson, so the backdrop is never a change). The export
+  draws the look the view shows; `renderFrame` takes no style of its own.
+- **What the lesson look draws** (web/lesson-look.js `styleOf`, `LESSON_*`; hooks in web/view3d.js `applyEnvironment`, `buildRun`, `lessonDraw`):
+  - the room (wall, shell, floor, cabinet) left out; `scene.background` the backdrop colour, unlit and exact (the backdrop's hex is the picture's bytes;
+    nothing casts a shadow on it). `backdrop: "auto"` (`pickBackdrop`): `#eef2f5` pale, or `#7d93a7` blue-grey when over half the side-view area of the
+    moving things (dynamic solids, not see-through, metals never counted pale) is pale (luminance over 0.55: white, cream). Module liquids and grains
+    are not solids: a scene of white milk or sugar names its backdrop. The table: `#d9caae` (pale) or `#a48d6c` (mid; and with a named backdrop darker
+    than luminance 0.45);
+  - the tabletop (a catalog `table`, or a grained-wood floor) one matte colour, no grain, no varnish, no planar mirror (skipped, canvas and export); a
+    floor of another stuff (grass, carpet, ice) keeps its own look;
+  - light (`LESSON_LIGHT`): key 3.1 from 60° up and in front ((-0.6, 3.8, 1.9) m from the table's middle: a shadow half as long as its thing is high),
+    its shadow map at most 1024 (soft edges), shadows at 0.4 of full (`light.shadow.intensity`; the contact shades unchanged), fill 1.05 (white sky, the
+    table's colour below), environment 0.75. A static part held more than 5 cm up (a funnel, a tap, a fixed magnet: `run.lessonNoShadow`) casts no
+    shadow: one out of the picture laid a band across the table. A module's own world (space) wins over the lesson's room;
+  - liquids (`lessonLiquid`: a lit, alpha-blended volume with no depth write that a model marks `userData.liquid`, or whose kit material key is the
+    liquids' or pouring modules' liquid: `material.userData.kitKey`, which web/models3d.js `kit.mat` now records) drawn both sides, the far side at
+    max(opacity, 0.6) and the near side at 0.45 × opacity (at least 0.12), tone-mapped by their brightest channel (the paints' path: the water stays
+    blue); one as opaque as 0.75 or more (honey, oil, a dyed or milky liquid) as it is. So a thing in the water shows in its own colours with its
+    waterline visible, and the water reads as water. The vessels' faint glass panes at 0.6 × their opacity, less glossy; real (transmissive) glass, a
+    jar's, with at most 0.55 of the room's light in it and its tint over at least 30 cm (`lessonGlass`: what is inside shows); the pouring module's
+    streams, drops and the liquid drawn solid in a glass jar keep their colour (the paints' path) with a softer gloss, and the streams and drops are
+    opaque (three.js's transmission pass draws only opaque things: a see-through stream vanished behind a jar's wall);
+  - no machinery: a model part (any Object3D) marked `userData.machinery = true` is not drawn (now: the sand funnel's ring stand, web/models/mod-granular.js);
+  - mounts (the view's supports of a static part in mid-air): a post or a wall bracket is a **hanger** instead, a slim grey rod from 3 m above down to
+    a small collar on the part's top (`mountHanger`; two near the ends of a bar wider than 26 cm), not in the shot's framing, casting no shadow;
+    the collar sits on the part's outline where its rod comes down (`topAt`): a level part's middle, a tilted one's raised corner (`topOf`), each
+    of a wide bar's two rods on the bar there (2026-10-21: it stood at the bounding box's top over the box's middle, so the laser scene's mirror,
+    aimed 150°, hung 5 cm under its collar; tools/staging/look.test.mjs checks every collar touches its part within 3 mm);
+  - the pull pin and its post slim and plain (a 10 mm grey rod, a 6 mm pin: `lessonPost`);
+  - **outlines** (web/lesson-outline.js `OUTLINE`; on unless `setOptions({outline: false})`): lines 1/400 of the picture's height wide (2.7 px at 1080p,
+    at least 1 px), drawn only by changing pixels already there, on the inside of a silhouette (no shape grows or moves): just inside every thing, its
+    own colour × 0.45 (a darker shade); round a see-through vessel (glass, a tank's panes, ice), 1.6 × as wide, tinted 0.85 toward `#3d6584`; and on a liquid's side,
+    tinted 0.65 toward `#2c6ea8`, where its front meets its surface (one waterline across the vessel, as the flat pictures draw it; the ID pass tells
+    a liquid's up-looking faces apart) and where it covers part of a thing (pass A has that thing behind it there: the waterline round a floating
+    thing), never round its own outline against what is behind it. ID passes draw
+    every mesh in a flat colour per item (a holder or a stand its own; the tabletop or floor and the room are the background) into targets twice the
+    picture's size each way: A the opaque things only (what is in a glass tank gets its line), B the same and the vessels, C the same and the liquids
+    (apart: a tank's front pane would hide its water's surface). Left out of all: contact shades, labels, glows (unlit see-through), streams, drops and
+    puddles, shadow-only proxies (no colour written: a glass tank's faint shadow box), instanced clouds (grains, drops, a chain's links: no line round
+    each grain) and parts shaped in their vertex shader (springs, ropes). A
+    composite pass weighs each pixel by the share of its sub-pixels within the width of another thing: anti-aliased. Export frames outline each
+    (sub-)frame after its main pass (with motion blur, before the frames are summed); the canvas draws its picture into a 4× MSAA target of its own,
+    outlines it with one sub-pixel and copies it out (so its lesson picture can differ from the export's in the lines' anti-aliasing); on the low tier
+    the canvas draws no outlines (a slow machine's frame; the export, always high, has them). Measured (1920 × 1080 export, MA-25's tank, Apple M5
+    Pro under load): 9.1 ms a frame in the real look, 11.0 in the lesson look without outlines, 10.8 (p90 18) with them.
+- **Release stands** (web/release-stand.js; `doc.view.release_stand`, the view's `releaseStand`; default "post" in the real look, "auto" in the lesson
+  look). For a held item (`held: true`) without a starting gate:
+  - "post": the pull pin on its post, as before (the pin slides out at the release, the post stays); a thing held in a liquid (the mechanics
+    module's `holdFrom: "above"`) gets that module's fork on a rod from above instead ("engine6 merge" at the end);
+  - "hidden": the same until the release; then, once the pin is out (release + 0.06 s), the pin and post fade out in 0.12 s while drawing back 6 cm
+    (`RETREAT`; short, so a slow-motion clip shows no holder wandering off), then are not drawn; their contact shade fades with them. Their materials are
+    copies (the shared ones never change). Scrubbing back before the release shows them again. In the lesson look the pin and post are slim and grey;
+  - "hanger": a holder from ABOVE instead of pin and post (`makeHanger`, `HANGER`): a slim rod (not shadow-casting) coming down just behind the item
+    (1.5 cm behind it, or behind the deepest static thing over it: a magnet over a clip) and an arm reaching forward over the item's highest point (a
+    slab tilted under 6° is held at its middle), ending in a rubber pad (a pale suction cup, 3-8 mm in radius: 0.35 x the thing's half-width; a dark disc
+    pressed on a paper clip read as a magnet holding it, the GPT-6.1 judge's FO-13 note) on its top, for a floater (the run shows it rising once let go;
+    for a run that ends before its release, its density, a hollow ball's over its whole volume, under the liquid's: `floats`) and for a thing too flat or
+    too wide for jaws (under 6 mm high, over 5 cm wide: a paper clip, a book), or else in two jaws round its top half (a ball, a grape, a block: the jaws
+    reach down to its middle, or 4 cm). Still until the release; then the jaws open 24° in 0.05 s and the holder draws back off the item along the depth
+    in 0.04 s (clear of its depth: a thing that snaps up or flies off passes in front of it) and lifts straight up, at 12 m/s² from 0.02 s, never lower
+    than the item's own top while still over it (a cork that rises at once pushes nothing: the pad goes up ahead of it) and only ever rising (a pure
+    function of t: an export frame is the same in any order); not drawn once 2 m up. Picked as the item while it is held, like the pin;
+  - "auto": "hanger" when the held part is in a liquid's container or over it (`doc.processes` "liquid", "flow-vessel", "flow-basin": between its x0 and
+    x1, below its rim + 15 cm: `overLiquid`), or held up in mid-air (more than 1 cm over the top of the static slab under it, or anything) with room over
+    it for the pad and arm (no static thing's underside within 1.2 cm over its top: a magnet 1.5 cm over a clip leaves room, and the holder comes down
+    behind it); else "hidden" (a thing that rests on something, a car at the top of a ramp). Decided per held item when the run is built, so per scene:
+    a lesson whose screens could differ in it names one release stand for all of them (`settings.release_stand`).
+  The export's motion blur takes sub-frames while a hidden post fades or a hanger lifts (as for a gate).
+- **Painted lines on any floor** (both looks): the measure module's start and finish lines (web/models/mod-measure.js: their builders say `build.paint =
+  true`) are drawn ON the top face of the highest static slab under the line's middle, from 10 cm below where the line's top is meant to be to 1 cm
+  above it, turned with that face (web/view3d.js `paintOn`; the table, a `floor` of any stuff, a lane, a plank), and their paint lies 1.4 to 2.4 mm above
+  that face (clear of the 1 mm the view grows every surface by; polygon offset too). Before, a line placed flush with a `floor` (or the table) was hidden
+  in it, and its contact shade showed as a dark smudge where it lay; a painted line now casts no contact shade. The line's x (what the stopwatches and
+  `crosses` goals read) is the item's own, unchanged.
+- Not changed in the real look: every scene draws as it did (the 12 scenarios and 10 gallery scenes, export frames wide and director at 0, 1.5 and
+  3.5 s with the table's mirror: byte for byte against origin/integrate/engine-waves, but car-ramp-dominoes at 0 s, 1 pixel by 1 level, which two
+  pages of the baseline also differ by); the only changes are the painted lines above.
+- **Tests**: `node --test tools/staging/look.test.mjs` (the view's decisions: which look, the backdrop and table, auto stands, pad or jaws, the holder's
+  and the fade's timing); `node tools/staging/test.mjs [--server <port>]` (documents Python == JS, errors alike, tracks unchanged).
+- **The five benchmark lessons** (lesson-regen/bench, MA-25, FO-13, MO-19, FO-36, MA-50): the same runs drawn in both looks, side by side with the
+  current EduLLM pictures, as sheets and clips (each prototype screen's own window and slow motion), tracks byte for byte the same in both looks.
+
+### Directed exports with the lesson look and hands (release 2 merge, 2026-10-21): web/view3d.js, web/lesson-outline.js
+
+The directed cameras (`"focus"`, `"director-plan"`: "Filming module: directed cameras") film a run in the lesson look, and a run with hands, as the
+other cameras and the canvas draw it. Render only: no body, contact or track changes.
+- **The look**: a shot's look keeps its own choices (backdrop, ground, light, labels, vignette) and takes the lesson look's colours
+  (`applyPlanLook`): `studio` and `room` are the lesson backdrop (its exact bytes; the lesson look has no room); `sweep` is the studio floor in the
+  lesson table's colour and finish (#d9caae or #a48d6c, roughness 0.93, environment 0.4: `lessonTableMaterial`'s), fogged into that backdrop; `table`
+  is the lesson's matte table and never the table's mirror; the light is the lesson's (`light: "subject"` still fits the key light's shadow frustum to
+  the shot). A module's own world (space) wins over the lesson look, as in `applyEnvironment`. Every moment a directed frame poses is put in the
+  lesson look (`lessonDraw` in `planPose`: the clear liquids a module makes for that moment, no machinery); the holders the look chose (hanger,
+  hidden post) are the run's own.
+- **Outlines in every band**: `outliner.begin(W, H)` once a (sub-)frame, then `job.band(scene, camera, color, rect, run)` right after each band's
+  main pass, while its things are hidden as that band hides them: the band's ID passes go into its own rectangle (viewport and scissor), and its
+  composite looks only at the ID passes inside that rectangle (`uRect`), so a band is outlined as a whole picture is (no line along its edge where
+  the next band's things are); lines 1/400 of the whole picture's height in every band; motion blur outlines each sub-frame before the sum, as
+  the other cameras do. `draw()` (the other cameras) and `present()` (the canvas) draw exactly as before (`uRect` the whole picture).
+- **Hands** (web/hands.js): drawn in every band of their own lane and in none of another lane's: `planHide` finds each rig's item when it hides
+  (the rigs are built again whenever the posts are placed again, so they are looked up then, not kept). Not part of any model box (`planBoxes`
+  leaves the hands' group out, as it leaves out mounts and stands): no plan frames a hand, and a magnet held in a fist is framed as the magnet,
+  not the arm that runs out of the picture. Motion blur takes sub-frames while a hand moves, a hidden post fades or a hanger lifts
+  (`blurCountPlan`, as `blurCount`). The mechanics module's fork on a rod (`"mechanics:holders"`) names its item (`userData.item`), so a band
+  leaves another lane's fork out, as it does that lane's pins, gates, hangers and hands.
+- **Ice** (web/models/blocks.js): engine6's frosty ice is the one kept (its shell tinted #8fc5e8 over 9 cm, a milky body at 30 %, the frost skin at
+  92 % that melts off as the cube warms); the director branch's own shell (transmission 0.82, #8cc3e8 over 7 cm) was made for the same reason (a
+  cube on a white plate read as a glass block) and is left out: with both the cube would be frosted twice.
+- **Design plan 09** (the clip that jumps to a magnet, `web/export/test/plans`): its push ends on 6 cm round the clip instead of 8; engine6 draws
+  the Gem clip at its true size (the old wire overshot its loops), and at 8 cm the clip measured 0.088 of the picture in the page, under the
+  must-see floor of 0.09; 0.12 now.
+- **Checked** (2026-10-21, branch release2, headless Chromium with the app's own page and server): the egg drop demo
+  (`demos/mechanics/egg-drop.json`) with a hand on each egg (`hand: "auto"`: two palms) in the lesson look (the mid palette: the eggs are
+  pale), its plan from the live director (4 shots, the two lanes split, every check passing in the page), filmed to an MP4 by the page's
+  encoder: each lane's hand only in its own band, outlines in both bands, the top row of every shot the backdrop's own bytes; in its setup
+  39147 pixels change with the hands off and 6363 with the outlines off. The same for a cork held under water by a fingertip (MA-25's
+  screen in the lesson look) and a hand-written split of two balls on two palms. `tools/hands/browser.mjs` 114 of 114; the twelve design
+  plans filmed in the page (`film-plans.mjs`): every check passes, deterministic, projection exact; wide and fixed export frames of four
+  scenes (lesson and real look, motion blur) and the focus camera's frames of four real-look scenes the same bytes as before this change (the
+  salt-on-ice scene compared page for page: in either tree its pictures differ between a browser's first and second page, a difference that
+  is older than this change).
+
 ## Machines and motion (module `mechanics`, 2026-10-19/20): catalog-wide start speed and paint, floors and ramps, lab carts, pullers, force meters, simple machines (a screw jack too), a roller coaster, falling through air, a balloon rocket, a fragile egg
 
 Files: `machines/mod_mechanics.py` and its port `web/sim/modules/mechanics.js` (line for line: the same documents, number for number; the AI
@@ -1934,8 +2231,8 @@ research/rw-validate-optics.ts [snell|fresnel|mirror|tir|prism|lens|image|invers
     (`spread` π, `out` π/2, 8.4 lm/W of its rating and 77 % of it as infrared, provisional) and an LED a 30° cone up (red 0.5, yellow 0.5, green 1.5,
     blue 0.4, white 4 lm at 20 mA, one-colour LED spectra, provisional); their light is their `light` reading × that (a bulb on 2 cells reads 11.6 ×
     the lux of one on 1 cell on a meter: its light ratio), they cast shadows, and a bulb's thin glass globe passes its own light (it is left out of the
-    bodies). The circuits module's solar panel still keeps its own light estimate (sun, lamps and glowing bulbs, no mirrors or lenses):
-    `opticsOf(scene).irradiance(panel solid, at, normal, width)` gives it the traced light whenever its owner reads it.
+    bodies). The circuits module's solar panel takes the traced light (its face a light-taking `panel` body; see the circuits section and
+    "Cross-module gaps (engine6 crossmod)"); `opticsOf(scene).irradiance(panel solid, at, normal, width)` gives the traced light on any face.
   - **Coloured and blinking torches.** The flashlight's `color` white | red | green | blue (one-colour LEDs: light kinds `led-red` 640 nm, `led-green`
     525, `led-blue` 465, `led-yellow` 590 (an LED's), FWHM 15-35 nm, Schubert); its `lumens` follows the colour until set (red 40, green 100, blue 10,
     white 150 lm: BT.2020's white balance, so red + green + blue make white and pairs make yellow, magenta, cyan). Its `pattern` (an open choice:
@@ -2017,7 +2314,8 @@ research/rw-validate-optics.ts [snell|fresnel|mirror|tir|prism|lens|image|invers
   an item (≥ 1e-9 W and 1e-6 of the source), "shadow" [occluder, screen] (light it stops would have landed on the screen first), "sees" [eye, item] (rays
   from its pupil over its field, through glass and off mirrors, end on a thing that scatters ≥ 1e-4 lm, or a source's light lands on it), "tir" [item].
   For other modules: `opticsOf(scene)` → `{absorbed(solid) W, irradiance(solid, at, normal, width) W/m², result()}` (the heat module's lamp heating and the
-  circuits module's solar panels can read the traced light from it; today both keep their own simpler estimates, which agree for an unobstructed beam).
+  circuits module's solar panels read the traced light from it; the heat module takes it for opaque bodies). Since engine6 a clear body, a filter, a
+  translucent sheet and a flat mirror take the share of a tube their depth catches, as an opaque body does ("Cross-module gaps (engine6 crossmod)").
 - **Goal kinds** (`machines/mod_optics.py` == `web/sim/modules/optics.js` == the AI's checks): `hits_target {light, target, before_s?}` ("light"
   event), `lit {item, at_least_lux?}` (a meter's lux at the end ≥ the value, default 1 lx; a target: mW > 0; else light_w > 0), `dark {item,
   at_most_lux?}`, `shadow_on {occluder, screen}`, `sees {eye, item}`, `brighter {a, b}` (lux, else mW, else light taken in), `focused {screen}`
@@ -2930,7 +3228,8 @@ without modules; the catalog grows by the types and props below).
   times heat's own absorptivity (Incropera A.12: white paint 0.2 … black 0.97; the tracer's own 1 − reflectance would make a white glaze take a
   tenth of a lamp's infrared). Clear bodies (ice, water, glass: optics role `glass`) keep heat's own estimate: the tracer gives a body of the glass
   role the whole height of a beam out of the plane rather than the share its depth catches (a 4 cm ice cube 34 cm from a lamp would take 12 × its
-  light: an optics-side limit, reported to its owner), and water, puddles and thermometers' bulbs keep heat's own too. Without optics (or before
+  light: an optics-side limit, reported to its owner; fixed on the optics side in engine6, heat.ts traced() still leaves them out), and water, puddles
+  and thermometers' bulbs keep heat's own too. Without optics (or before
   its first trace) heat's own estimate holds for everything, and clear solids in the way now pass their share (heat-data `TRANSMITTANCE`: glass,
   optical glass 0.92; PET, bag film 0.9; acrylic 0.92) instead of blocking: an ice cube under a clear jar gets 92 % of a lamp's heat. A focus (many
   bent or turned rays, ≥ 8, in 4 mm of a face) is a hot spot: its power on a spot of its rays' spread (0.5-2 mm radius), conducted into the sheet
@@ -2980,8 +3279,8 @@ without modules; the catalog grows by the types and props below).
   warms it (0.2-1.2 J), and a kitchen scale under a burning candle reads about 1 g less after 10 minutes.
 - **Known limits**: friction's and impacts' heat is lumped (a rubbed face is warmer than the block's mean); a candle's wax pool and dripping are not
   drawn and a candle shrinks evenly as it burns; a jar's air is one mixture (no draught under a raised jar); heat takes the optics module's light only
-  for opaque bodies (see above) and a flat mirror's reflection off a small mirror is the tracer's (it reflects the whole height of a lamp's beam: the
-  foil demo uses sunlight, which it handles exactly); poured liquid mixes as if of one kind; the circuits module's solar panel reads its own light; the fix search keeps a covered candle riding with its jar's top, so it seldom resizes a
+  for opaque bodies (see above) and a flat mirror's reflection off a small mirror is the tracer's (since engine6 the share of a beam its depth
+  catches, sunlight too); poured liquid mixes as if of one kind; the fix search keeps a covered candle riding with its jar's top, so it seldom resizes a
   jar over a candle (the jar's `volume_ml` knob is offered, but the moved candle makes the smaller jar's scene unfit).
 
 ### Heat repair 2 (2026-10-20): one water and one level, lids with holes, the clock from t = 0, the thermostat, no air, cups, the fix search
@@ -3112,8 +3411,8 @@ validator `research/rw-validate-granular.ts`. Category "Sand & soil".
   sheet, and falling grains as streaks of grains (a funnel's or a neck's stream is continuous; a crater's splash flies).
 - **AI** (`plugin` in web/sim/modules/granular.js): how-to and plan/edit/refine lines (grains and their angles, Beverloo's rates and the jam widths per
   grain, craters need held balls over a tray and follow Uehara's law, stream tables need time_lapse 10-30, a poured heap is the funnel's own: never a
-  sand-pile under a funnel, a heap must fit its plank or shelf, an hourglass is its own clock (never a stopwatch on it), a kitchen scale does not weigh
-  grains, a change of grain/spout/neck that makes a goal stale is rewritten with set_goals); goal kinds `piles {item: pile or funnel, min_deg?, max_deg?}`
+  sand-pile under a funnel, a heap must fit its plank or shelf, an hourglass is its own clock (or a stopwatch with stop reads on its empty, engine6), a
+  kitchen scale weighs the grains on its platform (engine6), a change of grain/spout/neck that makes a goal stale is rewritten with set_goals); goal kinds `piles {item: pile or funnel, min_deg?, max_deg?}`
   (a funnel's `heap_mm`/`heap_deg` when the item has no height_mm), `stands {item}`, `collapses {item}`, `steeper {a, b}` (piles or funnels),
   `crater {item, min_mm?}`, `crater_bigger {a, b}`, `sand_runs_out {item, before_s?, after_s?}`, `runs_out_first {a, b}`, `timer {item, seconds, tol_s?}`
   (tol_s in seconds, default 5 % of seconds; an old `tol` under 1 is a share, 0.1 = 10 %, 1 or more seconds; the entry carries want, tol, empty, jammed),
@@ -3155,16 +3454,167 @@ validator `research/rw-validate-granular.ts`. Category "Sand & soil".
   after "fill the funnel with fine sand instead") is rewritten with set_goals to what the change now shows, and the reply says so. A refine round
   whose run the engine cannot finish (too slow under load) keeps the last version that ran (web/ai/orchestrator.js). The open rework's refusal says a
   module goal's "<label>: no (…)" as "“<label>” still doesn’t happen (…)", never "<label>, and no".
-- For other modules: `grainsOn(scene, item)` (tooling/src/sim/modules/granular.ts) gives the grains (kg) resting on an item's fixed solids now (a kitchen
-  scale's platform); `grainsIn(scene)` the run's beds.
-- Known limits: a kitchen scale does not weigh grains yet (the measure module's scale counts moving solids; `grainsOn` is there for it to add);
-  a stopwatch cannot time an hourglass (its stop rules watch motion and an hourglass stands still: the hourglass's own run_s and the timer goal are its
-  clock; a stopwatch stop on another item's reading would need the measure module); sand rests only on fixed solids (a movable board under a heap is
-  not its floor);
+- For other modules: `grainsOn(scene, item, solid?)` (tooling/src/sim/modules/granular.ts) gives the grains (kg) resting on an item's fixed solids now
+  (with `solid`, that solid's only: a kitchen scale's platform, which weighs them since engine6); `grainsIn(scene)` the run's beds.
+- Known limits: a stopwatch times an hourglass only by its readings (stop reads, engine6: "Cross-module gaps"); sand rests only on fixed solids (a
+  movable board under a heap is not its floor);
   sand does not pile on moving bodies (falling grains pass through them) and does not push bodies sideways (an avalanche against a block);
   a pile is one heightfield (nothing under an overhang); the hourglass and funnel are fixed; a column taller than the crush height fails by slumping its
   edges rather than as one block; running water is quasi-steady (no waves; flood routing, not shallow-water dynamics) and the bed's change is
   time-lapsed while the water runs in real time; a planted cell holds fully (15 Pa); the flow module's free water does not wet or erode these beds.
+
+## Lesson liquids and grains (engine6 `matter` group, 2026-10-20): milk and chocolate milk, white and brown colouring, sugar, salt and rice, grains kept inside jars, glasses, cups and boxes, a tipped cup that pours grains
+Files: `machines/mod_granular.py` and its port `web/sim/modules/granular.js` (the grains, the containers' and the cups' build hooks, the AI lines),
+`tooling/src/sim/granular.ts` (GRAINS; `Holder`, `holderOf`, `holderQ`, `holderFloor`, `holderRing`, `heapIn`; `TipCup`), `tooling/src/sim/modules/granular.ts`
+(`holders` on sand-region, the `sand-pour` kind, readings, keyframes), `machines/mod_flow.py` and `web/sim/modules/flow.js` (milk, chocolate milk, white
+and brown dye, a pitcher's `contents` and `grain`), `tooling/src/sim/flow.ts` (a dye's fourth number, `seenOf`), `tooling/src/sim/modules/flow.ts`,
+`machines/mod_fluids.py` and `web/sim/modules/fluids.js` (milk, chocolate milk), `tooling/src/sim/modules/fluids.ts` (the sunk rule); view only:
+`web/models/mod-granular.js`, `mod-flow.js`, `mod-fluids.js`. Validator `research/rw-validate-kitchen.ts` (a gate: exits 1 on any failure); parity
+`tools/parity/granular.mjs` and `flow.mjs` (new combination scenes; run by tools/parity/run.sh as before). A scene without these grains, liquids, dyes or
+a container near grains builds and runs exactly as before (the 12 scenarios and the 10 gallery scenes: the same tracks and Python documents, byte for byte).
+- **Grains** (`grain` of `sand-pile`, `sand-tray`, `sand-funnel`, `hourglass`; `stream-table` offers neither sugar nor salt: running water dissolves
+  them): `sugar` (granulated: 0.5 mm crystals of 1587 kg/m³, poured bulk 800 kg/m³, repose 35°), `salt` (table salt: 0.4 mm cubes of 2165 kg/m³, bulk
+  1200 kg/m³, 32°), `rice` (long grain: its kernel's equal-volume sphere 2.8 mm, 1450 kg/m³, bulk 770 kg/m³, 32°); each flows by Beverloo and jams under 5
+  grains (sugar 2.5 mm, salt 2 mm, rice 14 mm); damp they cake as damp sand does and soaked they slump as soaked sand (dissolving is not modelled);
+  sources in granular.ts's header ([SANTOS17], [ETB-BULK], [ETB-REPOSE], [SALT-SPEC], [SALT-PAT], [USDA], [SCIAM-REPOSE]; the repose angles provisional
+  within 30-45°). In keyframes the seven older grains keep their indices 0-6; sugar is 7, salt 8, rice 9. Drawn as white crystals that catch the
+  light (sugar, salt) and long white grains (rice).
+- **Containers keep grains** (record field `sand-region.holders?: [{item, floor, left: [ids], right: [ids], round, depth}]`, at most 32): a build hook
+  (Python == JS, after the goals) names, on every pile and landing region (a funnel's, a cup's), each container whose floor's middle is within 0.6 m
+  of the region in x and that is not `held`: `glass-jar`, `cup`, `plastic-cup`, `bucket`, `beaker`, `graduated-cylinder`, `measuring-jug`, `coffee-mug`,
+  `bowl` (round), `box`, `basket` (square); `floor` its floor's part, `left`/`right` its body's walls (a jar's, not its shoulder and neck), `depth` the
+  left wall's front-to-back size. The engine (granular.ts `holderOf`, at the start, from those solids' outlines) finds its inside: the floor's top (level
+  within 2°), the inner faces at two heights (a straight or tapered wall line, r(y) from rb at ylo to rt at yhi; r0 the floor's own radius), the wall's
+  thickness and the rim; a round one's plan is a circle (an ellipse, k = depth ÷ width, when they differ), a square one's a rectangle. Where a bed
+  reaches it, its inside is that bed's floor (a tapered cup's wall line rising from r0), and a ring of wall columns all round it, front and back too
+  (max(wall, 1.01 × the column × max(1, 1/k)) wide), stands to its rim; the bed grows to hold it whole with columns no wider than a tenth of the
+  narrowest inside (at most 24000 columns); its own solids are not scanned as floor. So 400 g of sand poured into a 6.5 cm glass stays in it
+  (before: most of it landed outside).
+- **Readings in a container**: a pile or landing region whose middle is over a container's inside is read inside it: `height_mm`/`heap_mm` (its top
+  over the container's floor), `angle_deg`/`heap_deg` (the upper quartile of the surface's slope over the inside's floor cells, so a heap that fills
+  the container to its wall reads its sides from the top down to the wall; with under 8 floor cells, the free cone's atan(height / radius)),
+  `mass_g`/`heap_g` (inside it), and what lies outside it: a pile's `spilled_g`, a funnel's or a cup's new `outside_g`: its grains on the bed outside
+  the container (on the region's own columns and on the margin the bed grew round its containers that no region's rectangle covers), what fell
+  off the bed's edges and, of a cup's stream, what came down on another bed, fell past every bed or is falling below the bed's floor; so
+  `heap_g + outside_g` is everything poured but what is still in the air over it (2026-10-21: before, a stream thrown past its landing bed was in
+  neither). Once a gram lies outside it the run says "<cup> spills sugar outside <jar>" (a funnel's too; kind `spilled`). A landing region (a
+  funnel's, a cup's) whose middle is over no container's inside is read against the nearest container whose wall reaches into its rectangle
+  (2026-10-21, round 2: its stream came down beside the container, on its wall or past it), so its heap_* are what got in (maybe nothing) and
+  the rest is outside_g; a pile's region keeps the container under its middle, or none (a heap is laid where it is put). Every container a bed
+  holds reads `grains_g`: the grains inside it now, whoever poured or laid them there.
+- **A cup of grains** (the flow module's `pitcher`: `contents` liquid | grains (default liquid), `grain` sugar (default) | salt | rice | sand | fine
+  sand | coarse sand | gravel | soil | flour, `fill_ml` ("Amount in it") the grains' packed volume: 200 mL of sugar is 160 g): its `flow-pour` record
+  carries `contents: "grains"`, `grain`, `grains` (m³), `grains_asked?` and `volume: 0` (the flow module only tips it, pours no liquid and reads only its
+  `tilt_deg`); the granular build hook adds `sand-pour {id: <item>/grains, item, solid, inside [4 {x, y}], depth, wall, grain, wet: "dry", volume (m³),
+  asked? (mL)}` and a landing `sand-region` (`<item>/landing`, role landing, centred 3 cm past the lip toward the pour, reaching max(12 cm, 1.4 × the
+  heap's spread + 4 cm) each way, its top 4 mm under the lip, where the grains leave (as a funnel's under its spout; 2026-10-21: under the upright
+  cup's bottom, a cup held low, its body down beside a bowl's or a mug's rim or past the table's top, had that container's inside or the table
+  over its top, walls its grains fell through), its base 1 m under the cup's body, the cup's own solids excluded), which the containers' hook names
+  holders on; a container's inside holds grains up to its rim whatever the region's top. `TipCup` (granular.ts; the cup's section in its own frame × its depth): the grains turn with the cup until their surface stands steeper than the
+  angle of repose φ, then slump to it; they hold what lies under the repose line through the lowest corner of the opening, and the excess leaves over
+  that corner as a surface avalanche, δ·√(g·δ) of section a second (δ = excess ÷ the length of the line through the corner, but never thicker than
+  the grains standing over that line, from it (or their deepest point) to their surface; [LUBE04], provisional), from as soon as anything
+  lies over that line until the layer is under two grains. A cup w wide and h tall filled to a share f starts to pour at φ + atan(2h(1 − f)/w) (f ≥ ½)
+  or φ + atan(h/(2fw)) (f < ½); past 90° + φ it empties; what it held = what is in it + what it poured, exactly. The grains leave as falling parcels from
+  the lip's corner and land on the landing bed (in a jar under it, inside the jar). Readings on the pitcher: `left_g, poured_g, flow_gs, lands_x,
+  heap_mm, heap_deg, heap_g, outside_g`; events "<cup> starts pouring its sugar: tipped 86°, past what its grains stand at" (kind `pours`), "<cup> is
+  empty: all its sugar has poured out" (kind `emptied`), at the start "only N mL of sugar fits in <cup> (not M mL): it is filled to the brim" (kind
+  `brim`). Goals: flow's `empties {item}` reads `left_g` for a cup of grains; granular's `piles {item: the cup, in?: the container}` reads its
+  heap (and, with `in`, the container's grains_g: at least 90 % of what it poured inside it).
+- **Keyframes** (drawing only): `cup` on the pitcher ([nx, ny, c, area, angle]: its grains' surface n·p = c in the cup's frame, their section in m²
+  to 7 decimals, the cup's angle; 30 a second while it changes); `holders:<bed>` once, under the bed's first item ([n, (round 1 | square 0, x, floor,
+  r0, rb, ylo, rt, yhi, wall, rim, k, ring) × n]).
+- **View** (`web/models/mod-granular.js`): a round container's grains are their own turned mesh over its inside (rings × segments that follow the round
+  wall, an ellipse when it is deeper or shallower than wide; smooth against the glass, their side down to the floor against a straight wall), which the
+  ground bed's heightfield leaves out; a tipped cup's grains a body cut by their surface (the `cup` keyframe).
+- **Milk and chocolate milk** (`liquid` of the flow module's `pitcher`, `tap`, `leaky-bottle` and the liquids module's `water-tank`, `beaker`,
+  `measuring-jug`, `graduated-cylinder`): whole milk 1030.5 kg/m³ and 2.1 mPa·s at 20 °C [MILK-RHO] [MILK-MU]; chocolate milk about 1065 kg/m³ (from its
+  make-up by Choi & Okos' component densities, provisional) and 8 mPa·s as it pours (13.2 at 10 1/s, 7.1 at 150 1/s [DRINKS-RHEO]); surface tensions 47
+  and 46 mN/m (approximate); both opaque (fluids looks "milk" #f6f4ee, "chocolate milk" #7a4e33; the flow module draws them as the colour they show,
+  glossy, never seen through, a tipped round cup's body cut by its level surface).
+- **White and brown colouring** (`dye` of `pitcher`, `tap`, `leaky-bottle`): `white` [0, 0, 0, 20] (titanium dioxide: no absorbance, 20 per cm of
+  scattering: water with it looks like milk), `brown` [0.22, 0.38, 0.6] (absorbances per cm). A record's `dye` is 3 absorbances per cm, or 4 numbers for
+  one that scatters (the fourth its scattering per cm; mixed by volume like the others; milk's and chocolate milk's own colour is one, 25 per cm
+  [MILK-SCAT], provisional). What one sees (flow.ts `seenOf`): e^(−(a + s)·path) straight through plus ρ = 1 − e^(−s·path) scattered back as a deep
+  layer's Kubelka-Munk reflectance R∞ = 1 + K/S − √((K/S)² + 2K/S), K = 2a [KUBELKA31]; a clear liquid (s = 0) is exactly the old e^(−a·path), bit for
+  bit. New container reading `tint_o` (how much of what one sees its liquid scatters back: 0 clear … 1 milk; set only once a scattering liquid is in
+  it); `mixes_to {container, color}` names "white" (tint_o ≥ 0.5 and every channel ≥ 0.7) and "brown" (COLOR_NAMES + "white"). Looks: a 12-bit look +
+  4096 marks a liquid one does not see through (its 12 bits then the colour it shows); a particle's touch number + 2 marks one.
+- **Sunk** (`tooling/src/sim/modules/fluids.ts`): a thing wholly under, resting on something and held up by less than its weight reads `sunk` 1 and
+  never `afloat` (before, 97.2 % support counted as afloat: a grape on the bottom of a jug of milk); everything else reads as before.
+- **AI**: the flow plug-in's how-to, keys and change words name milk, chocolate milk, white and brown colouring and a cup of grains (`contents`, `grain`;
+  its digest gives a grain cup's grams and heap); the granular plug-in's name sugar, salt and rice (keys, how-to, the angles and jam widths) and the
+  containers (a funnel over a jar heaps inside it; `outside_g` in the digest); a new worked example, "Pour sugar into a glass jar and see it pile up"
+  (solved and met in web/ai/test/granular-plugin.test.mjs); tags and the pile's and funnel's descriptions name the kitchen grains (Python == JS).
+  A cup of grains reaches the planner (2026-10-21, round 2): a request with grains (sugar, salt, rice, grains, sand, flour, gravel, soil) and a
+  cup, mug, jug, pitcher, scoop, a tip, a tilt or a pour in one sentence, in either order (`words.picks` of the flow and the granular plug-ins),
+  picks both modules for the plan's and the edit's prompt: "A hand tips a cup of salt so it pours into a round glass jar" picked granular, hands
+  and heat (not flow, whose pitcher holds the grains: the planner said the library had no tipping pourer for grains and used a funnel of sand),
+  "A cup of salt is tipped over a bowl" heat alone, "Tip a cup of grains into a glass" waves alone; the pitcher's tags have "cup of salt" beside
+  sugar, rice and sand (Python == JS). Checked in ai/test/digest.test.mjs.
+- **Checked** (2026-10-20, `research/rw-validate-kitchen.ts`: 123 checks, 0 failed; CPU 0.2 s for a cup of sugar into a jar, 0.54 s for 400 g into the
+  glass, 0.07 s for a cup of milk): bulk densities 800.0, 1200.1, 770.0 kg/m³; heaps on the table 35.8°, 33.3°, 32.3° (± 3°); Beverloo's rates (19.7,
+  30.5, 90.2 g/s) and the jams (rice clogs a 12 mm spout and runs through 20 mm, sugar 2 mm and 4 mm, a salt timer 1.5 mm and 3 mm); 400 g of sand into
+  the 6.5 cm glass 0.000 g outside, 104.9 mm tall (theory 105.3: a level bed and a 34° cone), its cone 34.4°; a pint jar, a 22 cm dish, a box, a bowl, a
+  mug, an empty beaker, a bucket and a plastic cup 0.000 g outside, their heaps within 0.5° of repose; the tipped cup's onset within 0.02° of theory at
+  fills of 30-97 %, empty past 90° + φ, mass to 1e-12; cups of sugar, salt and rice into a jar (160, 240, 154 g) all inside, their onset within 0.2°;
+  milk and chocolate milk caught, levelled and named white and brown (as water with white or brown colouring); seenOf == tintOf for 200 clear dyes, bit
+  for bit; a grape sinks in milk and floats in chocolate milk, an egg sinks in it; determinism; 16 random container scenes finite with their grains
+  kept. Parity: tools/parity/granular.mjs and flow.mjs (with these scenes in their engine runs), fluids.mjs, 0 mismatches.
+- **Repair of 2026-10-21 (a tipped cup's spill read)**: the AI's "Sugar poured into a jar" (the cup's lip 12.5 cm over the jar's rim, tipped to 135°)
+  read 94 g in the jar and 10 g outside of the 160 g poured: as the cup passed 90° + φ its spout wall stood steeper than repose, the line through the
+  lip only clipped the opening's corner, and excess ÷ that short chord was a layer as thick as the cup is long: 69 mL left in one step at 1.8 m/s and
+  flew 20 cm, past the landing bed, and was lost (from about 3 cm over the rim up, whatever the height). Now the layer is never thicker than the
+  grains over the line (at most 0.9 mL a step, 0.42 m/s: all 160 g in the jar at every height the probe tried, its lip 4-19 cm over the rim); what does
+  land outside (a cup held high, a stream thrown wide) is read in `outside_g` wherever it went, and said; a grain landing on a wall's top more than
+  3 columns from any column that holds grains rolls to the nearest one (it fell on through the wall); the landing region's top is under the lip.
+  Checked: `rw-validate-kitchen.ts conserve` (56 pours over 7 containers, the lip 0-15 cm over each rim, tipped 125° and 150°: the worst
+  |poured − heap − outside| 7e-15 g; the AI's scene 160 g in the jar; a cup 1 m up tipped 170°: 158 g outside, all of it read, the spill said) and
+  `cup` (turned to 135° at 90°/s: at most 0.81 mL a step, 0.41 m/s; the old rule failed both, 66.6 mL and 1.79 m/s); every earlier kitchen and
+  granular check as before (the cup's onset and what rests on its spout wall at 115° unchanged); tools/parity/granular.mjs 0 mismatches.
+- **Milk mixes with water (repair of 2026-10-21)**: milk or chocolate milk poured into a beaker of water lay under it as a layer of its own
+  (milk 1030.5 kg/m³ to water's 998.2): the beaker read clear water, the same for both, and the view drew blue water. Milk is 88 % water and
+  clouds water at once: water, milk and chocolate milk (flow.ts `WATERY`) now mix as ONE liquid when poured together, in a liquids-module
+  container (beaker, measuring jug, graduated cylinder, water tank) and in the flow module's (a jar, a cup, a pitcher, a bottle): the layer of
+  the one already there takes it, its words kept, its density by volume, its viscosity by Arrhenius' rule (ln μ by volume [ARRHENIUS87], the
+  engine's pow), its colour by volume, each liquid's own colour carried in its dye (milk's 25 per cm of scattering, chocolate milk's absorbance);
+  a layer it makes denser or lighter than a neighbour moves to where its density puts it. Every other pair layers by density as before (oil on
+  water, honey under it; salt and sea water, syrup, soap and alcohol: a density column's lesson). The view: a fluids container whose liquid one
+  does not see into (its `tint_o` ≥ 0.5) is drawn in the colour it shows, opaque, up to its level (web/models/mod-flow.js; round ones a round
+  body, no longer a box whose corners stood out of the glass), and its own body and meniscus are not (web/models/mod-fluids.js). Measured: 150 mL
+  of milk into 300 mL of water, one layer of 1008.97 kg/m³ and 1.282 mPa·s, tint 0.961/0.969/0.967 and tint_o 1 ("white"); chocolate milk
+  0.259/0.110/0.050 ("brown"); dyed water unchanged (0.967/0.732/0.432 and 0.420/0.864/0.987). Checked: `rw-validate-kitchen.ts liquids`
+  (milk and chocolate milk into water and water into milk: one layer, density and viscosity exactly the rule's (2e-15), named white and brown;
+  water from a tap then milk into a glass jar: one white liquid; oil onto water: two layers), rw-validate-fluids.ts, -flow.ts and -crossmod.ts
+  all pass; tools/parity/flow.mjs and fluids.mjs --engine 0 mismatches.
+- **A stream beside its container (repair of 2026-10-21, round 2)**: a cup's or a funnel's stream that came down beside the jar was read as
+  the heap, all of it, with no `outside_g` and nothing said, and the AI's "The sugar piles up into a heap inside the jar" held while the heap
+  stood on the table next to an empty jar (the V2 release's edit "Move the jar 15 cm to the left, and leave the cup where it is": heap_g 120 of
+  120 g); a stream on the jar's wall read the grains inside and the wedge outside as one heap at 50°: only a landing region whose middle was over
+  the jar's inside was read against it. Now (tooling/src/sim/modules/granular.ts build) a landing region whose middle is over no container's
+  inside is read against the nearest container whose wall reaches into it (the same readings, `outside_g` and the spill said), and every
+  container a bed holds reads `grains_g`. `piles` takes `in` (an item: the container the heap must end inside; Python == JS): it holds only
+  with the heap's test and at least 90 % (`IN_SHARE`) of the item's grains (its `poured_g`; a laid heap's `mass_g + spilled_g`) in that
+  container's `grains_g` (0 when no bed reaches it); its summary entry adds `in`, `in_g`, `of_g`, its card words "no (0 of 120 g inside it;
+  no heap inside it)", its default label "… stands as a heap inside <container>". The AI: piles' `about`, the plan prompt and both how-tos say
+  to give `in` whenever the heap must end in a container, the worked example "Pour sugar into a glass jar" gives `in: jar`, and a plan's or an
+  edit's piles goal whose label says the heap is in/inside/into/within a container of the plan but leaves `in` out gets it (ai/schemas.mjs
+  `labelRef`, from the goal kind's `fromLabel`: the container's name, id or type word after those words, with at most an article and two
+  words between; two of that kind and no words to tell them: none), said in a warning; the edit digest says "none of its grains is in the
+  container beside it: all N g landed OUTSIDE it" for a funnel or a cup whose heap inside is empty, and of each container near grains "N g of
+  grains inside it at the end". Measured (rw-validate-kitchen.ts
+  `conserve`): 60 pours 0-20 cm off the pint jar's opening (cups of sugar, salt and rice tipped to 135° 12.5 cm over the rim; funnels of
+  sugar and salt): every gram in the jar or outside it (worst 7e-15 g), the jar's `grains_g` the heap in it, a gram outside said, piles
+  {in: jar} holding just when 90 % is inside; a stream on the wall split (a cup of sugar 5 cm off: 134.6 g in, 25.4 g out, where it read one
+  160 g heap); 20 cm off the jar is past the cup's landing bed: a heap on the table, the jar 0 g, piles {in: jar} fails. The AI's two scenes:
+  over the jar both piles goals hold (116.2 of 120 g, 150 of 150 g in); the jar moved 15 cm, all outside, said, both fail. The 12 scenarios and
+  10 gallery scenes: byte for byte as before (web/export/test/identity-tracks.json re-armed: only its web/sim fingerprint).
+- **Known limits**: a container keeps grains where it stood at the start (moved or tipped in the run, its walls for the grains stay where it began;
+  one `held` to be let go is not a holder); a jar filled past its shoulder heaps as if its body went straight up (its neck is not a wall for the grains); grains and liquids do not meet (milk on
+  sugar neither wets nor dissolves it; the matter module's dissolving is its own); a cup of grains is its 2-D section × its depth
+  (a round cup's grains pour as a box's would); the flow module's goals `fills`/`delivers` count liquid only (grains: `piles`, `outside_g`); a kitchen
+  scale under a fixed cup, jar, beaker, bucket or box weighs none of its grains (a bowl or a mug standing on a scale by its own weight is weighed
+  with them: "Cross-module gaps (engine6 crossmod)").
 
 ## Matter (module `matter`, 2026-10-19): the particle model, states and the heating curve, gas laws, diffusion, dissolving and saturation, conservation of mass on a scale, mixtures and separating, density
 Files: `machines/mod_matter.py` (catalog, goal kinds), `web/sim/modules/matter.js` (its exact port + the AI plug-in), `tooling/src/sim/modules/matter.ts`
@@ -3473,7 +3923,8 @@ validator `research/rw-validate-flow.ts` (a gate: exits 1 on any failure). Categ
 - **Readings** (track.state): pitcher `left_ml, poured_ml, flow_ml_s, tilt_deg, lands_x` (where its stream came down); tap `flowed_ml, flow_ml_s,
   lands_x`; leaky-bottle `left_ml, level_mm, poured_ml, flow_ml_s, jet<k>_ms, reach<k>_m` (k = 1 the lowest hole; reach measured out from the hole at
   the level the bottle stands on); hose `moved_ml, flow_ml_s`; a catching container `liquid_ml, level_mm, overflow_ml` (gone over its rim), `tint_r,
-  tint_g, tint_b` (what shows through 5 cm of its BIGGEST layer, 0…1: liquids that do not mix, oil on blue water, are never blended into green) and
+  tint_g, tint_b` (what shows through 5 cm of its BIGGEST layer, 0…1: liquids that do not mix, oil on blue water, are never blended into green;
+  milk, chocolate milk and water mix, 2026-10-21) and
   `puddle_ml`; a liquids-module container `received_ml` (and its own `volume_ml`, `level_mm`); waterwheel `rpm, turns`. Events: "<tap> turns on (100
   mL/s)", "<tap> turns off after 400 mL", "<pitcher> starts pouring", "<pitcher> is empty", "<bottle>'s jets start (3 holes)", "<bottle>'s holes open,
   but its cap is on: no air gets in, so no water comes out", "<hose> starts siphoning" (after its first mL), "<hose> runs from <b> to <a>: that
@@ -3543,7 +3994,8 @@ validator `research/rw-validate-flow.ts` (a gate: exits 1 on any failure). Categ
   met every goal (scores 8-9/10), the fix offered after the move being "Move Measuring cup 2 19 cm right", checked.
 - Known limits: the slice is 2-D (a stream's depth front to back is carried as volume, not drawn from a 3-D flow); surface tension and wetting are
   not modelled (no drips clinging under a spout, no meniscus); a stream striking a plank at 2 m/s splashes a few per cent off it (a flat plank has no
-  sides); a puddle on a kitchen scale's fixed platform is not weighed (the scale reads the moving things on it); what floats in a catalog container
+  sides); a puddle on a kitchen scale's platform is weighed since engine6, but it does not run off a small platform's edge ("Cross-module gaps
+  (engine6 crossmod)"); what floats in a catalog container
   does not raise its level; a stream that would need more than 4000 particles in flight at once waits; pitchers and
   the bottle are moved only by the hand that holds them or stay fixed; liquids do not soak into sand, cloth or paper, and do not dissolve
   (salt water is its own liquid); the flow module's free water does not wet or erode the granular module's beds.
@@ -3622,3 +4074,661 @@ are identical byte for byte (document, resolved, warnings, summary and track; Py
   `tools/parity-engine.mjs --catalog` ALL IDENTICAL (131 scenes × 3 runs in node and headless Chromium, 4 rates, 4 error messages),
   `tools/parity/fuzz-live.mjs --n 300` 754 cases, 0 mismatches; the node:test files as CI runs them, 473 of 473; the app in headless Chromium (the
   engine on the server and in the page) runs the starter and wrecking-ball, the same track both ways, no console errors.
+
+## Engine repair (2026-10-21): a resized body stays resting on what it rests on (tooling/src/sim/physics.ts)
+The document and track formats are unchanged. Only runs in which a module resizes a lone moving body that rests on something, or that something rests
+on, change: ice cubes and meltables melting, salt piles dissolving, candles burning down, puddles drying, a balloon growing on a floor. The 12
+scenarios, the 10 gallery scenes and the catalog are identical byte for byte (nothing is resized there).
+- Cause: `resize` rebuilds a body about its own origin (a slab's or a ball's middle), so a shrinking body's foot rose off what it stood on by half the
+  size it lost (a 4 cm cube that lost 1 %: 0.2 mm), and planck holds a body anywhere inside its contact skin without letting it settle back: two
+  polygons touch from 2 mm apart and rest 1.5 mm apart (their 1 mm radii less the 0.5 mm linear slop; a ball on a slab touches from 1 mm and rests at
+  0.5 mm), a contact only stops a closing approach, and only an overlap past the slop is pushed apart. So a melting cube hovered over its plate at the
+  skin's edge, 0.45 mm over where it rests on average and up to 0.55-0.65 mm (1.4 mm on an aluminium plate), and each rebuild that took it past the
+  skin dropped it in a short fall, caught again at the skin's edge; a salt pile on it hopped with it; while the world stands still before the release
+  (a module runs: a cube at 0 °C melts while it is held) it shrank in the air over its plate, to drop at the release; a body growing on a floor (a
+  balloon in a vacuum jar) went 0.15 mm into its rest and was pushed out. The stack repair (2026-10-19) plays no part: origin/dev with and without it
+  (`held.add` taken out) gives the same hover (the heat test's 2 cm cubes: +0.45 mm on average, up to +0.55 mm), the same melt times, and the same
+  tracks byte for byte for fairtest's six melt lanes.
+- Repair (`restingMoves`, `touchesOf`, `reachOf` and `shift` in `simulate`'s process runner): a lone, jointless moving body rebuilt from one live
+  size to another (1 % and up) that touches something under it moves toward it along the normal of that touch by what its outline's reach toward it
+  from its origin changed ((1 − new ÷ old size) × the reach), keeping the gap it rested at. What it touches is planck's own collision of the two
+  shapes where they stand (the manifold the next step would make, so also before the release, when planck has made no contacts yet; sensors and
+  pairs that never collide left out); under it = a touch whose normal into it is within 60° of straight up (the most upright one). A moving,
+  jointless body that rests on it alone moves with the face it rests on (along their touch's normal), and what rests on that one alone with it (up
+  to 8 deep). The moves come before the new fixture is made (planck builds it where the body now stands) and take each body's path through the
+  step with it; turns and motions are kept. Not moved: a body touching nothing under it (falling, floating, hanging), a part of a weld group (a
+  matter ballast) or a body with a joint (a balloon on a string), a rebuild to or from nothing (under 1 %: a melted cube, fracture's parked pieces),
+  and anything in a world without gravity.
+- Measured (each body's middle against the top of what it rests on + the skin + its own half height now, every frame from the release's
+  settling on; before → after): the heat test's 2 cm cubes on plates +0.45 mm on average, up to +0.55 mm → 0.000 mm (−0.05 to +0.005 mm);
+  `research/rw-validate-thermal.ts`'s 4 cm cube on its plate +0.46 / +0.63 mm (mean / worst), a 2.5 cm one +0.48 / +0.58, a 4 cm one on aluminium
+  +0.52 / +1.37, a 5 cm one in a bowl +0.47 / +0.65, a 15 g salt pile on a melting 5 cm cube +0.45 / +0.78 → 0.000 mm (the pile −0.006 mm at most);
+  fairtest's lanes (each cube over its floor) 1.5-2.26 mm → 1.495-1.505 mm. The engine reports a melting cube touching its plate at every heat beat
+  before and after (1.5-2.0 mm apart before, 1.50 mm after). The balloon pumped up in a vacuum jar keeps the 0.71 mm it landed at as it grows to
+  1.86 × its size (0.35-0.50 mm before).
+- What changed: the heat module takes each side's half thickness across a touch from the middle of the gap (heat.ts `contact`: (thickness + gap ÷ 2)
+  ÷ 2), so a hovering cube had a longer path through its plate; resting at the skin it was made for (heat.ts SKIN: "a 4 cm ice cube rests 1.5 mm
+  over its plate"), a cube on a plate melts 1-3 % sooner (with that half thickness taken without the gap, the hovering and the resting cube melt at
+  the same second: 4875 s and 2625 s both ways). `rw-validate-thermal.ts`: T1 86.9 → 85.6 min (80-150), 2.5 cm 47.5 → 46.3, 5 cm 118.8 → 116.9,
+  aluminium 31.3 as before, T3 81.9 / 78.8 / 71.3 → 80.0 / 77.5 / 70.0 min, T5 76.9 vs 86.9 → 75.6 vs 85.0 min (11.5 → 11.0 %); `-thermal-2`'s
+  salted and plain cubes 72.5 / 95.0 → 71.3 / 93.8 min, now the same with the release at 0.2, 2 and 5 s (72.1 / 95.0 and 72.1 / 94.6 min at 2 and
+  5 s before: the cubes that melted while held dropped at the release); `-matter`'s ice in a sealed bag on a kitchen scale reads 0.0002 g off
+  (0.0038 g before: its hops); `-air`'s balloon on the jar's floor 0.020476 → 0.020684 m (0.0185-0.026). Fairtest's six melt lanes
+  (`lanes_melt.py`'s scenes, settling and checks, on a server of this branch) all still verify: melted after the hour +0.002 to +0.005, melted away
+  0.7-2.0 lesson minutes sooner.
+- The AI panel's heat test ("a lamp aimed at the wrong cube is re-aimed", web/ai/test/heat-plugin.test.mjs) keeps its lamp at x 1.1 (64a2fb9). At its
+  first place, x 0.6, the lamp's base stood inside the lit cube's plate (the layout warns "Plate starts inside Desk lamp: it'll be shoved out at the
+  start"), so the run began by shoving the plate out: 12 mm sideways by the time-of-impact pass's strikes before the stack repair, onto the base's
+  corner (tilted 2.3°, the cube on it 3.3 mm higher: the 12.4 vs 9.1 mm the release-1 assembly saw) since; and 20 cm from the lit cube and 80 cm
+  from the dark one, the spill outside the 40° beam warmed the near cube about as much as the beam warmed the far one. Aimed at the dark cube, the two
+  melted 0-100 s apart in about 2200 s, which one first decided by the shove, not the aim (lit / dark: 2150 / 2225 s on origin/dev, 2250 / 2225
+  without the stack repair, 2100 / 2200 with this repair; at x 0.58, where nothing overlaps, 2225 / 2250 and 2200 / 2200), so x 0.6 fails the
+  test's first step with this repair too ("the lamp warms the other cube"). At x 1.1 the aim decides it by 200 s (aimed at the dark cube) and 100 s
+  (at the lit one), on all three engines.
+- Known limits: a body resting on several things moves along the most upright touch (in a V one side opens a little); one on a slope steeper than
+  60° is not moved; a body's other touches (a wall beside a melting cube) open by what it lost, as before; a body resting on two or more things is
+  not carried by any one of them (it settles as before).
+- Checked (this branch against origin/dev 69a0fd6, a copy of each, the live :8790 server never touched): `rw-validate-thermal.ts`'s five new
+  checks (three cubes on plates, a cube in a bowl, a salt pile on a melting cube: every frame within ±0.05 mm) fail on origin/dev and pass here, 123
+  of 123; every `research/rw-validate*.ts` CI runs, pointed at each copy: the same PASS lines (thermal-2 31, matter 232, fluids 71, air 114,
+  fracture 45, stack 9 with its log identical, plugins 16, p2 30, p3 98, p4 56 with its crash fuzz of 1500 scenes 0 exceptions and 0 non-finite,
+  and the rest), the numbers above moving within their ranges; the 12 scenarios and 10 gallery scenes and the catalog identical byte for byte
+  (web/sim with the bundle, and Python's documents, resolved, warnings and summaries); `tools/parity/heat.mjs --engine 40` ALL PASS (63 of 63 heat
+  documents, the node engine == the bundle), `tools/plugin-toy/test.mjs` ALL PASS, the matter, fluids, air, fracture, flow, granular and softbody
+  parity tools 0 mismatches, `tools/parity/fuzz-live.mjs --n 300` against this branch's server 967 cases, 0 mismatches; machines/test_*.py all
+  pass; the node:test files as CI runs them, 762 of 762; `npm run build:static:nogen` (the bundle byte-identical to a fresh build).
+
+## Hands (module `hands`, 2026-10-20): a person's hand where a person acts — holding, letting go, dropping, throwing, pushing, pouring
+
+Render only: nothing here changes a body, a contact or a track. The engine already holds a held thing exactly still until the release, a pusher
+pushes with its own force and time, a pitcher is tipped by the flow module's own process; the hand shows who does it. Files: `machines/mod_hands.py`
+and its port `web/sim/modules/hands.js` (the catalog's props and the AI plug-in), `web/hands.js` (the hands: geometry, poses, grips, motion),
+small hooks in `web/view3d.js`, a dev sheet `web/dev/hands.html`, tests `tools/hands/test.mjs` and `tools/hands/browser.mjs`, proof scenes
+`tools/hands/scenes/` (the five benchmark lessons' screens with hands). Where a hand holds a held thing, this replaces the pull pin of `doc.release`
+above (and a starting gate: the hand wins when an item sets both).
+- **Props** (common props, so only the catalog lists them: `ItemType.defaults()` and every document and resolved entry are as they were until an item
+  sets one; nothing is built: they stay in the item's resolved props, which the view reads):
+  - `hand` on every dynamic type but the pusher (207 types): `none` (default: the pull pin) | `auto` | `pinch` (thumb and index on either side) |
+    `palm` (it rests on the open palm, the fingers cupped round it) | `press` (one fingertip, the index a little bent, holds it down from above: a
+    cork on a tank's floor; the little finger's side toward the camera, so the curled fingers show and the index's nail is at its tip) |
+    `grip` (the whole hand round it). It acts while the item is held (`held: true`, until the scene's release) or fixed (`fixed: true`: held for
+    the whole run, in place of its stand: a magnet in a fist).
+  - `hand_from` on the same types: `auto` (default) | `left` | `right` | `above`: where the arm comes from (a press is always from above; a palm from
+    a side). `auto`: from above for a press or a grip; from a side away from where the thing goes, else from the picture's nearer edge (a
+    short arm; things held in a row are held from both sides).
+  - `hand` on the pusher, label "Pushed by": `none` (default: the machine) | `finger` | `hand` | `two hands` | `fist`.
+  - `hand` on the pitcher: `none` (default) | `hand`.
+  Refused alike in Python and JS when not a choice (`x: Hand must be one of none, auto, pinch, palm, press, grip, not 'claw'`).
+- **The view** (`web/view3d.js`): `setOptions({hands: "scene" | "all" | "off"})` (default `"scene"`; a page opened with `?hands=` starts so): `scene` draws
+  the hands the items ask for; `all` also puts one on every held thing (`auto`), every pusher (`hand`) and every pitcher; `off` draws none (the pins,
+  paddles and stands as before). A change builds the run again (a new `exportInfo().runId`). The export (`renderFrame`, so the MP4 export and the
+  library card's photo, `web/account/thumb.js`) draws what the view draws; to export without hands, `setOptions({hands: "off"})` first. A scene with
+  no hands builds and draws exactly as before (no group, no hook does anything). `view._debug.run.hands` = `{rigs: [{item, grip, from, skin, thrown,
+  rig}], plans, held, hidden, unmounted, at(t), busy(t), fit(pf, track)}` for tests.
+- **The hand**: a child's of about nine, 14.5 cm from the wrist crease to the middle fingertip (Snyder et al. 1977, UM-HSRI-77-17), its bones in
+  proportion (Buchholz, Armstrong & Goldstein 1992: an adult's 17.5 cm modelled, drawn at 0.83): a smooth palm, three-jointed fingers and thumb,
+  nails; a neutral mid skin (#c69273) and a plain blue-grey sleeve (#7187a5) with a cuff, graded as the view's own looks (gradeShader). Real size
+  whatever it does: a harder push is the pusher's force and time, never a bigger hand. The forearm and sleeve run from the wrist to beyond the
+  picture (the scene's fixed camera, `doc.view.camera`, as filmed at up to 4:3; else a box round the scene as the wide shot frames it): no elbow, no
+  person. It casts and takes shadows and shows in the table's mirror; it is in no shot's framing (every camera frames as it did; a directed camera's
+  model boxes leave it out: "Directed exports with the lesson look and hands"). Its meshes pick as
+  the item (a held thing's only while it is held, as the pin's; never as the surface under the cursor).
+- **Grips** (closed onto what is drawn: each finger's joints close together until a part touches the thing, the underactuated way a gripper closes,
+  against the thing's outline in the machine plane and its drawn depth — the model's own box, so a wine cork is 44 mm long). `auto` picks: in a
+  liquid (the liquids module's water, `doc.processes` kind `liquid`), a thing that rises (lighter than the liquid) gets `press` up to 6.5 cm and
+  `grip` above, one that sinks `pinch` up to 4.5 cm (or thin: under 1.5 cm one way and at most 20 cm, a nail, a pencil) and `grip` above; out of
+  one, a thing that rises with room above it `press`; else a small or thin thing `pinch`; a thing with less than 4 cm under it (the hand would not
+  fit: it rests on something, or nearly) `grip` from above; else `palm`. A `palm` asked for where no hand fits under the thing is a `grip` from
+  above, and a pinch from a side needs 3 cm under it (else it is from above): a hand never goes through what the thing stands on. Which way it goes is read from the run (its first
+  3 mm within 0.6 s of the release); a thing let go only after the run ends (a still) is guessed from its density against its liquid's (else it
+  falls). `pinch`: the thumb and index on either side of it across the way it will go, so it slides out from between them (the fingers front and back
+  when it is thin that way), at its end on the hand's side (7 mm in) or from above at its middle. `grip` from above: the hand on top, the fingers
+  draped down one side (a little toward the camera) and the thumb round its back, so its front shows; a bar (longer than 5 cm and twice its depth, at
+  most 4 cm high and deep) lies across the base of the fingers in a fist. `palm` under a ball is tangent to it 20 degrees off its bottom toward the camera.
+- **Letting go**: at the release the fingers open (0.08 s, as `doc.release.holder`'s opening) and the hand leaves along its way out (the arm's line;
+  a palm drops straight down from under the thing, up to 5 cm and never into what is under it, then goes out to its side, and down only with 40 cm
+  of room), starting at 30 m/s² up to 1.4 m/s (a palm 40 m/s² and
+  2.5 m/s: a thing falls at g, and a hand left under it would be seen to carry it). A press flicks off the thing to its little finger's side (away
+  from where the thing goes, else toward the side with more room to a wall beside it; 2.5 to 5 cm, up and out, at 60 m/s² up to 1.6 m/s), then
+  rises calmly out of the picture (0.3 m/s, faster only to be out within 0.9 s): a cork shoots up beside the hand, so the finger is seen to leave
+  it, never to lift it or ride on it, and the hand is still seen going a few tenths of a second later. Frame by frame the hand is also kept 0.8 mm clear of the thing it let go, from the track (the hand is pushed further along its
+  way when the thing would reach it: it never passes through it and never comes back); it is hidden once out of the picture. A thing that leaves at
+  more than 0.35 m/s (a throw: `start_speed`) is followed through first: the hand moves along its throw at 0.6 of its speed, slowing to rest in 0.1 s,
+  then leaves. The export's motion blur takes sub-frames while a hand moves (`busy`).
+- **A fixed thing** in a hand: held for the whole run, its stand (the view's mount) not drawn; a bar in a fist is held 4.5 cm in from its end away
+  from what moves (a magnet by its far end, from above).
+- **A pusher** with a hand: housing, rod and paddle are not drawn (they still act in the physics: the housing stands where it stands, unseen); the
+  hand moves with the paddle's face, from the paddle's own track, and rests on the thing it pushes while the paddle crosses the air its face starts
+  with (up to 5 cm; the thing does not move before the paddle reaches it), so a hand is on the thing before the push, never short of it. `finger`:
+  the index's tip on it; `fist`: the flats of the fingers' first bones; `hand`: the palm, the fingers up (on a ball, the heel of the hand on its back
+  8 degrees above its middle, tangent there, turned 38 degrees round it toward the camera so the back of the hand shows: a palm square to the push
+  is seen edge-on, a few fingers; else leaning 15 degrees into the push); `two hands`: a left and a right side by side (±3.4 cm across, ±1.8 cm up
+  and down). One arm for every skin, so a change of skin changes only the hand: from behind the push, rising 12 degrees and turned 10 toward the
+  camera (two hands' arms turned apart, 15 degrees each, or as far as each palm is round a ball).
+- **A pitcher** with a hand: a right hand for `pour_to: right` (a left for left) round its handle's outer side (a cup: round its body, the thumb by
+  the rim), turning with the flow module's `tilt_deg` reading exactly as the model does; the forearm turns half as far.
+- **AI** (`web/sim/modules/hands.js` `plugin`): the catalog digest's paragraph (props.hand and hand_from on held, fixed, pusher and pitcher items),
+  carried by a request that names a hand, a finger, a fingertip, a fist, a palm or a thumb (`words.picks`), plan and edit prompt lines ("a person holds, drops, throws, pushes or pours: held: true + props.hand ..."), change words ("a fingertip holds it
+  down", "two hands push it", "a hand holds and tips it", "no hand (the pull pin holds it)").
+- **Known limits**: a hand is not a body (nothing lands on it: a toss cannot be caught on the palm); it is kept clear only of the thing it let go,
+  not of everything else; one hand per held or fixed thing (the pusher's two hands aside); the grip is chosen from the thing's outline and drawn box,
+  not from what it is (an apple and an orange of one size are held alike).
+- **Checked** (2026-10-20, on this branch): `node --no-warnings tools/hands/test.mjs`: 126 of 126 (all 326 catalog entries items.py == web/sim;
+  the props on every dynamic type but the pusher, the pusher's and the pitcher's; the 14 proof scenes build the same documents in Python and JS
+  with and without their hand props, resolved differing only by them, and run to the same tracks on the browser bundle; the 12 scenarios and 10
+  gallery scenes the same documents, resolved props and warnings with the module and without it, in Python and JS; bad choices refused alike; the
+  AI registry, and a request naming a hand carrying the module's section; `tools/parity/run.sh` runs it). `node tools/hands/browser.mjs` (the app
+  with `?engine=browser`, headless Chromium): 85 of 85 (every proof scene's hands as asked; no pin, gate, stand or pusher machinery where a hand is;
+  the hand in the export's picture and gone once it has let go; the same moment drawn twice alike; hands `off` and `all`; the starter's pixels the
+  same with the hands on and off; the live canvas, the library card's photo and an MP4 from the export's encoder show the hand; every dynamic type
+  held (`auto`) and fixed (`grip`), every pusher skin and every pitcher: hands made and finite through the release, 416 of 426 scenes with a hand,
+  under 10 ms a scene).
+
+## Readable subjects (2026-10-20): thin steel face-on, cork sizes, a slow-foam ball, a ride-on car, sails and fans that read; clear water with rings and splashes; frosty ice, satin bowls, a lamp's gold light, clay lumps, gates without ghosts
+What a lesson picture needs to read at lesson size, found by the five-lesson benchmark (lesson-regen/bench: MA-25, FO-13, MO-19, FO-36, MA-50) and
+the fair-test and MO-37 lessons. Every option defaults to what was built before: the 12 scenarios and 10 gallery scenes build, run and summarize
+byte for byte as before in Python and in web/sim (only the catalog lists the new props); nothing here touches tooling/src/sim (no engine change,
+the bundle as it was). Physics options keep real numbers; the render-only ones say so in their help.
+- **Thin steel faces the camera** (machines/mod_magnetism.py = web/sim/modules/magnetism.js): `facing` "edge-on" (default: as it lies, a side view
+  sees its thin edge) | "face-on" on `paper-clip`, `plastic-clip`, `clip-on-thread` and `steel-washer`. Face-on turns the thing a quarter turn about
+  its length: the same steel and weight, its side outline is then its face, so what is seen is what touches. A clip is a polygon 33 × 8 mm with
+  pointed ends (`clip_face`: a Gem clip's loops end in half circles, within 1 mm; it never balances on an end), 1 mm front to back, its density for
+  0.45 g; a washer a regular octagon through its rim (exact √ corners, the same bits in both languages; it rests on a flat), its thickness front to
+  back. The magnetic block turns with it: a clip's `_soft` record w × h × d = 33 × 1.9 × 0.9 mm (two wires one above the other; the pull along its
+  length is unchanged: Aharoni's factor along a prism is symmetric in the other two sides), a washer's the square between its flats × its
+  thickness (magnetized along its face, as a real one on its edge is; its corners reach 2.4 mm past the rim of a 16 mm washer turned 45°). Measured
+  (ceramic 15 cm bar, its S end, the gap from the steel's top): an upright clip jumps from 15 mm and falls from 20 mm in both facings; an M8 washer
+  under the pole's end jumps from 7 mm face-on as flat, 8 mm in from the end 5 mm (flat 10 mm). The coin's face-on twin already exists
+  (`coin-edge`); a nail is round, its side view already its outline. Models (web/models/mod-magnetism.js): the clip's wire is a real Gem clip,
+  two and a half loops that never cross (the old path fed duplicate points to its curve: overshoots and crossing legs, unseen edge-on); face-on it
+  is drawn in the picture plane, a face-on washer as its ring about the camera's axis. Known limits: a face-on clip is a clip on its edge (the side
+  view's convention, as `coin-edge`): dropped end-first from 13 cm it cartwheels a few centimetres; the fluids module's surface tension still floats
+  a face-on clip by its wire's contact line (lay it edge-on to float it).
+- **Cork** (machines/mod_fluids.py = web/sim/modules/fluids.js): `diameter` 0.015-0.06 m (0.024), `length` 0.02-0.10 m (0.044), `lying` "front to
+  back" (default, as before: a cylinder through the depth, the camera sees its round end, it rolls) | "across" (a slab L × D whose depth π/4·D makes
+  outline × depth its true volume, at cork's 200 kg/m³: it weighs and displaces what the round cork does; drawn as the cylinder along x it is).
+  Every size floats a fifth under (19.94 %: 6.1 mm of 24 mm end-on, 11.4 mm of 45 mm; across, a rectangle's 4.8 mm of 24 mm).
+- **Sails** (render only; `sailboat`): `sail_shape` "square" (default) | "triangle": the square's area, its luff 1.5 h up the mast from the boom and
+  its foot 4/3 w along it, so its centroid (where the push acts, `sail_middle`, where the fan is aimed) is the square's middle; the mast is drawn up
+  past its head (web/models/mod-fluids.js `sailLook`, `sailTriangle`). `sail_face_on` (bool, false): the sheet and boom are drawn square to the
+  camera instead of let out 45°. The push is the 45° plate's 0.8·½ρv²·A either way (a sail square to the fan's wind would be edge-on to a side
+  camera: the help says so).
+- **A softer ball** (machines/mod_softbody.py = web/sim/modules/softbody.js, `foam-ball`): `foam` "stress ball" (default: e 0.55, as before) | "slow
+  foam" (viscoelastic memory foam, e 0.2: ASTM D3574's ball rebound puts such foam under 10 %, about 4 % taken, approximate [D3574]). Only the
+  softbody record's `e` changes. A 16 cm, 120 g ball let go 42 cm up hops 13.6 cm (stress ball) or 2.9 cm (slow foam); the hollow plastic toy
+  ball 4.3 cm on grass. Known limit: the softbody contact takes the ball's own restitution on every rigid surface (a lawn's loss is not added).
+- **A ride-on car** (machines/catalog_mechanisms.py = web/sim/catalog-mechanisms.js `_vehicle(..., big=BIG_CAR)`, `motor-car` only): a typed length
+  to 1.2 m (it was clamped at 0.5 m without a word), wheels to 0.2 m, body to 30 kg, push to 150 N: a 12 V ride-on toy car is about 1.1 m, 15-25 kg,
+  20-25 cm wheels, 1-2.5 m/s (approximate). The sliders still stop at the toy's own most (`slider_max` 0.5 m, 6.4 cm, 1.8 kg, 50 N); each prop's
+  help says what may be typed. On MO-37's 10 m track a 1.1 m, 20 kg ride-on (0.2 m wheels, 100 N) reaches its 2.74 m/s as the toy does.
+- **Fans** (render only): `turn_to_camera` (machines/mod_staging.py = web/sim/modules/staging.js, a common prop of `fan`, 0-60°, default 0, nothing
+  built for it): the fan is drawn turned about its upright toward the camera (web/models/rods.js `fanTurned`: the cage and the motor about the
+  neck, 10 cm behind the cage's middle), its air still blowing the way it points; the liquids module's stand behind a raised fan still meets the
+  motor. The fan's paint (the mechanics module's `color`, already on its solids) is drawn on its plastic. Its blades turn at most 1.8 times a
+  second (22° a frame at 30 fps, under a third of the 72° between blades: never seen strobing back; 4 a second did at 30 fps) and a faint disc
+  where they sweep shows from its switch-on (frame hook `fan:running`).
+- **Clear water** (render only; web/models/mod-fluids.js): water, salt water and sea water (`CLEAR_LIQUIDS`) in a tank (aquarium, tub, trough) or a
+  boat are drawn as clear water (a graduated cylinder's, a beaker's or a jug's column keeps its tinted body: its level is the reading): the body
+  only tints (`clearWaterMat`: an unlit MultiplyBlending over what is behind it, mix(white, its colour, 1 − e^(−depth/dist)), at most 0.32 of its
+  colour) with a faint haze of its colour (`waterHaze`, at most 8 %, so a tank seen from the side still reads as holding water), under a separate
+  rippled top (`waterSurface`, a child of the body so the level hook carries it, opacity 0.5) that mirrors the room through its own blue. The old
+  alpha-blended, lit body laid half a pale haze over everything in and behind it (a cork under water came out nearly white, the table grey). An
+  aquarium's front and back panes are clear float glass (`clearPane`, 5 % and their reflections). Measuring vessels, a density column's layers
+  and the other liquids are as before.
+- **Ring waves and entry splashes** (render only; web/models/fluids-rings.js, view plug-in `fluids:rings`, registered by mod-fluids.js): a thing
+  that pierces a single-layer liquid's top and moves up or down there sends out a ring every 1/12 s, sourced by the rate it pushes water aside,
+  A·v (its waterline's area, its vertical speed): 4 cm ripples at their deep-water speed √(gλ/2π + 2πσ/(ρλ)) = 0.27 m/s, a packet 1.5 wavelengths
+  long, 0.35 × A·v / (2π·r0·c) high at its edge r0 (at most 1.5 mm), falling as √(r0/r) and dying out over 1.5 s, mirrored once by the walls; drawn
+  as a sheet over the top (a shader) that lightens slopes facing the camera, darkens the others and is clear where the water is flat. An entry
+  faster than 0.5 m/s throws a crown of 16 drops (1.5-3 mm) up at 0.55-0.9 and out at 0.3-0.55 of its speed, falling back. Worked out from the
+  track when the run loads (the same picture at the same t, the export's too); nothing is made for a run in which nothing crosses a liquid's top.
+- **Ice** (render only; web/models/blocks.js, the ice look): a freezer-cold cube is a blue-white frosty block, even on a white plate: its body faintly
+  blue (attenuation #8fc5e8 over 9 cm) and milky (30 %), its frost skin 92 % and shaded by the room's light. The frost melts off as the cube warms
+  (frame hook `ice:frost` on its `temp` reading: full below −8 °C, gone above −1 °C); a run without the reading keeps it as built.
+- **Bowls** (render only; web/models/mod-heat.js): a satin glaze (roughness 0.38, clear coat 0.45 at 0.42): the mirror glaze drew the room's light as
+  one sharp upright streak on the far wall above what sat in the bowl, which read as steam. Plates keep theirs.
+- **A desk lamp's light** (render only): a hot filament's beam (incandescent, halogen) is drawn as the eye sees it (web/models/mod-optics.js
+  `seenColour`: its bands through the CIE 1931 colour matching functions, Wyman, Sloan & Shirley's fit, to linear sRGB against an equal-energy
+  white): warm gold (sRGB 255, 194, 108), where summing band powers drew salmon (1, 0.28, 0.26) from its 625-750 nm band. Other light kinds keep
+  their colours. A lamp the heat module lights is lit once: the optics module's spot for it is kept dark (still marked as lit, so no extra pool),
+  and the heat module's spot has a firmer edge (penumbra 0.2) at 0.6 of its brightness, so a white plate under it is not blown out (clipped
+  pixels 15 % → 9 %); its cone (the lamp's `beam_angle`) still lights the table past a plate narrower than the cone, as a real lamp's does.
+- **A lump of clay** (render only; web/models/clay-lump.js, registered by mod-mechanics.js): a hand-pressed lump, a solid of revolution about its
+  upright through its side outline (round seen from above; what touches is unchanged), its foot rounded under, its top a low dome with two thumb
+  hollows, uneven all round (only in and down, never out of the outline), in a matte kneaded-clay material; the generic drawing extruded the
+  outline into a flat-topped prism that read as a roof box on a car.
+- **Starting gate** (render only; web/start-gate.js, one line in web/view3d.js): the arm, stop and bolt cast shadows only while the gate is shut, and
+  the gate's post casts none: lifted high over the track (and the post behind it) they threw a detached grey shape on the room's back wall. (A
+  ball's own shadow on the back wall is not the gate's.)
+- Checked (this branch against its base, origin/integrate/engine-waves 2cbfe0e, in separate copies with their own servers under Python 3.13; the
+  live :8790 never touched): the 12 scenarios and 10 gallery scenes in web/sim with the bundle (documents, resolved, warnings, summaries, tracks,
+  layouts) and in Python (documents, resolved, warnings, summaries on those tracks), 22 of 22 byte-identical; the catalog differs only in the 9
+  types above (their new props, descriptions, sources; every preview and every other entry identical), and all 326 entries Python == web/sim; the
+  new options' documents Python == web/sim (51 scenes: thin steel both ways and at the props' limits, corks and sails, the foams on three floors,
+  ride-on cars, turned fans); tools/parity/run.sh's 33 steps all pass under Python 3.13 (core 21995 cases, server, browser, everyday, the catalogs,
+  mechanisms, heat, softbody 969 checks, matter, flow, circuits, magnetism --n 150 with engine runs, fluids 1213 checks, waves, granular, fracture,
+  mechanics 300 scenes, air, space, staging, the module checks, fuzz-live --n 300: 967 cases, 0 mismatches; under 3.14 its prims step differs
+  on Unicode 16, not on anything here); research/rw-validate-fluids, -magnetism, -softbody and -mechanics pointed at this tree: 71/71, 79/79,
+  109/109, 104/104; the 761 node:test cases (760 in a 4-way run at load 110, the one timing case, ai/test/server.test.mjs's per-step slots,
+  11 of 11 alone); machines/test_*.py (test_catalog 350/350, test_everyday 38/38, test_measure 382/382, test_mechanisms, test_rg, test_space
+  220/220); CI's syntax check (388 JavaScript, 100 TypeScript files) and py_compile; build:static:nogen (the engine bundle byte-identical to a
+  fresh build, every import resolved) but for vendor:media:check, which fails the same way on the base in this checkout's node_modules.
+  Pictures: before and after of every item at the lessons' own cameras.
+
+## Mechanics fixes (engine6, 2026-10-20): the pusher's push, holding from above, hanging machines, "moves" goals, a pail as a container
+From the lesson benchmark (lesson-regen/bench: FO-36, MA-25, FO-13, FO-79) and the sandbox AI follow-ups. No engine change (tooling/src/sim and the
+bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte for byte as before (server and web/sim).
+- **Pusher** (machines/mod_mechanics.py = web/sim/modules/mechanics.js `_pusher`): its rod sat inside its own static housing, so the contact
+  fought the drive's rail and its friction took a different share of every push (a sprung toy car pushed 5.0 N for 0.15 s left at 0.93 m/s,
+  5.25 N at 0.49 m/s). Now the slider's `a` is the housing (`a: "<id>/housing"`, `anchorA` (0.01, h − yh) and `axis` (1, 0) in the housing's
+  frame): planck joins the two, so they never touch. The housing (cart blue, 5 cm tall) is as long as the stroke + 2 cm (at least 10 cm, from x = −Lh
+  to 0 in the item's frame) and holds the rod 5 mm over its middle: `yh = max(0.025, height − 0.005)`; raised, it stands on a static wooden
+  `riser` (as long, from the floor to the housing). The rod spans the housing and 2 cm more (to the paddle at x 0.026, its face at 0.032: the
+  anchor text now says so) and stays in it over its whole stroke. The rod weighs 0.1356 kg and the paddle 0.0634 kg whatever the stroke and the
+  paddle's size (their densities set so): a paddle's size is its reach, not its push. A pusher at the default height and stroke builds a longer
+  housing than before (17 cm); its push is now its full F·t on the rod, the paddle and what it pushes. Checked (`research/rw-validate-mechanics.ts
+  pusher`, 13 checks; the base tree fails 12): a toy car pushed 3-9 N in 0.25 N steps for 0.15 s starts faster at every step, on carpet and
+  hardwood, rigid and 8 Hz axles; sprung = rigid within 1.8 %; 5 N within 1.7 % of (F·t − C_rr·m·g·t)/(car + wheels' I/r² + rod and paddle);
+  3 N × 0.2 s = 6 N × 0.1 s (the rolling resistance's share given back) within 0.6 %; 2.5, 7 and 14 cm paddles push a soccer ball alike (0.4 %);
+  pushing nothing, the rod and paddle go the integrator's own ½(F/0.199 kg)t² × 25/24 (0.02 %). Above about 7 N for 0.15 s the stroke's end
+  (15 cm) cuts the push short (the start then grows more slowly: still at every step). The benchmark's FO-36 scenes (pushers stood on blocks)
+  as they are: the finger's 5 N push starts the soccer ball at 0.360 m/s (it was 0.373: a 2 cm paddle weighed 21 g, now 63 g), the hand's 10 N at
+  0.996 m/s (0.947: its 10 cm paddle weighed 106 g, and the rod rubbed); 384 pushers at every corner of their props, pushing a block or a car at
+  0°, 180° and 37°, run finite.
+- **Held from above** (build hook `_holds`, both ports; render only): a held thing whose body (a root's middle) starts in a liquid (between a
+  `liquid` record's x0 and x1, over its floor, under its surface: the floor + its layers' heights) carries `holdFrom: "above"` on its moving
+  solids. Where the look's stand is the pull pin and post (the real look's default; a hand, a named "hidden", "hanger" or "auto" stand and the lesson
+  look hold it their own way: "engine6 merge" at the end) web/view3d.js draws no pull pin or post for such an item; web/models/mod-mechanics.js "mechanics:holders" draws a grey plastic rod
+  from a steel arm over the tank, a pad and a two-tined fork on the thing's top (the tines down its sides to its middle's height, at most
+  2.5 cm), the arm running along the tank over its rim to a wooden post 4 cm past the tank's nearer end; at `doc.release.at` the arm, rod and
+  fork slide up the post (0.15 s, ease-out) until the fork is 2 cm over the rim, and stay. A cork held on a tank's floor, a grape held under the
+  water: marked; a ball held over the water, a cork in an empty tank: not. A scene without a liquid gets nothing.
+- **"moves" goals** (machines/items.py = web/sim/items.js summarize; ai/goals.mjs = web/ai/goals.js): an item's distance is its rigid body's
+  that moved most: each weld group's parts averaged (as the whole item's were), the most of those (`_weld_groups`; the AI's `T.rigid(item)`). An
+  Atwood machine whose weights moved 31 cm each way "moved 0 cm"; now 0.31 m. An item of one rigid body gets the same bits as before.
+- **A pulley lift's pail is a container**: the mechanics plugin's `place` (`containers: ["pulley-lift"]`, `interior`: the pail's inside in the
+  lift's frame from the lift built alone: between its walls, its floor's top to its rim, the bail left out), so `place: {inside: <lift>}` sets a
+  thing on the pail's floor (the gallery's own apple spot to 0.1 mm); "pulley-lift" is in `WALL_CONTAINERS` (ai/schemas.mjs, ai/catalog-digest.mjs)
+  and `CONTAINERS_BY_WALLS` (web/ai/solver.js): an "in" goal on it becomes the scene's "walls" goal, judged by the pail's walls; `walls_inside`
+  (items.py = items.js) and the AI's `wallsInside` also read a pail's `wall1` and `wall2` as its left and right walls.
+- **Hanging machines hang** (web/ai/solver.js `hangClear`, `HUNG` = atwood-machine, pulley-lift): put `on` the table or a thing, it is raised so
+  its lowest part hangs its rope's `drop` (0.1-1 m) over the support (placement report `hung`: that height; an info issue "hung"); set down, an
+  Atwood machine's two weights rested and nothing could move. `on: "air"` keeps its height exactly, and `planFromScene` (an edit's base plan) gives
+  a hanging machine its exact place (`on: "air"`, `keep`), so an edit's re-solve never hangs one unasked. The planner's notes for both types say so.
+- **start_speed on a pulley rope** (`_common`, both ports): two bodies of one item joined by a `pulley` joint start the rope's way: its `a` end
+  as asked, its `b` end with vertical speed −vy ÷ the rope's ratio (both had the same start, which the rope could not take: equal weights did
+  not move). An equal-weight Atwood machine given 0.3 m/s (start_dir −90) goes on at 0.2998 m/s 1 s later; 0.35 against 0.25 kg speeds up from
+  it at 1.634 m/s² (g·Δm/Σm = 1.635).
+- **The upright nail** (FO-13): its weak pull under a bar lying flat is real physics, checked (`research/rw-validate-magnetism.ts upright`)
+  against VIS2, a converged volume-integral solve with both in-plane components of magnetization in each of 96 cells (its sheet force = its
+  co-energy's derivative): 0.84-1.09 of it, 3-15 mm under the bar, 4-15 mm in from its end. Under a bar lying flat the field runs along the bar,
+  across the nail. Stood on its end (its pole face down, along the nail) the bar lifts the 2.76 g nail from 15 mm, not 20 (VIS2; the engine
+  in a real run from 15 mm, not 18). Known limit, said there: a flat nail whose end lies 10 mm past the pole's corner is pulled 0.36-0.70 of
+  VIS2, because a row's pull is reckoned on its four coarse pieces (VIS2's own magnetization lumped into them gives the engine's number); its
+  24 cells' magnetization is right. Reckoning a row's pull on its cells is the fix (more face sampling: not done).
+- Checked: the 22 identity scenes byte-identical (server: Python + engine; web/sim + engine); `tools/mechanics/test.mjs` 0 mismatches (its new
+  regressions: the pusher at five heights, strokes and paddles, one turned; held cork, grape and dry tank; an Atwood/pulley-lift "moves" and pail
+  "walls" run; `--n 300`); "moves" on eight multi-body scenes and "walls" on a pail Python == web/sim; web/ai/test/solver.test.mjs, ai/test/goals.test.mjs,
+  ai/test/schemas.test.mjs (new tests for each); the view's holder seen in headless renders of the cork and the grape. Against this branch's base
+  (2cbfe0e), on the 18-core Mac under other agents' load (80-120): every research/rw-validate*.ts passes as before (mechanics 121, magnetism 81,
+  thermal 118, fluids 71, p4 56 with its crash fuzz of 1500 scenes: 0 exceptions, 0 non-finite; the rest unchanged) but optics' timing check (4-10 ms against its 2 ms, the base tree's the same); tools/parity/core.mjs
+  core and server modes 21995 cases with the base's own 117 mismatches (this machine's Python 3.14 against web/sim/unicode.js's 3.13 tables and
+  its "division by zero" wording), the summaries' 312 runs 0; fuzz-live --n 300 967 cases 0; fluids.mjs 1213 checks 0; staging all pass;
+  machines/test_*.py all pass; the node:test files 765 of 766 (ai/test/server.test.mjs "per-step slots", a timing test the base fails alike under
+  that load); the engine bundle rebuilds byte for byte.
+
+## AI follow-ups (2026-10-20, branch `e6-ai`): the run on the card, the person's own amounts and switches, real materials, the fix card's goals (web/ai)
+Only the AI layer changes (its words, and what its searches and tuners may try): no engine, builder, catalog or view file, so every document,
+resolved prop, warning, summary and track is as it was (the 12 scenarios and the 10 gallery scenes included).
+- **The run on the card** (`web/ai/run-story.js`, read by `describeRun` in web/ai/orchestrator.js). A run where no solid moves and no module event
+  happened no longer reads "In the run nothing moves" when a reading changed: `storyLines(sim, scene, {max = 3, per = 3, skip})` tells each item's
+  readings that changed (the keys its type lists in `readouts`, in that order, read from `track.state`), start → end in the readout's own unit and
+  digits: "Ice cube: temperature −17.9 → 0.0 °C, melted 0 → 93 %, puddle 0.0 → 52.4 g" (a state code with `words`, or a unit-less 0/1 flag, as its
+  word or no → yes: "boiling no → yes"; a unit-less share 0–1 shown with 2+ digits as a percent; a reading whose start and end print the same is
+  left out), else how much a resized solid ends at ("Block shrinks to 40 % of its size", from the placements' `scale`); the items in the order they
+  first changed. A time-lapse run says its span (`lessonSpan(sim)`): "In the run, over 80 s of lesson time: Hot plate: top 20 → 78 °C; Ice cube: …".
+  Beside a run's hits (or a thing's own parts striking each other) the modules' happenings are now said too, never dropped: "In the run: Ball hits
+  Box (0.47 s). Also: Tap turns on (60 mL/s) (0.50 s) → Tap turns off after 90 mL (2.00 s) → Mug fills to 90 mL (2.28 s)."; and after the rest, the
+  readings of things no happening names (at most 2 then): "In the run: Pan moves but hits nothing. Hot plate: top 21 → 50 °C; Pan: water 20.0 → 41.7
+  °C, pan 20 → 48 °C." A run without readings (every scene without modules) reads exactly as before.
+- **A module's words for an item's part of the run** (a new plug-in point, read from the registry as `digest` is): `words.story(item, run, {type,
+  scene, name}) -> text | [text] | null`, said "<name>: <text>" in place of that item's readings ("Pan: boils"); null (or no hook): the readings are
+  told. No module defines it yet; a module whose readings read badly as numbers can add it without touching describeRun.
+- **Amounts** (`web/ai/amounts.js`): `AMOUNT` (the orchestrator's `AMT`: every unit below, matched whole, so "200 mL" is never "200 m" and "5 small
+  balls" no "5 s") and `EXPLICIT` (`EXPLICIT_RE`: a number with any of those units but "in", a time or a count of turns: "land in the cup within 3
+  s" states an outcome, not a setting). Units by family (`unitFamily`): length (mm, cm, m, km, in, ft), angle (°, deg), volume (mL, cL, L, cc), flow
+  (mL/s, mL/min, L/s, L/min, "mL per second"), mass flow (g/s), mass (mg, g, kg, lb, oz), time (ms, s, min, h), rotation (rpm, rps, turns/min,
+  turns/s, revolutions per minute), turns, temperature (°C, °F, "degrees C", celsius), power (mW, W, kW), voltage (mV, V, kV), current (mA, amps;
+  never a bare "A"), resistance (Ω, ohms), frequency (Hz, kHz, hertz), force (N, kN), torque (N·m), stiffness (N/m), pressure (Pa, kPa, bar, psi,
+  atm), energy (J, kJ), light (lx, lm), sound (dB), irradiance (W/m²), speed (m/s, cm/s, km/h, mph), percent, ratio (×, x, times). `amountsIn(text)`
+  -> [{family, value, unit, at, text}]; `unitAmount(clause, spec, others)`; `bareAmount(clause, words, spec)`; `propWords(spec, key)`.
+- **What the person chose** (`choicesOf`, ai/DESIGN.md §16; hard: never changed by a fix or a rework, forward: further that way, never back): (1) a
+  clause that names nothing goes on about what the clause before it names: "use a thinner hose, only 6 mm wide inside" holds the hose's 6 mm; "make
+  the tap pour faster: 30 mL/s"; "make the ball heavier, then move it 10 cm left" holds its place. (2) An amount in a setting's own unit, said where
+  the thing is named, holds it where no other setting the edit set on that thing shares the unit's family: "fill the pitcher with 200 mL", "make the
+  tap pour 20 mL/s", "heat the water to 80 °C", "turn the hot plate up to 300 W", "make the buzzer 9 V", "make the tuning fork 440 Hz", "spin the
+  gear train at 300 rpm", "pump the jar down in 5 s", "blow 2 L into the balloon", "make the ball 200 g", "heat it to 80 degrees" (degrees with no C
+  or F are a temperature's where nothing in the clause turns or tilts) (lengths, angles and ratios still need the setting's own words beside them,
+  `keyAmount`: a move is said in them too; "move the box 10 cm left" never holds a width the edit also set). (3) A bare number for a setting without
+  a unit, after its words or before them: "set the friction to 0.5", "use 3 cells". (4) A setting no core word (`KEY_WORDS`) or module word
+  (`words.keys`) names is named by its own label, its key, its choices and an on/off's usual verbs either way (`propWords`, `BOOL_WORDS`: lit
+  (light, blow out, put out, snuff), closed (open, shut), on (switch/turn on, off), tare (zero), tied (tie, untie, knot), hollow (solid), hung
+  (hang), legs, glow); module words, when there are, are used with these. A switch so named, or a choice said by the value it now has, is hard:
+  "light the candle", "blow out the candle", "close the switch", "fold the paper plane as a dart", "put the cap on the deeper bottle" (with the edit
+  step's own `targets` naming the bottle). A material's own choices name it as the material words do ("a charged rod of PVC").
+- **The make-it-work search and an outcome request's switches** (web/ai/fixer.js): for a request that only states its outcome (`ctx.flex`), a
+  module's switch, pick-from-list setting or link that the edit set is never put back as it was before the edit: not by its knob (`knobCandidates`'
+  `undoes`, passed to `moduleKnob`) and not by a goal kind's `aim` (its prop change is refused as `set` refuses the person's own); a number may
+  still go back a quarter of the way (`forward`), a flip or a choice is the whole way. Each such undo is kept aside as the person's named switches
+  are (`kbBlocked`): when nothing else works the card says "Only undoing your change would make it work (take the bottle's cap off: with the cap on
+  no air gets in, so nothing comes out of the holes), so I left it as you asked". Another choice (wax → chocolate, never back to butter) or another
+  link may still be tried. A switch the AI set of its own accord in a plain edit (in `ctx.touched` but not in `ctx.hard` / `ctx.forward`) may still
+  be put back, as before.
+- **Real materials** (`web/ai/realism.js`): a thing's friction, rolling resistance, bounciness and side spring-back stay within what a real one of
+  its material has, about the material's own value (the item's chosen material in `catalog().materials`, else its type's default; an unset value
+  follows the chosen material, as web/sim/items.js `props_of` builds it): friction ×0.4–×2 and at most 1.2 (only soft rubber grips harder), rolling
+  resistance ×1/3–×3 ± 0.005, bounciness ×0.6–×1.2 and at most 0.98, side spring-back ×0.5–×1.5 ± 0.1 and at most 1 (`REAL_LIMITS`; the
+  physics-lesson-video skill's realism check, scripts/lib/realism.ts, uses the same limits). So a soda can grips 0.12–0.6 (never 1.6), a carpet
+  strip rolls 0.0117–0.155 (never 0.5), a floor of carpet the same, a varnished floor 0–0.005, a toy car's tyre 0.32–1.2. A change is refused only
+  when it goes further from real than the thing already was (`unrealStep(type, key, from, to, props)`; toward real is always allowed, and a value
+  the person chose, in `keep`, is theirs). Applied in: the make-it-work search (findFix drops every candidate that sets one, a module knob's or an
+  aim's, before it runs); the AI's reworks (`judgeRework`, the background's and "Ask the AI to rework it": "it gave Soda can 2 a friction of 1.6 (a
+  real one has 0.12–0.6)"); every edit answer (`adjustEdit` step (5): a value the edit step set that no real one has, when the person's words don't
+  ask for that setting (`materialSaid`: friction, grip, slippery, sticky, traction, smoother, icy …; resistance, drag; bouncier, more or less
+  bouncy, bounce higher …, elastic; side spring-back), goes back as it was, and the card says so: "Left as it was: Soda can 1’s friction (a real one
+  has 0.12–0.6, not 1.6) (you didn’t ask to change that)"; a rework's words are the app's, never the person's); the critic's patches (`guardPatches`
+  → `realPatches(plan, patches)`: the value taken out of its set_props / add / replace_type, the rest kept, and the round's `skipped` says "Soda can
+  1: its friction was not set to 1.6, which no real one has (0.12–0.6)"); a new scene's plan (right after the plan step, unless the words ask for
+  that setting: the value is left at its material's own, `report.assumptions` says "Soda can 1’s friction is a real one’s, not the 1.6 planned (a
+  real one has 0.12–0.6)", and `report.initialPlan` keeps the plan as written); and the build's tuners (`safeKnobs`, the joint tuner and the stage
+  tuner: `realKnob` cuts a tune knob on a material prop to the real range, widened only to take in the value it has now; one with no real value left
+  is left out, with a note). Also `materialBase`, `builtValue`, `realRange`, `unrealIn(a, b, {keep})`, `unrealWords(u, nameOf)`.
+- **The fix card's goals** (`web/ai/fix-card.js` `fixedGoals(goals, results, okAll)`, moved out of web/ai/panel.js `applyFix`, which imports it):
+  each goal as the fix's own checked run has it, its words only when they agree with its mark (never "✓ … · no"), a goal with no label of its own
+  matched to the run's "the goal" when it is the only one, `was`: its mark before the fix.
+- Checked (this branch; its own worktree and server :9851, :8790 never touched): the new node:test files `web/ai/test/run-story.test.mjs` (6),
+  `amounts.test.mjs` (6), `fixer-undo.test.mjs` (3, each failing on the code before), `realism.test.mjs` (9, its search, rework, edit, critic, plan
+  and tuner tests failing on the code before) and `fix-card.test.mjs` (4); every node:test file as CI runs it (.github/scripts/unit-tests.sh, 58
+  files): 788 of 788 at a load of about 10, and on the final code 786 of 789 at a load of about 100, the three misses load-bound (creative-fix c03's
+  search ran out of time with every file running at once, and passes alone: "make the 10 water bottles slimmer (6.5 → 5.2 cm across each)", 151
+  runs; two of ai/test/server.test.mjs's AI-slot timing tests, which fail as often on the base commit at that load);
+  web/ai/test/make-it-work.e2e.mjs in headless Chromium against :9851, 72 of 72 (with one more check: the applied fix card's goals all met, none
+  saying no); the egg-drop fix card (FR1 t2, restored and applied in headless Chromium): "The egg dropped on the thick foam survives · yes" (an
+  offer saved without words: the mark alone); an ice cube on a hot plate edited in the app: "In the run, over 80 s of lesson time: Hot plate: top 20
+  → 50 °C; Ice cube: temperature −17.9 → −0.7 °C." (before: "In the run nothing moves: everything stays where it was put."); `npm run
+  build:static:nogen` ships the four new files, the engine bundle byte-identical, and stops only at `vendor:media:check`, which fails the same on
+  the base commit with this machine's node_modules; the CI syntax check, 395 JavaScript files.
+
+## Cross-module gaps (engine6 crossmod, 2026-10-20): a stream into a floating vessel, a scale that weighs sand and puddles, the panel's traced light, a beam's depth share, the string telephone, a stopwatch stopped by a reading
+Where one module's thing meets another's. The 12 scenarios and the 10 gallery scenes are byte-identical (document, resolved, track, summary); of the 403
+demo and fixture scenes (demos/*, tools/parity/fixtures/*-demos.json) only those named below differ, with every goal as before. Checked by
+`research/rw-validate-crossmod.ts` (new: `vessel|weigh|solar|depth|telephone|stopwatch|all`; 44 checks: on the engine before this batch 29 of the
+39 outside the stopwatch group fail, the 4 solar checks pass, and the stopwatch group is refused: `reads` was no stop).
+- **A stream into a floating vessel** (tooling/src/sim/modules/flow.ts `land()`, `overOpening`): a falling particle inside several containers at once (a
+  bowl floating in a tank, a cup standing in a bucket) belongs to the innermost, the one whose inside's floor is the highest, and joins only its liquid
+  when it reaches that surface; a particle over the opening of one of the module's containers (its rim within about 27° of level) whose rim stands above
+  the surface of the container it is in is left to fall into it. So a tap's or a pitcher's stream over a bowl (or a mug) floating in a fluids tank fills
+  it (its weight through SolidHandle.carry, which the fluids module's `heldIn` reads) until its rim reaches the tank's surface; then the tank's water comes
+  over the rim (fluids' flood) and what lands there is the tank's water. Measured: a melamine bowl under an 80 mL/s tap holds what the tap let go a fall
+  earlier (463.8 mL at 6.5 s for 460.2), the tank takes 1.8 mL before the bowl's rim reaches the water at 7.43 s, the bowl holds 560.7 mL at its fullest
+  (ρ·V_envelope − m: 565 mL; the hose version 559), floods at 8.8 s and rests on the bottom at 9.06 s (`floats_then_sinks` met with a tap); a cup on a
+  bucket's floor fills (342 mL) and only its overflow reaches the bucket. No flow or fluids demo changed.
+- **A kitchen scale weighs grains and puddles** (measure.ts `measure-scale`; granular.ts `grainsOn(scene, item, solid?)`, flow.ts `puddlesOn(scene, solid)`;
+  each puddle keeps its kg, every particle at its own liquid's density): the reading adds, at rest, the weight of the grains whose bed columns stand on
+  the platform solid itself (not the scale's base) and of the liquid lying on it as puddles, through its load-cell filter and its tare like the rest of its
+  load (a heap set on it before the release is tared). A falling stream's own push is not added (as for a stream into a mug on it), and a puddle is as big
+  as the flow module makes it (it does not run off a small platform's edge). Measured: 30 mL of water spilt on the platform 29.95 g (× 0.9982), corn
+  syrup 1.38 g a mL, a 100 g heap set on it 100.0 g (tared: 0), a funnel's 100 g poured onto it 99.99 g, rising as it heaps (27 g at 1.5 s), a heap on
+  the table beside it 0, a funnel's 100 g poured into a bowl standing on it 485.1 g (the bowl's 385.1 g and 99.99 g). With the matter group's
+  containers that keep grains ("Lesson liquids and grains") the sand lies in the bowl: a container standing by its own weight (a bowl, a coffee-mug:
+  dynamic) is `loose` in granular.ts, and the scale under it weighs it with its grains (bowl + 100 g of sugar 485.11 g, a mug 429.99 g); a fixed cup,
+  jar, beaker, bucket or box holds its own grains, and a scale under one reads 0 for both. Nothing changes in a scene without grains or puddles on a
+  platform.
+- **The solar panel and the traced light**: already in before this batch (circuits.ts `tracedLight`, the panel's face a light-taking `panel` body of the
+  optics trace); checked again: a flashlight aimed at an indoor panel (sun 0) 167 W/m² of sunlight's worth and 33 mA into an ammeter, aimed away 0, a
+  cardboard card between them 0, turned onto it by a flat mirror 34 W/m² and 6.7 mA.
+- **A beam's depth share** (tooling/src/sim/optics.ts `beside` and the mirror branch; web/sim/optics.js rebuilt): a clear body (glass, water, ice), a colour
+  filter and a translucent sheet without a round aperture take only the part of a lamp's, flashlight's or laser's tube within |z| < D/2 of their depth D,
+  as an opaque body does (`caught`; the tube is cut to it, `clipTo`), the rest passing beside them out of the plane, not followed; a tube that fits within
+  the depth is left exactly as it was (a laser's 0.75 mm beam bit for bit). A flat mirror turns back only what it catches, sunlight too: a band its own
+  depth tall (before, a deep body downstream took its own depth of reflected sunlight). Uncut sunlight through clear bodies keeps its W per metre of
+  height (what passes beside them is sunlight too). Measured: a 4 cm glass cube 34 cm from a torch catches what a 4 cm opaque cube catches (128.6 mW
+  each; the beam's whole height there, which it took before, 356 mW); under a desk lamp's 35° shade a tenth of the height (11.0 against 100.8 mW, the heat
+  repair's "12 times"); a filter the same; a 4 cm flat mirror's face catches what an opaque slab there catches and a deep screen gets 0.9 × it; sunlight
+  off a 10 cm mirror onto a body 1 m deep 0.9 × the mirror's catch, not 10 ×; the lamp-and-ice demo's near cube 0.14 W (2.0 W before). Changed scenes: the
+  `light_w` of clear bodies under lamps and the light reflected off small flat mirrors (demos/optics/demo-lamp-ice and demo-periscope, demos/thermal/
+  heat-lamp, heat-led and heat-puddle, demos/heat/heat-oil-water, jarlamp, oil, foil-18, foil-30, foil0, foil18 and heat-foil-reflector, the heat-demos
+  fixtures 2, 3, 8, 17 and 20): every goal as before. Heat still keeps its own estimate for clear bodies (heat.ts `traced()` leaves glass-role bodies
+  out; it could take optics' figure now), so temperatures move only where light went through a clear body onto something opaque (heat-led's ice under
+  the old bulb melts at 9.117 s, 9.083 s before; plates within 0.001 °C; a plate's focused hot spot under an ice cube is gone).
+- **String telephone** (`string-telephone`, the waves module: machines/mod_waves.py `build_telephone` == web/sim/modules/waves.js; tooling/src/sim/waves.ts
+  `telephoneOf` and SoundField `telephones`): two 9 oz paper cups (9 cm, mouths outward; ghost solids `cup-talk`, `cup-listen`) and a string between their
+  bottoms (ghost `string`, carrying `sag`, render only), always level, its anchor the string's middle at the cups' height. Props `length` 0.5-20 m (3),
+  `pull` 0-30 N (5), `pinched`, `string` cotton string (1 mm, 0.6 g/m, about 2 GPa, loss factor 0.08) | fishing line (nylon 0.5 mm, 1140 kg/m³, 3 GPa,
+  0.03) | wire (steel 0.3 mm, 200 GPa, 0.001), `voice` none | whisper | quiet | normal | loud | shout (40, 52, 62, 75, 82 dB 1 m away: whisper provisional,
+  Pearsons 1977, ANSI S3.5-1997), `talk_at`, `talk_for` (a held voice: a whisper as breath noise at 1-4 kHz, a voice 220 Hz and its harmonics),
+  `show_waves`. Readouts: its voice's sounding, pitch, struck, amp_mm; `carries` (no | yes), `sag_mm`, `loss_db`, `string_ms`. Records: its voice (a
+  source at the left cup's mouth) and `{kind: "sound", role: "telephone", solid, a, b (the cups' mouths), length, diameter, rho, E, eta, tension, pinched,
+  cup: {r, m, f, v}, reach}`. Engine: a source within `reach` (0.5 m) of one cup's mouth is heard by a meter within 0.5 m of the other's (each way): in at
+  the near mouth by 1/r (5 cm at least), × ratio, out by 1/r from 5 cm of the far mouth; its time the two air legs at the air's speed and the string at
+  its own; nothing in a vacuum (no air takes the voice to the cup). ratio = 2·S²·Z_s·ρ₀c²/(ω·V·(Z_d² + Z_s²))·e^(−η·ω·L/(2√(E/ρ))) at 1 kHz (a lumped
+  cup-string-cup model, provisional): Ernst's sagging-string modulus E/(1 + (μgL)²·EA/(12T³)) (Der Bauingenieur 40, 52 (1965)), a thin bar's impedance
+  A·√(E_eq·ρ) and speed √(E_eq/ρ) (Kinsler §3.5), each cup bottom a 0.66 g plate above its 590 Hz resonance (Z_d = ω·m·|1 − (f_r/f)²|), the ear closing the
+  far cup (V 266 mL, ρ₀c² = 1.4 × 101325 Pa); no pull or pinched: nothing; the sag μgL²/(8T) under the run's gravity, at most 30 % of its length. Numbers:
+  3 m of cotton at 5 N loses 24.3 dB cup to cup, +1.35 dB a metre; wire 16.3 dB; fishing line 29.4 dB, +0.5 a metre; drooping at 0.1 N 39.5 dB (6.6 cm
+  of sag); on the Moon the same 0.1 N droops 1.1 cm and loses 27 dB. A whisper into the left cup reaches an ear at the right cup's mouth at 42.8 dB through
+  3 m of taut cotton, 1.9 ms after (1618 m/s), against 30.6 dB through the air alone (under a quiet room's 35). Goal `hears` takes `expect: false` (a slack
+  or pinched telephone's ear does not hear it; items.py and web/sim alike). AI: how-to and plan lines (the ear's place: meter x = phone.x + length/2 +
+  0.12, its height the phone's), a worked example (a taut and a slack telephone, each with its ear), knobs (pull, pinched, voice, length), digest lines
+  (what it carries, where an ear hears it, how the child talked). View (web/models/mod-waves.js): the cups with a red (talk) and a blue (listen) band, the
+  string hanging in its sag, a clothes peg when pinched; the sound lines also spread from the far cup while the string carries the voice (0.7 as strong: a
+  picture).
+- **A stopwatch stopped by a reading** (measure: `stop` reads; props `stop_reading`, an open choice of empty, bottom_g, clogged, melted, reading, temp,
+  water_temp, boiling, flame, popped, broken, light, on, lux, liquid_ml, volume_ml, left_ml, flooded, sunk, grams, level, rpm, dissolved_g or any other
+  reading key, default empty, and `stop_value` (1); the record's `stop_key` and `stop_value` only with stop reads, so every other stopwatch's document is
+  as before): it stops when the watched item's reading reaches the value from the side it was on when the watch started (one that starts on the value
+  waits until it leaves it), timed where it crossed between the step before and now (a module's 0/1 reading: at the step it changed), plus `reaction`.
+  A `reads` goal's `seconds` on a stopwatch that counts lesson reads its `lesson_s` (what its face shows; the same as before at a time-lapse of 1).
+  Measured: a one-minute sand timer under a time-lapse of 4: the stopwatch on its empty reads 59.6 lesson s (the timer's own run_s 59.59), stopped at
+  15.10 s as it ran out; on 20 g in its bottom bulb it stops with 19.9 g there; a 0.2 s reaction stops it 0.2 s later; on an ice cube's melted under a
+  time-lapse of 600 it stops as the cube melts (11.57 s: 113.7 lesson minutes). The measure demos' resolved props gain the two new props' defaults.
+- **Texts**: fluids (a tap or pitcher fills a floating bowl; the digest's "no water from the tap landed in it" when a stream misses), granular (a kitchen
+  scale weighs a heap on it; a stopwatch can time a sand timer), flow (a puddle on a scale is weighed), measure (stop reads, counts lesson, the scale's
+  grains and puddles, two worked examples) and waves (the telephone) how-to, plan and edit lines.
+- **Checked** (2026-10-20): research/rw-validate-crossmod.ts ALL PASS (44 checks); tools/parity/module.mjs
+  --module waves (767 checks) and --module measure (773), tools/parity/waves.mjs --n 60 --browser (671 cases, 6 telephone scenes), granular (368),
+  flow (404), fluids (1213), module.mjs --module optics (741), heat (35 of 35) and circuits (ALL PASS): 0 mismatches; the node engine == the browser
+  bundle on all of them. The other validators as before: air 114, circuits 83, flow 60, fluids 71, fracture 45, granular 130, magnetism 79, matter
+  232, measure 139, mechanics 104, p2 30, p3 98, plugins 16, poly 47, softbody 109, space 117, space-air 38, stack 9, thermal 118, thermal-2 31,
+  waves 54 PASS, 0 FAIL; optics 110 of 111, its `perf` wall-clock timing over by the machine's load alone (the engine before this batch, run
+  alternately, 7.7-19.7 ms against 8.8-14.1 ms here; that frame has no clear body, so `beside` never runs in it); p4 55 of 56: its crash fuzz
+  (5000 scenes) has 3 breakdowns in 4986 scenes, each a lever-kit (class 2 or 3, a light effort, a start speed: alone with the table it breaks
+  down too) that the engine before this batch breaks on the same way, at the same moment, built by its own builder: the string telephone, a new
+  type, moves the fuzz's draw onto them. machines/test_measure.py 434 of 434, test_catalog.py 351 of 351 (the string telephone among them); the
+  node:test files as CI runs them 759 of 761, the other two (ai/test/server.test.mjs per-step slots, a timing; web/ai/test/creative-fix.test.mjs
+  c03, a search against the clock) pass run alone, as on the engine before this batch.
+
+## Energy devices (module `energy`, 2026-10-20): paper windmills and model wind turbines, winches, generators that light LEDs, battery cars (4-PS3-4)
+Files: `machines/mod_energy.py` and its exact port `web/sim/modules/energy.js` (catalog, build hooks, goal kinds, the AI plug-in),
+`tooling/src/sim/energy.ts` (blade-element momentum, pure), `tooling/src/sim/modules/energy.ts` (the process kind "energy"),
+`web/models/mod-energy.js` (models, frame hooks `energy:rotor`, `energy:pulley`, the view plugin `energy:belts`); additions to the circuits module
+(`machines/mod_circuits.py` = `web/sim/modules/circuits.js`, `tooling/src/sim/circuits.ts`, `tooling/src/sim/modules/circuits.ts`), one block of
+`tooling/src/sim/modules/flow.ts`, one line of `web/models/mod-mechanics.js`. Unit tests `tooling/src/sim/energy.test.ts` (`node --test --no-warnings
+--import ./tools/engine-math-node.mjs tooling/src/sim/energy.test.ts`), AI plug-in tests `web/ai/test/energy-plugin.test.mjs`, parity
+`tools/energy/test.mjs` (in `tools/parity/run.sh`), validator `research/rw-validate-energy.ts` (a gate: exits 1 on any failure). Category "Energy
+devices". A scene with none of these items (no rotor, no generator, no waterwheel load, no motor driving wheels) builds and runs exactly as before.
+- **Items**: `pinwheel` "Paper windmill" (sails cut from one square: `diameter` 0.1-0.4 m (0.2), `blades` 2-8 (4), `pitch` 5-45° at the tips (18; they
+  twist 15° more toward the hub), `paper` copy paper 80 g/m² | card 200 | plastic sheet 140, on a 6 mm straw on a skewer through a wooden post, the
+  axle `height` 0.12-0.6 m (0.3) over its foot; `facing` left | right: the side the wind must come from; `yaw` 0-60°: turned toward the viewer;
+  `load_g` 0-500 g: a paper cup of pennies (3 g + 2.5 g a US cent) on a thread tied to the straw, 0: none; `axle_mm` 2-30 (6): where the thread winds;
+  anchor: the middle of its foot's bottom), `wind-turbine` "Model wind turbine" (the classroom KidWind kit: a round wooden base with brass + (right)
+  and − terminals, an aluminium tower, a nacelle; `blades` 2-12 (3) flat blades `blade_length` 0.05-0.3 m (0.15) × `blade_width` 0.02-0.12 m (0.06) of
+  `blade_material` corrugated plastic 650 g/m² | cardboard 300 | balsa 320 on 6 mm dowels in a crimping hub (3 cm), `pitch` 0-60° (20), hub `height`
+  0.2-1.2 m (0.45), `facing`, `yaw`, `generator` KidWind generator | hobby motor | none (its leads are the base's terminals), `load_g` 0-2000 g and
+  `axle_mm` 2-40 (6): a weightlifter spool on its shaft), `generator` "Small generator" (`kind` KidWind generator: k 0.02817 V·s/rad (5.9 V at 2000
+  rpm open), 38 Ω, friction 0.2 mN·m, rotor 5×10⁻⁷ kg·m² | hobby motor: the FA-130 as a generator, k 2.86 mV·s/rad, 1.36 Ω; link `shaft` to a
+  waterwheel, pinwheel, wind-turbine or wheel-and-axle; `ratio` 1-20: a belt step-up, 1 on the shaft itself; `leads` normal: + positive while the
+  shaft turns counter-clockwise as seen | swapped; on its own little base, a ghost that touches nothing, terminals ±2.6 cm; no shaft: it never turns).
+  Every `waterwheel` (flow) lists `load_g` 0-2000 g (0), `axle_mm` 2-40 (12) and `winds` auto | clockwise | counter-clockwise (auto: the way the
+  stream above it turns it, falling on its right clockwise); a build hook hangs a cup from a spool on its axle when load_g > 0, in front of its
+  paddles, 3 cm under their circle (a 140 mL/s tap lifts up to about 350 g on the 12 mm spool, 600 g on a 6 mm one; a heavier cup pulls the wheel
+  backward and falls). The circuits module's `motor` gains `drives: "wheels"` and the link `car` ("Drives the wheels of": toy-car, cart, truck,
+  dynamics-cart): a build hook mounts its gearbox (a ghost slab of the motor's mass, hobby 18 g, solar 22 g, geared 30 g, the geared one the yellow
+  "TT") on the car's chassis over its rear axle (where the motor item is placed does not matter); "wheels" with no car is "none". A wire may name a
+  wind-turbine or a generator (sources).
+- **A rotor's stand-in**: the blades turn about a shaft along the wind (the picture sees the rotor edge-on, or its face turned by `yaw`); the engine's
+  bodies turn about the picture's own axis, so the turning is carried by a hidden 2 cm ghost ball (`<item>/hub`, its mass 2J/r² so its inertia is the
+  rotor's J: blades ∫ sheet·c(r)·r² dr, dowels, hub, shaft, the generator's rotor) hinged at the spool's place by a pin joint with Coulomb friction
+  (straw on a skewer μ 0.3 at 1.5 mm, a turbine's bushing μ 0.15 at 1 mm, plus the generator's) and `limits` {lower −10000, upper: the winding angle}
+  that stop it 2 mm before the cup's handle reaches the spool (2.2 cm of thread left). The wind's torque twists it (the energy record), the thread
+  winds on it (a mechanics spool), the generator's current holds it back (circuits). `yaw` turns the whole head (rotor, shaft, spool) about the post:
+  the spool sits at x = s·down·cos ψ, z = −down·sin ψ (the spool record's `z`), the rotor at x = −s·up·cos ψ. A wound-up cup holds the rotor still (a
+  turbine meant to light an LED takes no load).
+- **Records** (`doc.processes`): `{kind: "energy", role: "rotor", solid, at {x, y}, axis, yaw, sense, rotor {blades, r0, R, chord [root, tip], pitch
+  [root, tip], ar, cd0, stations}}` (validated by energyProblem: 1-24 blades, 0 ≤ r0 < R, 1-40 stations) and `{kind: "energy", role: "pass", solid,
+  through: [ids]}` (a hung cup's contacts with its own machine left out, never counted as impacts); a cup is a mechanics `spool {drum, b, center,
+  radius, sense, anchorB, minLength, z?}` with meters `thread-pull` (reads rope → `pull_n`) and `lift` (reads rise → `lift_m`); a turbine's or a
+  generator's circuits part `{kind: "generator", a, b, k, r, rotor, stator?, ratio?, inertia?, sense?}` (no `speed`/`from`: those are a hand
+  generator's, unchanged); a battery car's motor part `{..., sense: -1, rotor: "<car>/rear", stator: "<car>/chassis", wheel: "<car>/axle-rear"}`. A
+  generator on another item's shaft adds a ghost rotor ball welded to that shaft part (`<gen>/rotor`, inertia J·ratio²) and a pin `<gen>/drag` of
+  friction fric·ratio.
+- **Physics** (`energy.ts`): blade-element momentum, 8 stations a blade: flat plates (Helmbold's lift slope for the blade's aspect ratio, a stall
+  fade, crossflow drag 1.2, skin friction cd0 0.02: C_n = c_N·cos β + cd0·sin φ, C_t = c_N·sin β − cd0·cos φ), Prandtl's tip and hub loss, Glauert's a
+  = k/(1 + k) to a = 0.4 and Buhl's branch above (Ning's form), swirl a' = k'/(1 − k') (capped at 4); the induction moves a quarter of the way to its
+  target each step (a dynamic inflow) and decays in still air or a backwind; each element meets the wind the engine blows WHERE IT IS (a fan's round
+  jet about its own axis: an element out of the picture's plane at its own distance from that axis, the jet's centre found each step as the centroid
+  of its push across the rotor; a breeze everywhere), the shaft taking the wind's component along it (cos ψ). Checked against Ning's bracketed root.
+  Generators (`circuits.ts`, `modules/circuits.ts`): EMF k·ratio·ω (ω the rotor's spin against its stator, in the part's sense); its torque is
+  implicit in the shaft's turning, τ = sense·k_s·(a − b·k_s·ω)/(1 + k_s²·b·h/J) with k_s = ratio·k, (a, b) its branch's line from the circuit's
+  solution and J the shaft's whole weld group's inertia plus `inertia` (a stiff load never rings). A battery car's motor drives its wheel through the
+  axle joint's own planck motor: target speed (η·k·a − F)/(η·k²·b) (where its torque less the gearbox's friction F is nothing), most torque |η·k·(a −
+  b·k·ω) − F·sign ω| (× lengthScale² for planck's units): the wheel rolls with the car's weight behind it while it grips. `modules/flow.ts`: a
+  waterwheel's paddle circle (its "in the way" check) counts only the parts that turn with its hub, so its hung cup is never "in the way".
+  `mod-mechanics.js`: a spool record's `z` places its cord.
+- **Readings** (track.state): pinwheel and wind-turbine `rpm, turns, angle` (rad, the view's), `wind_ms` (the axial wind over the disc), `tsr`,
+  `power_mw` (taken from the wind), `cp`, `thrust_n`; with a load `rope` (free thread, m), `pull_n`, `lift_m`; a wind-turbine with a generator
+  `generator_rpm, generator_voltage, generator_current, generator_angle`; generator `rpm, voltage, current` (out of +), `angle`; a car's motor `rpm,
+  current, voltage`.
+- **Goal kinds** (Python == JS): `generates {item, at_least_v?, at_least_mw?}` (|V| at least at_least_v, default 1 V, all through the run's last 0.5
+  s; with at_least_mw its V·I too), `generates_more {a, b}` (a's mean electrical power over the last 0.5 s ≥ 1.1 × b's and b's + 0.1 mW),
+  `lifts_higher {a, b}` (a's cup ends ≥ 2 cm and 10 % higher above where it started); every number they report is + 0 (never −0: a backward
+  generator's 0 mA × its negative volts). The circuits module's lights / spins, the mechanics module's rises and the core moves cover the rest.
+- **View** (`web/models/mod-energy.js`): a paper windmill (coloured twisted sails, a bead, a straw on a skewer through a wooden post on a foot), a
+  model turbine (base with brass terminals, tower, nacelle, crimping hub, blades on dowels), the cup of pennies, a spool on a waterwheel's axle, a
+  generator (can and pulley on a base), the battery car's yellow gear motor; the rotor's blades are drawn on its fixed post or nacelle and turned by
+  `energy:rotor` from the `angle` reading (a blur disc from 450 rpm), the head turned by `yaw`; `energy:belts` draws a belt from a pulley that turns
+  with the shaft (radius 6 mm × ratio) to the generator's pulley (none when it sits on the shaft).
+- **AI** (`plugin` in web/sim/modules/energy.js): how-to (rotors FACE THE WIND: `facing`; the shaft at the fan's middle height, 30-60 cm from its
+  face; yaw's cost; the KidWind generator's 2.1 V at 720 rpm and the LED's 650-700 rpm; the winch and its heaviest cup; a waterwheel's 5:1 step-up and
+  leads; the battery car), plan / edit / refine lines; goal kinds with aliases (makes_electricity, more_power, lifts_more...), labels, details and
+  samples; 19 knobs with honest whys (pinwheel pitch, diameter, blades, load_g, axle_mm, yaw, height; wind-turbine pitch, blade_length, blades, yaw,
+  height, load_g, generator; generator ratio, leads, kind; waterwheel load_g, axle_mm); edit-digest lines (the wind on a rotor and its speed, NO wind
+  reaching it, a cup too heavy or wound to the top, a generator NOT on a shaft or turning BACKWARD, a battery car's motor and its car); change words
+  in real units ("step-up 1:1 → 5:1 (a 140 → 700 rpm generator on a 140 rpm wheel: 0.413 → 2.07 V)"); request words (pennies, straw, swap leads...); a
+  generator is held up by its own base (`place.held`); a battery car's motor RIDES on its car (`place.rides(thing, typeOf)`, a new plug-in point
+  given by the circuits module, web/sim/plugins.js `ridesOn`: the motor with drives "wheels" and a `car` link to a car of the scene): web/ai/solver.js
+  places its item as the plan says but with no outline there, as the engine builds nothing there (its gearbox is a ghost on the car), so it starts
+  inside nothing, nothing is moved for it, nothing rests on it or holds it up, and what the plan sets on it, beside it or leaning on it goes on its
+  car; `inspect()` and `planFromScene()` give it none either (release 2, round 3: the release's own battery car, its motor and battery both put on
+  the car, read "There's no room for Geared motor where it was asked to be: it goes through Battery" and its card was capped at 6/10; a motor left on
+  the table under a race's lane read "Lane 1 starts inside Geared motor"); six worked examples, each solved and met in the tests: a windmill
+  lifting a cup in a fan's wind, a turbine lighting an LED in front of a fan, a fair test of 20° against 45° blades (generates_more), a waterwheel
+  lifting a cup, a waterwheel lighting an LED through a 5:1 generator with its leads swapped, a battery car (moves). The circuits module's `aimLit`
+  (make it work for lights, buzzes, spins) now also offers, for a generator on a shaft, its leads swapped when its voltage is backward and a bigger
+  step-up when it is under 2 V (checked in the engine like any try).
+- Checked (2026-10-20): `research/rw-validate-energy.ts` 34 of 34: the relaxed induction equals Ning's steady root (|Δa| 1.05e-15 over 96 annuli), no
+  rotor beats Betz (best Cp 0.263 of 100 rotors), the default paper windmill peaks at Cp 0.172 at λ 1.95 (0.17 at 2 measured [JWEA]); the KidWind
+  generator open 2.124 V at 720 rpm (2.13 measured [VERNIER]) and 4.248 at 1440 (4.25), 7.227 at 2450 (6.54, within its 12 %: the real EMF per rpm
+  falls 9 % by 3600 rpm), loaded 1.784 V (200 Ω, 1.82), 1.539 (100 Ω, 1.59), 3.077 (100 Ω at 1440 rpm, 3.14); k·ω·I = V·I + I²R (310.9 mW both); a 5:1
+  belt 720 rpm 2.124 V, swapped −2.124 V; a red LED lights from 660 rpm (about 700 [VERNIER]); free turbines settle at 542.5 rpm against BEM's 543.5
+  (3 m/s) and 908 against 908.1 (5 m/s); a turbine in front of a fan lights an LED (1.864 V at 713.6 rpm, light 0.317) with its torque balanced (wind
+  0.4736 mN·m = friction 0.2906 + k·I 0.1787); nothing turns in a vacuum; a narrow jet on a big disc 0.7014 m/s against the profile's area mean
+  0.6971; yawed 30° it turns 0.828 × as fast (cos 30° 0.866, less for its cos² torque); a windmill winds 0.1212 m of thread against Δθ·r 0.1219 m and
+  stops with 2.24 cm left; held at the top the thread pulls 0.1984 N against √((mg)² + drag²) 0.1978 N; the heaviest cup a 20 cm windmill lifts in 4
+  m/s is 52.55 g (47 g rises, 58 g does not); a waterwheel winds its cup up 0.132 m (thread on the left: it turns clockwise), a 2 kg cup not at all;
+  the battery car rolls at 0.293 m/s against ω·r 0.296 m/s, its motor's V = k·ω + I·R (3.148 V both) and η·k·I 4.376 mN·m against its gearbox's 4, it
+  moves 1.095 m, wired the other way −0.503 m; its goals; the same scene twice byte for byte. `tooling/src/sim/energy.test.ts` 9 of 9;
+  `tools/energy/test.mjs` 0 mismatches (its catalog, 119 documents, 26 runs on both engines and 46 sampled goals; --n 40 --mix 240: 1315 checks, 363
+  documents, 72 runs; 25 lesson scenes, the AI's six examples among them, identical in Python and JS and on both engines, 15 of 15 of their goals
+  met); `web/ai/test/energy-plugin.test.mjs` 8 of 8 (make it work swaps a backward generator's leads to light its LED, and lightens or thins an
+  overloaded windmill's winch). Unchanged elsewhere: the 12 scenarios, the 10 gallery scenes, the circuits module's 19 demos, the fluids module's 17
+  demos and four waterwheel and motor scenes are identical to the branch point byte for byte (documents, resolved, warnings and summaries in Python
+  and JS, tracks from the bundle and the node engine); `research/rw-validate-circuits.ts` 83 of 83, `-flow.ts` 60 of 60, `-mechanics.ts` 104 of 104;
+  `tools/parity/circuits.mjs --n 150 --engine 16` all pass (every demo as expected), `tools/parity/module.mjs --module circuits` 1016 checks,
+  `tools/parity/flow.mjs --n 20 --engine` 404 checks, `tools/mechanics/test.mjs --n 300` 0 mismatches; `tools/circuits.test.ts` 27 of 27; the
+  circuits, flow and mechanics AI tests pass; `tools/parity/engine-fuzz.mjs --n 1500` (every catalog type, these among them) 0 exceptions and 0
+  non-finite placements in 1498 runs; `machines/test_catalog.py` on pinwheel, wind-turbine, generator, motor, waterwheel, battery, cart and led 8 of
+  8.
+- Known limits: blades are flat plates (no camber; a paper sail's bow is drawn, not modelled); the generator's EMF per rpm is constant (the real
+  KidWind's falls about 9 % by 3600 rpm); its friction and rotor inertia, the sheets' densities and the straw's and bushing's friction are
+  provisional; a wind from behind turns a rotor backward without induction; the rotor is a stand-in, so its blades never strike anything and the
+  nacelle's own drag is not modelled; a yawed turbine's nacelle is a solid where it stands unturned (only its drawn head, the rotor's wind and the
+  spool turn); a cup hung under a waterwheel can be struck by splash; the hobby and solar motors drive wheels without a gearbox (fast and weak, as
+  wired straight to an axle).
+
+## engine6 merge (2026-10-20): how the eight groups' pieces meet (branch `engine6`)
+The eight engine6 branches (hands, look, readable, matter, mechanics, ai, crossmod, energy) merged onto `integrate/engine-waves` 2cbfe0e. Where two
+groups drew or computed the same thing, the merge decides it once:
+- **One holder per held thing** (render only; web/view3d.js buildRun `heldHow`, read by view plug-ins as `ctx.heldBy(item)`: "hand" | "fork" | "gate"
+  | "hanger" | "hidden" | "post", or null): a hand (`hand` prop, or the view's `hands: "all"`) always holds it alone; else, where the look's stand is
+  the pull pin and post (the real look's default, or `release_stand` "post"), a thing held in a liquid (mod_mechanics.py `holdFrom: "above"`) gets the
+  mechanics module's fork on a rod; else a starting gate; else the look's stand (web/release-stand.js `standModeFor`: the lesson look's "auto" holds a
+  thing in or over a liquid with its hanger from above). "mechanics:holders" draws its fork only where `ctx.heldBy(item)` is "fork" (with no view that
+  says, as before). So the real look shows the fork over a tank, the lesson look the hanger, and never two holders on one thing.
+- **Clear water in the lesson look** (web/models/mod-fluids.js, web/lesson-look.js, web/lesson-outline.js): the real look draws a tank's water,
+  salt water or sea water as clear water (readable subjects: a body that only tints, a rippled top sheet, a faint haze); the lesson look draws every
+  liquid its own way, this one too: as the tinted body made lesson-style (a hidden child of the body, `userData.lessonTwin`, lends it that body's
+  material: a material kept in userData would not survive a model's clone; the body says `userData.lessonBody`), its top sheet and haze not drawn
+  (`userData.realOnly`). The fluids level hook's own copy of a lesson liquid (its drifting ripples) keeps lessonLiquid's two-sided shader, which a
+  clone drops (it is first owned after the lesson pass has swapped the body). The lesson outlines take a mesh marked `userData.liquid` as a liquid
+  whatever its material and leave a clear liquid's top sheet out, so the waterline across a tank and round a floating thing are drawn as on the look
+  branch (MA-25's apple and grape, rendered both ways: the same lesson water and waterlines; the real look keeps its clear water).
+- **Grains on a kitchen scale** (matter + crossmod, tooling/src/sim/modules/granular.ts): see "Cross-module gaps (engine6 crossmod)": a container that
+  stands by its own weight (bowl, coffee-mug) is weighed with the grains it keeps (bowl + 100 g of sugar 485.11 g, mug 429.99 g); a fixed cup or jar
+  keeps its grains and a scale under it reads 0.
+- **Generated files**: web/sim/modules/index.js from tools/gen-modules.mjs (energy and hands registered), the engine bundle (`npm run build:engine`),
+  ai/.cache/catalog-digest.json (`npm run digest:ai`; since 2026-10-21 keyed by what web/sim's files and ai/catalog-digest.mjs say, not their
+  times, so a checkout of a commit reads the committed digest as it is and leaves it unchanged, and ai/test/digest.test.mjs fails while it is not
+  current: before, every checkout rebuilt it, the tree showed it changed, and the committed text had fallen behind web/sim's milk).
+- **Checked on the merge**: tools/parity/run.sh (all 36 steps, python 3.13, against the merge's own server, 0 mismatches); `node tools/parity-engine.mjs
+  --catalog` (348 scenes x 3 runs, node and Chromium, all identical); the 27 research/rw-validate*.ts CI runs, as it runs them (FUZZ_N 1500: p4's
+  crash fuzz 0 exceptions, 0 non-finite, and so at its local 5000 too; optics' 2 ms perf gate 1.3 ms, 2.5 ms only while three validators and the parity suite ran beside it);
+  every tracked *.test.mjs (810 tests, AI_FIX_TIME_SCALE=4); machines/test_*.py; tooling/src/sim/energy.test.ts; tools/hands/browser.mjs (114 checks,
+  now also one holder each with the hands on and off, and the lesson look's hanger over a tank); the static build and `npm run check:vercel`; the
+  generated files (bundle, module indexes, sprites, unicode, trig) regenerate byte for byte; the 12 scenarios and 10 gallery scenes byte-identical to
+  2cbfe0e through web/sim + the bundle and through the server (documents, summaries, tracks, layouts). A pitcher of grains (the matter group's
+  contents "grains") tipped by a hand pours as the hands group's pour rig expects (its tilt_deg reading); the sand lands and stays in a glass jar.
+
+## Landing grains settle down the heap (engine6 proof, 2026-10-20, branch `e6-proof`): tooling/src/sim/granular.ts `Bed.rain`
+Found by the five-lesson benchmark's proof on engine6 (lesson-regen/bench/proto/MA-50/v2: a hand tips a cup of sugar into a glass jar). On
+engine6 as merged a pillar of sugar stood under the cup's stream: the run's own `heap_mm` read 651 mm in the 112 mm pint jar
+(MA-50/v2/as-merged/pillar-vs-fix.png); the kitchen validator's cups tipped to 135° stood pillars of 1403, 1451 and 1591 mm (sugar, salt, rice),
+a cup of sugar onto the bare table 190 mm, sugar through a 20 mm funnel into the jar 548 mm. Cause: a parcel's grains landed in a fixed spot of
+3 × 3 columns, so a fast stream (a cup pours about 180 g a second) laid metres of height a second onto one column of the jar's 4 mm bed, and a
+column sinks no faster than √(g·h) [LUBE04]: it stood until it was tall enough to drain. A narrow, slow stream (an 8 mm funnel's 14 g a second)
+never fed one column fast enough to show it.
+- Now each share of a landing parcel settles as landing grains do (`World.land` → `Bed.rain`): a layer at a time (a quarter of the drop its
+  grains stand at across one column, or a 64th of what lands), each resting where it lands unless that would stand it steeper over a
+  neighbouring column (not a wall or an edge) than a fresh heap's face stands, its grains' standing slope + 3° (`TAN_STABLE`: the angle of
+  maximum stability, a few degrees over repose [JNB96]; damp grains, whose faces stand vertical, rest where they land); then it runs on down to
+  the lowest such neighbour, 64 columns at most (`ROLL`); ties go round the four ways in turn, so a heap fed at a point grows round. The bed's
+  avalanches then bring the faces to repose as before. A layer that rests where it lands is laid exactly as before; nothing else changed.
+- Measured (the highest a heap stands while it is poured / at the end, mm; engine6 → now): the lesson's cup of sugar into the pint jar 651 / 67 →
+  57 / 57; the validator's cups at 135° (sugar, salt, rice) 1403 / 57, 1451 / 55, 1591 / 55 → 74 / 70, 69 / 65, 70 / 65; a cup of sugar onto the
+  table 190 / 44 → 47 / 44; sugar through a 20 mm funnel into the jar 548 / 67 → 70 / 66; sand through an 8 mm funnel onto the table 32.5 / 31.2
+  → 30.4 / 30.3. Poured heaps' slopes (rw-validate-granular "repose", rw-validate-kitchen "grains"; their references): sand 35.2° → 34.3° (34°),
+  fine sand 32.9° → 32.5° (32°), coarse sand 36.0° → 35.2° (35°), gravel 38.5° → 37.4° (38°), flour 45.7° → 45.1° (45°), sugar 35.8° → 35.3°
+  (35°), salt 33.3° → 32.3° (32°), rice 32.3° → 31.3° (32°): a mean of 0.35° from the references, against 0.84° before.
+- rw-validate-kitchen.ts `cupengine`: five new gates, "while it pours, its heap stands no more than 15 mm over its end" (the three cups into the
+  jar, a cup onto the table, a 20 mm funnel into the jar); engine6 as merged fails all five.
+- Checked (against engine6 9a22f9c, Python 3.13, in copies with their own servers; the live :8790 never touched): the 12 scenarios and 10 gallery
+  scenes byte for byte through web/sim + the bundle and through the server (documents, summaries, tracks, layouts); every research/rw-validate*.ts
+  (27, FUZZ_N 1500: granular 130, kitchen 128 with the new gates, crossmod 44, matter 232, waves 54, p4 56 with its crash fuzz, the rest as before;
+  optics' 2 ms timing gate read 2.02 ms only while two validator sets and the parity suite ran beside it, 1.52 ms alone); tools/parity granular,
+  flow and matter --engine (392, 428 and 1487 checks), fuzz-live --n 300 (971 cases) and parity-engine --catalog (348 scenes × 3 runs, node ==
+  Chromium), 0 mismatches; the 810 node:test cases; build:static:nogen (the bundle byte-identical to a fresh build; with a real node_modules
+  folder: a symlinked one makes vendor:media:check differ, with or without this change).
+- Known limit: a cup tipped past 90° + φ still lets out all it holds in a step or two (TipCup's flowing layer δ = excess ÷ chord grows as the
+  chord shrinks: about 70 g in one parcel); its grains now settle where they land, but its stream is drawn as a burst. Through its whole mouth a
+  cup empties at about w·√(g·w) a second for each metre of its depth at most (a slot's Beverloo scaling): capping δ at the mouth's width is the
+  fix, not made here.

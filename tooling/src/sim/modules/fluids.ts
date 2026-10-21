@@ -19,8 +19,9 @@
  *   a container: level_mm (its top surface over its inner floor), volume_ml (what a scale on its wall reads: liquid and whatever is under
  *   the surface), spilled_ml (gone over the rim); with several layers also layer1_mm … (each layer's top over the floor, bottom first);
  *   a moving item that is or has been in a liquid: submerged (0…1 of its displacing volume under the surface), buoyancy_n (the liquid's
- *   push, ρ·g·V), afloat (1 while the liquid holds up at least 97 % of its weight, smoothed over a quarter second), sunk (1 while it rests
- *   on something, rising or falling slower than 2 cm/s (rolling along the bottom counts), the liquid holding up less), draft_mm (its lowest
+ *   push, ρ·g·V), afloat (1 while the liquid holds up at least 97 % of its weight, smoothed over a quarter second, unless it rests wholly
+ *   under, held up by less than its weight: 2026-10-20), sunk (1 while it rests on something, rising or falling slower than 2 cm/s (rolling
+ *   along the bottom counts), the liquid holding up less than 97 %, or it wholly under and less than its weight), draft_mm (its lowest
  *   point under the surface); a hull also flooded (1
  *   once water has poured in) and freeboard_mm (its opening above the surface);
  *   a sailboat: air_ms (the air's speed at its sail, along x), push_n (the sail's push along x: ½ρ·C·A·|u|·u, u the air past the sail).
@@ -447,8 +448,11 @@ class Liquids {
 			const fraction = e !== undefined && e.whole > 0 ? Math.min(1, e.under / e.whole) : 0
 			ctx.set(item, "submerged", fraction)
 			ctx.set(item, "buoyancy_n", e?.lift ?? 0)
-			ctx.set(item, "afloat", fraction > 0 && smooth >= AFLOAT ? 1 : 0)
-			ctx.set(item, "sunk", e !== undefined && fraction > 0 && smooth < AFLOAT && e.slow && e.touching ? 1 : 0)
+			// (wholly under, resting on something and held up by less than its weight: it has sunk, however near its density is the liquid's,
+			// a grape in milk at 97 %: 2026-10-20)
+			const down = e !== undefined && e.slow && e.touching && fraction >= 0.999 && smooth < 1
+			ctx.set(item, "afloat", fraction > 0 && smooth >= AFLOAT && !down ? 1 : 0)
+			ctx.set(item, "sunk", e !== undefined && fraction > 0 && (smooth < AFLOAT || down) && e.slow && e.touching ? 1 : 0)
 			ctx.set(item, "draft_mm", e !== undefined && Number.isFinite(e.low) && e.top > e.low ? (e.top - e.low) * 1000 : 0)
 		}
 		for (const hull of this.hulls) {

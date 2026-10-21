@@ -13,7 +13,8 @@
  *   resistor   r (Ω); turn: {r, from, to}: a dimmer turned from r to turn.r between the two moments (s)
  *   buzzer     r (Ω), v_min (V it sounds from), v_rated, pitch (Hz)
  *   motor      k (V·s/rad at its shaft, gearbox included), r (Ω), efficiency (gearbox), joint (the shaft's pin joint id)
- *   generator  the same as a motor; its shaft is turned by a hand crank (the joint's own drive), so it only gives current
+ *   generator  the same as a motor; its shaft is turned by a hand crank (the joint's own drive), so it only gives current; or (`rotor`) by a
+ *              body's shaft (a wind turbine's, a waterwheel's), which its current holds back, k·I (energy module, 2026-10-20)
  *   probe      contacts [solid, solid]: a tester's two probes; closed through whatever single solid touches both, R = ρ·L/A of its material
  *   solar      isc (A at 1000 W/m²), v_knee (V), g_d (S above the knee), rsh, rs (Ω), cells: a panel's face {solid, at, normal, area}
  *   meter      mode "volts" (10 MΩ across a and b) | "amps" | "galvanometer" (r in series): its reading is V_ab or I_ab
@@ -113,6 +114,11 @@ export type CircuitPart =
 			readonly fan?: { readonly inertia: number; readonly drag: number; readonly solid: string; readonly at: Vec; readonly direction: number; readonly diameter: number; readonly pitch: number }
 			/** friction torque at the shaft (N·m) */
 			readonly friction?: number
+			/** -1: its shaft turns clockwise for current a→b (a car's wheel turning it forward, to its +x); 1 (default): counter-clockwise */
+			readonly sense?: number
+			/** its rotor is a car's wheel: the chassis-to-wheel axle joint (a doc joint id) it drives through that joint's own motor (energy module
+			 *  2026-10-20: a battery car; the wheel rolls with the car's whole weight behind it, so the drive is a constraint, not a torque) */
+			readonly wheel?: string
 	  }
 	| {
 			readonly kind: "generator"
@@ -124,9 +130,17 @@ export type CircuitPart =
 			readonly k: number
 			readonly r: number
 			/** turned by hand at this many rad/s from `from` (s) until `to` (s) */
-			readonly speed: number
-			readonly from: number
+			readonly speed?: number
+			readonly from?: number
 			readonly to?: number
+			/** or turned by a body's shaft (energy module, 2026-10-20: a wind turbine's, a waterwheel's): its rotor (a solid turning about its own
+			 *  middle) against its stator (a solid, or the world), `ratio` generator turns a shaft turn (a belt or gears; 1 direct), the extra
+			 *  inertia (kg·m²) the shaft turns with besides its own body's (none: the body's), and `sense` as a motor's */
+			readonly rotor?: string
+			readonly stator?: string
+			readonly ratio?: number
+			readonly inertia?: number
+			readonly sense?: number
 	  }
 	| { readonly kind: "probe"; readonly id: string; readonly item?: string; readonly name?: string; readonly a: string; readonly b: string; readonly contacts: readonly [string, string] }
 	| {
@@ -431,6 +445,14 @@ export const admitCircuits = (raw: unknown, solidIds: ReadonlySet<string>): Circ
 			case "generator":
 				num(p, "k", 0, true)
 				num(p, "r", 0, true)
+				if (part.rotor !== undefined) {
+					// (turned by a body's shaft: its rotor and stator must be solids, its ratio over 0)
+					if (!solidIds.has(part.rotor)) bad(`generator ${String(p.id)}'s rotor ${JSON.stringify(part.rotor)} is not a solid`)
+					if (part.stator !== undefined && !solidIds.has(part.stator)) bad(`generator ${String(p.id)}'s stator ${JSON.stringify(part.stator)} is not a solid`)
+					if (p.ratio !== undefined) num(p, "ratio", 0, true)
+					if (p.inertia !== undefined) num(p, "inertia")
+					break
+				}
 				if (typeof p.speed !== "number" || !Number.isFinite(p.speed)) bad(`generator ${String(p.id)}'s speed must be a number`)
 				num(p, "from")
 				break
@@ -764,8 +786,11 @@ export class CircuitSim {
 				case "meter":
 					r.reads = p.mode === "volts" ? r.v : r.i
 					break
-				case "motor": {
-					// its line: I(e) = a − b·e, e = k·ω (the caller drives the shaft with η·k·I along it)
+				case "motor":
+				case "generator": {
+					// its line: I(e) = a − b·e, e = k·ω (the caller drives the shaft with η·k·I along it; a generator turned by a body's shaft is held
+					// back along it: the same line)
+					if (p.kind === "generator" && p.rotor === undefined) break
 					const line = this.broken.has(p.id) ? { a: 0, b: 0 } : lineOf(n, br, sol, main)
 					this.lines.set(p.id, { a: finite(line.a), b: finite(line.b) })
 					break

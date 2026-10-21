@@ -1012,10 +1012,28 @@ class _Fall {
 	}
 }
 
+/** The solids sids (ids, in their order) by the rigid body each is part of (a solid with a parent and no pivot is welded to it): items.py. */
+function _weld_groups(doc, sids) {
+	const byId = new Map(doc.solids.map((s) => [s.id, s]))
+	const root = (sid) => {
+		let s = byId.get(sid)
+		while (s.parent !== undefined && s.parent !== null && (s.pivot === undefined || s.pivot === null) && byId.has(s.parent)) s = byId.get(s.parent)
+		return s.id
+	}
+	const out = new Map()
+	for (const sid of sids) {
+		const r = root(sid)
+		if (!out.has(r)) out.set(r, [])
+		out.get(r).push(sid)
+	}
+	return [...out.values()]
+}
+
 /** Plain-language results: the goals, each moving item's story, and the first hits between items in order. A goal is
  *  {kind: "in", item, container} (it ends between the container's walls), {kind: "falls", item | items: [id]} (every rigid body of them ends
  *  fallen, _Fall), {kind: "hits", item, target, before_s?} (something of it touches something of the target, by before_s if given),
- *  {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), {kind: "off", item}
+ *  {kind: "moves", item, min_m?} (its rigid body that moved most, the mean of that weld group's parts, ends at least min_m, default 5 cm,
+ *  from where it started), {kind: "off", item}
  *  (it ends off the table) or {kind: "walls", item, container} (it ends between a cup's, a jar's or a mug's own walls: walls_inside), as
  *  ai/goals.mjs checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others). */
 /** What a module's goal kind reads (items.py GoalCtx): the scene, its document and track, and helpers. */
@@ -1179,10 +1197,12 @@ export function summarize(scene, doc, track) {
 			let least = _num(g.min_m)
 			least = least === null ? 0.05 : least
 			let d = 0.0
-			if (sids.length) {
-				const c0 = [pySum(sids.map((i) => fr[0].placements[i].x)) / sids.length, pySum(sids.map((i) => fr[0].placements[i].y)) / sids.length]
-				const c1 = [pySum(sids.map((i) => fr[fr.length - 1].placements[i].x)) / sids.length, pySum(sids.map((i) => fr[fr.length - 1].placements[i].y)) / sids.length]
-				d = hypot(c1[0] - c0[0], c1[1] - c0[1])
+			// (its rigid body that moved most: items.py)
+			for (const grp of _weld_groups(doc, sids)) {
+				const c0 = [pySum(grp.map((i) => fr[0].placements[i].x)) / grp.length, pySum(grp.map((i) => fr[0].placements[i].y)) / grp.length]
+				const c1 = [pySum(grp.map((i) => fr[fr.length - 1].placements[i].x)) / grp.length, pySum(grp.map((i) => fr[fr.length - 1].placements[i].y)) / grp.length]
+				const h = hypot(c1[0] - c0[0], c1[1] - c0[1])
+				if (h > d) d = h
 			}
 			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} moves at least ${_short_m(least)}`, ok: sids.length > 0 && d >= least, kind: "moves", item: g.item, moved_m: pyRound(d, 4) })
 		} else if (kind === "off" && known(g.item)) {
@@ -1228,13 +1248,13 @@ export function summarize(scene, doc, track) {
 	return out
 }
 
-/** Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right")
- *  parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top, each part where the run's last frame has it.
- *  False when the container has no such parts or the item no moving solid. */
+/** Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right",
+ *  a pulley lift's pail's "wall1" and "wall2") parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top,
+ *  each part where the run's last frame has it. False when the container has no such parts or the item no moving solid. */
 export function walls_inside(doc, last, iid, cid) {
 	const part = (names) => doc.solids.find((s) => s.item === cid && names.includes(s.part))
-	const L = part(["left", "wall-left"])
-	const R = part(["right", "wall-right"])
+	const L = part(["left", "wall-left", "wall1"])
+	const R = part(["right", "wall-right", "wall2"])
 	const F = part(["floor", "body", "base", "bottom"])
 	if (L === undefined || R === undefined || F === undefined) return false
 	const pose = (s) => (s.id in last ? [last[s.id].x, last[s.id].y, "angle" in last[s.id] ? last[s.id].angle : 0] : [s.at.x, s.at.y, "angle" in s ? s.angle : 0])
