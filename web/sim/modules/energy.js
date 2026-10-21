@@ -443,6 +443,7 @@ function _power_of(ctx, iid) {
 	return out
 }
 
+// (every number a goal reports is + 0: no -0 (a backward generator's 0 mA times its negative volts), which Python's sum() never gives)
 export function goal_generates(ctx, g) {
 	const iid = g.item
 	if (!ctx.known(iid)) return null
@@ -459,7 +460,7 @@ export function goal_generates(ctx, g) {
 	if (mw !== null) what.push(`${_trim(mw)} mW`)
 	return {
 		label: truthy(g.label) ? g.label : `${ctx.name(iid)} makes ${what.join(" and ")}`, ok, kind: "generates", item: iid,
-		volts: v === null ? null : pyRound(v[v.length - 1], 4), mw: p === null ? null : pyRound(p[p.length - 1], 3)
+		volts: v === null ? null : pyRound(v[v.length - 1], 4) + 0, mw: p === null ? null : pyRound(p[p.length - 1], 3) + 0
 	}
 }
 
@@ -472,7 +473,7 @@ export function goal_generates_more(ctx, g) {
 	const ok = ma !== null && mb !== null && ma >= mb * 1.1 && ma >= mb + 0.1
 	return {
 		label: truthy(g.label) ? g.label : `${ctx.name(g.a)} makes more power than ${ctx.name(g.b)}`, ok, kind: "generates_more", a: g.a, b: g.b,
-		mw_a: ma === null ? null : pyRound(ma, 3), mw_b: mb === null ? null : pyRound(mb, 3)
+		mw_a: ma === null ? null : pyRound(ma, 3) + 0, mw_b: mb === null ? null : pyRound(mb, 3) + 0
 	}
 }
 
@@ -491,7 +492,7 @@ export function goal_lifts_higher(ctx, g) {
 	const ok = ra !== null && rb !== null && ra >= rb + 0.02 && ra >= rb * 1.1
 	return {
 		label: truthy(g.label) ? g.label : `${ctx.name(g.a)} lifts its load higher than ${ctx.name(g.b)}`, ok, kind: "lifts_higher", a: g.a, b: g.b,
-		rise_a: ra === null ? null : pyRound(ra, 4), rise_b: rb === null ? null : pyRound(rb, 4)
+		rise_a: ra === null ? null : pyRound(ra, 4) + 0, rise_b: rb === null ? null : pyRound(rb, 4) + 0
 	}
 }
 
@@ -534,8 +535,8 @@ export const plugin = {
 	title: "Energy devices: paper windmills (pinwheels) and model wind turbines in a fan's wind, generators lighting LEDs, windmills and waterwheels winding up loads, battery cars",
 	howto: [
 		"Devices that turn one form of energy into another (4-PS3-4). pinwheel (a paper windmill: its sails on a straw axle through a wooden post; anchor: the middle of its foot's bottom: place {on: \"table\", x}) and wind-turbine (a classroom model turbine: a round wooden base with + and − terminals, an aluminium tower, a nacelle holding a KidWind generator, a crimping hub of `blades` flat blades `blade_length` × `blade_width` at `pitch`; anchor: the middle of its base's bottom: place {on: \"table\", x}). Their rotors FACE THE WIND along the table: `facing` left means the wind must come from the left (a fan on its left blowing right; a breeze \"to the right\"). Their shaft is `height` above the table (pinwheel 0.3 m, turbine 0.45 m): give it the fan's middle height. A fan standing on the table (place {on: \"table\", x}) has its middle diameter/2 + 6.5 cm up (a 40 cm fan: 0.265 m, a 50 cm fan: 0.315 m) and blows a round jet 0.9 × its diameter across, full speed for about 6 diameters: put the rotor 30-60 cm from the fan's face, its sails or blades inside the jet (the outer parts of a rotor wider than the jet get little wind; a breeze item gives the whole table the same wind). `yaw` 20-35° turns the rotor's face toward the viewer (much clearer in the picture) at a cost: it takes the wind's share along its shaft (cos of the angle), about cos² less torque.",
-		"Numbers (blade-element momentum with flat blades; the KidWind generator's measured 2.13 V at 720 rpm and 38 Ω): a 20 cm paper windmill in a 4-5 m/s wind turns about 900-1100 rpm free; a model turbine (3 blades × 15 cm at 20°) in a 5 m/s breeze about 900 rpm free, about 700 rpm in front of a 50 cm fan at 5 m/s, giving 1.9 V: a red LED needs about 1.8 V (650-700 rpm) and lights dimly there, brightly with a 6 m/s fan; pitch 10-30° turns best (45° turns slowly, 0° not at all); more blades give more torque at low speed. Wire a turbine's generator like a battery: its + (right terminal) to the LED's + and the LED's − back to its − (current goes out of +). A paper windmill's sails are too weak to turn a generator fast enough to light an LED (its point: a turbine needs a strong rotor).",
-		"Lifting a load (the windmill-winch challenge): `load_g` on a pinwheel or turbine is a paper cup of pennies (3 g + 2.5 g a penny) on a thread wound on its straw or shaft (`axle_mm` across: a skewer 3 mm, a straw 6 mm, a cotton reel 25 mm): the cup starts on the table under the axle's downwind end and is wound up until 2.2 cm under it, where it holds the rotor still (a turbine that must light an LED takes no load_g); the rotor stops when the cup's torque, load × g × axle radius, passes what its sails give at a standstill (a 20 cm windmill in a 4 m/s breeze lifts at most about 50 g on a 6 mm straw: twice as much on a 3 mm skewer, at half the speed). A waterwheel (flow module) takes `load_g` too: a cup hung under it from a spool on its axle (`axle_mm` 12; `winds` auto: the way the stream turns it); a 140 mL/s tap lifts tens of grams to about half a kilogram. Goals: rises {item} (mechanics: its cup ends 5 cm higher), lifts_higher {a, b}. Readings lift_m (how far the cup rose), pull_n (the thread's pull).",
+		"Numbers (blade-element momentum with flat blades; the KidWind generator's measured 2.13 V at 720 rpm and 38 Ω): a 20 cm paper windmill turns about 1200 rpm free in a 4 m/s wind and 1500 in 5 m/s (its sail tips about 3 times the wind's speed); a model turbine (3 blades × 15 cm at 20°) in a 5 m/s breeze about 900 rpm free, about 700 rpm in front of a 50 cm fan at 5 m/s, giving 1.9 V: a red LED needs about 1.8 V (650-700 rpm) and lights dimly there, brightly with a 6 m/s fan; pitch 10-30° turns best (45° turns slowly, 0° not at all); more blades give more torque at low speed. Wire a turbine's generator like a battery: its + (right terminal) to the LED's + and the LED's − back to its − (current goes out of +). A paper windmill's sails are too weak to turn a generator fast enough to light an LED (its point: a turbine needs a strong rotor).",
+		"Lifting a load (the windmill-winch challenge): `load_g` on a pinwheel or turbine is a paper cup of pennies (3 g + 2.5 g a penny) on a thread wound on its straw or shaft (`axle_mm` across: a skewer 3 mm, a straw 6 mm, a cotton reel 25 mm): the cup starts on the table under the axle's downwind end and is wound up until 2.2 cm under it, where it holds the rotor still (a turbine that must light an LED takes no load_g); the rotor stops when the cup's torque, load × g × axle radius, passes what its sails give at a standstill (a 20 cm windmill in a 4 m/s breeze lifts at most about 50 g on a 6 mm straw: twice as much on a 3 mm skewer, at half the speed). A waterwheel (flow module) takes `load_g` too: a cup hung under it from a spool on its axle (`axle_mm` 12; `winds` auto: the way the stream turns it); a 140 mL/s tap lifts up to about 350 g on the 12 mm spool (about twice that on a 6 mm one, more slowly); a heavier cup, hanging under the wheel from the start, pulls it backward and falls. Goals: rises {item} (mechanics: its cup ends 5 cm higher), lifts_higher {a, b}. Readings lift_m (how far the cup rose), pull_n (the thread's pull).",
 		"generator (a small DC generator on a little base with + and − terminals; it touches nothing: place {on: \"table\", x} beside the machine): link `shaft` to a waterwheel, paper windmill, wind turbine or wheel-and-axle; `ratio` steps it up through a belt (a waterwheel under a 140 mL/s tap turns about 140 rpm: ratio 5 brings the generator to about 700 rpm, enough for an LED); `kind` KidWind generator (2.1 V at 720 rpm, 38 Ω) or hobby motor (a tenth of that). Its + is positive while the shaft turns COUNTER-clockwise as seen: a waterwheel with its stream on the RIGHT turns clockwise, so set leads \"swapped\" (or wire the LED the other way round). Readings rpm, voltage, current.",
 		"Battery car (circuits module): a cart, toy-car or truck on the table; a battery on it (place {on: <the car>}); a motor {kind: \"geared\", drives: \"wheels\", car: <the car's id>} (it rides on the car over its rear axle: where the motor item itself is placed does not matter); wires battery + → motor + and motor − → battery − (that way round it drives forward, to the right; swapped, backward). Two AA cells and the geared (48:1 \"TT\") motor drive a cart at about 0.3 m/s (its wheels spin a little at the start); a hobby motor without gears accelerates slowly to far higher speeds. Goal: moves {item: <the car>, min_m}; the motor's rpm, current and voltage are readings.",
 		"Goals of this module: generates {item, at_least_v?, at_least_mw?} (a turbine's or a small generator's voltage over the run's last 0.5 s; default at least 1 V), generates_more {a, b} (generator a's electrical power more than b's: a fair test of blades), lifts_higher {a, b}. Also: lights {item: an LED or bulb} (circuits), spins / turns {item, at_least_rpm} on a windmill, turbine or generator (it reads rpm), rises {item} (mechanics). Let the rotor spin up: seconds 5-8 for a turbine (it takes 2-4 s to reach its speed)."
@@ -735,7 +736,8 @@ export const plugin = {
 		} else if (item.type === "waterwheel" && Number(item.props?.load_g) > 0) {
 			const lift = maxOf(run, item.id, "lift_m")
 			const spool = (run?.doc?.processes ?? []).find((p) => p.id === `${item.id}/thread`)
-			out.push(`a cup of ${n0(item.props.load_g)} g hangs from a ${n2(item.props?.axle_mm ?? 12)} mm spool on its axle, its thread on the ${spool?.sense === -1 ? "left: it winds up as the wheel turns clockwise" : "right: it winds up as the wheel turns counter-clockwise"}${lift !== null ? `; it rose ${n0(lift * 100, 1)} cm` : ""}`)
+			const fell = endOf(run, item.id, "lift_m")
+			out.push(`a cup of ${n0(item.props.load_g)} g hangs from a ${n2(item.props?.axle_mm ?? 12)} mm spool on its axle, its thread on the ${spool?.sense === -1 ? "left: it winds up as the wheel turns clockwise" : "right: it winds up as the wheel turns counter-clockwise"}${fell !== null && fell < -0.01 ? `; it FELL ${n0(-fell * 100, 1)} cm, pulling the wheel backward: too heavy for the stream (less load, a thinner spool, more flow, or winds the other way)` : lift !== null ? `; it rose ${n0(lift * 100, 1)} cm` : ""}`)
 		} else if (item.type === "motor" && P.drives === "wheels") {
 			const car = item.props?.car
 			const parts = (run?.doc?.processes ?? []).find((p) => p.kind === "circuit")?.parts ?? []

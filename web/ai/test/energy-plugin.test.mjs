@@ -126,6 +126,8 @@ test("the edit digest: the wind on a rotor and its speed, no wind at all, a gene
 	assert.match(lines(heavy, "p"), /does not turn: its cup is too heavy/)
 	const wound = run(scene([breeze(5), { id: "t", type: "wind-turbine", x: 1.2, y: 0, props: { load_g: 30 } }], [], 5))
 	assert.match(lines(wound, "t"), /stopped turning when its cup was wound all the way up to its shaft/, "a winch stops at the top: no fault")
+	const sinking = run(scene([{ id: "w", type: "waterwheel", x: 1.2, y: 0.45, props: { load_g: 600 } }, { id: "tap", type: "tap", x: 1.284, y: 0.75, props: { flow_ml_s: 140, on_at: 0.1 } }], [], 3))
+	assert.match(lines(sinking, "w"), /its thread on the left: it winds up as the wheel turns clockwise; it FELL \d/, "600 g on a 12 mm spool is too heavy for a 140 mL/s stream")
 	const car = run(scene([
 		{ id: "c", type: "cart", x: 0.4, y: 0 }, { id: "bat", type: "battery", x: 0.4, y: 0.0735 },
 		{ id: "m", type: "motor", x: 0.4, y: 0.2, props: { kind: "geared", drives: "wheels", car: "c" } }, ...wires("bat", "m")

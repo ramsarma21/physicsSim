@@ -514,6 +514,7 @@ def _power_of(ctx, iid):
     return [v[k] * i[k] * 1000 for k in range(n)]
 
 
+# (every number a goal reports is + 0.0: never -0.0 (a backward generator's 0 mA times its negative volts), as web/sim gives it)
 def goal_generates(ctx, g):
     """{kind: "generates", item, at_least_v?, at_least_mw?}: a generator (a wind turbine's, a small generator) gives at least at_least_v volts
     (default 1 V; its size, either way round) all through the run's last 0.5 s, and with at_least_mw at least that much electrical power."""
@@ -536,7 +537,7 @@ def goal_generates(ctx, g):
     if mw is not None:
         what.append(f"{_trim(mw)} mW")
     return {"label": g.get("label") or f"{ctx.name(iid)} makes {' and '.join(what)}", "ok": ok, "kind": "generates", "item": iid,
-            "volts": None if v is None else round(v[-1], 4), "mw": None if p is None else round(p[-1], 3)}
+            "volts": None if v is None else round(v[-1], 4) + 0.0, "mw": None if p is None else round(p[-1], 3) + 0.0}
 
 
 def goal_generates_more(ctx, g):
@@ -549,7 +550,7 @@ def goal_generates_more(ctx, g):
     mb = sum(pb) / len(pb) if pb else None
     ok = ma is not None and mb is not None and ma >= mb * 1.1 and ma >= mb + 0.1
     return {"label": g.get("label") or f"{ctx.name(g['a'])} makes more power than {ctx.name(g['b'])}", "ok": ok, "kind": "generates_more", "a": g["a"],
-            "b": g["b"], "mw_a": None if ma is None else round(ma, 3), "mw_b": None if mb is None else round(mb, 3)}
+            "b": g["b"], "mw_a": None if ma is None else round(ma, 3) + 0.0, "mw_b": None if mb is None else round(mb, 3) + 0.0}
 
 
 def _rise(ctx, iid):
@@ -570,4 +571,4 @@ def goal_lifts_higher(ctx, g):
     ra, rb = _rise(ctx, g["a"]), _rise(ctx, g["b"])
     ok = ra is not None and rb is not None and ra >= rb + 0.02 and ra >= rb * 1.1
     return {"label": g.get("label") or f"{ctx.name(g['a'])} lifts its load higher than {ctx.name(g['b'])}", "ok": ok, "kind": "lifts_higher",
-            "a": g["a"], "b": g["b"], "rise_a": None if ra is None else round(ra, 4), "rise_b": None if rb is None else round(rb, 4)}
+            "a": g["a"], "b": g["b"], "rise_a": None if ra is None else round(ra, 4) + 0.0, "rise_b": None if rb is None else round(rb, 4) + 0.0}
