@@ -687,12 +687,13 @@ function roomAround(E, statics, pf, reach = 0.15) {
 }
 
 /** The grip a held thing gets for `auto`: from its size, whether it is in a liquid, which way it goes once let go and what is round it. */
-export function autoGrip({ E, move, inWater, room }) {
+export function autoGrip({ E, move, inWater, room, depth = Infinity }) {
 	const size = Math.max(E.w, E.h)
+	const thin = Math.min(E.w, E.h, depth) <= 0.015 && size <= 0.2 // (a nail, a pencil, a clip, a washer: held between thumb and finger)
 	const rises = !!move && move.y > 0.5
-	if (inWater) return rises ? (size <= 0.065 ? "press" : "grip") : size <= 0.045 ? "pinch" : "grip"
+	if (inWater) return rises ? (size <= 0.065 ? "press" : "grip") : size <= 0.045 || thin ? "pinch" : "grip"
 	if (rises && room.above === Infinity) return size <= 0.065 ? "press" : "grip"
-	if (size <= 0.045) return "pinch"
+	if (size <= 0.045 || thin) return "pinch"
 	if (room.below < 0.004) return "grip" // (it rests on something: held from above)
 	return "palm"
 }
@@ -964,7 +965,9 @@ function build(H, pf, track) {
 			for (const m of g.meshes) {
 				m.userData.solidId = r.solidId
 				m.userData.hand = true
-				if (p.kind === "hold") m.userData.stand = true // (picked as the item only while it is held, like the pin)
+				// (picked as the item: a held thing's hand only while it holds it, like the pin; never the surface under the cursor, as a stand never is)
+				if (p.kind === "hold") m.userData.stand = true
+				else m.userData.mount = true
 				H.pickables.push(m)
 			}
 		}
@@ -1010,7 +1013,7 @@ function holdRig(p, pf, C) {
 	}
 	const others = C.statics.filter((s) => s.item !== p.item)
 	const room = roomAround(E, others, pf)
-	const grip = p.grip === "auto" ? autoGrip({ E, move, inWater, room }) : p.grip
+	const grip = p.grip === "auto" ? autoGrip({ E, move, inWater, room, depth: 2 * halfZ(d) }) : p.grip
 	const from = fromFor(grip, p.from ?? "auto", { move, inWater, room })
 	if (p.kind === "fixed" && grip === "grip") {
 		// a fist round a fixed bar: at its end away from what moves (a magnet held by its far end)
