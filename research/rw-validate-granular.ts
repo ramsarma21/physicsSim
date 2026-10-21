@@ -429,8 +429,11 @@ if (want === "all" || want === "perf") {
 		["two sand timers at time-lapse 4 (16 s)", scene([{ id: "a", type: "hourglass", x: 0.9, y: 0 }, { id: "b", type: "hourglass", x: 1.6, y: 0, props: { neck_mm: 4 } }], 16, { settings: { time_lapse: 4 } })]
 	] as const) {
 		const R = run(s)
-		// (the budget: a lesson scene in about 1.5 s of CPU at most, so a build's runs stay quick on a loaded machine)
-		claim(`${label}: ${fmt(R.ms)} ms of CPU (under 1500 ms)`, R.ms < 1500)
+		// (the budget: a lesson scene in about 1.5 s of CPU at most, so a build's runs stay quick on a loaded machine. GitHub's shared 4-core
+		// runners take up to twice as long for the same run (two sand timers: 0.89-1.71 s of CPU there, the module's whole check 21.6 s on one
+		// runner and 40.9 s on another), so CI keeps a regression gate at 2.5x the budget, as rw-validate-optics.ts' perf check does)
+		const budget = process.env.CI ? 3750 : 1500
+		claim(`${label}: ${fmt(R.ms)} ms of CPU (under ${budget} ms)`, R.ms < budget)
 	}
 }
 
