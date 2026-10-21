@@ -7,7 +7,7 @@
 // a battery's +, an LED's anode, a bulb's or a switch's a) and a second ("-": on its left). A wire's ends name an item (links a, b) and which
 // of its terminals ("+" or "-"). Sources: see the Python file's header (Energizer, ASTM B258, CRC, IES, Kingbright, Mabuchi).
 let F = null
-let register, ItemType, Prop, Link, Readout, register_goal_kind, register_build_hook, MATERIALS, add_look, define_material, props_of, TYPES, CATEGORIES
+let register, ItemType, Prop, Link, Readout, register_goal_kind, register_build_hook, MATERIALS, add_look, define_material, props_of, TYPES, CATEGORIES, Ctx
 let pyRound, truthy, fmtF, pySum, maxOf, minOf, cos, sin
 
 const CAT = "Electricity"
@@ -38,9 +38,13 @@ const RESISTIVITY = {
 	"modeling clay": 1e10
 }
 const TYPES_OF = ["battery", "bulb", "led", "switch", "buzzer", "motor", "resistor", "dimmer", "tester", "meter", "solar-panel", "hand-generator",
-	"electromagnet", "coil", "straight-wire"]
-// what drives current round a loop (a wire end whose terminal is not said is joined + of a source to + of a load: _ends)
-const SOURCES = ["battery", "solar-panel", "hand-generator"]
+	"electromagnet", "coil", "straight-wire", "wind-turbine", "generator"]
+// what drives current round a loop (a wire end whose terminal is not said is joined + of a source to + of a load: _ends); the energy module's wind
+// turbine and small generator are sources too (web/sim/modules/energy.js puts their parts and terminals in this module's store)
+const SOURCES = ["battery", "solar-panel", "hand-generator", "wind-turbine", "generator"]
+// a battery car (a motor that drives "wheels"): the cars it may ride on, and each motor's own weight (the Python file's CARS, MOTOR_MASS)
+const CARS = ["toy-car", "cart", "truck", "dynamics-cart"]
+const MOTOR_MASS = { hobby: 0.018, solar: 0.022, geared: 0.03 }
 // electromagnetism (the Python file's sources: ASTM B258 enamelled and bare copper, Chikazumi's low-carbon steel, a school galvanometer)
 const AWG24_D = 0.000511
 const AWG24_OHM = 0.0842
@@ -58,7 +62,7 @@ const PV_EFF = [0.0399, 0.0532, 0.0606, 0.0662, 0.0713, 0.0759, 0.0868, 0.0553]
 
 export function register_all(f) {
 	F = f
-	;({ register, ItemType, Prop, Link, Readout, register_goal_kind, register_build_hook, MATERIALS, add_look, define_material, props_of, TYPES, CATEGORIES } = f)
+	;({ register, ItemType, Prop, Link, Readout, register_goal_kind, register_build_hook, MATERIALS, add_look, define_material, props_of, TYPES, CATEGORIES, Ctx } = f)
 	;({ pyRound, truthy, fmtF, pySum, maxOf, minOf, cos, sin } = f.py)
 	MOTORS = {
 		hobby: { k: pyRound((3 - 0.2 * (3 / 2.2)) / ((9100 * 2 * Math.PI) / 60), 7), r: pyRound(3 / 2.2, 4), eff: 1.0, fric: pyRound((0.2 * (3 - 0.2 * (3 / 2.2))) / ((9100 * 2 * Math.PI) / 60), 7), can: [0.038, 0.02] },
@@ -68,6 +72,7 @@ export function register_all(f) {
 	if (!CATEGORIES.includes(CAT)) CATEGORIES.push(CAT)
 	_materials()
 	_types()
+	register_build_hook(_mount_on_cars) // (before _gather: a battery car's motor rides on its car, its terminals there)
 	register_build_hook(_gather)
 	// (stays_dark and glows_brighter, not dark and brighter: the optics module's light-meter goals have those names)
 	for (const [kind, fn] of [["lights", goal_lights], ["stays_dark", goal_dark], ["glows_brighter", goal_brighter], ["buzzes", goal_buzzes], ["spins", goal_spins], ["current", goal_current], ["conducts", goal_conducts], ["deflects", goal_deflects], ["induces", goal_induces]])
@@ -403,7 +408,19 @@ function _types() {
 	// --- motor
 	function build_motor(c, P) {
 		const m = MOTORS[P.kind]
-		const drives = P.drives
+		let drives = P.drives
+		if (drives === "wheels") {
+			const car = c.link("car")
+			if (car !== null) {
+				// a battery car: the motor rides on the car its link names, driving its rear wheel forward (_mount_on_cars puts it there)
+				const st = _store(c.sb)
+				if (!st.cars) st.cars = []
+				st.cars.push({ motor: c.item.id, car, kind: P.kind })
+				_part(c, "motor", null, { k: m.k, r: m.r, efficiency: m.eff, friction: m.fric, sense: -1 })
+				return
+			}
+			drives = "none" // (on no car: a motor on its stand, turning nothing)
+		}
 		const size = P.size
 		const board = _on_board(c, P)
 		const steel = c.mat({ base: "steel", overrides: {} })
@@ -452,10 +469,11 @@ function _types() {
 		...common,
 		props: [
 			new Prop("kind", "Motor", "hobby", { kind: "choice", choices: ["hobby", "solar", "geared"], help: "hobby: a fast toy motor (FA-130: about 9000 rpm on 3 V); solar: turns on very little current; geared: a slow, strong 48:1 gear motor (about 100 rpm on 3 V)" }),
-			new Prop("drives", "On its shaft", "propeller", { kind: "choice", choices: ["propeller", "paddle", "disc", "none"], help: "propeller: a fan that blows to the right; paddle and disc turn facing you" }),
+			new Prop("drives", "On its shaft", "propeller", { kind: "choice", choices: ["propeller", "paddle", "disc", "none", "wheels"], help: "propeller: a fan that blows to the right; paddle and disc turn facing you; wheels: it rides on the car its `car` link names and drives its rear wheels forward (a battery car: use the geared motor)" }),
 			new Prop("size", "Attachment size", 0.1, 0.03, 0.4, 0.01, "m", "The propeller's or disc's diameter, the paddle's length"),
 			_mount_prop()
 		],
+		links: [new Link("car", "Drives the wheels of", { types: [...CARS], help: "With On its shaft: wheels, the toy car, cart or truck it rides on and drives" })],
 		readouts: [new Readout("rpm", "Speed", { unit: "rpm", digits: 0 }), new Readout("current", "Current", { unit: "A", digits: 3 }), new Readout("voltage", "Voltage across it", { unit: "V", digits: 2 }), new Readout("air", "Air speed", { unit: "m/s", digits: 2 })],
 		tags: ["dc motor", "electric motor", "fan", "propeller", "spin", "rotor", "toy motor", "electricity to motion", "circuit", "turn"],
 		description: "A small DC motor on a stand. Current through it from its + to its − turns its shaft counter-clockwise (swap its wires and it turns the other way); with a propeller it blows air to the right.",
@@ -825,6 +843,38 @@ function _types() {
 }
 
 // ---------------------------------------------------------------- gathering the circuit (a build hook)
+// ---------------------------------------------------------------- a battery car's motor on its car (a build hook, before _gather; the Python file's _mount_on_cars)
+function _mount_on_cars(sb, scene) {
+	const st = sb.circuit
+	if (!st || !st.cars || !st.cars.length) return
+	const by = new Map(sb.solids.map((s) => [s.id, s]))
+	const joints = new Map(sb.joints.map((j) => [j.id, j]))
+	for (const rec of st.cars) {
+		const mid = rec.motor
+		const car = rec.car
+		const chassis = by.get(`${car}/chassis`)
+		const wheel = by.get(`${car}/rear`)
+		const axle = joints.get(`${car}/axle-rear`)
+		const part = st.parts.find((p) => p.id === `${mid}/motor`)
+		if (chassis === undefined || wheel === undefined || axle === undefined || axle.kind !== "wheel" || part === undefined) continue
+		const item = sb.scene_items.get(mid)
+		const c = new Ctx(sb, item, props_of(item))
+		const [L, D] = MOTORS[rec.kind].can
+		const depth = 0.027
+		const ax = axle.anchor.x
+		const ay = axle.anchor.y
+		const mass = MOTOR_MASS[rec.kind]
+		const plastic = c.mat({ base: "circuit plastic", density: pyRound(mass / (L * D * depth), 3), overrides: {} })
+		const gid = c.slab("gearbox", L, D, depth, 0.0, 0.0, { material: plastic, kind: chassis.kind, look: "circuit plastic", words: "a battery car's motor and gearbox", ghost: true, color: rec.kind === "geared" ? "#f2c230" : "#9aa3ab" })
+		const s = sb.solids[sb.solids.length - 1]
+		s.parent = chassis.id
+		s.at = { x: pyRound(ax + L / 2 - 0.012, 5), y: pyRound(ay, 5) }
+		delete s.angle
+		for (const [name, sx] of [["+", 1], ["-", -1]]) _terminal(c, name, gid, sx * (L / 2 - 0.006), D / 2)
+		Object.assign(part, { rotor: wheel.id, stator: chassis.id, wheel: axle.id })
+	}
+}
+
 function _terminal_world(sb, name, terminals) {
 	const t = Object.prototype.hasOwnProperty.call(terminals, name) ? terminals[name] : null
 	if (t === null) return null

@@ -22,7 +22,7 @@ forward voltage at 20 mA red about 2.0 V, yellow 2.1, green (GaP) 2.2, blue and 
 import math
 
 NEEDED = ("register", "ItemType", "Prop", "Link", "Readout", "register_goal_kind", "register_build_hook", "MATERIALS", "add_look", "props_of",
-          "TYPES", "CATEGORIES", "cos", "sin")
+          "TYPES", "CATEGORIES", "cos", "sin", "Ctx")
 
 CAT = "Electricity"
 BASE_H = 0.012              # m: a part's base board (12 mm plywood)
@@ -65,9 +65,13 @@ RESISTIVITY = {
     "modeling clay": 1e10,  # oil-based plasticine: an insulator (provisional)
 }
 TYPES_OF = ("battery", "bulb", "led", "switch", "buzzer", "motor", "resistor", "dimmer", "tester", "meter", "solar-panel", "hand-generator",
-            "electromagnet", "coil", "straight-wire")
-# what drives current round a loop (a wire end whose terminal is not said is joined + of a source to + of a load: SOURCES, _gather)
-SOURCES = ("battery", "solar-panel", "hand-generator")
+            "electromagnet", "coil", "straight-wire", "wind-turbine", "generator")
+# what drives current round a loop (a wire end whose terminal is not said is joined + of a source to + of a load: SOURCES, _gather); the energy
+# module's wind turbine and small generator are sources too (machines/mod_energy.py puts their parts and terminals in this module's store)
+SOURCES = ("battery", "solar-panel", "hand-generator", "wind-turbine", "generator")
+# a battery car (a motor that drives "wheels"): the cars it may ride on (their rear wheel, chassis and rear axle joint), and each motor's own weight
+CARS = ("toy-car", "cart", "truck", "dynamics-cart")
+MOTOR_MASS = {"hobby": 0.018, "solar": 0.022, "geared": 0.03}      # kg: FA-130 18 g [MAB], RF-300 about 22 g, a TT gear motor about 30 g (provisional)
 # Electromagnetism. [ASTM] ASTM B258 / NEC ch. 9 table 8 enamelled copper at 20 °C: 24 AWG 0.511 mm 84.2 mΩ/m, 28 AWG 0.321 mm 212.9 mΩ/m;
 # 14 AWG bare 1.628 mm 8.28 mΩ/m. [CHIKAZUMI] low-carbon steel (a nail): saturation µ0·M_s ≈ 2.0 T (M_s 1.6 MA/m), initial χ ≈ 1000 (the
 # magnetism module's numbers for its own nail electromagnet, so a nail is the same iron in both). A school centre-zero galvanometer: about
@@ -91,6 +95,7 @@ def register_all(g):
         CATEGORIES.append(CAT)
     _materials()
     _types()
+    register_build_hook(_mount_on_cars)       # (before _gather: a battery car's motor rides on its car, its terminals there)
     register_build_hook(_gather)
     # (stays_dark and glows_brighter, not "dark" and "brighter": the optics module's light-meter goals have those names)
     for kind, fn in (("lights", goal_lights), ("stays_dark", goal_dark), ("glows_brighter", goal_brighter), ("buzzes", goal_buzzes), ("spins", goal_spins),
@@ -427,6 +432,15 @@ def _types():
     def build_motor(c, P):
         m = MOTORS[P["kind"]]
         drives = P["drives"]
+        if drives == "wheels":
+            car = c.link("car")
+            if car is not None:
+                # a battery car: the motor rides on the car its link names, driving its rear wheel forward (to the car's +x: the wheel turns
+                # clockwise for current in at +); its gearbox and terminals are put on the car's chassis once every item is built (_mount_on_cars)
+                _store(c.sb).setdefault("cars", []).append({"motor": c.item["id"], "car": car, "kind": P["kind"]})
+                _part(c, "motor", k=m["k"], r=m["r"], efficiency=m["eff"], friction=m["fric"], sense=-1)
+                return
+            drives = "none"         # (on no car: a motor on its stand, turning nothing)
         size = P["size"]
         board = _on_board(c, P)
         steel = c.mat(base="steel", overrides={})
@@ -483,9 +497,10 @@ def _types():
         _part(c, "motor", k=m["k"], r=m["r"], efficiency=m["eff"], friction=m["fric"], **({"rotor": rotor, "stator": hub} if rotor else {}))
     register(ItemType("motor", "Electric motor", CAT, build_motor, **common,
                       props=[Prop("kind", "Motor", "hobby", kind="choice", choices=list(MOTORS), help="hobby: a fast toy motor (FA-130: about 9000 rpm on 3 V); solar: turns on very little current; geared: a slow, strong 48:1 gear motor (about 100 rpm on 3 V)"),
-                             Prop("drives", "On its shaft", "propeller", kind="choice", choices=["propeller", "paddle", "disc", "none"], help="propeller: a fan that blows to the right; paddle and disc turn facing you"),
+                             Prop("drives", "On its shaft", "propeller", kind="choice", choices=["propeller", "paddle", "disc", "none", "wheels"], help="propeller: a fan that blows to the right; paddle and disc turn facing you; wheels: it rides on the car its `car` link names and drives its rear wheels forward (a battery car: use the geared motor)"),
                              Prop("size", "Attachment size", 0.1, 0.03, 0.4, 0.01, "m", "The propeller's or disc's diameter, the paddle's length"),
                              _mount_prop()],
+                      links=[Link("car", "Drives the wheels of", types=list(CARS), help="With On its shaft: wheels, the toy car, cart or truck it rides on and drives")],
                       readouts=[Readout("rpm", "Speed", "rpm", 0), Readout("current", "Current", "A", 3), Readout("voltage", "Voltage across it", "V", 2), Readout("air", "Air speed", "m/s", 2)],
                       tags=["dc motor", "electric motor", "fan", "propeller", "spin", "rotor", "toy motor", "electricity to motion", "circuit", "turn"],
                       description="A small DC motor on a stand. Current through it from its + to its − turns its shaft counter-clockwise (swap its wires and it turns the other way); with a propeller it blows air to the right.",
@@ -800,6 +815,42 @@ def _types():
                       description="An upright pegboard behind the circuit, facing you, so a circuit reads at a glance: put parts on it with Stands on: board (they stay where they are put) and wire them in a loop.",
                       source="Lesson art: drawn behind the parts; nothing touches it.",
                       anchor="its middle", facts="60 x 40 cm"))
+
+
+# ---------------------------------------------------------------- a battery car's motor on its car (a build hook, before _gather)
+def _mount_on_cars(sb, scene):
+    """A motor that drives "wheels" (a battery car): its gearbox welded to its car's chassis over the rear axle (it rides with the car and touches
+    nothing), its two terminals on the gearbox's top, its part driving the car's rear wheel against the chassis through the rear axle's joint (the
+    engine drives that joint's own motor along the motor's torque-speed line: tooling/src/sim/modules/circuits.ts). Run once every item is built,
+    so the car's solids and joints are there whatever the order of the items."""
+    st = getattr(sb, "circuit", None)
+    if st is None or not st.get("cars"):
+        return
+    by = {s["id"]: s for s in sb.solids}
+    joints = {j["id"]: j for j in sb.joints}
+    for rec in st["cars"]:
+        mid, car = rec["motor"], rec["car"]
+        chassis, wheel, axle = by.get(f"{car}/chassis"), by.get(f"{car}/rear"), joints.get(f"{car}/axle-rear")
+        part = next((p for p in st["parts"] if p["id"] == f"{mid}/motor"), None)
+        if chassis is None or wheel is None or axle is None or axle.get("kind") != "wheel" or part is None:
+            continue
+        item = sb.scene_items[mid]
+        c = Ctx(sb, item, props_of(item))
+        L, D = MOTORS[rec["kind"]]["can"]
+        depth = 0.027
+        # (its output shaft on the rear axle, its body forward of it under the deck: in the chassis's own frame)
+        ax, ay = axle["anchor"]["x"], axle["anchor"]["y"]
+        mass = MOTOR_MASS[rec["kind"]]
+        plastic = c.mat(base="circuit plastic", density=round(mass / (L * D * depth), 3), overrides={})
+        gid = c.slab("gearbox", L, D, depth, 0.0, 0.0, material=plastic, kind=chassis["kind"], look="circuit plastic", words="a battery car's motor and gearbox",
+                     ghost=True, color="#f2c230" if rec["kind"] == "geared" else "#9aa3ab")
+        s = sb.solids[-1]
+        s["parent"] = chassis["id"]
+        s["at"] = {"x": round(ax + L / 2 - 0.012, 5), "y": round(ay, 5)}
+        s.pop("angle", None)
+        for name, sx in (("+", 1), ("-", -1)):
+            _terminal(c, name, gid, sx * (L / 2 - 0.006), D / 2)
+        part.update({"rotor": wheel["id"], "stator": chassis["id"], "wheel": axle["id"]})
 
 
 # ---------------------------------------------------------------- gathering the circuit (a build hook)
