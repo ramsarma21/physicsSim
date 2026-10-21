@@ -8408,6 +8408,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			}
 			const dir = anchor === "above" ? -1 : 1
 			const [bx, by, bw, bh] = inBand
+			if (x < bx || x > bx + bw || y < by || y > by + bh) return // (what it names is out of this band's picture: no words for it here)
 			tx = Math.min(Math.max(tx, bx + pad), Math.max(bx + pad, bx + bw - m.width - pad))
 			ty = Math.min(Math.max(ty, by + th + pad), Math.max(by + th + pad, by + bh - pad))
 			const hits = (r) => placed.find((o) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h)

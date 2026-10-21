@@ -463,3 +463,19 @@ test("the automatic plan on the 12 scenarios and 10 gallery scenes: valid, video
 	}
 	assert.ok(allPass >= 10, `${allPass} of 22 automatic plans pass every check, sizes too`)
 })
+
+test("the automatic plan of a comparison filmed one run per lane: a lane per run, split at one scale, every check passing", async () => {
+	const { simulate, catalog, plugins } = await import("./sim-node.mjs")
+	const { registryOf } = await import("../subjects.js")
+	const cat = catalog()
+	const reg = registryOf(plugins())
+	for (const [name, runs] of Object.entries(index).filter(([, r]) => !r[""])) {
+		const world = X.makeWorld({ runs: Object.fromEntries(Object.entries(runs).map(([lane, f]) => [lane, { sim: simulate(JSON.parse(readFileSync(join(ROOT, f), "utf8"))), scene: JSON.parse(readFileSync(join(ROOT, f), "utf8")) }])), catalog: cat, registry: reg })
+		const plan = X.autoPlan(world, { width: W, height: H, fps: FPS })
+		assert.deepEqual(checkShotPlanSchema(plan), [], `${name}: the automatic plan is valid`)
+		assert.deepEqual(plan.lanes.list.map((l) => l.id), Object.keys(runs), `${name}: a lane per run`)
+		assert.ok(plan.shots.every((s) => s.layout === "split"), `${name}: every shot split at one scale`)
+		const r = X.checkPlan(plan, world, { width: W, height: H, fps: FPS })
+		assert.ok(r.ok, `${name}: ${r.messages.join("; ")}`)
+	}
+})

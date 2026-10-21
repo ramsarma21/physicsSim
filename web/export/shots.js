@@ -1963,14 +1963,15 @@ function marksOf(film) {
 		const anns = sh.annotate ?? []
 		if (!anns.length) continue
 		const span = sh.move === "push" || sh.move === "pull" || sh.move === "arc" ? clamp(Number(sh.move_seconds ?? Math.max(1 / film.fps, fs.T - fs.holdAfter)), 1 / film.fps, fs.T) : 0
-		/** a target's points in a band's own world (as measure's tgPts) */
+		/** a target's points in a band's own world (as measure's tgPts, except that a mark on a place or on a thing no lane owns stays where it is
+		 *  in the scene: words written for one lane's place never show over the other lanes' things at their offset) */
 		const bandPts = (tg, bi, t) => {
 			const lane = fs.bands[bi].lane
 			if (fs.layout === "split" && lanes) {
 				const own = tg.item !== undefined ? S.laneOf.get(tg.item) : undefined
 				if (own !== undefined && S.one) return own === lane ? (S.pts(tg, null, t) ?? []) : []
 				if (tg.role !== undefined || tg.gap !== undefined || tg.mark !== undefined || tg.contact !== undefined) return S.pts(tg.role !== undefined && !tg.lane ? { ...tg, lane } : tg, lane, t) ?? []
-				if (S.one) return (S.pts(tg, null, t) ?? []).map((X) => add(X, m.offs[bi] ?? [0, 0, 0]))
+				if (S.one) return S.pts(tg, null, t) ?? []
 				return S.pts(tg, lane, t) ?? []
 			}
 			if (fs.layout === "together" && lanes && tg.role !== undefined && !tg.lane) return lanes.flatMap((ln) => S.pts({ ...tg, lane: ln.id }, S.one ? null : ln.id, t) ?? [])
@@ -2283,7 +2284,20 @@ export function autoPlan(world, opts = {}) {
 		return f.length ? f : ids
 	}
 	const nameOf = (id) => R.scene?.items?.find((i) => i.id === id)?.name || id
-	const lanes = world.single ? autoLanes(R, rec, primary) : null
+	// (one run per lane: each run is a lane, its things cast by their own ids, the ones every run has; rows for things that travel across,
+	// columns for things that fall or stay put)
+	const perRunLanes = () => {
+		const runs = [...world.runs.entries()]
+		const shared = primary.filter((id) => runs.every(([, Rk]) => Rk.solidsOf.has(id)))
+		if (!shared.length) return null
+		const across = shared.some((id) => {
+			const P0 = R.itemPts(id, null, 0)
+			const P1 = R.itemPts(id, null, dur)
+			return P0.length && P1.length && Math.abs(centre3(P1)[0] - centre3(P0)[0]) > Math.abs(centre3(P1)[1] - centre3(P0)[1]) + 0.05
+		})
+		return { arrange: across ? "rows" : "columns", list: runs.map(([lane, Rk]) => ({ id: lane, label: words(Rk.scene?.name || lane, 40), cast: Object.fromEntries(shared.map((id) => [id, id])) })) }
+	}
+	const lanes = world.single ? autoLanes(R, rec, primary) : perRunLanes()
 	const asp = W / H
 	const startOf = (id) => R.M.get(`start:${id}`)
 	const stopOf = (id) => R.M.get(`stop:${id}`)
