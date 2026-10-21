@@ -155,5 +155,7 @@ ok(sim.plugins.changeWords("pitcher", "hand", "none", "hand") === "a hand holds 
 const digest = await import(pathToFileURL(join(PG, "ai/catalog-digest.mjs")).href)
 const dg = digest.digestFromCatalog(sim.catalog())
 ok(dg.text.includes("props.hand") && dg.text.includes("hand_from"), "the AI's catalog digest names props.hand and hand_from", `${dg.stats.tokens} tokens`)
+const picked = (text) => digest.promptCatalog(dg, { text }).modules
+ok(["The hand lets go of the cork", "A finger pushes the red ball", "a magnet held in a fist"].every((t) => picked(t).includes("mod_hands")) && !picked("a ball rolls down a ramp into a cup").includes("mod_hands"), "a request that names a hand, a finger or a fist carries the module's section; a plain one does not")
 console.log(`${passed} passed, ${failed} failed`)
 process.exit(failed ? 1 : 0)

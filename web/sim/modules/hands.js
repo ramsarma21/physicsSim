@@ -63,6 +63,8 @@ export const plugin = {
 		edit: "props.hand puts a person's hand on a held or fixed thing (auto | pinch | palm | press | grip | none), on a pusher (finger | hand | two hands | fist | none) or a pitcher (hand | none); props.hand_from picks the arm's side."
 	},
 	words: {
+		// (a request that names a hand, a finger, a fist, a palm or a thumb carries this module's section: "the hand lets go", "a finger pushes it")
+		picks: "\\b(?:hands?|fingers?|fingertips?|fists?|palms?|thumbs?)\\b",
 		change(type, key, a, b, nameOf) {
 			void nameOf
 			if (key === "hand_from") return b && b !== "auto" ? `the hand comes from ${b === "above" ? "above" : `the ${b}`}` : null

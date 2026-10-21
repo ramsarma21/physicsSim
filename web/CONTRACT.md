@@ -3675,16 +3675,16 @@ above (and a starting gate: the hand wins when an item sets both).
 - **A pitcher** with a hand: a right hand for `pour_to: right` (a left for left) round its handle's outer side (a cup: round its body, the thumb by
   the rim), turning with the flow module's `tilt_deg` reading exactly as the model does; the forearm turns half as far.
 - **AI** (`web/sim/modules/hands.js` `plugin`): the catalog digest's paragraph (props.hand and hand_from on held, fixed, pusher and pitcher items),
-  plan and edit prompt lines ("a person holds, drops, throws, pushes or pours: held: true + props.hand ..."), change words ("a fingertip holds it
+  carried by a request that names a hand, a finger, a fingertip, a fist, a palm or a thumb (`words.picks`), plan and edit prompt lines ("a person holds, drops, throws, pushes or pours: held: true + props.hand ..."), change words ("a fingertip holds it
   down", "two hands push it", "a hand holds and tips it", "no hand (the pull pin holds it)").
 - **Known limits**: a hand is not a body (nothing lands on it: a toss cannot be caught on the palm); it is kept clear only of the thing it let go,
   not of everything else; one hand per held or fixed thing (the pusher's two hands aside); the grip is chosen from the thing's outline and drawn box,
   not from what it is (an apple and an orange of one size are held alike).
-- **Checked** (2026-10-20, on this branch): `node --no-warnings tools/hands/test.mjs`: 125 of 125 (all 326 catalog entries items.py == web/sim;
+- **Checked** (2026-10-20, on this branch): `node --no-warnings tools/hands/test.mjs`: 126 of 126 (all 326 catalog entries items.py == web/sim;
   the props on every dynamic type but the pusher, the pusher's and the pitcher's; the 14 proof scenes build the same documents in Python and JS
   with and without their hand props, resolved differing only by them, and run to the same tracks on the browser bundle; the 12 scenarios and 10
   gallery scenes the same documents, resolved props and warnings with the module and without it, in Python and JS; bad choices refused alike; the
-  AI registry). `node tools/hands/browser.mjs` (the app with `?engine=browser`, headless Chromium): 83 of 83 (every proof scene's hands as asked;
+  AI registry, and a request naming a hand carrying the module's section). `node tools/hands/browser.mjs` (the app with `?engine=browser`, headless Chromium): 83 of 83 (every proof scene's hands as asked;
   no pin, gate, stand or pusher machinery where a hand is; the hand in the export's picture and gone once it has let go; the same moment drawn
   twice alike; hands `off` and `all`; the starter's pixels the same with the hands on and off; the live canvas, the library card's photo and an MP4
   from the export's encoder show the hand).
