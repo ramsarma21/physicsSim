@@ -527,21 +527,29 @@ function _puller() {
 	}))
 }
 
+const PUSH_ROD_KG = 0.135648
+const PUSH_PADDLE_KG = 0.06336
+
 function _pusher() {
 	const build_pusher = (c, P) => {
 		const stroke = P.stroke
 		const h = P.height
-		const steel = c.mat({ base: "steel", overrides: {} })
-		c.slab("housing", 0.1, 0.05, 0.08, -0.05, 0.025, { kind: "static", material: c.mat({ base: "cart plastic", overrides: {} }), look: "cart blue", words: "the pusher's housing" })
-		const rod = c.slab("rod", 0.12, 0.012, 0.012, -0.04, h, { material: steel, look: "steel", words: "the pusher's rod" })
-		c.slab("paddle", 0.012, P.paddle, 0.08, 0.026, h, { material: c.mat({ base: "rubber mat", overrides: {} }), look: "rubber mat", words: "the pusher's flat paddle" })
+		// (the housing as long as the rod's travel and 2 cm more, its rod 5 mm over its middle, raised on a wooden block; the rod slides on the
+		// housing's own rail and never touches it: machines/mod_mechanics.py)
+		const Lh = Math.max(0.1, stroke + 0.02)
+		const yh = Math.max(0.025, h - 0.005)
+		const housing = c.slab("housing", Lh, 0.05, 0.08, -Lh / 2, yh, { kind: "static", material: c.mat({ base: "cart plastic", overrides: {} }), look: "cart blue", words: "the pusher's housing" })
+		if (yh - 0.025 > 0.001)
+			c.slab("riser", Lh, yh - 0.025, 0.08, -Lh / 2, (yh - 0.025) / 2, { kind: "static", material: c.mat({ base: "varnished hardwood", overrides: {} }), look: "wood", words: "the wooden block the pusher stands on" })
+		const L = Lh + 0.02
+		const rod = c.slab("rod", L, 0.012, 0.012, 0.02 - L / 2, h, { material: c.mat({ base: "steel", density: _r(PUSH_ROD_KG / (L * 0.012 * 0.012), 3), overrides: {} }), look: "steel", words: "the pusher's rod" })
+		c.slab("paddle", 0.012, P.paddle, 0.08, 0.026, h, { material: c.mat({ base: "rubber mat", density: _r(PUSH_PADDLE_KG / (0.012 * P.paddle * 0.08), 3), overrides: {} }), look: "rubber mat", words: "the pusher's flat paddle" })
 		const s = c.sb.solids[c.sb.solids.length - 1]
 		s.parent = rod
-		s.at = { x: 0.066, y: 0.0 }
+		s.at = { x: _r(0.006 + L / 2), y: 0.0 }
 		delete s.angle
 		const t0 = P.delay
-		const [wx, wy] = c.world(-0.04, h)
-		const base = { role: "slider", a: null, b: rod, anchorA: { x: _r(wx), y: _r(wy) }, anchorB: { x: 0.0, y: 0.0 }, axis: { x: _r(py.cos(c.a), 6), y: _r(py.sin(c.a), 6) }, lower: 0.0, upper: _r(stroke) }
+		const base = { role: "slider", a: housing, b: rod, anchorA: { x: 0.01, y: _r(h - yh) }, anchorB: { x: 0.0, y: 0.0 }, axis: { x: 1.0, y: 0.0 }, lower: 0.0, upper: _r(stroke) }
 		if (P.mode === "force") c.process("mechanics", "drive", { ...base, speed: 10.0, force: _r(P.force, 4), friction: 50.0, ...(t0 > 0 ? { from: t0 } : {}), until: _r(P.push_time + t0, 4) })
 		else c.process("mechanics", "drive", { ...base, speed: _r(P.speed, 4), force: 200.0, friction: 50.0, ...(t0 > 0 ? { from: t0 } : {}) })
 	}
@@ -553,15 +561,19 @@ function _pusher() {
 			new Prop("push_time", "Push time", 0.2, 0.02, 5.0, 0.01, "s", "How long it pushes (force mode)"),
 			new Prop("speed", "Speed", 0.5, 0.05, 3.0, 0.01, "m/s", "The paddle's speed (speed mode)"),
 			new Prop("stroke", "Stroke", 0.15, 0.03, 0.5, 0.005, "m", "How far its paddle can go"),
-			new Prop("height", "Height", 0.03, 0.015, 0.5, 0.005, "m", "The rod's height: set it to the pushed thing's middle"),
-			new Prop("paddle", "Paddle height", 0.06, 0.02, 0.3, 0.005, "m"),
+			new Prop("height", "Height", 0.03, 0.015, 0.5, 0.005, "m", "The rod's height: set it to the pushed thing's middle (a raised housing stands on a wooden block)"),
+			new Prop("paddle", "Paddle height", 0.06, 0.02, 0.3, 0.005, "m", "How tall its paddle is (its reach; it weighs 63 g whatever its size)"),
 			new Prop("delay", "Starts after", 0.0, 0.0, 10.0, 0.05, "s", "Seconds after the scene lets go")
 		],
 		tags: ["pusher", "push", "force", "piston", "plunger", "applied force", "kick", "shove", "paddle", "net force", "harder push"],
-		anchor: "the floor under its paddle's starting face",
+		anchor: "the floor under its housing's front end (its paddle's face starts 3.2 cm ahead of it)",
 		description:
 			"A driven paddle on a rod from a fixed housing: it pushes what is in front of it (to its right; turn it to push another way) with a set force for a set time, or moves at a set speed: a harder push, a bigger change in motion.",
-		source: "A linear actuator held at its set force (or speed) along its stroke; no people needed.", facts: "5 N for 0.2 s", edit: [{ kind: "rotate" }]
+		source:
+			"A linear actuator held at its set force (or speed) along its stroke; no people needed. Its rod (136 g) and paddle (63 g), " +
+			"whatever their sizes, move with what it pushes: a push of F for t gives a thing of mass m that slides about " +
+			"F·t / (m + 0.2 kg) (provisional weights).",
+		facts: "5 N for 0.2 s", edit: [{ kind: "rotate" }]
 	}))
 }
 
