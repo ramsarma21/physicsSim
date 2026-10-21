@@ -255,6 +255,73 @@ try {
 		}
 		ok(skin > 100, "an MP4 made by the export's encoder shows the hand (its 7th frame, read back with ffmpeg)", `${mp4.info?.frames} frames, ${mp4.info?.video?.codec}, ${skin} skin pixels`)
 	}
+	// ---- every type: held with an auto hand (and let go), fixed in a grip; every pusher skin; every pitcher's vessel and side: built from the
+	// page's own builder and engine (web/sim), each hand made, its poses finite before and through the release, and how long making them takes
+	const sweep = await page.evaluate(async () => {
+		const sim = await import("./sim/index.js")
+		const { createEngine } = await import("./sim/engine.js")
+		const { makeHands } = await import("./hands.js")
+		const engine = createEngine()
+		const out = { types: 0, made: 0, bad: [], ms: [], grips: {} }
+		const finite = (r) => [r.root.position.x, r.root.position.y, r.root.position.z, r.arm.position.x, r.arm.position.y, r.arm.quaternion.w].every(Number.isFinite)
+		const check = async (scene, label, wantRigs = 1) => {
+			let lay
+			try {
+				lay = sim.layout(sim.clean(scene))
+			} catch (e) {
+				return // (a type that cannot stand alone here)
+			}
+			let track
+			try {
+				track = await engine.run(lay.doc, 120) // (web/sim/engine.js: the track itself)
+			} catch (e) {
+				out.bad.push(`${label}: engine ${String(e?.message ?? e).slice(0, 80)}`)
+				return
+			}
+			try {
+				const pf = (s) => {
+					const q = track.frames[0].placements[s.id]
+					return { x: q ? q.x : s.at.x, y: q ? q.y : s.at.y, angle: q ? q.angle : (s.angle ?? 0) }
+				}
+				const t0 = performance.now()
+				const H = makeHands({ doc: lay.doc, track, resolved: lay.resolved, mode: "scene" })
+				H.fit(pf, track)
+				out.ms.push(performance.now() - t0)
+				out.types++
+				const n = H.rigs.reduce((a, r) => a + (r.rigs ?? [r.rig]).length, 0)
+				if (H.rigs.length < Math.min(1, wantRigs)) {
+					if (H.plans?.length) out.bad.push(`${label}: planned, no hand made`)
+					return
+				}
+				out.made++
+				for (const r of H.rigs) out.grips[r.grip ?? r.skin ?? "pour"] = (out.grips[r.grip ?? r.skin ?? "pour"] ?? 0) + 1
+				for (const t of [0, 0.29, 0.31, 0.34, 0.4, 0.6, 0.9]) {
+					H.at(t)
+					for (const r of H.rigs) for (const g of r.rigs ?? [r.rig]) if (!finite(g)) out.bad.push(`${label}: not finite at ${t} s`)
+				}
+				void n
+			} catch (e) {
+				out.bad.push(`${label}: ${String(e?.stack ?? e).slice(0, 160)}`)
+			}
+		}
+		const types = sim.catalog().types
+		for (const t of types) {
+			if (!t.dynamic || t.key === "pusher") continue
+			const base = { version: 2, name: `sweep ${t.key}`, seconds: 1.0, release: 0.3, items: [{ id: "table", type: "table", x: 0.6, y: 0 }] }
+			await check({ ...base, id: `sw-${t.key}`, items: [...base.items, { id: "it", type: t.key, x: 0.4, y: 0.35, held: true, props: { hand: "auto" } }] }, `${t.key} held`)
+			await check({ ...base, id: `swf-${t.key}`, items: [...base.items, { id: "it", type: t.key, x: 0.4, y: 0.35, fixed: true, props: { hand: "grip" } }] }, `${t.key} fixed`)
+		}
+		for (const skin of ["finger", "hand", "two hands", "fist"])
+			await check({ version: 2, id: `swp-${skin}`, name: "sweep pusher", seconds: 1.0, release: 0.3, items: [{ id: "table", type: "table", x: 0.6, y: 0 }, { id: "p", type: "pusher", x: 0.2, y: 0, props: { hand: skin } }, { id: "b", type: "tennis-ball", x: 0.29, y: 0.034 }] }, `pusher ${skin}`)
+		for (const vessel of ["pitcher", "jug", "measuring cup", "cup"])
+			for (const side of ["right", "left"])
+				await check({ version: 2, id: `swq-${vessel}-${side}`, name: "sweep pitcher", seconds: 1.5, release: 0.3, items: [{ id: "table", type: "table", x: 0.6, y: 0 }, { id: "q", type: "pitcher", x: 0.5, y: 0.3, props: { hand: "hand", vessel, pour_to: side, pour_at: 0.2, tip_s: 0.8 } }] }, `pitcher ${vessel} ${side}`)
+		engine.terminate()
+		out.ms.sort((a, b) => a - b)
+		return { ...out, median: out.ms[out.ms.length >> 1], max: out.ms.at(-1) }
+	})
+	ok(sweep.types > 400 && sweep.bad.length === 0, `every dynamic type held (auto) and fixed (grip), every pusher skin, every pitcher: hands made, finite through the release (${sweep.made} of ${sweep.types} scenes with a hand)`, sweep.bad.slice(0, 5).join(" | "))
+	ok(sweep.max < 400, `making a scene's hands takes ${sweep.median?.toFixed(1)} ms (median), ${sweep.max?.toFixed(0)} ms at most`, JSON.stringify(sweep.grips))
 	ok(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "))
 } finally {
 	await browser.close()

@@ -810,7 +810,8 @@ function solveHold(grip, from, d, E, move) {
 		// front); a thin bar lies across the base of the fingers, a big thing under the middle of the palm
 		const zSize = halfZ(d) * 2
 		const at = 0.044 + 0.018 * clamp((0.05 - zSize) / 0.035, 0, 1)
-		const bar = E.w > Math.max(0.05, 4 * halfZ(d)) // (a long thin thing lying across: a magnet, a ruler, a rod)
+		// (a long thin thing lying across, a fist round it: a magnet, a ruler, a rod; a toy car is not one)
+		const bar = E.w > Math.max(0.05, 4 * halfZ(d)) && E.h <= 0.04 && 2 * halfZ(d) <= 0.04
 		if (from === "above") {
 			const top = hitAlong(d, V(E.cx, E.y1 + 0.3, 0), V(0, -1, 0), 0.6)
 			const T = V(E.cx, top === null ? E.y1 : E.y1 + 0.3 - top, 0)
