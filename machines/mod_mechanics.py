@@ -1310,8 +1310,8 @@ SOFT = {"foam": 5e4, "sponge": 1e5, "pillow": 1e4, "rubber mat": 2e6, "carpet": 
 
 def _holds(sb, scene):
     """A held thing that starts in a liquid (a cork held down on a tank's floor, a grape held under the water) is held from above: its moving
-    solids carry `holdFrom: "above"` (render only: the 3D view draws a clamp on a clear rod from an arm over the tank, lifted clear at the
-    release, instead of its pull pin on a post from the table, which under a cork reads as a peg it rests on). Whether a root body's middle
+    solids carry `holdFrom: "above"` (render only: the 3D view draws a fork on a rod from an arm over the tank, lifted clear at the release,
+    instead of its pull pin on a post from the table, which under a cork reads as a peg it rests on). Whether a root body's middle
     starts between a liquid's walls (x0..x1), over its floor and under its surface (the floor plus its layers' heights). A scene without a
     liquid gets nothing; the engine never reads it."""
     liquids = [p for p in sb.processes if p.get("kind") == "liquid" and p.get("layers")]
