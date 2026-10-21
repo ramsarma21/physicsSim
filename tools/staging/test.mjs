@@ -1,7 +1,8 @@
-// The staging module (machines/mod_staging.py, web/sim/modules/staging.js; render only: a fixed camera and starting gates), end to end:
+// The staging module (machines/mod_staging.py, web/sim/modules/staging.js; render only: a fixed camera, starting gates, the lesson look), end to end:
 //   catalog   start_gate is listed (a common prop) on the balls, vehicles and blocks, and only there; the entries are equal in items.py and web/sim
-//   document  scenes with settings.camera and start_gate build the same doc.view in both; scenes without them have no doc.view (byte-identical docs)
-//   errors    a bad settings.camera is refused with the same words in both
+//   document  scenes with settings.camera and start_gate build the same doc.view in both; scenes without them have no doc.view (byte-identical docs);
+//             settings.style / backdrop / release_stand (the lesson look) too
+//   errors    a bad settings.camera, style, backdrop or release_stand is refused with the same words in both
 //   engine    doc.view changes no track: the browser bundle runs a document with and without it to the same bytes; the server too (--server <port>)
 //   plugins   the AI's registry has the module's digest paragraph, prompt lines and change words; the AI schema takes settings.camera
 //   node tools/staging/test.mjs [--server 8972]
@@ -86,6 +87,43 @@ for (const bad of [{ x0: 1 }, { x0: 0, x1: 0.05 }, { x0: 0, x1: 1, y: "a" }, { x
 	ok(a !== null && a === `can't build this scene: ${b}`, `bad camera refused alike: ${JSON.stringify(bad)}`, a)
 }
 
+// ---- the lesson look: settings.style, backdrop, release_stand -> doc.view (render only), Python == JS, errors alike
+const tank = {
+	version: 2, id: "look-tank", name: "Look tank", seconds: 2, release: 0.5, stage: { x0: -0.4, x1: 0.9, y0: -0.1, y1: 0.6 },
+	items: [
+		{ id: "table", type: "table", x: 0.25, y: 0, props: { width: 1.5 } },
+		{ id: "tank", type: "water-tank", x: 0.25, y: 0, props: { style: "aquarium", length: 0.24, height: 0.24, depth: 0.16, fill: 0.14 } },
+		{ id: "cork", type: "cork", x: 0.25, y: 0.018, held: true }
+	]
+}
+const lookCases = [
+	["lesson look, a named backdrop (upper case kept as lower), a hanger", { ...tank, settings: { style: "lesson", backdrop: "#ABCDEF", release_stand: "hanger" } }, { style: "lesson", backdrop: "#abcdef", release_stand: "hanger" }],
+	["lesson look with a camera and gravity", { ...tank, settings: { gravity: "moon", camera: { x0: 0, x1: 0.5 }, style: "lesson" } }, { camera: { x0: 0, x1: 0.5, y: 0.3, pitch: 6.843, hfov: 69.39 }, style: "lesson" }],
+	["the real look said out loud: nothing", { ...tank, settings: { style: "real" } }, undefined],
+	["a release stand alone (the real look)", { ...tank, settings: { release_stand: "hidden" } }, { release_stand: "hidden" }],
+	["auto backdrop and auto stand", { ...tank, settings: { style: "lesson", backdrop: "auto", release_stand: "auto" } }, { style: "lesson", backdrop: "auto", release_stand: "auto" }],
+	["nulls say nothing", { ...tank, settings: { style: null, backdrop: null, release_stand: null } }, undefined]
+]
+for (const [what, scene, want] of lookCases) {
+	const clean = sim.clean(scene)
+	const js = sim.layout(clean)
+	const P = py({ scene: clean })
+	ok(!P.error && isDeepStrictEqual(P.doc, js.doc) && JSON.stringify(P.doc.view) === JSON.stringify(js.doc.view), `look document: items.py == web/sim: ${what}`, P.error ?? JSON.stringify(js.doc.view))
+	ok(isDeepStrictEqual(js.doc.view, want), `look doc.view: ${what}`, JSON.stringify(js.doc.view))
+}
+ok(isDeepStrictEqual(sim.layout(sim.clean({ ...tank, settings: { style: "real" } })).doc, sim.layout(sim.clean(tank)).doc), "settings.style real builds the very document of a scene that says nothing")
+for (const bad of [{ style: "Lesson" }, { style: 1 }, { style: true }, { backdrop: "red" }, { backdrop: "#12345" }, { backdrop: "#1234567" }, { backdrop: "#12345g" }, { backdrop: 0 }, { release_stand: "pin" }, { release_stand: true }, { release_stand: "Hidden" }]) {
+	const sc = sim.clean({ ...tank, settings: bad })
+	let a = null
+	try {
+		sim.layout(sc)
+	} catch (e) {
+		a = e.message
+	}
+	const b = py({ scene: sc }).error
+	ok(a !== null && a === `can't build this scene: ${b}`, `bad look refused alike: ${JSON.stringify(bad)}`, a)
+}
+
 // ---- engine: doc.view is not physics
 const E = await import(pathToFileURL(join(PG, "web/sim/engine-worker.js")).href)
 const runA = E.handle({ id: 1, doc: withView, rate: 120 })
@@ -96,6 +134,11 @@ const gatedHeld = sim.layout(sim.clean(cases[0][1])).doc
 const heldOnly = sim.layout(sim.clean({ ...cases[0][1], settings: undefined, items: cases[0][1].items.map((i) => (i.id === "toy" ? { ...i, props: Object.fromEntries(Object.entries(i.props).filter(([k]) => k !== "start_gate")) } : i)) })).doc
 const runC = E.handle({ id: 3, doc: heldOnly, rate: 120 })
 ok(JSON.stringify(runA.track) === JSON.stringify(runC.track), "a starting gate and a camera change no track (the same held scene without them)")
+const lookDoc = sim.layout(sim.clean(lookCases[0][1])).doc
+const plainDoc = sim.layout(sim.clean(tank)).doc
+const runL = E.handle({ id: 4, doc: lookDoc, rate: 120 })
+const runP = E.handle({ id: 5, doc: plainDoc, rate: 120 })
+ok(runL.error === undefined && JSON.stringify(runL.track) === JSON.stringify(runP.track), "the lesson look and a hanger change no track (the held cork in its tank)", runL.error ?? `${JSON.stringify(runL.track).length} bytes`)
 void noView
 void gatedHeld
 if (serverPort) {
@@ -105,6 +148,9 @@ if (serverPort) {
 	ok(!a.error && JSON.stringify(a.track) === JSON.stringify(b.track), `server :${serverPort}: the same track with and without them`, a.error ?? "")
 	ok(isDeepStrictEqual(a.doc.view, withView.view), "server: doc.view as web/sim builds it")
 	ok(JSON.stringify(a.track) === JSON.stringify(runA.track), "server track == browser bundle track")
+	const la = await post(lookCases[0][1])
+	const lb = await post(tank)
+	ok(!la.error && JSON.stringify(la.track) === JSON.stringify(lb.track) && isDeepStrictEqual(la.doc.view, lookDoc.view), `server :${serverPort}: the lesson look changes no track; doc.view as web/sim's`, la.error ?? "")
 }
 
 // ---- plugins and the AI
