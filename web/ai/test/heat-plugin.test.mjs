@@ -164,8 +164,10 @@ test("make it work: a lamp aimed at the wrong cube is re-aimed (the module's lin
 		{ id: "p2", type: "plate", x: 1.4, y: 0, props: {} },
 		cube("lit", 0.8, 0.02, 0.0045, "Lit cube"),
 		cube("dark", 1.4, 0.02, 0.0045, "Dark cube"),
-		// (the lamp halfway between the cubes, so its aim decides which melts first: at x 0.6, 20 cm from the lit cube and 80 cm from the
-		// dark one, the spill outside its 40° beam warmed the near cube more than the beam warmed the far one, whatever it was aimed at)
+		// (the lamp halfway between the cubes, so its aim decides which melts first, by 100-200 s either way. At x 0.6 its base stood inside the lit
+		// cube's plate (the layout's warning "Plate starts inside Desk lamp"), and 20 cm from the lit cube and 80 cm from the dark one the spill
+		// outside its 40° beam warmed the near cube about as much as the beam warmed the far one: aimed at the dark cube, the two melted 0-100 s
+		// apart (of about 2200 s), which one first decided by how the run shoved the plate out of the lamp's base, not by the aim)
 		{ id: "lamp", type: "lamp", x: 1.1, y: 0, props: { target: "dark", power_w: 100 } }
 	], [{ kind: "melts_first", a: "lit", b: "dark" }], 10, { room_temp: 22, time_lapse: 600 })
 	const R = run(s)

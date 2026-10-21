@@ -868,7 +868,8 @@ of 2026-10-19 16:43, in Python and in web/sim). How to write one: the guide and 
   submerged volume (`submerged`: a sphere's cap, an outline below a line × depth), readings (`set`/`get`) and events. Admission refuses an unknown kind,
   two processes with one id, settings out of range, and whatever a kind's `check` says. The track gains `state: {item: {key: [value per frame]}}`
   (5 decimals), `events: [{t, items, text, kind?}]` and a resized solid's placement `scale` (its body against the document's: depth too, so its volume
-  and mass go as scale³; below 1 % it is a sensor that no longer falls) — each only when a process made one. Gravity and the air's density are per run
+  and mass go as scale³; below 1 % it is a sensor that no longer falls; a lone moving body resting on something keeps resting on it as it is
+  resized, and what rests on it alone with it: "Engine repair (2026-10-21)" at the end) — each only when a process made one. Gravity and the air's density are per run
   (`runGravity`, `airDensity` in physics.ts): exactly 9.81 and 1.2 without settings. Engine modules use only the deterministic math (+ − × ÷, sqrt, abs,
   min, max, floor, ceil, round, sign, trunc and the engine's sin, cos, atan2, exp, hypot, pow): the bundle and the server compute the same bits.
   A run's track depends on its document alone, never on what ran before in the same process: planck's contact pool is bypassed (physics.ts
@@ -3622,3 +3623,66 @@ are identical byte for byte (document, resolved, warnings, summary and track; Py
   `tools/parity-engine.mjs --catalog` ALL IDENTICAL (131 scenes × 3 runs in node and headless Chromium, 4 rates, 4 error messages),
   `tools/parity/fuzz-live.mjs --n 300` 754 cases, 0 mismatches; the node:test files as CI runs them, 473 of 473; the app in headless Chromium (the
   engine on the server and in the page) runs the starter and wrecking-ball, the same track both ways, no console errors.
+
+## Engine repair (2026-10-21): a resized body stays resting on what it rests on (tooling/src/sim/physics.ts)
+The document and track formats are unchanged. Only runs in which a module resizes a lone moving body that rests on something, or that something rests
+on, change: ice cubes and meltables melting, salt piles dissolving, candles burning down, puddles drying, a balloon growing on a floor. The 12
+scenarios, the 10 gallery scenes and the catalog are identical byte for byte (nothing is resized there).
+- Cause: `resize` rebuilds a body about its own origin (a slab's or a ball's middle), so a shrinking body's foot rose off what it stood on by half the
+  size it lost (a 4 cm cube that lost 1 %: 0.2 mm), and planck holds a body anywhere inside its contact skin without letting it settle back: two
+  polygons touch from 2 mm apart and rest 1.5 mm apart (their 1 mm radii less the 0.5 mm linear slop; a ball on a slab touches from 1 mm and rests at
+  0.5 mm), a contact only stops a closing approach, and only an overlap past the slop is pushed apart. So a melting cube hovered over its plate at the
+  skin's edge, 0.45 mm over where it rests on average and up to 0.55-0.65 mm (1.4 mm on an aluminium plate), and each rebuild that took it past the
+  skin dropped it in a short fall, caught again at the skin's edge; a salt pile on it hopped with it; while the world stands still before the release
+  (a module runs: a cube at 0 °C melts while it is held) it shrank in the air over its plate, to drop at the release; a body growing on a floor (a
+  balloon in a vacuum jar) went 0.15 mm into its rest and was pushed out. The stack repair (2026-10-19) plays no part: origin/dev with and without it
+  (`held.add` taken out) gives the same hover (the heat test's 2 cm cubes: +0.45 mm on average, up to +0.55 mm), the same melt times, and the same
+  tracks byte for byte for fairtest's six melt lanes.
+- Repair (`restingMoves`, `touchesOf`, `reachOf` and `shift` in `simulate`'s process runner): a lone, jointless moving body rebuilt from one live
+  size to another (1 % and up) that touches something under it moves toward it along the normal of that touch by what its outline's reach toward it
+  from its origin changed ((1 − new ÷ old size) × the reach), keeping the gap it rested at. What it touches is planck's own collision of the two
+  shapes where they stand (the manifold the next step would make, so also before the release, when planck has made no contacts yet; sensors and
+  pairs that never collide left out); under it = a touch whose normal into it is within 60° of straight up (the most upright one). A moving,
+  jointless body that rests on it alone moves with the face it rests on (along their touch's normal), and what rests on that one alone with it (up
+  to 8 deep). The moves come before the new fixture is made (planck builds it where the body now stands) and take each body's path through the
+  step with it; turns and motions are kept. Not moved: a body touching nothing under it (falling, floating, hanging), a part of a weld group (a
+  matter ballast) or a body with a joint (a balloon on a string), a rebuild to or from nothing (under 1 %: a melted cube, fracture's parked pieces),
+  and anything in a world without gravity.
+- Measured (each body's middle against the top of what it rests on + the skin + its own half height now, every frame from the release's
+  settling on; before → after): the heat test's 2 cm cubes on plates +0.45 mm on average, up to +0.55 mm → 0.000 mm (−0.05 to +0.005 mm);
+  `research/rw-validate-thermal.ts`'s 4 cm cube on its plate +0.46 / +0.63 mm (mean / worst), a 2.5 cm one +0.48 / +0.58, a 4 cm one on aluminium
+  +0.52 / +1.37, a 5 cm one in a bowl +0.47 / +0.65, a 15 g salt pile on a melting 5 cm cube +0.45 / +0.78 → 0.000 mm (the pile −0.006 mm at most);
+  fairtest's lanes (each cube over its floor) 1.5-2.26 mm → 1.495-1.505 mm. The engine reports a melting cube touching its plate at every heat beat
+  before and after (1.5-2.0 mm apart before, 1.50 mm after). The balloon pumped up in a vacuum jar keeps the 0.71 mm it landed at as it grows to
+  1.86 × its size (0.35-0.50 mm before).
+- What changed: the heat module takes each side's half thickness across a touch from the middle of the gap (heat.ts `contact`: (thickness + gap ÷ 2)
+  ÷ 2), so a hovering cube had a longer path through its plate; resting at the skin it was made for (heat.ts SKIN: "a 4 cm ice cube rests 1.5 mm
+  over its plate"), a cube on a plate melts 1-3 % sooner (with that half thickness taken without the gap, the hovering and the resting cube melt at
+  the same second: 4875 s and 2625 s both ways). `rw-validate-thermal.ts`: T1 86.9 → 85.6 min (80-150), 2.5 cm 47.5 → 46.3, 5 cm 118.8 → 116.9,
+  aluminium 31.3 as before, T3 81.9 / 78.8 / 71.3 → 80.0 / 77.5 / 70.0 min, T5 76.9 vs 86.9 → 75.6 vs 85.0 min (11.5 → 11.0 %); `-thermal-2`'s
+  salted and plain cubes 72.5 / 95.0 → 71.3 / 93.8 min, now the same with the release at 0.2, 2 and 5 s (72.1 / 95.0 and 72.1 / 94.6 min at 2 and
+  5 s before: the cubes that melted while held dropped at the release); `-matter`'s ice in a sealed bag on a kitchen scale reads 0.0002 g off
+  (0.0038 g before: its hops); `-air`'s balloon on the jar's floor 0.020476 → 0.020684 m (0.0185-0.026). Fairtest's six melt lanes
+  (`lanes_melt.py`'s scenes, settling and checks, on a server of this branch) all still verify: melted after the hour +0.002 to +0.005, melted away
+  0.7-2.0 lesson minutes sooner.
+- The AI panel's heat test ("a lamp aimed at the wrong cube is re-aimed", web/ai/test/heat-plugin.test.mjs) keeps its lamp at x 1.1 (64a2fb9). At its
+  first place, x 0.6, the lamp's base stood inside the lit cube's plate (the layout warns "Plate starts inside Desk lamp: it'll be shoved out at the
+  start"), so the run began by shoving the plate out: 12 mm sideways by the time-of-impact pass's strikes before the stack repair, onto the base's
+  corner (tilted 2.3°, the cube on it 3.3 mm higher: the 12.4 vs 9.1 mm the release-1 assembly saw) since; and 20 cm from the lit cube and 80 cm
+  from the dark one, the spill outside the 40° beam warmed the near cube about as much as the beam warmed the far one. Aimed at the dark cube, the two
+  melted 0-100 s apart in about 2200 s, which one first decided by the shove, not the aim (lit / dark: 2150 / 2225 s on origin/dev, 2250 / 2225
+  without the stack repair, 2100 / 2200 with this repair; at x 0.58, where nothing overlaps, 2225 / 2250 and 2200 / 2200), so x 0.6 fails the
+  test's first step with this repair too ("the lamp warms the other cube"). At x 1.1 the aim decides it by 200 s (aimed at the dark cube) and 100 s
+  (at the lit one), on all three engines.
+- Known limits: a body resting on several things moves along the most upright touch (in a V one side opens a little); one on a slope steeper than
+  60° is not moved; a body's other touches (a wall beside a melting cube) open by what it lost, as before; a body resting on two or more things is
+  not carried by any one of them (it settles as before).
+- Checked (this branch against origin/dev 69a0fd6, a copy of each, the live :8790 server never touched): `rw-validate-thermal.ts`'s five new
+  checks (three cubes on plates, a cube in a bowl, a salt pile on a melting cube: every frame within ±0.05 mm) fail on origin/dev and pass here, 123
+  of 123; every `research/rw-validate*.ts` CI runs, pointed at each copy: the same PASS lines (thermal-2 31, matter 232, fluids 71, air 114,
+  fracture 45, stack 9 with its log identical, plugins 16, p2 30, p3 98, p4 56 with its crash fuzz of 1500 scenes 0 exceptions and 0 non-finite,
+  and the rest), the numbers above moving within their ranges; the 12 scenarios and 10 gallery scenes and the catalog identical byte for byte
+  (web/sim with the bundle, and Python's documents, resolved, warnings and summaries); `tools/parity/heat.mjs --engine 40` ALL PASS (63 of 63 heat
+  documents, the node engine == the bundle), `tools/plugin-toy/test.mjs` ALL PASS, the matter, fluids, air, fracture, flow, granular and softbody
+  parity tools 0 mismatches, `tools/parity/fuzz-live.mjs --n 300` against this branch's server 967 cases, 0 mismatches; machines/test_*.py all
+  pass; the node:test files as CI runs them, 762 of 762; `npm run build:static:nogen` (the bundle byte-identical to a fresh build).
