@@ -7,7 +7,6 @@
 //   node web/export/test/film-plans.mjs --server http://127.0.0.1:<port> --out <dir> [--size 1280x720] [--fps 30] [--blur 8] [--only 01,05]
 //   node web/export/test/film-plans.mjs --focus ...   the automatic plan instead (camera "focus") on the 12 scenarios, the 10 gallery scenes
 //                                                     and the plans' scenes (one run each)
-//   LESSON_SCENES=<lesson-regen/compositor/build2/scenes>   the lesson compositor's lane scenes (plans 02, 03, 04; skipped without it)
 // The server is this repository's own (python3 web/server.py <port>); only GET and POST /api/... are asked. Headless Chromium only.
 import { createRequire } from "node:module"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
@@ -27,7 +26,6 @@ const FPS = Number(opt("--fps", 30))
 const BLUR = Number(opt("--blur", 8))
 const ONLY = opt("--only", "") ? opt("--only", "").split(",") : null
 const FOCUS = argv.includes("--focus")
-const LESSON = process.env.LESSON_SCENES ?? null
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || path.join(os.homedir(), ".bun/install/cache/playwright-core@1.60.0@@@1"))
 const CHROME = [path.join(os.homedir(), "Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"), path.join(os.homedir(), "Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell")].find((p) => existsSync(p))
 
@@ -46,10 +44,7 @@ else {
 	for (const g of JSON.parse(readFileSync(path.join(ROOT, "web", "gallery", "index.json"), "utf8"))) add(`web/${g.scene}`)
 	for (const runs of Object.values(planIndex)) for (const p of Object.values(runs)) add(p)
 }
-const sceneOf = (p) => {
-	if (p.startsWith("$LESSON_SCENES/")) return LESSON ? path.join(LESSON, p.slice("$LESSON_SCENES/".length)) : null
-	return path.join(ROOT, p)
-}
+const sceneOf = (p) => path.join(ROOT, p)
 mkdirSync(OUT, { recursive: true })
 
 const browser = await chromium.launch({ headless: true, ...(CHROME ? { executablePath: CHROME } : {}), args: ["--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist", "--use-mock-keychain", "--disable-background-timer-throttling", "--disable-renderer-backgrounding"] })
@@ -104,7 +99,7 @@ for (const [name, runs] of Object.entries(index)) {
 	if (ONLY && !ONLY.some((o) => name.startsWith(o))) continue
 	const files = Object.fromEntries(Object.entries(runs).map(([lane, p]) => [lane, sceneOf(p)]))
 	if (Object.values(files).some((f) => !f || !existsSync(f))) {
-		console.log(`${name}: skipped (its lane scenes are the lesson compositor's: set LESSON_SCENES)`)
+		console.log(`${name}: skipped (a scene file is missing: ${Object.values(files).join(", ")})`)
 		summary.push({ plan: name, skipped: true })
 		continue
 	}

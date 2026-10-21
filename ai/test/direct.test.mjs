@@ -1,24 +1,30 @@
 // The direct step (ai/director.mjs, ai/shot-plan.mjs, web/export/digest.js): the timeline digest, the shot-plan language's checks, the automatic
-// plan, and the step end to end through the mock gateway: the director's plan, the executor's measured checks, up to 2 repair turns, the
-// fallback. No live calls: the model's answers are recorded ones (fixtures/direct/recorded: the plans Opus 5.5 wrote for six design examples)
-// or the design's own plans (fixtures/direct/plans), and the executor is a stub that answers what the real one measured.
+// plan, and the step end to end through the mock gateway: the director's plan, the executor's measured checks (web/export/shots.js itself, and
+// scripted reports where a test needs a given sequence of verdicts), up to 3 repair turns, then the director's best try or an automatic plan.
+// No live calls: the model's answers are recorded ones (fixtures/direct/recorded: the plans Opus 5.5 wrote for six design examples, replayed
+// with the verdicts they were measured with) or the design's own plans (web/export/test/plans, with its scenes).
 import assert from "node:assert/strict"
 import { readdirSync, readFileSync } from "node:fs"
 import { after, before, beforeEach, test } from "node:test"
 import { AIError } from "../core.mjs"
-import { REPAIR_TURNS, directSource, executorFrom, failedChecks, repairTurn, safePlan, worldInput } from "../director.mjs"
+import { REPAIR_TURNS, SOFT_CHECKS, directSource, executorFrom, failedChecks, loadExecutor, repairTurn, safePlan, worldInput } from "../director.mjs"
 import { VALIDATORS } from "../schemas.mjs"
 import { checkShotPlanSchema, nearest, validateShotPlan } from "../shot-plan.mjs"
 import { runScene, runStep, STEPS } from "../steps.mjs"
 import { buildDigest, digestText, momentTime } from "../../web/export/digest.js"
+import * as Shots from "../../web/export/shots.js"
 import { mockEnv, startMockGateway, testRouting } from "./mock-gateway.mjs"
 
 const PG = new URL("../../", import.meta.url)
 const read = (p) => readFileSync(new URL(p, PG), "utf8")
 const json = (p) => JSON.parse(read(p))
 const FX = "ai/test/fixtures/direct/"
-const PLANS = json(`${FX}plans/index.json`)
-const plan = (name) => json(`${FX}plans/${name}.json`)
+const PLANS = json("web/export/test/plans/index.json").plans
+const plan = (name) => {
+	const p = json(`web/export/test/plans/${name}.json`)
+	delete p.$schema
+	return p
+}
 
 // the design examples' runs, made once (the same run as /api/simulate)
 const RUNS = new Map()
@@ -51,7 +57,8 @@ const badInput = (re) => (e) => e instanceof AIError && e.code === "bad_input" &
 const answer = (p, usd = 0.05) => ({ content: JSON.stringify(p), usage: { prompt_tokens: 1000, completion_tokens: 500, costInUSD: usd } })
 const LASER = () => json("demos/optics/demo-mirror.json")
 const LESSON = { question: "What happens to the light when it hits the mirror?", answer: "It bounces off at the same angle.", grade: 4 }
-/** A stub executor: each measure answers the next report of the list (the last one again when they run out), and records what it measured. */
+/** A scripted executor: each measure answers the next report of the list (the last one again when they run out), and records what it measured
+ *  (for a test that needs a given sequence of verdicts; the real one is web/export/shots.js, the step's default). */
 function stubExecutor(reports) {
 	const seen = []
 	return {
@@ -66,6 +73,8 @@ function stubExecutor(reports) {
 }
 const PASS = { ok: true, checks: [{ shot: "x", check: "keep-in", ok: true, why: "fine" }], shots: [] }
 const FAIL = (why = "too small: laser s 0.05 (floor 0.09)", shot = "tip") => ({ ok: false, checks: [{ shot, check: "subject-size", ok: false, why }], shots: [{ id: shot, move: "hold", heroes: [{ what: '{"item":"laser"}', s: 0.05 }] }] })
+/** a failure that breaks the video (something kept is cut off), not only its size */
+const HARD = (why = "every kept thing at least 0.02 inside the edges at every frame (closest -0.1 at 1 s)", shot = "tip") => ({ ok: false, checks: [{ shot, check: "keep-in", ok: false, why }], shots: [{ id: shot, move: "hold", minKeep: -0.1 }] })
 
 // ------------------------------------------------------------------------------------------------ the step's place
 test("direct is a step everywhere a step is listed: steps, the routing, both servers' queues and the AI gate's reservation", () => {
@@ -85,7 +94,7 @@ test("direct is a step everywhere a step is listed: steps, the routing, both ser
 	assert.match(fn, /STEP_SLOTS = \{[^}]*direct: \d/)
 	assert.match(fn, /TYPICAL_S = \{[^}]*direct: \d/)
 	assert.match(read("api/_lib/ai-gate.mjs"), /STEP_USD = \{[^}]*direct: [\d.]+/)
-	assert.match(read("vercel.json"), /web\/export\/\*\.js/, "the direct step loads web/export/digest.js, subjects.js and shots.js by computed paths: the AI function must include them")
+	assert.match(read("vercel.json"), /web\/export\/\*\.js,web\/export\/\*\.json/, "the direct step loads web/export/digest.js, subjects.js and shots.js and reads shot-plan.schema.json: the AI function must include them")
 })
 
 test("bad payloads are a 400 with a plain reason, before any run or model call", async () => {
@@ -307,49 +316,74 @@ test("measured failures go back to the director as a repair turn; the repaired p
 	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: ex }))
 	assert.equal(out.result.source, "director")
 	assert.deepEqual(out.result.rounds.map((r) => [r.round, r.ok]), [[0, false], [1, true]])
-	assert.equal(out.result.plan.shots[0].frame.width, 0.42)
+	assert.equal(out.result.plan.shots[0].frame.width, 0.28)
 	assert.equal(gw.requests.length, 2)
 	const msgs = gw.requests[1].body.messages
 	assert.deepEqual(msgs.map((m) => m.role), ["system", "user", "assistant", "user"])
 	assert.equal(JSON.parse(msgs[2].content).shots[0].frame.width, 1.2)
-	assert.match(msgs[3].content, /1 check failed \(repair 1 of at most 2\):\n- tip subject-size: too small/)
+	assert.match(msgs[3].content, new RegExp(`1 check failed \\(repair 1 of at most ${REPAIR_TURNS}\\):\\n- tip subject-size: too small`))
+	assert.match(msgs[3].content, /Ways to repair them:\n- subject-size: a hero under its floor: frame closer/)
 	assert.match(msgs[3].content, /Return the complete corrected plan as one JSON object/)
 	assert.ok(Math.abs(out.usage.costInUSD - 0.3) < 1e-9)
 	assert.deepEqual([...new Set(out.attempts.map((a) => a.turn))], [0, 1])
 })
 
-test("a plan still failing after the repair turns is replaced by the automatic plan; the director's last plan and its failures are kept", async () => {
+test("a plan still breaking a hard check after the repair turns is replaced by the automatic plan; the director's best try and its failures are kept", async () => {
 	const p = plan("01-laser-mirror")
 	gw.script("m1", Array.from({ length: REPAIR_TURNS + 1 }, () => answer(p)))
-	const ex = stubExecutor([(q) => (q.notes?.startsWith("Made without a director") ? PASS : FAIL())])
+	const ex = stubExecutor([(q) => (q.notes?.startsWith("Made without a director") ? PASS : HARD())])
 	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: ex }))
 	assert.equal(gw.requests.length, REPAIR_TURNS + 1)
 	assert.equal(out.result.source, "automatic")
 	assert.equal(out.result.rounds.length, REPAIR_TURNS + 1)
 	assert.ok(out.result.rounds.every((r) => !r.ok))
-	assert.equal(out.result.fallback.reason, "the director's plan still failed the engine's checks")
+	assert.equal(out.result.fallback.reason, "the director's plan still breaks the engine's checks")
 	assert.equal(out.result.fallback.plan_by, "director.mjs")
-	assert.deepEqual(out.result.fallback.director_failed, ["tip subject-size: too small: laser s 0.05 (floor 0.09)"])
+	assert.deepEqual(out.result.fallback.director_failed, ["tip keep-in: every kept thing at least 0.02 inside the edges at every frame (closest -0.1 at 1 s)"])
 	assert.equal(out.result.fallback.director_plan.title, p.title)
 	assert.equal(out.result.report.ok, true)
 	assert.deepEqual(validateShotPlan(out.result.plan, { digest: buildDigest({ runs: await runsOf("01-laser-mirror") }) }).errors, [])
 })
 
-test("an executor's own automatic plan is used when it passes; when neither passes, the one with fewer failed checks", async () => {
-	gw.script("m1", Array.from({ length: 3 }, () => answer(plan("01-laser-mirror"))))
+test("soft failures (size, fill) after the repair turns keep the director's best try, said in the warnings", async () => {
+	const p = plan("01-laser-mirror")
+	const closer = JSON.parse(JSON.stringify(p))
+	closer.shots[0].frame = { width: 0.2 }
+	gw.script("m1", [answer(p), answer(closer), answer(p), answer(p)])
+	const fill = { ok: false, checks: [{ shot: "tip", check: "fill", ok: false, why: "0.9 of the picture is backdrop" }], shots: [] }
+	const two = { ok: false, checks: [FAIL().checks[0], fill.checks[0]], shots: [] }
+	const ex = stubExecutor([two, fill, two, two])
+	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: ex }))
+	assert.equal(gw.requests.length, REPAIR_TURNS + 1)
+	assert.equal(out.result.source, "director")
+	assert.equal(out.result.plan.shots[0].frame.width, 0.2, "the try with the fewest failures (the later one on a tie)")
+	assert.deepEqual(out.result.soft, ["tip fill: 0.9 of the picture is backdrop"])
+	assert.equal(out.result.report.ok, false)
+	assert.match(out.warnings.join("\n"), /the director's plan is filmed with 1 size or fill check\(s\) under the net after 3 repair\(s\)/)
+	assert.ok(["subject-size", "must-see", "fill", "face", "beam-visible"].every((c) => SOFT_CHECKS.has(c)) && !SOFT_CHECKS.has("keep-in"))
+})
+
+test("an executor's own automatic plan is used when it passes; when none passes, the one that breaks the fewest hard checks, the director's on a tie", async () => {
+	gw.script("m1", Array.from({ length: REPAIR_TURNS + 1 }, () => answer(plan("01-laser-mirror"))))
 	const theirs = { ...plan("01-laser-mirror"), title: "Their automatic camera" }
-	const ex = { ...stubExecutor([(q) => (q.title === "Their automatic camera" ? PASS : FAIL())]), safePlan: () => theirs }
+	const ex = { ...stubExecutor([(q) => (q.title === "Their automatic camera" ? PASS : HARD())]), safePlan: () => theirs }
 	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: ex }))
 	assert.equal(out.result.source, "automatic")
 	assert.equal(out.result.fallback.plan_by, "executor")
 	assert.equal(out.result.plan.title, "Their automatic camera")
 	gw.reset()
-	gw.script("m1", Array.from({ length: 3 }, () => answer(plan("01-laser-mirror"))))
-	const two = { ok: false, checks: [FAIL().checks[0], { shot: "y", check: "cut", ok: false, why: "a jump cut" }], shots: [] }
-	const ex2 = { ...stubExecutor([(q) => (q.title === "Their automatic camera" ? two : FAIL())]), safePlan: () => theirs }
+	gw.script("m1", Array.from({ length: REPAIR_TURNS + 1 }, () => answer(plan("01-laser-mirror"))))
+	const two = { ok: false, checks: [HARD().checks[0], { shot: "y", check: "cut", ok: false, why: "a jump cut" }], shots: [] }
+	const ex2 = { ...stubExecutor([(q) => (q.title === "Their automatic camera" ? two : q.notes?.startsWith("Made without a director") ? FAIL() : HARD())]), safePlan: () => theirs }
 	const out2 = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: ex2 }))
-	assert.equal(out2.result.fallback.plan_by, "director.mjs")
+	assert.equal(out2.result.fallback.plan_by, "director.mjs", "this file's automatic plan breaks no hard check")
 	assert.match(out2.warnings.join("\n"), /the automatic plan fails the engine's checks too \(framing-infeasible/)
+	gw.reset()
+	gw.script("m1", Array.from({ length: REPAIR_TURNS + 1 }, () => answer(plan("01-laser-mirror"))))
+	const ex3 = { ...stubExecutor([(q) => (q.title === "Their automatic camera" || q.notes?.startsWith("Made without a director") ? two : HARD())]), safePlan: () => theirs }
+	const out3 = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: ex3 }))
+	assert.equal(out3.result.source, "director", "no automatic plan breaks fewer hard checks than the director's")
+	assert.equal(out3.result.fallback.plan_by, "director")
 })
 
 test("a plan that does not validate gets the core's repair turn with the errors and nearest ids, before anything is measured", async () => {
@@ -378,20 +412,11 @@ test("no usable plan from any route falls back to the automatic plan; a gateway 
 	gw.fallback = () => ({ status: 500, body: { error: { message: "no scripted answer" } } })
 })
 
-test("without an executor the plan is validated only, and says so", async () => {
-	gw.script("m1", [answer(plan("01-laser-mirror"))])
-	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: null }))
-	assert.equal(out.result.source, "director")
-	assert.equal(out.result.measured, false)
-	assert.equal(out.result.report, null)
-	assert.match(out.warnings.join("\n"), /not measured: this build has no plan executor/)
-})
-
 test("a repair turn starts only with time left for a whole answer: else the automatic plan", async () => {
 	gw.script("m1", [answer(plan("01-laser-mirror"))])
 	const r = routing()
 	r.steps.direct = { ...r.steps.direct, timeoutMs: 60000, budgetMs: 15000 }
-	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, { ...opts({ executor: stubExecutor([FAIL(), PASS]) }), routing: r })
+	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, { ...opts({ executor: stubExecutor([HARD(), PASS]) }), routing: r })
 	assert.equal(gw.requests.length, 1)
 	assert.equal(out.result.source, "automatic")
 	assert.match(out.warnings.join("\n"), /no time left for repair 1/)
@@ -412,49 +437,61 @@ test("a comparison filmed one run per lane reaches the executor as one run per l
 	assert.deepEqual(Object.keys(wi.runs), ["top", "bottom"])
 })
 
-test("web/export/shots.js's interface: the world is built once from the step's runs, its moments are the digest's, checkPlan's resolution errors are failed checks", async () => {
-	const calls = { world: 0, check: 0, auto: 0 }
-	const fake = {
-		makeWorld: (input) => {
-			calls.world++
-			assert.ok(input.run && input.scene && input.catalog)
-			return { runs: new Map([["", { M: new Map([["start", 0], ["release", 0.5], ["end", 1], ["result", 0.5], ["pause:setup", 0], ["pause:result", 0.5], ["beam:laser:on", 0]]), WHAT: new Map() }]]) }
-		},
-		checkPlan: (p, world, o) => {
-			calls.check++
-			assert.equal(o.width, 1920)
-			return calls.check === 1 ? { ok: false, errors: [{ at: "shots[0] (tip).subject", message: "lazer is not in the scene", nearest: ["laser"] }], report: null } : { ok: true, report: { ok: true, checks: [{ shot: "tip", check: "keep-in", ok: true, why: "fine" }], shots: [] } }
-		},
-		autoPlan: () => {
-			calls.auto++
-			return null
-		}
-	}
-	const ex = executorFrom(fake)
+test("the step measures with web/export/shots.js itself: one world of the step's runs, its moments the digest's, its measured failures sent back", async () => {
+	const ex = loadExecutor({})
 	assert.equal(ex.name, "web/export/shots.js")
-	gw.script("m1", [answer(plan("01-laser-mirror")), answer(plan("01-laser-mirror"))])
-	const out = await runStep("direct", { scene: LASER(), lesson: LESSON }, opts({ executor: ex }))
-	assert.equal(calls.world, 1)
-	assert.equal(calls.check, 2)
+	let worlds = 0
+	const counted = { ...ex, world: (input) => (worlds++, ex.world(input)) }
+	const far = plan("01-laser-mirror")
+	far.shots[0].frame = { width: 2.5 }
+	gw.script("m1", [answer(far), answer(plan("01-laser-mirror"))])
+	const out = await runStep("direct", { scene: LASER(), lesson: LESSON, return_digest: true }, { ...opts(), executor: counted })
+	assert.equal(worlds, 1, "the world is built once for every plan of the step")
 	assert.equal(out.result.source, "director")
-	assert.deepEqual(out.result.rounds[0].failed, ["resolve: shots[0] (tip).subject: lazer is not in the scene (nearest: laser)"])
-	assert.match(gw.requests[1].body.messages.at(-1).content, /- resolve: shots\[0\] \(tip\)\.subject: lazer is not in the scene \(nearest: laser\)/)
+	assert.equal(out.result.measured, true)
+	assert.equal(out.result.report.ok, true)
+	assert.deepEqual(out.result.rounds.map((r) => r.ok), [false, true])
+	assert.ok(out.result.rounds[0].failed.some((f) => /^tip (subject-size|fill|beam-visible|must-see)/.test(f)), out.result.rounds[0].failed.join("; "))
+	const sent = gw.requests[1].body.messages.at(-1).content
+	assert.match(sent, /^The engine compiled your plan and measured every frame/)
+	assert.ok(out.result.rounds[0].failed.every((f) => sent.includes(f)))
+	assert.match(out.result.digest.text, /^SCENE demo-mirror/)
 	assert.equal(out.prompt.digest.executor, "web/export/shots.js")
-	assert.equal(executorFrom({ measure: () => PASS }).name, "measure")
-	assert.equal(executorFrom({}), null)
+	// the digest's moments are the executor's own
+	const w = ex.world(worldInput({ runs: { "": { scene: LASER(), run: await runScene(LASER()) } } }))
+	assert.deepEqual(ex.momentsOf(w, "").index, Object.fromEntries(w.runs.get("").M))
+})
+
+test("the page's model boxes reach the executor's world: a box drawn bigger than the outline is what the plan is measured on", async () => {
+	const scene = LASER()
+	const run = await runScene(scene)
+	const plain = Shots.makeWorld(worldInput({ runs: { "": { scene, run } } }))
+	const solid = run.doc.solids.find((x) => x.item === "laser" || x.id?.startsWith("laser"))
+	const big = { [solid.id]: { world: [0, 1.2, 0, 0.6, -0.1, 0.1] } }
+	const src = await directSource({ scene, lesson: LESSON, boxes: big }, { clean: async (v) => v })
+	assert.deepEqual(src.boxes, { "": big })
+	const boxed = Shots.makeWorld(worldInput({ runs: { "": { scene, run, boxes: src.boxes[""] } } }))
+	const span = (w) => {
+		const P = w.main.itemPts("laser", null, 0)
+		return Math.max(...P.map((p) => p[0])) - Math.min(...P.map((p) => p[0]))
+	}
+	assert.ok(span(boxed) > span(plain) + 0.5, `${span(boxed)} vs ${span(plain)}`)
+	await assert.rejects(directSource({ scene, lesson: LESSON, boxes: { x: { y: 1 } } }, { clean: async (v) => v }), badInput(/boxes\["x"\] must be/))
+	await assert.rejects(directSource({ runs: { top: scene, bottom: scene }, lesson: LESSON, boxes: { left: {} } }, { clean: async (v) => v }), badInput(/boxes\.left: no such lane/))
 })
 
 test("the repair turn names every failed check and what the failing shots measured", () => {
 	const report = { ok: false, checks: [{ shot: "roll", check: "speed", ok: false, why: "the picture's fastest point 0.639 widths/s (limit 0.5 for a pull)" }, { shot: "roll", check: "zoom-rate", ok: true, why: "fine" }], shots: [{ id: "roll", move: "pull", video: [3, 5.8], heroes: [{ what: '{"role":"toy"}', lane: "top", s: 0.1 }], minKeep: 0.04, peakPanWps: 0.639, peakZoomPerS: 0.75, peakYawDegS: 0 }] }
 	assert.deepEqual(failedChecks(report), ["roll speed: the picture's fastest point 0.639 widths/s (limit 0.5 for a pull)"])
 	const t = repairTurn(report, 1)
-	assert.match(t, /1 check failed \(repair 1 of at most 2\):\n- roll speed: the picture's fastest point 0\.639 widths\/s \(limit 0\.5 for a pull\)/)
+	assert.match(t, new RegExp(`1 check failed \\(repair 1 of at most ${REPAIR_TURNS}\\):\\n- roll speed: the picture's fastest point 0\\.639 widths\\/s \\(limit 0\\.5 for a pull\\)`))
+	assert.match(t, /Ways to repair them:\n- speed: the camera moves too fast/)
 	assert.match(t, /- roll \(pull\); video 3-5\.8 s; heroes \{"role":"toy"\}@top s 0\.1; closest margin 0\.04; fastest point 0\.639 widths\/s, zoom 0\.75\/s/)
 })
 
 // ------------------------------------------------------------------------------------------------ the recorded live answers
 const RECORDED = readdirSync(new URL(`${FX}recorded/`, PG)).filter((f) => f.endsWith(".json"))
-test("the recorded answers of the live runs replay: each round's plan valid, the failures sent back, the last plan passing", async () => {
+test("the recorded answers of the live runs replay with the verdicts they were measured with: each round's plan valid, the failures sent back, the last plan passing", async () => {
 	assert.ok(RECORDED.length >= 6, `${RECORDED.length} recorded runs`)
 	for (const f of RECORDED) {
 		gw.reset()

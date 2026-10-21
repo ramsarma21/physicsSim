@@ -1,0 +1,53 @@
+{
+	"about": "The design's twelve examples as a caller asks the director for them (POST /api/ai/direct): the lesson or demo each video is for, and the run or the runs (one per lane) it films. The lane scenes of 02, 03 and 04 are the lesson compositor's (build2/scenes, copied into web/export/test/scenes). web/export/test/direct-e2e.mjs asks for each plan and exports its MP4.",
+	"examples": {
+		"01-laser-mirror": {
+			"scene": "demos/optics/demo-mirror.json",
+			"payload": { "kind": "demo", "lesson": { "question": "What happens to the light when it hits the mirror?", "answer": "It bounces off. The angle going out is the same as the angle coming in.", "grade": 4 }, "concept": "light reflects off a mirror: the angle in equals the angle out" }
+		},
+		"02-fairtest-ramps": {
+			"runs": { "top": "web/export/test/scenes/ft_1b_car_red_clay.json", "bottom": "web/export/test/scenes/ft_3b_car_red_clay.json" },
+			"payload": { "kind": "lesson", "lesson": { "question": "Is this a valid experiment to test ramp height?", "answer": "Yes. The height is different, and everything else is the same.", "words": ["Our question: does a higher ramp make a toy roll farther? We are testing ramp height.", "Now both cars carry the same gray ball of clay."], "pauses": [{ "where": "result" }], "grade": 3 }, "concept": "a fair test changes only one thing" }
+		},
+		"03-salt-ice": {
+			"scene": "web/export/test/scenes/ft_melt_plates_salt6_plain.json",
+			"payload": { "kind": "lesson", "lesson": { "question": "Is this a valid experiment to test salt?", "answer": "Valid. Both cubes are on plates, so the plates are the same. Only the salt is different.", "words": ["We are testing salt.", "Now the cubes sit on white plates."], "pauses": [{ "where": "setup" }], "grade": 3 }, "concept": "a fair test changes only one thing: salt on one ice cube" }
+		},
+		"04-fan-boats": {
+			"runs": { "top": "web/export/test/scenes/ft_boat_10cm_small.json", "bottom": "web/export/test/scenes/ft_boat_80cm_small.json" },
+			"payload": { "kind": "lesson", "lesson": { "question": "Does it test sail size? Does it test fan distance?", "answer": "Not sail size: the sails are the same. It tests fan distance: that is the only thing that differs.", "words": ["Does it test sail size?", "The bottom fan is farther from its boat.", "Does it test fan distance?"], "pauses": [{ "where": "setup" }, { "where": "result" }], "grade": 3 }, "concept": "a fair test changes only one thing" }
+		},
+		"05-mo37-race": {
+			"scene": "demos/measure/mo37-lanes.json",
+			"payload": { "kind": "lesson", "lesson": { "question": "Is the red car faster?", "answer": "Yes. Same 10 meters, and red took fewer seconds.", "words": ["Red: 10 meters in 3 seconds. Blue: 10 meters in 4 seconds."], "pauses": [{ "where": "result" }], "grade": 3 }, "concept": "faster means the same distance in less time" }
+		},
+		"06-chain-reaction": {
+			"scene": "web/scenarios/rube-goldberg.json",
+			"payload": { "kind": "demo", "lesson": { "question": "What makes ball 2 go into the box?", "answer": "A chain: ball 1 rolls down the ramps, knocks over the dominoes, the last domino tips the seesaw, and the seesaw throws ball 2 into the box.", "grade": 4 }, "concept": "a chain reaction: each step starts the next" }
+		},
+		"07-pendulum": {
+			"scene": "demos/waves/x05-pendulum-period.json",
+			"payload": { "kind": "demo", "lesson": { "question": "How long does one swing take?", "answer": "About 2 seconds, every time.", "grade": 5 }, "concept": "a pendulum's swing takes the same time every time" }
+		},
+		"08-switch-bulb": {
+			"scene": "demos/circuits/board-switch-bulb.json",
+			"payload": { "kind": "demo", "lesson": { "question": "What makes the bulb light?", "answer": "Closing the switch makes the loop complete.", "grade": 4 }, "concept": "a complete circuit: closing the switch lights the bulb" }
+		},
+		"09-magnet-clip": {
+			"scene": "demos/magnetism/g1-clip-jumps.json",
+			"payload": { "kind": "demo", "lesson": { "question": "What does the magnet do to the clips?", "answer": "It pulls up the near clip; the far clip is too far away.", "grade": 3 }, "concept": "a magnet pulls steel things that are close enough" }
+		},
+		"10-egg-drop": {
+			"scene": "demos/mechanics/egg-drop.json",
+			"payload": { "kind": "demo", "lesson": { "question": "Which egg breaks?", "answer": "The one that lands on the bare table.", "grade": 3 }, "concept": "a soft landing: the egg that falls on foam does not break" }
+		},
+		"11-siphon": {
+			"scene": "demos/flow/06-siphon.json",
+			"payload": { "kind": "demo", "lesson": { "question": "How does the water get out of the high beaker?", "answer": "Through the hose, up over the rim and down, as long as the hose's end is under water.", "grade": 5 }, "concept": "a siphon" }
+		},
+		"12-earth-orbit": {
+			"scene": "demos/space/earth-seasons-orbit.json",
+			"payload": { "kind": "demo", "lesson": { "question": "How long does the Earth take to go round the Sun?", "answer": "One year.", "grade": 4 }, "concept": "one trip round the Sun is one year" }
+		}
+	}
+}

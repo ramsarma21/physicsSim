@@ -1,7 +1,8 @@
-// The director's shot plan: its structure (ai/shot-plan.schema.json, JSON Schema 2020-12, checked here without a dependency) and its
-// resolution against the run's timeline digest (web/export/digest.js): every item, part, role, moment, contact, event, reading, beam stretch
-// and bounce a plan names must be in the digest, every play window inside its run, every shot long enough to read. The errors are plain
-// sentences with a path and, for a name the digest lacks, the digest's nearest ids: they go back to the director as its repair turn.
+// The director's shot plan: its structure (web/export/shot-plan.schema.json, the filming module's language: JSON Schema 2020-12, checked here
+// without a dependency) and its resolution against the run's timeline digest (web/export/digest.js): every item, part, role, moment, contact,
+// event, reading, beam stretch and bounce a plan names must be in the digest, every play window inside its run, every shot long enough to
+// read. The errors are plain sentences with a path and, for a name the digest lacks, the digest's nearest ids: they go back to the director
+// as its repair turn. The executor (web/export/shots.js checkPlan) then resolves the same names on the run itself, compiles and measures.
 //
 //   checkShotPlanSchema(value) -> [errors]                 the structure only
 //   resolveShotPlan(plan, digest) -> {errors, warnings, timing: {shots: [{id, t0, t1, seconds}], seconds}}
@@ -10,7 +11,7 @@
 import { readFileSync } from "node:fs"
 import { momentTime } from "../web/export/moments.js"
 
-export const SHOT_PLAN_SCHEMA = JSON.parse(readFileSync(new URL("./shot-plan.schema.json", import.meta.url), "utf8"))
+export const SHOT_PLAN_SCHEMA = JSON.parse(readFileSync(new URL("../web/export/shot-plan.schema.json", import.meta.url), "utf8"))
 const DEFS = SHOT_PLAN_SCHEMA.$defs
 export const TARGET_KINDS = ["item", "items", "role", "point", "region", "contact", "beam", "trail", "path", "through", "gap", "mark"]
 const MIN_SHOT_S = 0.8 // the shortest shot a child can read (the safety net's minShot)
@@ -163,7 +164,7 @@ const FORMS = {
 	moment: "a moment id or {at, plus}"
 }
 
-/** The structural errors of a shot plan ([] when it is valid against ai/shot-plan.schema.json). */
+/** The structural errors of a shot plan ([] when it is valid against web/export/shot-plan.schema.json). */
 export function checkShotPlanSchema(value) {
 	return errorsOf(SHOT_PLAN_SCHEMA, value, "plan")
 }

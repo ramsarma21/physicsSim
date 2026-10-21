@@ -23,8 +23,8 @@
 		},
 		"concept": "a fair test changes only one thing",
 		"runs": {
-			"top": "ai/test/fixtures/direct/scenes/ft_boat_10cm_small.json",
-			"bottom": "ai/test/fixtures/direct/scenes/ft_boat_80cm_small.json"
+			"top": "web/export/test/scenes/ft_boat_10cm_small.json",
+			"bottom": "web/export/test/scenes/ft_boat_80cm_small.json"
 		}
 	},
 	"model": "claude-group/claude-opus-5-5",

@@ -1,4 +1,4 @@
-// The directed cameras are view-only. (1) Filming a run (the world, the automatic plan, a compile, the safety net, the digest) never changes it: its
+// The directed cameras are view-only. (1) Filming a run (the world, the automatic plan, a compile, the safety net, the director's digest) never changes it: its
 // document and summary stay as they were, its track only gains the static placements every view reader fills in (track.js completeTrack), and the
 // engine gives the very same run again afterwards. (2) The 12 built-in scenarios' and 10 gallery scenes' runs are byte for byte what the engine made
 // before the directed cameras (identity-tracks.json: integrate/engine-waves 19947da), checked while web/sim is the one those hashes were made with;
@@ -12,6 +12,7 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { completeTrack } from "../../track.js"
 import * as X from "../shots.js"
+import { buildDigest, digestText } from "../digest.js"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, "..", "..", "..")
@@ -47,7 +48,8 @@ test("filming a run never changes it, and the engine gives the same run again af
 		const world = X.makeWorld({ run, scene, catalog: cat, registry: reg })
 		const film = X.compile(X.autoPlan(world, { width: 1280, height: 720, fps: 30 }), world, { width: 1280, height: 720, fps: 30, kind: "focus" })
 		X.measure(film)
-		X.digestText(X.digest(world))
+		const R = world.main
+		digestText(buildDigest({ runs: [{ lane: "", scene, run, recog: R.recog, moments: { index: Object.fromEntries(R.M), what: Object.fromEntries(R.WHAT) } }] }))
 		assert.equal(sha(run.doc), before.doc, `${f}: the document`)
 		assert.equal(sha(run.summary), before.summary, `${f}: the summary`)
 		assert.equal(sha(run.track), before.track, `${f}: the track (only completeTrack's fill)`)

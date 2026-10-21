@@ -100,7 +100,7 @@
 		{
 			"id": "tip",
 			"beat": "laser",
-			"intent": "Start on the cause: the laser and the thin line of light leaving its tip, placed left so the light has room to go right, where the story goes.",
+			"intent": "Start on the cause, close: the laser and the thin line of light leaving its tip, placed left so the light has room to go right, where the story goes.",
 			"run": {
 				"freeze": "release",
 				"seconds": 1.4
@@ -110,7 +110,7 @@
 				"item": "laser"
 			},
 			"frame": {
-				"width": 0.42
+				"width": 0.28
 			},
 			"place": "left-third",
 			"view": "eye",
@@ -128,7 +128,9 @@
 		{
 			"id": "to-mirror",
 			"beat": "straight",
-			"in": "continue",
+			"in": {
+				"ease": 1.2
+			},
 			"intent": "Ride along the beam at a walking pace: the straight line is the path the light takes, and the camera takes it too. Light is really instant; the ride is a way of looking, over a held moment.",
 			"run": {
 				"freeze": "release"

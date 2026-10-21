@@ -18,7 +18,7 @@
 			"grade": 3
 		},
 		"concept": "a fair test changes only one thing: salt on one ice cube",
-		"scene": "ai/test/fixtures/direct/scenes/ft_melt_plates_salt6_plain.json"
+		"scene": "web/export/test/scenes/ft_melt_plates_salt6_plain.json"
 	},
 	"model": "claude-group/claude-opus-5-5",
 	"usd": 0.1832108,

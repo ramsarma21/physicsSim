@@ -1,9 +1,9 @@
 // The filming module (web/export/shots.js): the executor on synthetic runs (holds at the size asked, follows that keep their subject in every frame,
 // pushes that are smooth and land on their end framing, travels that rest at each stop, cuts and glides, one camera for every lane, the safety net
 // catching what it must, films that are pure functions of plan and run and survive JSON), the design's twelve worked plans on this repository's
-// scenes (every check of the safety net passing), and the automatic plan on the 12 built-in scenarios and 10 gallery scenes.
+// scenes and the lesson compositor's lanes (web/export/test/scenes; every check of the safety net passing), and the automatic plan on the 12
+// built-in scenarios and 10 gallery scenes. Plans are checked against the shot-plan language with the director's own validator (ai/shot-plan.mjs).
 //   node --test web/export/test/shots.test.mjs
-//   LESSON_SCENES=<lesson-regen/compositor/build2/scenes> node --test ...   also the three plans filmed from the lesson compositor's lanes
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
@@ -12,11 +12,10 @@ import { dirname, join, resolve } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import * as X from "../shots.js"
-import { checkSchema } from "../schema-check.js"
+import { checkShotPlanSchema } from "../../../ai/shot-plan.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(HERE, "..", "..", "..")
-const SCHEMA = JSON.parse(readFileSync(join(HERE, "..", "shot-plan.schema.json"), "utf8"))
 const FPS = 30
 const W = 1920
 const H = 1080
@@ -117,7 +116,8 @@ test("a follow keeps its subject in every frame, inside the comfort limits", () 
 	assert.ok(worst < 0.96, `the ball is whole in the picture at every frame (farthest ${worst})`)
 	assert.ok(steady < 0.3, `the ball rides near the middle while it rolls steadily (farthest ${steady})`)
 	assert.ok(check(rep, "speed")[0].ok, check(rep, "speed")[0].why)
-	assert.ok(rep.ok, rep.failed.join("; "))
+	// (every check but the fill of the still it rests in: a small ball at the follow's width, which is what this test films)
+	assert.deepEqual(rep.failed.filter((f) => !/^\S+ fill:/.test(f)), [])
 })
 
 test("a push glides on a straight dolly line, slows into its end framing and rests there", () => {
@@ -133,7 +133,8 @@ test("a push glides on a straight dolly line, slows into its end framing and res
 	const rep = X.measure(f)
 	const end = rep.shots[0].size[0]
 	assert.ok(Math.abs(Math.max(end.w, end.h) - 0.3) < 0.005, `it lands on the end framing (${Math.max(end.w, end.h)})`)
-	assert.ok(rep.ok, rep.failed.join("; "))
+	// (every check but the fill of its first, wide framing, which this test asks for)
+	assert.deepEqual(rep.failed.filter((f) => !/^\S+ fill:/.test(f)), [])
 })
 
 test("a travel goes along its path at a walking pace and rests at each stop", () => {
@@ -351,6 +352,45 @@ test("the safety net catches what it must", () => {
 	assert.equal(fails([{ run: { freeze: "release", seconds: 1 }, move: "hold", subject: { items: ["ball", "block"] }, frame: { fit: "snug" } }, { in: "continue", run: { from: "release", to: "stop:ball" }, move: "hold", subject: { item: "block" }, keep: [{ item: "ball" }] }], "keep-in").length, 1)
 })
 
+test("the safety net sees an empty picture, a subject gone from it and the same still twice; small_because lowers a detail's floor", () => {
+	const w = worldOf(roll())
+	const rep = (shots) => X.measure(film(plan1(shots), w))
+	const one = (r, name) => r.checks.filter((c) => c.check === name)
+	// the ball and the block 1.2 m apart in one picture: most of it backdrop, the two far apart in it
+	const apart = rep([{ run: { freeze: "start", seconds: 2 }, move: "hold", subject: { items: ["ball", "block"] }, frame: { fit: "snug" } }])
+	assert.equal(one(apart, "fill")[0].ok, false)
+	assert.match(one(apart, "fill")[0].why, /of the picture is backdrop \(at most 0\.82\); what the shot names covers 0\.\d+ of the box round it/)
+	assert.ok(apart.shots[0].fill[0].backdrop > 0.82 && apart.shots[0].fill[0].cover < 0.6)
+	// the same two with the gap between them named (the distance is the point): the box round them is what the shot is about
+	assert.equal(one(rep([{ run: { freeze: "start", seconds: 2 }, move: "hold", subject: { items: ["ball", "block"] }, context: [{ gap: ["ball", "block"] }], frame: { fit: "snug" } }]), "fill")[0].ok, true)
+	// one thing close: its own box spans the picture
+	assert.equal(one(rep([{ run: { freeze: "start", seconds: 2 }, move: "hold", subject: { item: "block" }, frame: { size: 0.6 } }]), "fill")[0].ok, true)
+	// a reveal of a whole after its parts is not asked to fill
+	const reveal = X.measure(film(plan1([{ beat: "r", run: { freeze: "start", seconds: 2 }, move: "hold", subject: { items: ["ball", "block"] }, frame: { fit: "snug" } }], { story: [{ id: "r", kind: "reveal", says: "test" }] }), w))
+	assert.equal(one(reveal, "fill").length, 0)
+	// a hold framed where the ball was let go, while it rolls away: the picture is empty of it for seconds
+	const gone = rep([{ run: { from: "release", to: "stop:ball" }, move: "hold", subject: { item: "ball", when: "release" }, frame: { size: 0.3 } }])
+	assert.equal(one(gone, "present")[0].ok, false)
+	assert.match(one(gone, "present")[0].why, /leaves the picture and is gone for [\d.]+ s/)
+	// ... and a shot that waits for the ball to come into a picture of where it is going, briefly: fine; for long: not
+	const waitShort = rep([{ run: { from: { at: "stop:ball", plus: -1 }, to: "stop:ball" }, move: "hold", subject: { item: "ball", when: "stop:ball" }, frame: { size: 0.3 } }])
+	assert.equal(one(waitShort, "present")[0].ok, true, one(waitShort, "present")[0].why)
+	const waitLong = rep([{ run: { from: { at: "stop:ball", plus: -3 }, to: "stop:ball" }, move: "hold", subject: { item: "ball", when: "stop:ball" }, frame: { size: 0.3 } }])
+	assert.match(one(waitLong, "present")[0].why, /the picture waits [\d.]+ s for the subject/)
+	// the very same still picture twice in a row; a mark that appears in the second makes it a new beat
+	const still = { run: { freeze: "start", seconds: 1.5 }, move: "hold", subject: { item: "block" }, frame: { size: 0.5 } }
+	assert.equal(one(rep([still, { ...still, in: "cut" }]), "repeat").length, 1)
+	assert.equal(one(rep([still, { ...still, in: "cut", annotate: [{ kind: "label", on: { item: "block" }, text: "block" }] }]), "repeat").length, 0)
+	// a small detail: under its floor, unless small_because (with min_size) says the smallness is the point
+	const wide = { run: { freeze: "start", seconds: 2 }, move: "hold", subject: { items: ["ball", "block"] }, context: [{ gap: ["ball", "block"] }], frame: { width: 2.4 }, view: "eye" }
+	const plain = rep([{ ...wide, audit: { question: "Can a child see the ball and the block?", details: [{ item: "ball" }] } }])
+	assert.equal(one(plain, "must-see")[0].ok, false)
+	assert.match(one(plain, "must-see")[0].why, /\{"item":"ball"\} \(a detail\) s 0\.\d+ \(floor 0\.045\)/)
+	const small = rep([{ ...wide, audit: { question: "Can a child see the ball and the block?", details: [{ item: "ball" }], min_size: 0.03, small_because: "the ball is small next to the block: that is the point" } }])
+	assert.ok(plain.shots[0].must[0].s >= 0.03 && plain.shots[0].must[0].s < 0.045, `the ball as a detail: s ${plain.shots[0].must[0].s}`)
+	assert.equal(one(small, "must-see")[0].ok, true, one(small, "must-see")[0].why)
+})
+
 test("specOf: a square-on pose is the scene's fixed-camera spec (camera.py projects it exactly)", () => {
 	const pose = { L: [1.2, 0.3, 0], d: 2.5, yaw: 0, pitch: 0.12, hfov: 0.8 }
 	const s = X.specOf(pose)
@@ -365,8 +405,7 @@ test("specOf: a square-on pose is the scene's fixed-camera spec (camera.py proje
 
 // ------------------------------------------------------------------------------------------------ the design's twelve plans, on real runs
 const index = JSON.parse(readFileSync(join(HERE, "plans", "index.json"), "utf8")).plans
-const LESSON = process.env.LESSON_SCENES ?? null
-const sceneFile = (p) => (p.startsWith("$LESSON_SCENES/") ? (LESSON ? join(LESSON, p.slice("$LESSON_SCENES/".length)) : null) : join(ROOT, p))
+const sceneFile = (p) => join(ROOT, p)
 
 test("the design's twelve worked plans: valid, resolved, every check of the safety net passing", async () => {
 	const { simulate, catalog, plugins } = await import("./sim-node.mjs")
@@ -376,9 +415,9 @@ test("the design's twelve worked plans: valid, resolved, every check of the safe
 	let done = 0
 	for (const [name, runs] of Object.entries(index)) {
 		const files = Object.fromEntries(Object.entries(runs).map(([lane, p]) => [lane, sceneFile(p)]))
-		if (Object.values(files).some((f) => !f || !existsSync(f))) continue
+		assert.ok(Object.values(files).every((f) => existsSync(f)), `${name}: its scenes ${Object.values(files).join(", ")}`)
 		const plan = JSON.parse(readFileSync(join(HERE, "plans", `${name}.json`), "utf8"))
-		assert.deepEqual(checkSchema(SCHEMA, plan), [], `${name}: valid against shot-plan.schema.json`)
+		assert.deepEqual(checkShotPlanSchema(plan), [], `${name}: valid against shot-plan.schema.json`)
 		let world
 		if (files[""]) {
 			const scene = JSON.parse(readFileSync(files[""], "utf8"))
@@ -394,7 +433,7 @@ test("the design's twelve worked plans: valid, resolved, every check of the safe
 		})
 		done++
 	}
-	assert.ok(done >= 9, `${done} of the 12 plans ran (the 9 on this repository's scenes at least)`)
+	assert.equal(done, 12)
 })
 
 // ------------------------------------------------------------------------------------------------ the automatic plan (camera "focus")
@@ -411,7 +450,7 @@ test("the automatic plan on the 12 scenarios and 10 gallery scenes: valid, video
 		const scene = JSON.parse(readFileSync(f, "utf8"))
 		const world = X.makeWorld({ run: simulate(scene), scene, catalog: cat, registry: reg })
 		const plan = X.autoPlan(world, { width: W, height: H, fps: FPS })
-		assert.deepEqual(checkSchema(SCHEMA, plan), [], `${f}: the automatic plan is valid`)
+		assert.deepEqual(checkShotPlanSchema(plan), [], `${f}: the automatic plan is valid`)
 		const r = X.checkPlan(plan, world, { width: W, height: H, fps: FPS, kind: "focus" })
 		assert.ok(r.film, `${f}: ${r.messages.join("; ")}`)
 		const dur = world.main.dur

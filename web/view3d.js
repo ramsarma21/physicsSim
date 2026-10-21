@@ -20,6 +20,7 @@ import { buildModel, beginRun, endRun, modelFor, modelKey, isModelCached, pinMod
 import { makeGate } from "./start-gate.js"
 import * as Shots from "./export/shots.js"
 import { recognize, registryOf, sceneFromSim } from "./export/subjects.js"
+import { buildDigest, digestText } from "./export/digest.js"
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Constants (all lengths in meters)
@@ -8381,6 +8382,10 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		ctx.lineCap = "round"
 		ctx.lineJoin = "round"
 		const font = (k) => `600 ${Math.max(10, Math.round(k * H))}px "Helvetica Neue", Helvetica, Arial, sans-serif`
+		// (the words already written in this band: a label that would land on one moves away from its anchor, up for above, down otherwise, so two
+		// marks on one thing never print over each other)
+		let placed = []
+		let inBand = [0, 0, W, H] // (the band being written in: words are kept whole inside it, never cut by its edge)
 		const text = (s, x, y, anchor, key) => {
 			ctx.font = font(key ? 0.04 : 0.03)
 			const m = ctx.measureText(s)
@@ -8401,6 +8406,17 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 				tx = x - m.width / 2
 				ty = y + th / 2.8
 			}
+			const dir = anchor === "above" ? -1 : 1
+			const [bx, by, bw, bh] = inBand
+			tx = Math.min(Math.max(tx, bx + pad), Math.max(bx + pad, bx + bw - m.width - pad))
+			ty = Math.min(Math.max(ty, by + th + pad), Math.max(by + th + pad, by + bh - pad))
+			const hits = (r) => placed.find((o) => r.x < o.x + o.w && o.x < r.x + r.w && r.y < o.y + o.h && o.y < r.y + r.h)
+			for (let n = 0; n < 8; n++) {
+				const o = hits({ x: tx - pad, y: ty - th - pad, w: m.width + 2 * pad, h: th + 2 * pad })
+				if (!o) break
+				ty = dir < 0 ? o.y - pad : o.y + o.h + th + pad
+			}
+			placed.push({ x: tx - pad, y: ty - th - pad, w: m.width + 2 * pad, h: th + 2 * pad })
 			ctx.lineWidth = Math.max(2, 0.16 * th)
 			ctx.strokeStyle = "rgba(10,12,16,0.85)"
 			ctx.strokeText(s, tx, ty)
@@ -8413,6 +8429,8 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			const prims = marks?.[bi] ?? []
 			if (!prims.length && !b.inset) continue
 			drewAny = true
+			placed = []
+			inBand = b.rect
 			ctx.save()
 			ctx.beginPath()
 			ctx.rect(x, y, w, h)
@@ -8662,12 +8680,15 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		const shot = exportShot(xg, kind, W, H, fps, planSpec(kind, o))
 		return { film: shot.film, plan: shot.plan, report: shot.report, summary: planSummary(shot) }
 	}
-	/** What a director may name in the run shown (DIRECTOR.md section 2: Shots.digest with the drawn models' boxes), as data and as the prompt's text.
+	/** What a director may name in the run shown (DIRECTOR.md section 2): the director's own timeline digest (web/export/digest.js, as the AI step
+	 *  `direct` builds it) with the moments and the recognizer's answer of the world this view films, as data and as the prompt's text.
 	 *  o: {focus: {scene, hints, catalog}, runs, lane} as renderFrame's. null until the run is settled. */
 	function exportDigest(o) {
 		if (disposed || !canExport() || !isSettled()) return null
-		const d = Shots.digest(planWorld(planSpec("focus", o ?? {})))
-		return { digest: d, text: Shots.digestText(d) }
+		const world = planWorld(planSpec("focus", o ?? {}))
+		const runs = [...world.runs.entries()].map(([lane, R]) => ({ lane, scene: R.scene ?? sceneFromSim(R.sim), run: R.sim, recog: R.recog, moments: { index: Object.fromEntries(R.M), what: Object.fromEntries(R.WHAT) } }))
+		const d = buildDigest({ runs })
+		return { digest: d, text: digestText(d) }
 	}
 	/** The drawn models' boxes of the run shown ({solid id: {x0, x1, y0, y1, z0, z1} | {round, z0, z1} | {world: [...]}}), to plan with this run while
 	 *  another is shown (renderFrame's runs[lane].boxes). null until the run is settled. */

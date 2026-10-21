@@ -2119,7 +2119,7 @@ function outcomeGoalSoft(v, ctx) {
 }
 
 // ---------------------------------------------------------------- per step
-// direct: the director's shot plan (ai/shot-plan.schema.json), resolved against ctx.digest (the run's timeline digest: ai/shot-plan.mjs)
+// direct: the director's shot plan (web/export/shot-plan.schema.json), resolved against ctx.digest (the run's timeline digest: ai/shot-plan.mjs)
 export const VALIDATORS = { observe: validateObservation, plan: validatePlan, refine: validateRefine, rate: validateRate, edit: validateEdit, direct: validateShotPlan }
 export function validate(step, value, ctx) {
 	const f = VALIDATORS[step]

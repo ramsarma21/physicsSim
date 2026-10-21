@@ -150,7 +150,7 @@
 				"role": "egg"
 			},
 			"frame": {
-				"width": 0.34
+				"width": 0.1
 			},
 			"view": "eye",
 			"lens": 50,
@@ -177,7 +177,7 @@
 			"id": "fall",
 			"beat": "land",
 			"layout": "split",
-			"in": "continue",
+			"in": "cut",
 			"intent": "Let go and ride down with both eggs, eight times slower, one camera for both halves, and come to rest at the ground as they land: one cracks on the table, one sinks into the foam.",
 			"run": {
 				"from": {

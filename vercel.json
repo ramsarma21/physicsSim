@@ -10,7 +10,7 @@
 		"api/ai/*.mjs": {
 			"maxDuration": 300,
 			"supportsCancellation": true,
-			"includeFiles": "{ai/**,web/sim/**/*.js,web/sim/**/*.json,web/track.js,web/export/*.js}",
+			"includeFiles": "{ai/**,web/sim/**/*.js,web/sim/**/*.json,web/track.js,web/export/*.js,web/export/*.json}",
 			"excludeFiles": "web/sim/**/*.map"
 		},
 		"api/scenes/*.mjs": {

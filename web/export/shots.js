@@ -8,7 +8,6 @@
 //   compile(plan, world, {width, height, fps})  -> a film: per frame its shot, its run time and one camera per band (JSON; frameAt() reads it)
 //   measure(film)                               -> the report: each shot's measured facts and the safety net's checks (DIRECTOR.md 7.2)
 //   autoPlan(world, {width, height, fps})       -> the plan with no director: what the recognizer says the run is about, big, cut by moment
-//   digest(world) / digestText(digest)          -> what a director may name (section 2), as data and as the prompt's text
 //   resolvePlan(plan, world) / checkPlan(plan, world, opts)   -> every id resolved (7.1), then compiled and measured (7.2), with messages
 //   frameAt(film, tau), cameraOf(pose), specOf(pose), runTimeAt(film, tau), videoTimesOf(film, t), retime(film, impacts), filmFromJSON(json)
 //
@@ -45,6 +44,11 @@ export const NET = Object.freeze({
 	minShot: 0.8,
 	faceH: 0.18, // an instrument face whose reading carries the answer: at least this share of the picture's height (gate 5)
 	parity: 1.1, // the same role in two lanes: sizes within 10 %
+	backdrop: 0.82, // a held moment's picture: at most this share of it shows nothing of the scene (FRAMING_RULE gate 4; the originals 0.57 to 0.80) ...
+	fillLong: 0.5, // ... unless what it names already spans this share of the picture on its longer side (a thin, flat or lone thing framed close) ...
+	spread: 0.6, // ... and covers this share of the box round it (things far apart with backdrop between belong in their own bands)
+	absentS: 0.5, // video seconds a playing shot may show none of its subject once it has been seen (it left the picture) ...
+	waitS: 1.5, // ... and before it first comes in (a cut ahead that waits for a fast thing to arrive)
 })
 /** The named views: yaw and pitch in degrees, and the lens a view takes when the shot names none (mm on a full-frame camera). */
 export const VIEWS = Object.freeze({
@@ -765,6 +769,25 @@ function scopeOf(world, lanesSpec) {
 		return [].concat(ln?.cast[role] ?? [])
 	}
 	const ptsOfIds = (R, ids, t) => ids.flatMap((id) => R.itemPts(id, null, t))
+	// a thing no lane's cast names that stands on or in one lane's things, far from the others' (the salt on the salted cube), is that lane's
+	// too: drawn, framed, marked and measured in its own band only, never copied into the other bands at their offset (where it is not)
+	if (lanes && one) {
+		const scenery = new Set((one.recog?.scenery ?? []).map((x) => x.item))
+		const boxes = lanes
+			.map((ln) => {
+				const P = ptsOfIds(one, Object.values(ln.cast).flatMap((v) => [].concat(v)), 0)
+				return P.length ? { id: ln.id, x0: Math.min(...P.map((X) => X[0])), x1: Math.max(...P.map((X) => X[0])), y0: Math.min(...P.map((X) => X[1])), y1: Math.max(...P.map((X) => X[1])) } : null
+			})
+			.filter(Boolean)
+		for (const id of one.itemIds()) {
+			if (laneOf.has(id) || scenery.has(id) || boxes.length < 2) continue
+			const P = one.itemPts(id, null, 0)
+			if (!P.length) continue
+			const c = centre3(P)
+			const ds = boxes.map((b) => ({ id: b.id, d: Math.hypot(Math.max(b.x0 - c[0], 0, c[0] - b.x1), Math.max(b.y0 - c[1], 0, c[1] - b.y1)) })).sort((a, b) => a.d - b.d)
+			if (ds[0].d <= 0.05 && ds[1].d > 0.15) laneOf.set(id, ds[0].id)
+		}
+	}
 	const offsets = new Map()
 	if (lanes) {
 		const L0 = lanes[0]
@@ -1284,7 +1307,7 @@ export function compile(plan, world, opts = {}) {
 		}
 		const allBands = [...bands.map((b) => ({ lane: b.lane, rect: b.rect })), ...insets.map((b) => ({ lane: b.lane, rect: b.rect, inset: true }))]
 		// the other lanes' things are left out of each band (one run: a band shows only its own lane's copies)
-		const hide = allBands.map((b) => (layout === "split" && S.one && b.lane ? lanes.filter((l) => l.id !== b.lane).flatMap((l) => Object.values(l.cast).flatMap((v) => [].concat(v))).filter((id) => S.laneOf.get(id) !== b.lane) : []))
+		const hide = allBands.map((b) => (layout === "split" && S.one && b.lane ? [...S.laneOf].filter(([, l]) => l !== b.lane).map(([id]) => id) : []))
 		const i0 = frames.length
 		for (let i = 0; i < n; i++) {
 			const u = i / fps
@@ -1640,7 +1663,9 @@ export function measure(film) {
 					if (!P.length) continue
 					const s = boxStats(projBox(arrPose(KF.b[bi]), aspOf(bi), P))
 					const kindFloor = isDetail || tg.part || tg.reading || !thing(tg) ? NET.detailS : heroFloor
-					const floor = sh.audit?.min_size !== undefined && !isDetail ? (small ? sh.audit.min_size : Math.max(sh.audit.min_size, kindFloor)) : small && !isDetail ? Math.min(kindFloor, NET.detailS) : kindFloor
+					// min_size raises a must-see thing's floor; with small_because it sets the floor of must-see things and details alike (never under the
+					// schema's 0.03); small_because alone lowers a must-see hero to the detail floor
+					const floor = sh.audit?.min_size !== undefined ? (small ? sh.audit.min_size : isDetail ? kindFloor : Math.max(sh.audit.min_size, kindFloor)) : small && !isDetail ? Math.min(kindFloor, NET.detailS) : kindFloor
 					must.push({ what: JSON.stringify(tg), lane: fs.bands[bi].lane, s: r3(s.s), h: r3(s.h), margin: r3(s.margin), floor, detail: !!isDetail })
 				}
 		}
@@ -1710,7 +1735,7 @@ export function measure(film) {
 			if (heroRows.length) (bad.length ? fail : pass)(sh.id, "subject-size", `${bad.length ? "too small: " : ""}${(bad.length ? bad : heroRows).map((h) => `${h.what}${h.lane ? "@" + h.lane : ""} s ${h.s} h ${h.h}`).join("; ")} (floor s ${heroFloor}${wholeShot ? ", a whole/setup shot" : `, h ${NET.heroH} unless flat or thin`}; group ${sizes.map((z) => z.s).join("/")})`)
 		}
 		const badMust = must.filter((x) => x.s < x.floor * 0.999 || x.margin < 0)
-		if (must.length) (badMust.length ? fail : pass)(sh.id, "must-see", badMust.length ? badMust.map((x) => `${x.what}${x.lane ? "@" + x.lane : ""} s ${x.s} (floor ${x.floor}) margin ${x.margin}`).join("; ") : `${must.length} things whole, each at least its floor${small ? ` (small, because: ${sh.audit.small_because})` : ""}`)
+		if (must.length) (badMust.length ? fail : pass)(sh.id, "must-see", badMust.length ? badMust.map((x) => `${x.what}${x.lane ? "@" + x.lane : ""}${x.detail ? " (a detail)" : ""} s ${x.s} (floor ${x.floor}) margin ${x.margin}`).join("; ") : `${must.length} things whole, each at least its floor${small ? ` (small, because: ${sh.audit.small_because})` : ""}`)
 		for (const fc of faces) (fc.h >= NET.faceH * 0.999 ? pass : fail)(sh.id, "face", `${fc.what}${fc.lane ? "@" + fc.lane : ""}: the face ${fc.h} of the picture's height (at least ${NET.faceH} to read it)`)
 		if (parity !== null) (parity <= NET.parity + 1e-9 ? pass : fail)(sh.id, "parity", `the lanes' scale (picture widths per metre at each lane's own subject) differs x${parity} (at most x${NET.parity})`)
 		// a pause, and the video's last shot: still for its last 0.5 s
@@ -1726,6 +1751,164 @@ export function measure(film) {
 			;(mv <= 0.003 ? pass : fail)(sh.id, "settled", `the last 0.5 s ${mv <= 0.003 ? "still" : `moves ${r3(mv)} widths/s`}`)
 		}
 		if (fs.T < NET.minShot - 1e-9) fail(sh.id, "shot-length", `${r3(fs.T)} s (a shot under ${NET.minShot} s cannot be read)`)
+		// present: a shot whose run plays keeps its subject in the picture (a hold framed where a thing starts, while it leaves, shows an empty
+		// picture); a cut ahead may wait a little for it to arrive
+		if (fs.rate !== 0 && sh.move !== "travel" && sh.move !== "follow" && thing(sh.subject)) {
+			const heroes = heroesOf(sh.subject).map(({ when, ...h }) => h)
+			let gone = 0
+			let goneAt = null
+			let wait = 0
+			for (let bi = 0; bi < nb; bi++) {
+				let run = 0
+				let seenYet = false
+				for (let i = 0; i < F.length; i++) {
+					const pose = arrPose(F[i].b[bi])
+					let seen = false
+					for (const h of heroes) {
+						if (h.lane && fs.bands[bi].lane && h.lane !== fs.bands[bi].lane) continue
+						const P = tgPts(h, bi, F[i].t)
+						if (!P.length) continue
+						const b = projBox(pose, aspOf(bi), P)
+						if (b.behind) continue
+						const inW = Math.max(0, Math.min(1, b.x1) - Math.max(-1, b.x0))
+						const inH = Math.max(0, Math.min(1, b.y1) - Math.max(-1, b.y0))
+						const all = Math.max(1e-9, (b.x1 - b.x0) * (b.y1 - b.y0))
+						if ((inW * inH) / all >= 0.25) seen = true
+					}
+					if (seen) {
+						seenYet = true
+						run = 0
+						continue
+					}
+					run++
+					if (!seenYet) wait = Math.max(wait, run / fps)
+					else if (run / fps > gone) {
+						gone = run / fps
+						goneAt = r3(fs.tau0 + i / fps)
+					}
+				}
+			}
+			const bad = gone > NET.absentS + 1e-9 || wait > NET.waitS + 1e-9
+			const who = heroes.map((h) => JSON.stringify(h)).join(", ")
+			;(bad ? fail : pass)(sh.id, "present", gone > NET.absentS + 1e-9 ? `the subject (${who}) leaves the picture and is gone for ${r3(gone)} s, until ${goneAt} s of video (at most ${NET.absentS} s): follow it, end the shot as it leaves, or frame where it goes` : wait > NET.waitS + 1e-9 ? `the picture waits ${r3(wait)} s for the subject (${who}) to come in (at most ${NET.waitS} s): start the shot later, or frame where it is` : `the subject stays in the picture${wait > 0 ? ` (it comes in after ${r3(wait)} s)` : ""}`)
+		}
+		// fill (FRAMING_RULE gate 4): a still picture shows the scene, not backdrop. Most of it may be backdrop only when what the shot names already
+		// spans the picture and fills the box round it (a thin or flat thing framed tight); otherwise the camera is too far, or the things it names
+		// stand apart with empty backdrop between them
+		// (a held moment's picture: not a run playing, which a hold frames over the room its things move through, nor a moving shot, a reveal of
+		// a whole after its parts, a picture of light, or space, where the scene's own sky is the picture)
+		const fillExempt = fs.rate !== 0 || sh.move === "travel" || sh.move === "follow" || beatKind === "reveal" || fs.look?.backdrop === "scene" || [subjAtKey, sh.subject, ...(sh.keep ?? []), ...(sh.context ?? [])].some((tg) => tg?.beam !== undefined)
+		if (!fillExempt) {
+			const named = [subjAtKey, ...(sh.keep ?? []), ...(sh.context ?? []), ...(sh.audit?.must_see ?? []), ...(sh.audit?.details ?? [])].filter(Boolean)
+			const fills = []
+			for (let bi = 0; bi < nb; bi++) {
+				const pose = arrPose(KF.b[bi])
+				const asp = aspOf(bi)
+				const lane = fs.bands[bi].lane
+				const pr = projector(pose, asp)
+				/** a thing's box as the picture shows it, clipped to the picture; a box reaching behind the camera (a table top under a close camera)
+				 *  by the part in front of it (its points sampled through the box) */
+				const shownBox = (P) => {
+					let b = projBox(pose, asp, P)
+					if (b.behind) {
+						const lo = [0, 1, 2].map((k) => Math.min(...P.map((X) => X[k])))
+						const hi = [0, 1, 2].map((k) => Math.max(...P.map((X) => X[k])))
+						b = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity }
+						for (let a = 0; a <= 6; a++)
+							for (let c = 0; c <= 6; c++)
+								for (let e = 0; e <= 6; e++) {
+									const q = pr([lo[0] + ((hi[0] - lo[0]) * a) / 6, lo[1] + ((hi[1] - lo[1]) * c) / 6, lo[2] + ((hi[2] - lo[2]) * e) / 6])
+									if (q.z < 0.02) continue
+									b.x0 = Math.min(b.x0, q.x)
+									b.x1 = Math.max(b.x1, q.x)
+									b.y0 = Math.min(b.y0, q.y)
+									b.y1 = Math.max(b.y1, q.y)
+								}
+					}
+					const c = { x0: Math.max(-1, b.x0), x1: Math.min(1, b.x1), y0: Math.max(-1, b.y0), y1: Math.min(1, b.y1) }
+					return c.x1 > c.x0 && c.y1 > c.y0 ? c : null
+				}
+				const mine = []
+				for (const tg of named) {
+					if (tg.lane && lane && tg.lane !== lane) continue
+					// (a group's things one by one, so things far apart are measured apart; a place, a mark, a trail, a gap or a face as its own box)
+					const ones = thing(tg) ? heroesOf(tg) : []
+					for (const one of ones.length ? ones : [tg]) {
+						const P = tgPts(one, bi, KF.t)
+						const c = P.length ? shownBox(P) : null
+						if (c) mine.push(c)
+					}
+				}
+				if (!mine.length) continue
+				// everything else the band draws of the scene: not what the look turns into backdrop (the table top under a studio sweep, walls, things
+				// drawn invisible) and not the other lanes' things
+				const R = S.one ? S.one : S.runOf(lane)
+				const hidden = new Set(fs.hide?.[bi] ?? [])
+				const backdropItem = (id) => {
+					const it = R.scene?.items?.find((x) => x.id === id)
+					const type = R.solidsOf.get(id)?.[0]?.itemType ?? it?.type
+					return (type === "table" && fs.look?.ground !== "table") || type === "wall" || it?.props?.invisible_in_3d === true
+				}
+				const drawn = []
+				for (const id of R.itemIds()) {
+					if (hidden.has(id) || backdropItem(id)) continue
+					const P = R.itemPts(id, null, KF.t)
+					const c = P.length ? shownBox(P) : null
+					if (c) drawn.push(c)
+				}
+				// (and what a module draws that has no body of its own: a circuit's board)
+				for (const pr of R.doc?.processes ?? [])
+					for (const b of pr.boards ?? []) {
+						if (!(b.width > 0 && b.height > 0)) continue
+						const P = []
+						for (const dx of [-0.5, 0.5]) for (const dy of [-0.5, 0.5]) for (const z of [-0.01, 0.01]) P.push([b.x + dx * b.width, b.y + dy * b.height, z])
+						const c = shownBox(P)
+						if (c) drawn.push(c)
+					}
+				const U = { x0: Math.min(...mine.map((b) => b.x0)), x1: Math.max(...mine.map((b) => b.x1)), y0: Math.min(...mine.map((b) => b.y0)), y1: Math.max(...mine.map((b) => b.y1)) }
+				const longer = Math.max((U.x1 - U.x0) / 2, (U.y1 - U.y0) / 2)
+				// a 48-column grid of the picture: the share the scene covers, and the share of the box round the named things they cover
+				const GX = 48
+				const GY = Math.max(8, Math.round(GX / asp))
+				let all = 0
+				let shown = 0
+				let inU = 0
+				let hitU = 0
+				const inside = (b, x, y) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1
+				for (let gy = 0; gy < GY; gy++) {
+					const y = -1 + (2 * (gy + 0.5)) / GY
+					for (let gx = 0; gx < GX; gx++) {
+						const x = -1 + (2 * (gx + 0.5)) / GX
+						all++
+						const own = mine.some((b) => inside(b, x, y))
+						if (own || drawn.some((b) => inside(b, x, y))) shown++
+						if (inside(U, x, y)) {
+							inU++
+							if (own) hitU++
+						}
+					}
+				}
+				fills.push({ lane, backdrop: r3(1 - shown / all), longer: r3(longer), cover: r3(inU ? hitU / inU : 1) })
+			}
+			row.fill = fills
+			const bad = fills.filter((f) => f.backdrop > NET.backdrop + 1e-9 && (f.longer < NET.fillLong - 1e-9 || f.cover < NET.spread - 1e-9))
+			const say = (f) => `${f.lane ? `${f.lane}: ` : ""}${f.backdrop} of the picture is backdrop (at most ${NET.backdrop}); what the shot names ${f.longer < NET.fillLong ? `spans ${f.longer} of the picture's longer side (${NET.fillLong} would fill it)` : ""}${f.longer < NET.fillLong && f.cover < NET.spread ? " and " : ""}${f.cover < NET.spread ? `covers ${f.cover} of the box round it (${NET.spread} would fill it): things apart with backdrop between` : ""}`
+			if (fills.length) (bad.length ? fail : pass)(sh.id, "fill", bad.length ? `${bad.map(say).join("; ")}: frame closer or with a longer lens, give far-apart things their own bands (layout split, one scale) or show them one at a time, or name what belongs in the room around them (keep, context)` : `the scene fills the picture (${fills.map((f) => `${f.lane ? f.lane + " " : ""}backdrop ${f.backdrop}`).join(", ")})`)
+		}
+		// the same still picture twice: a cut to the very picture the shot before ended on, the run held at the same moment, the same marks and
+		// badge (nothing changes on screen: marks that appear or change make it a new beat, not a repeat)
+		if (k > 0 && fs.rate === 0 && row.peakPanWps <= NET.holdStill && row.peakZoomPerS <= 0.01 && JSON.stringify(sh.annotate ?? []) === JSON.stringify(meta[k - 1].sh.annotate ?? []) && (sh.label ?? null) === (meta[k - 1].sh.label ?? null)) {
+			const pf = film.shots[k - 1]
+			const a = film.frames[pf.i0 + pf.n - 1]
+			const c = F[0]
+			const samePose = (p, q) => {
+				const P = arrPose(p)
+				const Q = arrPose(q)
+				return Math.abs(Math.log(P.d / Q.d)) < 0.01 && len3(sub(P.L, Q.L)) < 0.005 * P.d && Math.abs(P.yaw - Q.yaw) < 0.01 && Math.abs(P.pitch - Q.pitch) < 0.01 && Math.abs(P.hfov - Q.hfov) < 1e-3
+			}
+			if (pf.rate === 0 && Math.abs(pf.t0 - fs.t0) < 1e-6 && pf.layout === fs.layout && a.b.length === c.b.length && a.b.every((p, bi) => samePose(p, c.b[bi])))
+				fail(sh.id, "repeat", `the same still picture as ${pf.id} (the run held at the same moment, the camera where it was, the same marks)${fs.layout === "split" ? `: in a split every band shows its own lane's copy of the subject at one scale, so another lane's thing frames the very same picture (to show one lane's thing alone, use layout single)` : ""}: make them one shot, or change the picture`)
+		}
 		// a cut that changes the picture only a little is a jump cut
 		if (fs.in === "cut" && prevPose) {
 			const a = prevPose
@@ -2447,124 +2630,4 @@ function autoLanes(R, rec, primary) {
 			cast: Object.fromEntries(roles.filter((r) => r.per[i]).map((r) => [r.name, r.per[i]])),
 		})),
 	}
-}
-
-// ------------------------------------------------------------------------------------------------ the digest (section 2)
-/** What a director may name (DIRECTOR.md section 2): per run (one, or one per lane) the scene, the cast ranked by the recognizer with each thing's
- *  size, boxes, start and rest and top speed and parts, every moment id with its time and words, the contacts, the module happenings, the
- *  readings, the light sources' traced paths with their bounces and measured angles, the lanes the recognizer found, the metre marks and the
- *  instrument faces. Plain data; digestText() is the prompt's compact text. */
-export function digest(world) {
-	const runs = []
-	for (const [lane, R] of world.runs) {
-		const rec = R.recog
-		const rankOf = new Map()
-		for (const s of rec.subjects ?? []) rankOf.set(s.item, s)
-		const box = (P) => {
-			const [a, b] = boundsOf(P)
-			return [r3(a[0]), r3(b[0]), r3(a[1]), r3(b[1])]
-		}
-		const cast = []
-		const ranked = [...(rec.primary ?? []), ...(rec.context ?? [])]
-		const listed = [...ranked, ...R.itemIds().filter((id) => !ranked.includes(id))]
-		for (const id of listed) {
-			const P0 = R.itemPts(id, null, 0)
-			if (!P0.length) continue
-			const sw = []
-			for (let k = 0; k <= 30; k++) sw.push(...R.itemPts(id, null, (R.dur * k) / 30))
-			const s = rankOf.get(id)
-			const scen = (rec.scenery ?? []).find((x) => x.item === id)
-			const cs = R.seriesOf(id)
-			let top = 0
-			if (cs) for (let k = 1; k < cs.length; k++) top = Math.max(top, Math.hypot(cs[k][0] - cs[k - 1][0], cs[k][1] - cs[k - 1][1]) * R.HZ)
-			const b0 = box(P0)
-			cast.push({
-				id,
-				name: R.scene?.items?.find((i) => i.id === id)?.name ?? null,
-				type: R.solidsOf.get(id)[0]?.itemType ?? null,
-				rank: s ? s.rank : scen ? "scenery" : "other",
-				roles: s?.roles ?? [],
-				size: [r3(b0[1] - b0[0]), r3(b0[3] - b0[2])],
-				box: b0,
-				swept: box(sw.length ? sw : P0),
-				start: R.M.get(`start:${id}`) ?? null,
-				rest: R.M.get(`stop:${id}`) ?? null,
-				topSpeed: r3(top),
-				parts: R.partsOf(id),
-			})
-		}
-		const moments = [...R.M.entries()].map(([id, t]) => ({ id, t: r4(t), what: R.WHAT.get(id) ?? "" })).sort((a, b) => a.t - b.t || (a.id < b.id ? -1 : 1))
-		const readings = []
-		for (const item of Object.keys(R.track.state ?? {}))
-			for (const key of R.readingKeys(item)) {
-				const raw = R.track.state[item][key].filter((v) => typeof v === "number")
-				if (!raw.length) continue
-				readings.push({ item, key, start: r4(raw[0]), end: r4(raw[raw.length - 1]), min: r4(Math.min(...raw)), max: r4(Math.max(...raw)), starts: R.readT(item, key, "starts") ?? null, settles: R.readT(item, key, "settles") ?? null, peak: R.readT(item, key, "peak") ?? null })
-			}
-		const beams = R.sourceIds().map((src) => {
-			const on = R.M.get(`beam:${src}:on`)
-			const t = on !== undefined ? Math.max(on, Math.min(R.dur, R.tRel)) : null
-			const b = t !== null ? R.beamAt(src, t) : null
-			return {
-				source: src,
-				on: on ?? null,
-				at: t,
-				points: b ? b.pts.map((p) => [r4(p[0]), r4(p[1])]) : [],
-				segments: b ? b.segments.map((s) => ({ n: s.n, length: r3(s.length), ends: s.end })) : [],
-				bounces: b ? b.bounces.map((x, i) => ({ n: i + 1, point: [r4(x.p[0]), r4(x.p[1])], item: x.item, normal: x.n ? [r3(x.n[0]), r3(x.n[1])] : null, in: x.in === null ? null : r3(x.in), out: x.out === null ? null : r3(x.out) })) : [],
-			}
-		})
-		const instruments = (rec.readables ?? []).filter((r) => r.kind === "face").map((r) => ({ item: r.items[0], face: R.partsOf(r.items[0]).includes("face") ? "face" : null, readings: R.readingKeys(r.items[0]), what: r.what }))
-		runs.push({
-			lane,
-			scene: { id: R.doc.id ?? null, name: R.scene?.name ?? null, seconds: r3(R.dur), release: r3(R.tRel), timeLapse: R.scene?.settings?.time_lapse ?? 1, tableTop: r3(R.tableTop), environment: R.environment ?? null },
-			cast,
-			scenery: (rec.scenery ?? []).map((x) => x.item),
-			others: (rec.others ?? []).map((x) => x.item),
-			moments,
-			contacts: R.contacts.map((c) => ({ a: c.a, b: c.b, t: r4(c.t), speed: r3(c.speed) })),
-			events: R.events.map((e) => ({ kind: e.kind, items: e.items ?? [], t: r4(e.t), text: e.text ?? "" })),
-			readings,
-			beams,
-			lanes: rec.lanes ? { lanes: rec.lanes, pairs: rec.pairs, variable: rec.variable ?? [] } : null,
-			marks: [...R.marks.values()].map((m) => ({ item: m.item, zero: m.zero ?? m.x ?? null, start: m.start ?? null, finish: m.finish ?? null })),
-			instruments,
-			paths: [],
-		})
-	}
-	return { version: VERSION, runs }
-}
-/** The digest as the director's prompt shows it (section 2.2): ids first, one fact per line, metres and seconds. */
-export function digestText(d) {
-	const L = []
-	const f = (v) => (v === null || v === undefined ? "-" : String(r3(v)))
-	for (const r of d.runs) {
-		const tag = r.lane ? ` (lane ${r.lane})` : ""
-		L.push(`SCENE${tag} ${r.scene.id ?? ""} ${JSON.stringify(r.scene.name ?? "")}: ${f(r.scene.seconds)} s, release ${f(r.scene.release)}${r.scene.timeLapse && r.scene.timeLapse !== 1 ? `, time-lapse x${r.scene.timeLapse}` : ""}. Table top y = ${f(r.scene.tableTop)}.`)
-		const castLine = (c) => `${c.id.padEnd(10)} ${c.rank.padEnd(8)} ${String(c.type ?? "").padEnd(14)} x ${f(c.box[0])}..${f(c.box[1])} y ${f(c.box[2])}..${f(c.box[3])} (${f(c.size[0])} x ${f(c.size[1])} m)${c.swept[1] - c.swept[0] > c.size[0] + 0.02 || c.swept[3] - c.swept[2] > c.size[1] + 0.02 ? `, swept x ${f(c.swept[0])}..${f(c.swept[1])} y ${f(c.swept[2])}..${f(c.swept[3])}` : ""}${c.start !== null ? `; start ${f(c.start)}` : ""}${c.rest !== null ? ` rest ${f(c.rest)}` : ""}${c.topSpeed > 0.02 ? `, top ${f(c.topSpeed)} m/s` : ""}${c.parts.length > 1 ? `; parts ${c.parts.join(" ")}` : ""}${c.roles.length ? `  (${c.roles.join(", ")})` : ""}`
-		const main = r.cast.filter((c) => c.rank === "primary" || c.rank === "context")
-		const rest = r.cast.filter((c) => c.rank !== "primary" && c.rank !== "context")
-		main.forEach((c, i) => L.push(`${i ? "      " : "CAST  "} ${castLine(c)}`))
-		if (rest.length) L.push(`       others: ${rest.map((c) => `${c.id} (${c.rank})`).join(", ")}`)
-		if (r.lanes) L.push(`LANES  ${r.lanes.lanes.map((l) => `${l.id}: ${l.items.join(" ")}`).join(" | ")}; pairs ${r.lanes.pairs.map((p) => p.join("/")).join(", ")}${r.lanes.variable?.length ? `; variable ${r.lanes.variable.join(", ")}` : ""}`)
-		L.push(`MOMENTS ${r.moments.map((m) => `${m.id} ${f(m.t)}`).join(" | ")}`)
-		for (const b of r.beams) {
-			if (!b.points.length) {
-				L.push(`BEAM   ${b.source}: no light${b.on !== null ? ` (on at ${f(b.on)})` : ""}`)
-				continue
-			}
-			const parts = []
-			parts.push(`source (${b.points[0].join(", ")})`)
-			b.bounces.forEach((x) => parts.push(`bounce:${x.n} on ${x.item ?? "?"} at (${x.point.join(", ")}), normal (${x.normal?.join(", ") ?? "-"}), in ${f(x.in)} deg, out ${f(x.out)} deg`))
-			const lastEnd = b.segments.at(-1)?.ends
-			parts.push(lastEnd ? `hit:${lastEnd} at (${b.points.at(-1).join(", ")})` : `end (${b.points.at(-1).join(", ")})`)
-			L.push(`BEAM   ${b.source} (on ${f(b.on)}, traced at ${f(b.at)}): ${parts.join(" -> ")}; ${b.segments.map((s) => `segment ${s.n} ${f(s.length)} m`).join(", ")}`)
-		}
-		if (r.readings.length) L.push(`READINGS ${r.readings.map((x) => `${x.item}.${x.key} ${f(x.start)} -> ${f(x.end)}${x.starts !== null ? ` (starts ${f(x.starts)}, settles ${f(x.settles)})` : ""}`).join(" | ")}`)
-		if (r.events.length) L.push(`EVENTS ${r.events.map((e) => `${e.kind}:${e.items.join("+")} ${f(e.t)}`).join(" | ")}`)
-		if (r.contacts.length) L.push(`CONTACTS ${r.contacts.slice(0, 40).map((c) => `${c.a}+${c.b} ${f(c.t)} (${f(c.speed)} m/s)`).join(" | ")}${r.contacts.length > 40 ? ` ... (${r.contacts.length} in all)` : ""}`)
-		if (r.marks.length) L.push(`MARKS  ${r.marks.map((m) => `${m.item}: 0 m at x ${f(m.zero)}${m.finish !== null ? `, finish ${f(m.finish)}` : ""}`).join(" | ")}`)
-		if (r.instruments.length) L.push(`INSTRUMENTS ${r.instruments.map((i) => `${i.item}${i.face ? ` (face part: ${i.face})` : ""}: ${i.readings.join(", ")}`).join(" | ")}`)
-	}
-	return L.join("\n")
 }

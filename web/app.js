@@ -907,12 +907,23 @@ function openNew(opts = {}) {
 S.openNew = openNew
 
 // ---------- Export video (web/export/export-ui.js: the dialog, the E key and the top-bar button; it finds the renderer and the encoder itself) ----------
+// Its Directed camera asks the AI step "direct" for a shot plan of the run (POST /api/ai/direct through the AI's own client: queue, progress,
+// sign-in and allowance answers), where the AI can be used (web/ai/access.js); elsewhere it films the view's automatic directed camera.
+let directAI = null
+const directPlan = async (payload, signal, onEvent) => {
+	directAI ??= import("./ai/orchestrator.js").then((m) => m.createOrchestrator({ api }))
+	return (await directAI).call("direct", payload, signal, onEvent)
+}
+let aiAccessNow = null
+import("./ai/access.js").then((m) => { const a = m.aiAccess(); aiAccessNow = () => (a.check?.(), a.state.kind) }).catch(() => { aiAccessNow = () => "off" }) // (asked once, when the dialog first wants to know)
 import("./export/export-ui.js").then((m) => (S.exportUI = m.mountExportUI({
 	button: $("#export-video"), store, toast, viewEl: viewEl(),
 	get: () => ({ scene: S.scene, sim: S.sim, view: S.view, layout: S.layout, editing: S.editing || !!S.editor?.dragging, cam: S.cam, t: S.t, playing: S.playing }),
 	pause: () => setPlaying(false),
 	play: () => setPlaying(true),
 	rerun: () => scheduleRun(0),
+	direct: directPlan,
+	aiState: () => (aiAccessNow ? aiAccessNow() : "ok"),
 }))).catch((e) => console.warn("Video export unavailable:", e))
 
 // ---------- wiring ----------

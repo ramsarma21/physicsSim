@@ -29,8 +29,9 @@ const RES = [
 ]
 const FPS = [30, 60]
 const CAMERAS = [
-	// (the view's "focus" camera: directed for what the scene shows, from its own subjects and moments; the default for a scene with goals or a comparison)
-	{ id: "focus", label: "Directed", hint: "Close on what the scene is about, still while it matters, cut from moment to moment: no table, no wall." },
+	// (directed for what the scene shows: the AI director's shot plan (POST /api/ai/direct, o.direct) filmed by the view's "director-plan" camera; until
+	// it lands, or where there is no AI, the view's automatic "focus" camera; the default for a scene with goals or a comparison)
+	{ id: "focus", label: "Directed", hint: "A camera directed for what this scene shows: close on what matters, following the action, cut from moment to moment. No table, no wall." },
 	{ id: "wide", label: "Wide", hint: "The whole machine in one steady shot." },
 	{ id: "follow", label: "Follow", hint: "Stays with whatever is moving." },
 	{ id: "orbit", label: "Orbit", hint: "A slow turn around the machine." },
@@ -155,6 +156,9 @@ function blit(ctx, src) {
  *   rerun(): run the scene now,
  *   viewEl: the element holding the 3D view's canvas (a fallback preview reads it),
  *   statusEl, errorEl: the top bar's run status and the view's error line (when a run lands, fails or starts),
+ *   direct(payload, signal, onEvent): the AI step "direct" (ai/director.mjs: {scene, text | concept, kind, boxes, aspect} -> {plan, source,
+ *     report, ...}) or absent: the Directed camera is then the view's automatic one ("focus"); aiState(): "ok" | "off" | "sign_in" | "quota" |
+ *     "access" (web/ai/access.js), where the AI can be used now,
  * }
  * Returns {open, close, isOpen, sync}.
  */
@@ -187,8 +191,110 @@ export function mountExportUI(o) {
 		bytes: saved.calib?.bytes && typeof saved.calib.bytes === "object" ? saved.calib.bytes : {},
 	}
 	const remember = () => { try { store?.set(STORE_KEY, { res: set.res, fps: set.fps, ...(set.cameraChosen ? { camera: set.camera, cameraChosen: true } : {}), ...(set.blurChosen ? { blur: set.blur, blurChosen: true } : {}), sound: set.sound, calib }) } catch {} }
-	/** What the directed camera ("focus") is told besides the run: the scene as it is (its words and goals name the subjects). */
-	const camOpts = (cam) => (cam === "focus" ? { focus: { scene: get().scene } } : {})
+	// ----- the Directed camera: the AI director's shot plan for the run shown (camera "director-plan") once it has landed; the view's automatic
+	// directed camera ("focus": the scene's own subjects and moments) until then, where there is no AI, or when the director could not plan it -----
+	const dir = { sim: null, words: "", state: "idle", plan: null, source: null, about: "", why: "", ctl: null, promise: null, t0: 0, note: "", dur: null, durFor: null }
+	/** The director's plan for the run shown, when the Directed camera is chosen and it has landed. */
+	const directedPlan = () => (camNow() === "focus" && dir.state === "ready" && dir.plan && dir.sim === get().sim ? dir.plan : null)
+	/** What the view is asked for a camera: {camera, plan | focus} (the same for the preview, the frames, exportInfo and the sound). */
+	const camArgs = (cam) => {
+		if (cam !== "focus") return { camera: cam }
+		const plan = dir.state === "ready" && dir.plan && dir.sim === get().sim ? dir.plan : null
+		return plan ? { camera: "director-plan", plan } : { camera: "focus", focus: { scene: get().scene } }
+	}
+	/** The director's cut's length in video seconds (it may slow a moment, hold one, cut back), from the view's film of the plan. */
+	function dirDuration() {
+		const plan = directedPlan()
+		if (!plan) return null
+		if (dir.durFor === plan && dir.durFps === set.fps) return dir.dur
+		let d = null
+		try {
+			const info = get().view?.exportInfo?.({ camera: "director-plan", plan, width: PREVIEW.w, height: PREVIEW.h, fps: set.fps })
+			d = Number(info?.plan?.duration) > 0 ? Number(info.plan.duration) : null
+		} catch {}
+		if (d) Object.assign(dir, { dur: d, durFor: plan, durFps: set.fps })
+		return d
+	}
+	/** What the video spans: the director's cut (video time, from 0) or the trimmed run (run time = video time). */
+	const spanNow = () => {
+		const d = directedPlan() ? dirDuration() : null
+		return d ? { start: 0, end: d, directed: true } : { start: trim.start, end: trim.end, directed: false }
+	}
+	const canDirect = () => {
+		if (!isFn(o.direct)) return false
+		try { return (o.aiState?.() ?? "ok") === "ok" } catch { return true }
+	}
+	const dirWords = () => (dlg.querySelector("#xv-dir-words")?.value ?? "").trim()
+	const plainDirError = (e) => {
+		const m = String(e?.message || e || "").replace(/[.\s]+$/, "")
+		return /sign in/i.test(m) ? "Sign in to have the camera directed by AI." : /allowance|quota/i.test(m) ? `${m}.` : `The AI director couldn’t plan it (${m.slice(0, 160) || "no answer"}).`
+	}
+	/** Ask the AI director for this run (once per run and words; force: again). The preview films the automatic camera until the plan lands. */
+	function askDirector(force = false) {
+		const s = get()
+		if (!canDirect() || !s.sim || freshness().state !== "fresh") return null
+		const words = dirWords()
+		if (!force && dir.sim === s.sim && dir.words === words && (dir.state === "asking" || dir.state === "ready")) return dir.promise
+		dir.ctl?.abort()
+		const ctl = new AbortController()
+		const scene = s.scene
+		const name = String(scene?.name ?? "").trim()
+		let boxes
+		try { boxes = s.view?.exportBoxes?.() ?? undefined } catch {} // (the drawn models' boxes: the plan is measured on what the video shows)
+		const payload = { scene, kind: words ? "request" : "demo", ...(words ? { text: words } : { concept: name || "what happens in this scene" }), ...(boxes ? { boxes } : {}), aspect: "16:9" }
+		Object.assign(dir, { sim: s.sim, words, state: "asking", plan: null, source: null, about: "", why: "", ctl, t0: performance.now(), note: "", dur: null, durFor: null })
+		let wrote = false // (a plan written once: thinking after it is the director changing what the engine's checks failed)
+		let lastPhase = null
+		const onEvent = (ev) => {
+			if (dir.ctl !== ctl || ev?.type !== "ai-progress") return
+			if (lastPhase === "writing" && ev.phase !== "writing") wrote = true
+			lastPhase = ev.phase ?? lastPhase
+			dir.note = ev.state === "waiting" ? `waiting for a free AI slot${ev.position ? ` (${ev.position} ahead)` : ""}` : ev.phase === "writing" ? (wrote ? "writing the changed shots" : "writing the shots") : wrote || ev.repair ? "changing the shots the checks failed" : "planning the shots"
+			paintDir()
+		}
+		const p = Promise.resolve()
+			.then(() => o.direct(payload, ctl.signal, onEvent))
+			.then((r) => {
+				if (dir.ctl !== ctl) return
+				const res = r?.plan ? r : r?.result
+				if (!res?.plan?.shots?.length) throw new Error("the director gave back no plan")
+				Object.assign(dir, { state: "ready", plan: res.plan, source: res.source ?? "director", about: String(res.plan.about ?? ""), why: "" })
+			})
+			.catch((e) => {
+				if (dir.ctl !== ctl || ctl.signal.aborted) return
+				console.warn("Directed camera:", e)
+				Object.assign(dir, { state: "failed", plan: null, why: plainDirError(e) })
+			})
+			.finally(() => {
+				if (dir.ctl !== ctl) return
+				dir.promise = null
+				if (isOpen()) { render(); redrawPreview() }
+			})
+		dir.promise = p
+		paintDir()
+		return p
+	}
+	/** The Directed camera's line under the camera choice: asking, directed for what, or why it is the automatic camera. */
+	function paintDir() {
+		const box = dlg.querySelector("#xv-dir")
+		const on = camNow() === "focus"
+		box.hidden = !on || !isFn(o.direct)
+		if (box.hidden) return
+		const can = canDirect()
+		dlg.querySelector('[data-act="direct"]').disabled = !can || freshness().state !== "fresh" || (dir.state === "asking" && dir.sim === get().sim && dir.words === dirWords())
+		dlg.querySelector("#xv-dir-words").disabled = !can
+		const st = dlg.querySelector("#xv-dir-state")
+		st.textContent = !can
+			? "The automatic directed camera: the AI director isn’t available here."
+			: dir.state === "asking" && dir.sim === get().sim
+				? `Directing the camera… ${dir.note || "planning the shots"} · ${fmtSpan((performance.now() - dir.t0) / 1000)}. The preview shows the automatic camera until the shots are planned.`
+				: directedPlan()
+					? `${dir.source === "automatic" ? "An automatic plan (the director’s shots didn’t pass the checks)" : "Directed"}: ${dir.about}`
+					: dir.state === "failed" && dir.sim === get().sim
+						? `${dir.why} The automatic directed camera films it.`
+						: "The automatic directed camera. Direct asks the AI director to plan the shots."
+		st.dataset.state = dir.state
+	}
 	/** A scene with goals or a comparison is filmed Directed unless the person picked a camera (exportInfo().directed). */
 	function defaultCamera() {
 		let d = null
@@ -271,6 +377,10 @@ export function mountExportUI(o) {
 					<div class="xv-row-top"><span class="xv-lbl" id="xv-l-cam">Camera</span></div>
 					<div class="xv-seg" role="radiogroup" aria-labelledby="xv-l-cam" data-k="camera">${CAMERAS.map((c) => `<button type="button" role="radio" data-v="${c.id}">${c.label}</button>`).join("")}</div>
 					<p class="xv-hint" id="xv-cam-hint"></p>
+					<div class="xv-dir" id="xv-dir" hidden>
+						<div class="xv-dir-row"><input type="text" id="xv-dir-words" maxlength="300" autocomplete="off" spellcheck="true" placeholder="What should the video show? (optional)" aria-label="What should the video show?"><button type="button" class="xv-btn xv-small" data-act="direct">Direct</button></div>
+						<p class="xv-dir-state" id="xv-dir-state" aria-live="polite"></p>
+					</div>
 				</div>
 				<label class="xv-tog">
 					<span class="xv-tog-t"><b>Motion blur</b><small id="xv-blur-cap">Soft streaks on fast parts, like a real camera. Slower to make.</small></span>
@@ -430,7 +540,7 @@ export function mountExportUI(o) {
 		const view = get().view
 		caps.render = isFn(view?.renderFrame)
 		let info = null
-		try { info = isFn(view?.exportInfo) ? await view.exportInfo({ width: resNow().w, height: resNow().h, fps: set.fps, camera: set.camera, motionBlur: set.blur, ...camOpts(set.camera) }) : view?.exportInfo ?? null } catch {}
+		try { info = isFn(view?.exportInfo) ? await view.exportInfo({ width: resNow().w, height: resNow().h, fps: set.fps, camera: set.camera, motionBlur: set.blur, ...camArgs(set.camera) }) : view?.exportInfo ?? null } catch {}
 		if (info && typeof info === "object") {
 			const cams = Array.isArray(info.cameras) ? info.cameras.map((c) => (typeof c === "string" ? c : c?.id)).filter(Boolean) : null
 			caps.cameras = cams?.length ? cams : null
@@ -476,7 +586,7 @@ export function mountExportUI(o) {
 	const blurAllowed = () => caps.blur && (!realtimeAt(resNow(), set.fps) || fitsRealtime(resNow(), set.fps, true))
 	/** Motion blur as it will be made: the person's choice, else the view's recommendation (on wherever the view can blur well). */
 	const blurNow = () => (set.blur ?? !!caps.recommendedBlur) && blurAllowed()
-	const frameCount = () => Math.max(1, Math.round((trim.end - trim.start) * set.fps))
+	const frameCount = () => { const sp = spanNow(); return Math.max(1, Math.round((sp.end - sp.start) * set.fps)) }
 	/** bits per second the encoder will use for this size and rate */
 	const bitrateFor = (r, fps) => { try { const b = caps.encoder?.mod?.videoBitrate?.(r.w, r.h, fps); if (b > 0) return b } catch {} return MBPS[r.id][fps === 60 ? 1 : 0] * 1e6 }
 	function syncTrim() {
@@ -510,7 +620,8 @@ export function mountExportUI(o) {
 	}
 	function estimate() {
 		const r = resNow()
-		const secs = trim.end - trim.start
+		const sp = spanNow()
+		const secs = sp.end - sp.start
 		const fps = set.fps
 		const audio = set.sound && caps.audio?.ok !== false && (impactsIn(get().sim).length || tonesIn(get().sim)) ? AUDIO_KBPS * 1000 : 0
 		const cam = camNow()
@@ -625,6 +736,14 @@ export function mountExportUI(o) {
 		const fill = $(".xv-trim-fill")
 		fill.style.left = `${T ? (trim.start / T) * 100 : 0}%`
 		fill.style.right = `${T ? 100 - (trim.end / T) * 100 : 0}%`
+		// the director's cut is filmed whole (it may slow, hold or replay a moment, so a stretch of the run is not a stretch of the video)
+		const sp = spanNow()
+		dlg.classList.toggle("xv-directed", sp.directed)
+		if (sp.directed) {
+			$("#xv-len-v").innerHTML = `<b>${fmtSpan(sp.end - sp.start)}</b> · the director’s cut`
+			$('[data-act="full"]').hidden = true
+		}
+		paintDir()
 		// the estimate and the Export button
 		const go = $("#xv-go")
 		const e = estimate()
@@ -671,11 +790,12 @@ export function mountExportUI(o) {
 		m.textContent = text || ""
 	}
 	function previewTime(now) {
-		if (pv.scrub != null) return pv.scrub
-		if (!pv.playing) return pv.t
-		const len = Math.max(0, trim.end - trim.start)
+		const sp = spanNow()
+		if (pv.scrub != null && !sp.directed) return pv.scrub
+		if (!pv.playing) return clamp(pv.t, sp.start, sp.end)
+		const len = Math.max(0, sp.end - sp.start)
 		const u = ((now - pv.t0) / 1000) % (len + PREVIEW.hold)
-		return trim.start + Math.min(len, u)
+		return sp.start + Math.min(len, u)
 	}
 	function previewLoop(now) {
 		pv.raf = requestAnimationFrame(previewLoop)
@@ -689,7 +809,7 @@ export function mountExportUI(o) {
 		}
 		if (now - pv.last < 1000 / PREVIEW.fps) return
 		const t = previewTime(now)
-		if (pv.shown && pv.shown.t === t && pv.shown.cam === camNow() && pv.shown.sim === get().sim) return
+		if (pv.shown && pv.shown.t === t && pv.shown.cam === camNow() && pv.shown.sim === get().sim && pv.shown.plan === directedPlan()) return
 		pv.last = now
 		pv.busy = drawPreview(t).finally(() => (pv.busy = null))
 	}
@@ -703,14 +823,15 @@ export function mountExportUI(o) {
 			if (pv.failed) return // (it says why; a new run, or opening the dialog again, tries again)
 			$("#xv-prev-t").textContent = fmtT(t)
 			$(".xv-trim-head").style.left = `${trim.seconds ? (t / trim.seconds) * 100 : 0}%`
+			const plan = directedPlan()
 			try {
 				const began = performance.now()
-				const src = await view.renderFrame(t, { width: PREVIEW.w, height: PREVIEW.h, camera: cam, motionBlur: false, preview: true, ...camOpts(cam) })
+				const src = await view.renderFrame(t, { width: PREVIEW.w, height: PREVIEW.h, camera: cam, motionBlur: false, preview: true, ...camArgs(cam) })
 				const took = performance.now() - began
 				if (pv.timesSim !== s.sim) { pv.lastMs = previewMs() ?? pv.lastMs; pv.times = []; pv.timesSim = s.sim }
 				if (took < 250) { pv.times.push(took); if (pv.times.length > 12) pv.times.shift() } // (not a session's first frame: it compiles)
 				if (!isOpen() || mode !== "settings") return
-				if (blit(pvCtx, src)) { pv.shown = { t, cam, sim: s.sim }; previewMsg("") }
+				if (blit(pvCtx, src)) { pv.shown = { t, cam, sim: s.sim, plan }; previewMsg("") }
 				if (src instanceof ImageBitmap) src.close?.()
 				else if (typeof VideoFrame !== "undefined" && src instanceof VideoFrame) src.close()
 			} catch (e) {
@@ -719,7 +840,7 @@ export function mountExportUI(o) {
 				const state = freshness().state
 				const transient = /no finished run|scene changed/i.test(e?.message) || state !== "fresh"
 				if (!transient) { pv.failed = true; console.warn("Export preview:", e) }
-				pv.shown = { t, cam, sim: s.sim } // (not asked again until the run, the moment or the camera changes)
+				pv.shown = { t, cam, sim: s.sim, plan } // (not asked again until the run, the moment, the camera or its plan changes)
 				pvCtx.clearRect(0, 0, pvCanvas.width, pvCanvas.height)
 				previewMsg(!transient ? "The preview couldn’t be drawn." : state === "running" ? "The preview shows once the run lands." : "The preview shows once the scene has run.")
 			}
@@ -742,7 +863,7 @@ export function mountExportUI(o) {
 		const b = $('[data-act="preview"]')
 		b.classList.toggle("playing", on)
 		b.setAttribute("aria-label", on ? "Pause the preview" : "Play the preview")
-		if (on) pv.t0 = performance.now() - (pv.t - trim.start) * 1000
+		if (on) pv.t0 = performance.now() - (pv.t - spanNow().start) * 1000
 		else pv.t = pv.shown?.t ?? trim.start
 	}
 	const redrawPreview = () => { pv.shown = null }
@@ -782,6 +903,7 @@ export function mountExportUI(o) {
 		;(mode === "done" ? $('[data-act="download"]') : $(".xv-sheet")).focus({ preventScroll: true })
 		cancelAnimationFrame(pv.raf)
 		pv.raf = requestAnimationFrame(previewLoop)
+		if (camNow() === "focus") askDirector() // (once per run: a dialog opened again on the same run shows the plan already made)
 		caps.loading || loadEncoder().then(() => isOpen() && render())
 		await Promise.all([viewFacts(), loadEncoder().then(audioSupport)]).catch(() => {})
 		if (isOpen()) { render(); redrawPreview() }
@@ -849,7 +971,7 @@ export function mountExportUI(o) {
 			const v = b.dataset.v
 			if (k === "fps") set.fps = Number(v)
 			else set[k] = v
-			if (k === "camera") { set.cameraChosen = true; redrawPreview() }
+			if (k === "camera") { set.cameraChosen = true; redrawPreview(); if (v === "focus") askDirector() }
 			remember()
 			render()
 			return
@@ -865,7 +987,9 @@ export function mountExportUI(o) {
 		else if (act === "rerun") { o.rerun?.(); render() }
 		else if (act === "full") { trim.start = 0; trim.end = trim.seconds; trim.touched = false; render(); redrawPreview() }
 		else if (act === "preview") setPreviewPlaying(!pv.playing)
+		else if (act === "direct") { askDirector(true); render(); redrawPreview() }
 	})
+	dlg.querySelector("#xv-dir-words").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); askDirector(true); render(); redrawPreview() } })
 	for (const k of ["blur", "sound"]) {
 		$(`input[data-k="${k}"]`).addEventListener("change", (e) => {
 			set[k] = e.target.checked
@@ -971,6 +1095,20 @@ export function mountExportUI(o) {
 		}
 		return out
 	}
+	/** The impact sounds of a directed film: each hit when the video shows it (web/export/shots.js retime: a slowed hit too, a stretch played
+	 *  twice sounds twice; never in a freeze), from where it was at its run time, panned by the film's own cameras. */
+	async function soundForFilm(sim, scene, args, seconds, signal, size) {
+		const synth = caps.encoder?.synthesizeImpacts
+		if (!isFn(synth)) throw new Error("this build has no sound maker yet")
+		const view = get().view
+		const made = view.exportPlan?.({ ...args, ...size })
+		if (!made?.film) throw new Error("the directed camera has no film of this run yet")
+		const { retime } = await import("./shots.js")
+		const impacts = retime(made.film, sim.track?.impacts ?? [])
+		const whole = await raceAbort(synth(impacts, sim.doc, { duration: seconds, sampleRate: 48000, track: sim.track, stage: scene?.stage, tones: false, panAt: (t, x, y) => view.exportProject(t, x, y, { ...args, ...size }) }), signal)
+		if (!(typeof AudioBuffer !== "undefined" && whole instanceof AudioBuffer)) throw new Error("the sound maker gave back no sound")
+		return whole
+	}
 	const toBlob = (r) => {
 		if (r instanceof Blob) return r.type ? r : new Blob([r], { type: "video/mp4" })
 		const x = r?.blob ?? r?.file ?? r?.data ?? r?.buffer ?? r
@@ -992,13 +1130,16 @@ export function mountExportUI(o) {
 		const sim = s.sim
 		const r = resNow()
 		const fps = set.fps
-		const start = trim.start
-		const end = trim.end
-		const total = Math.max(1, Math.round((end - start) * fps))
+		// (Directed: when its director is still planning, the export waits for it in the progress pane below; the span is worked out again then)
+		let sp = spanNow()
+		let start = sp.start
+		let end = sp.end
+		let total = Math.max(1, Math.round((end - start) * fps))
 		readFixed() // (the run being filmed: Fixed only if its scene sets a camera)
 		const camera = camNow()
 		const blur = blurNow()
-		const wantSound = set.sound && caps.audio?.ok !== false && (impactsIn(sim).length > 0 || tonesIn(sim))
+		const waitDirector = camera === "focus" && dir.state === "asking" && dir.sim === sim && dir.promise
+		let wantSound = set.sound && caps.audio?.ok !== false && (impactsIn(sim).length > 0 || tonesIn(sim))
 		const sceneJSON = JSON.stringify(s.scene) // (the done pane is shown again only for this very scene)
 		const name = fileNameFor(s.scene?.name)
 		const ctl = new AbortController()
@@ -1027,13 +1168,28 @@ export function mountExportUI(o) {
 		let cancelled = false
 		try {
 			if (isFn(view.whenSettled)) await raceAbort(withTimeout(view.whenSettled(), 30000), ctl.signal)
+			if (waitDirector) {
+				phase("Directing the camera…")
+				await raceAbort(dir.promise, ctl.signal)
+			}
+			// the camera as it will film every frame: the director's plan (its cut whole, video time from 0) or the view's own
+			const args = camArgs(camera)
+			sp = spanNow()
+			if (sp.directed) {
+				start = 0
+				end = sp.end
+				total = Math.max(1, Math.round(end * fps))
+				job.total = total
+				wantSound = set.sound && caps.audio?.ok !== false && (sim.track?.impacts?.length ?? 0) > 0
+				$("#xv-p-what").textContent = `${name} · ${r.w} × ${r.h} · ${fps} fps${blur ? " · motion blur" : ""}${wantSound ? " · sound" : ""} · directed`
+			}
 			// the run every frame must be of (the view refuses a frame of another: the scene was edited and re-run mid-export)
 			let runId
 			try { runId = isFn(view.exportInfo) ? view.exportInfo()?.runId : undefined } catch {}
 			let audio = null
 			if (wantSound) {
 				phase("Making the impact sounds…")
-				try { audio = await soundFor(sim, s.scene, start, end, total / fps, ctl.signal, { camera, width: r.w, height: r.h, fps, ...camOpts(camera) }) } catch (e) {
+				try { audio = sp.directed ? await soundForFilm(sim, s.scene, args, total / fps, ctl.signal, { width: r.w, height: r.h, fps }) : await soundFor(sim, s.scene, start, end, total / fps, ctl.signal, { camera, width: r.w, height: r.h, fps, ...args }) } catch (e) {
 					if (isAbort(e)) throw e
 					console.warn("Export sound:", e)
 					soundNote = `The sound couldn’t be made (${e.message}), so this video is silent.`
@@ -1058,7 +1214,7 @@ export function mountExportUI(o) {
 				const t = Math.min(end, start + i / fps)
 				let src
 				try {
-					src = await view.renderFrame(t, { width: r.w, height: r.h, camera, motionBlur: blur, fps, runId, quality: "high", start, end, index: i, frames: total, ...camOpts(camera) })
+					src = await view.renderFrame(t, { width: r.w, height: r.h, camera, motionBlur: blur, fps, runId, quality: "high", start, end, index: i, frames: total, ...args })
 				} catch (e) {
 					if (ctl.signal.aborted) throw abortError()
 					// the view's own words are for developers: say what happened ("renderFrame: no finished run…" is the scene being changed)
@@ -1229,6 +1385,7 @@ export function mountExportUI(o) {
 			const sim = get().sim
 			if (trim.sim !== sim) { pv.failed = false; pv.stillAt = null; redrawPreview() }
 			render()
+			if (camNow() === "focus" && sim && dir.sim !== sim && freshness().state === "fresh") askDirector() // (a new run: its own plan)
 		}
 	}
 	if (statusEl) {

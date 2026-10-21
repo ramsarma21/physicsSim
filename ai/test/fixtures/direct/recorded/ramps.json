@@ -19,8 +19,8 @@
 		},
 		"concept": "a fair test changes only one thing",
 		"runs": {
-			"top": "ai/test/fixtures/direct/scenes/ft_1b_car_red_clay.json",
-			"bottom": "ai/test/fixtures/direct/scenes/ft_3b_car_red_clay.json"
+			"top": "web/export/test/scenes/ft_1b_car_red_clay.json",
+			"bottom": "web/export/test/scenes/ft_3b_car_red_clay.json"
 		}
 	},
 	"model": "claude-group/claude-opus-5-5",

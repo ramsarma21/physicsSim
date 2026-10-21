@@ -1,6 +1,6 @@
 // The director's TIMELINE DIGEST (scratchpad design DIRECTOR.md section 2): what the engine knows about a run before a single frame is filmed
 // (every body's path, every contact, every start and stop, every light ray's path, every reading over time), cut down to what a director
-// names, each fact with the id a shot plan uses for it. A shot plan (ai/shot-plan.schema.json) may name only what the digest lists: the
+// names, each fact with the id a shot plan uses for it. A shot plan (web/export/shot-plan.schema.json) may name only what the digest lists: the
 // validator (ai/shot-plan.mjs) resolves every id against it, and the plan's executor resolves the same ids the same way.
 //
 //   buildDigest({runs: [{lane, scene, run, hints?, recog?, moments?}], recognize?, catalog?, registry?, hints?}) -> digest

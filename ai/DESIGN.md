@@ -500,24 +500,26 @@ without modules: the digest text, the prompts and every answer are what they wer
 ## 21. The direct step: a directed camera per video (director AI, 2026-10-20; the director design's sections 2, 3, 5, 7.4 and 9.1)
 The user, of the sandbox's lesson videos: the camera must be "like actually directed for each lesson", zoomed in on what the lesson is about,
 "follow the laser and watch it bounce then back up and see the angle is the same", never a table top or a white wall, and no blanket rules. So
-each video gets a **shot plan** (`ai/shot-plan.schema.json`, JSON Schema 2020-12: the shots in order, each with its reason, its stretch of the
+each video gets a **shot plan** (`web/export/shot-plan.schema.json`, the filming module's language, JSON Schema 2020-12: the shots in order, each with its reason, its stretch of the
 run and speed, what it looks at, how big, from where, how it moves and joins the shot before, its marks and its own yes/no audit question),
 written by a director model for that video's lesson, and filmed exactly by the plan executor (`web/export/shots.js`: makeWorld, checkPlan,
 compile, measure, autoPlan).
 - **Payload** (`ai/director.mjs` directSource): `scene` (one run) or `runs: {lane: scene}` (2 to 4 lanes: a comparison filmed one run per lane,
   the lesson compositor's two scenes); `text` (a request typed in the sandbox, or what the video should show) and/or `lesson {question, answer,
   words, pauses: [{where: setup|result, t?}], grade}`; `concept`; `kind` (lesson | request | demo); `lanes` (a lanes block the caller already
-  knows: kept as given); `hints {roles, brief, cues, subjects}` (the physics-lesson-video skill's binding); `aspect` (16:9 default); `max_seconds`;
-  `return_digest`. Bad input is a 400 before any run or model call.
+  knows: kept as given); `hints {roles, brief, cues, subjects}` (the physics-lesson-video skill's binding); `boxes` (the caller page's drawn
+  model boxes, `view.exportBoxes()`: one object for one run, `{lane: ...}` for one run per lane; the plan is then measured on the shapes the
+  video shows, as the page films it, rather than on physics outlines: a sail, a fan guard or a lamp head is larger than its outline);
+  `aspect` (16:9 default); `max_seconds`; `return_digest`. Bad input is a 400 before any run or model call.
 - **What the director reads**: the step runs the scene(s) itself (`runScene`, the same run as /api/simulate), ranks the cast with
-  `web/export/subjects.js` when the build has it, and gives the model the run's **timeline digest** (`web/export/digest.js` buildDigest /
+  `web/export/subjects.js`, and gives the model the run's **timeline digest** (`web/export/digest.js` buildDigest /
   digestText): the cast with boxes, swept boxes, starts, rests, top speeds and parts; every moment by its id (start, release, result, end,
   pause:*, start:/stop:/exit:/landing:/apex:<item>, turn:<item>#n for a regular swing, contact:<a>+<b>#n with its point and speed,
   event:<kind>:<item>, beam:<source>:on, cue:<n> and step:<n>); the readings with their starts, settles and peaks; each light beam's traced
   path (the optics tracer's own) with every bounce's point, normal and measured angles in and out; the lane marks and instrument faces; for a
-  comparison one section per run and what differs between the runs. When the executor is in the build its world is built once from the same
-  runs and its moments replace the digest's own, so the ids the director reads are exactly the ones it resolves (on the twelve design scenes and
-  the lesson scenes the digest's own ids and times already equal the executor's).
+  comparison one section per run and what differs between the runs. The executor's world is built once from the same runs (and boxes) and
+  its moments replace the digest's own, so the ids the director reads are exactly the ones it resolves. This is the one digest: the view's
+  `exportDigest` gives the same text for the run it shows.
 - **The prompt**: `ai/prompts/direct.md` (the director's craft guide, a condensed language reference, the safety net's numbers) with
   `_direct_examples.md` (three worked examples: the laser, the fair-test ramps, the chain reaction, each with its digest and plan) and the
   modules' `prompt.direct` snippets; the user turn is the source, the video's wishes and the digest. Route `direct` in `ai/models.json`: Opus 5.5
@@ -525,24 +527,38 @@ compile, measure, autoPlan).
 - **Checks and repairs** (`runDirector`): the answer is validated by `ai/shot-plan.mjs` (the schema without a dependency, ajv-equivalent on the
   twelve plans and 6000 random mutations; then every id resolved against the digest with the nearest ids, every play window inside its run, every
   shot at least 0.8 s, marks that fit their targets): `callModel`'s one repair turn fixes what does not validate. The valid plan goes to the
-  executor (`checkPlan`: resolution, compile, the safety net); its failed checks go back to the director as a repair turn ("lands speed: the
-  picture's fastest point 0.897 widths/s (limit 0.5 for a hold)", with what the failing shots measured), at most 2 (`REPAIR_TURNS`). A plan
-  still failing, or no usable plan from any route (invalid output, out of time), is replaced by the **automatic plan**: the executor's
-  `autoPlan` and `safePlan` here (the setup, then the run cut where something starts, strikes or happens, each stretch a still snug hold on what
-  moves then, then the result; things too small for a stretch's picture kept whole without being its subject), whichever passes the checks
-  (else the one failing fewest; the answer then says framing-infeasible). A gateway that is down is an error, never a silent fallback.
+  executor (`checkPlan`: resolution, compile, the safety net, including the picture of a held moment being mostly the scene, a playing shot's
+  subject staying in the picture, and never the same still twice); its failed checks go back to the director as a repair turn ("lands speed:
+  the picture's fastest point 0.897 widths/s (limit 0.5 for a hold)", with what the failing shots measured and the ways to repair each kind
+  of failure), at most 3 (`REPAIR_TURNS`). Then the director's best try (the fewest hard failures, then soft) is the video when what still
+  fails is only **soft** (`SOFT_CHECKS`: a hero, must-see thing, detail, instrument face or beam under its size, a held picture not filled: the
+  scene's layout can make that framing-infeasible), said in the warnings and `soft`. One that still breaks a **hard** check (something cut
+  off, a move too fast, a jump, a jump cut, a repeat, a shot too short, a subject gone from the picture, a name the run lacks), or no usable
+  plan from any route (invalid output, out of time), gives way to the **automatic plan**: the executor's `autoPlan` and `safePlan` here (the
+  setup, then the run cut where something starts, strikes or happens, each stretch a still snug hold on what moves then, then the result;
+  things too small for a stretch's picture kept whole without being its subject), the one that breaks the fewest hard checks (the director's
+  own try stays a candidate and wins a tie). A gateway that is down is an error, never a silent fallback.
 - **Answer**: `{plan, source: "director" | "automatic", shots: [{id, beat, move, seconds, why}] (why: the shot's intent), report (the executor's
   measured report: every check with its numbers), measured, rounds: [{round, ok, failed, ms, usd, plan}], timing: {shots, seconds},
-  digest_hash, fallback?: {reason, plan_by, director_plan, director_failed}, digest?}` with the usual `model, servedModel, ms, usage` (summed
-  over every turn: the AI gate meters `usage.costInUSD`; STEP_USD.direct reserves $0.75), `attempts` (each with its `turn`), `warnings`,
-  `prompt {system, chars, digest: {ms, hash, recognizer, executor}}`.
-- **Without the executor** (a build before web/export/shots.js joins): the plan is validated only, `measured: false`, with a warning. Callers
-  and tests may inject `o.executor` ({measure(plan, ctx) -> report, safePlan?, world?, momentsOf?}) and `o.recognize`.
+  digest_hash, soft?: [the soft failures it is filmed with], fallback?: {reason, plan_by, director_plan, director_failed}, digest?}` with the
+  usual `model, servedModel, ms, usage` (summed over every turn: the AI gate meters `usage.costInUSD`; STEP_USD.direct reserves $0.75),
+  `attempts` (each with its `turn`), `warnings`, `prompt {system, chars, digest: {ms, hash, recognizer, executor, boxes}}`.
+- **The executor and the recognizer are the build's own** (`web/export/shots.js`, `web/export/subjects.js`, imported by ai/director.mjs, which
+  ai/steps.mjs loads only for this step); tests may put others in their place (`o.executor`: {measure(plan, ctx) -> report, safePlan?, world?,
+  momentsOf?}; `o.recognize`, or null for the digest's own ranking).
+- **Callers**: the export dialog's Directed camera (web/export/export-ui.js through the AI client, web/ai/orchestrator.js `call("direct")`):
+  the scene, the person's optional words ("What should the video show?") or the scene's name as the concept, the page's model boxes; the
+  automatic camera films the preview until the plan lands, and the export waits for it. The physics-lesson-video skill and the lesson
+  compositor: web/CONTRACT.md "Filming module: directed cameras".
+- **End to end** (21 Oct, `web/export/test/direct-e2e.mjs`: the twelve design examples through the app's server and page, live): every
+  director plan measured on the page's model boxes, filmed to MP4 by the page's own encoder, the bands of a comparison filmed one run per lane
+  put together, a contact sheet from each MP4's frames.
 - **Measured** (20 Oct, Opus 5.5 through the gateway): the six design examples (laser and mirror, the fair-test ramps, salt on ice, fan-driven
   boats, the chain reaction, the switch and bulb), and the three that are the prompt's own worked examples again with them held out, 24 runs in
   three sets (the design's prototype compiler as the executor; the engine's checkPlan; the final code): every run ended on the director's own
   plan passing every check of its executor, after 0 to 2 repair turns, in 21 to 160 s for $0.06 to $0.47 a video. The executor's checks of the
   twelve design plans pass; the automatic plan here passes on 9 of the 12 design scenes (a still camera cannot keep a 10 m race, a rolling
   ball or a falling egg big: those are framing-infeasible without a director). Tests:
-  `ai/test/direct.test.mjs` (22: the digest, the language's checks, the automatic plan, the loop through the mock gateway, the recorded live
-  answers replayed in `fixtures/direct/recorded/`).
+  `ai/test/direct.test.mjs` (the digest, the language's checks, the automatic plan, the loop through the mock gateway with web/export/shots.js
+  itself and with scripted verdicts, the page's boxes reaching the executor, the recorded live answers replayed in `fixtures/direct/recorded/`
+  with the verdicts they were measured with; the design plans and lane scenes are web/export/test/plans and web/export/test/scenes).

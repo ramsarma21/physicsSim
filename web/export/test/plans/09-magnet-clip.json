@@ -142,7 +142,15 @@
 						"item": "far"
 					}
 				]
-			}
+			},
+			"context": [
+				{
+					"gap": [
+						"magnet",
+						"far"
+					]
+				}
+			]
 		},
 		{
 			"id": "gap",
@@ -243,7 +251,7 @@
 				"role": "clip"
 			},
 			"frame": {
-				"size": 0.48
+				"size": 0.52
 			},
 			"view": {
 				"yaw": 0,

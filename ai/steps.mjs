@@ -23,11 +23,12 @@
 //            sizes, places in words, supports, the last run's hits and goals, look-alikes); the answer carries kind (change | ask | answer |
 //            fix | undo | new) and targets ([{says, ids, because}]): §14.
 //   direct  {scene* (or runs*: {lane: scene}, a comparison filmed one run per lane), text (the request) and/or lesson {question, answer, words,
-//            pauses, grade}, concept, kind, lanes, hints {roles, brief, cues, subjects}, aspect, max_seconds, return_digest} -> a directed camera:
-//            {plan (ai/shot-plan.schema.json), source: "director" | "automatic", shots: [{id, beat, move, seconds, why}], report (the engine's
-//            measured checks), measured, rounds, timing, digest_hash, fallback?}. The step runs the scene(s) itself and gives the director the
-//            run's timeline digest (web/export/digest.js); a plan that fails the engine's checks gets up to 2 repair turns, then the automatic
-//            plan is used (ai/director.mjs, ai/DESIGN.md §21).
+//            pauses, grade}, concept, kind, lanes, hints {roles, brief, cues, subjects}, boxes (the page's exportBoxes(), or {lane: ...}),
+//            aspect, max_seconds, return_digest} -> a directed camera: {plan (web/export/shot-plan.schema.json), source: "director" |
+//            "automatic", shots: [{id, beat, move, seconds, why}], report (the engine's measured checks), measured, rounds, timing, digest_hash,
+//            soft?, fallback?}. The step runs the scene(s) itself and gives the director the run's timeline digest (web/export/digest.js); a
+//            plan that fails the engine's checks (web/export/shots.js) gets up to 3 repair turns; then its best try is filmed unless it breaks a
+//            hard check, when an automatic plan is (ai/director.mjs, ai/DESIGN.md §21).
 //   img = "data:image/jpeg;base64,..." or {data: "data:image/...", name?, label?}
 import { createHash } from "node:crypto"
 import { mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs"
@@ -687,8 +688,8 @@ async function edit(p, o) {
 
 /**
  * direct: a shot plan for one video (ai/director.mjs). The scene (or each lane's scene) is run here, the same run as /api/simulate, and its
- * timeline digest is what the director reads; web/export/subjects.js ranks the cast when this build has it (o.recognize injects one), and
- * web/export/shots.js measures the plan (o.executor injects one; without it the plan is validated only).
+ * timeline digest is what the director reads; web/export/subjects.js ranks the cast and web/export/shots.js measures every plan (on the page's
+ * model boxes when the caller sends them; o.recognize and o.executor put others in their place, for tests).
  */
 let directorP = null
 /** ai/director.mjs and web/export/digest.js, loaded the first time a direct step runs (the other steps' processes never load the engine's
@@ -699,8 +700,8 @@ async function direct(p, o) {
 	const src = await directSource(p, { clean: (v, field) => scene({ [field]: v }, field, { required: true }) })
 	const t0 = Date.now()
 	const m = await sim()
-	const recognize = await loadRecognizer(o)
-	const executor = await loadExecutor(o)
+	const recognize = loadRecognizer(o)
+	const executor = loadExecutor(o)
 	const registry = o.registry ?? registryFrom(globalThis[Symbol.for("sandbox.plugins")])
 	const catalog = m.catalog()
 	const runs = {}
@@ -718,26 +719,24 @@ async function direct(p, o) {
 			try {
 				recog = recognize({ scene: s.scene, run, catalog, registry, hints })
 			} catch {} // (the digest ranks the cast itself)
-		runs[s.lane] = { scene: s.scene, run, hints, recog }
+		const boxes = src.boxes?.[s.lane] ?? null
+		runs[s.lane] = { scene: s.scene, run, hints, recog, ...(boxes ? { boxes } : {}) }
 		list.push({ lane: s.lane, scene: s.scene, run, hints, recog })
 	}
 	// the executor's world of these runs, built once: its moments are the digest's ids, and it checks every plan of this step
 	const extra = { catalog, registry }
-	const notes = []
-	if (executor?.world)
+	if (executor.world)
 		try {
 			extra.world = executor.world(worldInput({ runs, catalog, registry }))
 		} catch (e) {
-			notes.push(`the plan executor could not read the runs (${String(e?.message ?? e).slice(0, 160)}): its checks are skipped`)
+			throw bad(`the engine cannot film this run: ${String(e?.message ?? e).slice(0, 300)}`)
 		}
-	const exec = executor?.world && !extra.world ? null : executor
-	const digest = buildDigest({ runs: list.map((r) => ({ ...r, moments: extra.world && exec?.momentsOf ? exec.momentsOf(extra.world, r.lane) : null })), recognize, catalog, registry })
+	const digest = buildDigest({ runs: list.map((r) => ({ ...r, moments: extra.world && executor.momentsOf ? executor.momentsOf(extra.world, r.lane) : null })), recognize, catalog, registry })
 	const digestMs = Date.now() - t0
 	const system = loadPrompt("direct.md") + (await snippetsFor("direct"))
 	const user = directUserTurn(src, digest)
-	const out = await runDirector({ step: "direct", system, user, digest, src, runs, executor: exec, extra, o })
-	out.warnings.unshift(...notes)
-	out.prompt = { system: hash(system), chars: system.length + user.length, digest: { ms: digestMs, hash: digest.hash, recognizer: !!recognize, executor: exec?.name ?? null } }
+	const out = await runDirector({ step: "direct", system, user, digest, src, runs, executor, extra, o })
+	out.prompt = { system: hash(system), chars: system.length + user.length, digest: { ms: digestMs, hash: digest.hash, recognizer: !!recognize, executor: executor.name ?? null, boxes: !!src.boxes } }
 	return out
 }
 

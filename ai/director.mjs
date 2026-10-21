@@ -1,21 +1,25 @@
 // The direct step's machinery (ai/steps.mjs runs it as the step "direct"): a shot plan for one video, written by the director model from the
 // lesson or request and the run's timeline digest (web/export/digest.js), checked by the shot-plan validator (ai/shot-plan.mjs), then measured
-// by the plan's executor (web/export/shots.js checkPlan: resolution, the compiler and the safety net). A plan that fails goes back to the director
-// with the failed checks as a repair turn, at most REPAIR_TURNS times; one that still fails is replaced by the automatic plan (the
-// executor's, else safePlan here), which is always valid and tells no story. Design: the scratchpad's director/DIRECTOR.md sections 2, 3, 5,
-// 7 and 9.1; the language: ai/shot-plan.schema.json.
+// by the plan's executor (web/export/shots.js checkPlan: resolution, the compiler and the safety net, on the drawn models' boxes when the caller
+// sends them). A plan that fails goes back to the director with the failed checks and what to do about them as a repair turn, at most
+// REPAIR_TURNS times. A plan whose last failures are only of size and fill (soft: the picture is smaller or emptier than the net asks) is still
+// the director's video, said in the warnings; one that still breaks a hard check (something cut off, too fast, a jump, a shot too short) is
+// replaced by an automatic plan (the executor's autoPlan or safePlan here), which tells no story. Design: the scratchpad's director/DIRECTOR.md
+// sections 2, 3, 5, 7 and 9.1; the language: web/export/shot-plan.schema.json.
 //
-//   directSource(payload, {clean}) -> the payload checked (400s) and normalised: {kind, text, lesson, concept, scenes: [{lane, scene}], lanes, hints, aspect, max_seconds}
+//   directSource(payload, {clean}) -> the payload checked (400s) and normalised: {kind, text, lesson, concept, scenes: [{lane, scene}], lanes, hints, boxes, aspect, max_seconds}
 //   directUserTurn(src, digest) -> the user turn (the source, the video's wishes, the digest's text)
 //   repairTurn(report, round) -> the repair turn for a measured failure
-//   loadExecutor(o) / executorFrom(module) -> {measure(plan, ctx) -> report, safePlan?, world?, momentsOf?} or null (no executor in this build)
+//   loadExecutor(o) / executorFrom(Shots) -> the executor: {measure(plan, ctx) -> report, safePlan, world, momentsOf} (o.executor: one in its place)
 //   safePlan(digest, src) -> the automatic plan
 //   runDirector({...}) -> {result, model, servedModel, ms, usage, attempts, warnings, repaired}
 import { AIError, callModel, loadRouting, routeFor } from "./core.mjs"
 import { validateShotPlan } from "./shot-plan.mjs"
 import { digestText } from "../web/export/digest.js"
+import * as Shots from "../web/export/shots.js"
+import { recognize as recognizeSubjects } from "../web/export/subjects.js"
 
-export const REPAIR_TURNS = 2 // measured failures sent back to the director before the automatic plan takes over
+export const REPAIR_TURNS = 3 // measured failures sent back to the director before its plan is judged as it stands
 const REPAIR_MIN_MS = 45000 // a repair turn only starts with at least this much of the step's budget left
 const ASPECTS = ["16:9", "4:3", "3:2", "1:1", "3:1"]
 const LANE_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,39}$/
@@ -91,7 +95,31 @@ export async function directSource(p, { clean }) {
 	if (!ASPECTS.includes(aspect)) throw bad(`aspect must be one of ${ASPECTS.join(", ")}`)
 	const max = p.max_seconds === undefined ? null : p.max_seconds
 	if (max !== null && !(typeof max === "number" && max >= 2 && max <= 60)) throw bad("max_seconds must be a number of seconds from 2 to 60")
-	return { kind, text, lesson, concept, scenes, lanes, hints, aspect, max_seconds: max, return_digest: p.return_digest === true }
+	const boxes = boxesOf(p.boxes, scenes.map((s) => s.lane))
+	return { kind, text, lesson, concept, scenes, lanes, hints, boxes, aspect, max_seconds: max, return_digest: p.return_digest === true }
+}
+
+const BOX_KEYS = ["x0", "x1", "y0", "y1", "z0", "z1", "round"]
+/**
+ * The drawn models' boxes the caller's page measured (web/view3d.js exportBoxes(): {solid id: {x0, x1, y0, y1, z0, z1} | {round, z0, z1} |
+ * {world: [x0, x1, y0, y1, z0, z1]}}), so the engine measures the plan on the shapes the video will show rather than physics outlines (a
+ * sail, a fan's guard, a liquid are larger): one object for one run, or {lane: {...}} for one run per lane. -> {lane: boxes} or null
+ */
+function boxesOf(v, lanes) {
+	if (v === undefined || v === null) return null
+	if (!isObj(v)) throw bad("boxes must be an object {solid id: box} (one run) or {lane: {solid id: box}} (one run per lane)")
+	if (JSON.stringify(v).length > 400000) throw bad("boxes is too large (at most 400000 characters as JSON)")
+	const okBox = (b) => isObj(b) && (Array.isArray(b.world) ? b.world.length === 6 && b.world.every(Number.isFinite) : Object.entries(b).every(([k, x]) => BOX_KEYS.includes(k) && Number.isFinite(x)))
+	const perLane = lanes.length > 1 || lanes[0] !== ""
+	const sets = perLane ? v : { "": v }
+	const out = {}
+	for (const [lane, set] of Object.entries(sets)) {
+		if (!lanes.includes(lane)) throw bad(`boxes.${lane}: no such lane (the lanes are ${lanes.join(", ")})`)
+		if (!isObj(set)) throw bad(`boxes${lane ? `.${lane}` : ""} must be an object {solid id: box}`)
+		for (const [id, b] of Object.entries(set)) if (!okBox(b)) throw bad(`boxes${lane ? `.${lane}` : ""}["${String(id).slice(0, 40)}"] must be {x0, x1, y0, y1, z0, z1}, {round, z0, z1} or {world: [6 numbers]}`)
+		out[lane] = set
+	}
+	return out
 }
 
 /** The recognizer's hints for a source: the lesson's words and pauses, the skill's roles, brief and cues, the other lanes of a comparison. */
@@ -147,42 +175,59 @@ const shotRow = (s) => {
 	if (s.peakPanWps !== undefined) bits.push(`fastest point ${s.peakPanWps} widths/s, zoom ${s.peakZoomPerS}/s, turn ${s.peakYawDegS} deg/s`)
 	return `- ${bits.join("; ")}`
 }
+/** What to do about each kind of failed check: the ways a director can repair it without giving up the story. */
+const REMEDY = {
+	"subject-size": "a hero under its floor: frame closer (size, fit tight, a smaller width) or a longer lens; things that stand far apart get their own bands (layout split at one scale, or a director's comparison of two lanes: one thing per lane) or one shot each; when the smallness is the point (a whole after its parts), audit.small_because with min_size",
+	"must-see": "a must-see thing or detail under its floor: frame closer or a longer lens; split far-apart things into bands, or show them one at a time; small_because with min_size (at least 0.03) lowers the floor for details too, when the smallness is the point",
+	fill: "most of the picture is backdrop: frame closer, give far-apart things their own bands or one shot each, or name what belongs in the room around them (a gap between two things, the light a laser sends, the ramp a car rolls on) in context",
+	present: "the subject is out of the picture too long: follow it, end the shot (its run's to) as it leaves, start later, or frame where it goes",
+	repeat: "the same still picture twice: make the two shots one (a mark can appear or change inside a shot: from, to), or change the picture (another subject, scale or place; layout single for one lane's thing)",
+	"keep-in": "something kept is cut off: a wider frame or more room on that side, keep fewer things, or follow",
+	speed: "the camera moves too fast: a longer move_seconds, a slower rate, a slower travel pace, or a cut instead of the move",
+	"zoom-rate": "the zoom is too fast: a longer move_seconds, a smaller change of scale, or a cut (over 2.5x is a cut)",
+	"turn-rate": "the camera turns too fast: a longer move_seconds or a smaller turn",
+	"no-jump": "the picture jumps at a join: a cut (in: cut) or a longer ease",
+	cut: "a jump cut (almost the same picture): change the scale 1.6x, the place a quarter of the picture or the angle 20 deg, or glide (in: continue / ease) instead",
+	still: "a hold that moves: in: cut, or let the move end (move_seconds) before the hold",
+	settled: "a pause or the last shot still moving at its end: hold_after, or a shorter move_seconds",
+	"shot-length": "a shot under 0.8 s: a longer run window, seconds or hold_after",
+	"hold-length": "a still under 0.8 s: more seconds or hold_after",
+	label: "a rate other than 1 needs its label",
+	parity: "the lanes at different scales: one camera for every band (no per_lane), align on the role",
+	face: "an instrument's face too small to read: frame closer on it (split columns side by side, align on it) or an inset",
+	"beam-visible": "the light too thin to see: a narrower window (under the width the digest gives for its core)",
+	resolve: "a name the run does not have: use the digest's ids (the nearest are given)",
+	compile: "the engine could not film it: change the shot the message names"
+}
 /** The repair turn for a plan that failed the measured net: the failed checks, what the failing shots measured, and what to do. */
 export function repairTurn(report, round, max = REPAIR_TURNS) {
 	const failed = failedChecks(report)
-	const failing = new Set((report?.checks ?? []).filter((c) => c && c.ok === false).map((c) => c.shot))
+	const bad = (report?.checks ?? []).filter((c) => c && c.ok === false)
+	const failing = new Set(bad.map((c) => c.shot))
 	const rows = (Array.isArray(report?.shots) ? report.shots : []).filter((s) => failing.has(s.id)).map(shotRow)
+	const kinds = [...new Set(bad.map((c) => c.check))].filter((k) => REMEDY[k])
 	return [
 		`The engine compiled your plan and measured every frame. ${failed.length} check${failed.length === 1 ? "" : "s"} failed (repair ${round} of at most ${max}):`,
 		...failed.slice(0, 40).map((f) => `- ${f}`),
 		...(rows.length ? ["", "What those shots measured (sizes: the share of the picture, sqrt of width x height, at the shot's key moment):", ...rows] : []),
+		...(kinds.length ? ["", "Ways to repair them:", ...kinds.map((k) => `- ${k}: ${REMEDY[k]}`)] : []),
 		"",
-		"Change the plan so that every check passes. Keep the story and every shot that passed; change only what the numbers name: a closer frame or a longer lens for a hero under its floor, more room (keep) or a wider frame for a thing cut off, a longer move_seconds or a slower rate for a move that is too fast, a cut instead of a glide across a big change, a bigger change (or no cut) for a jump cut, hold_after for a pause that is not still. Return the complete corrected plan as one JSON object (the whole plan, not just the changed shots)."
+		"Change the plan so that every check passes. Keep the story and every shot that passed; change only what the numbers name. Return the complete corrected plan as one JSON object (the whole plan, not just the changed shots)."
 	].join("\n")
 }
 
 // ------------------------------------------------------------------------------------------------ the executor
-/**
- * The plan's executor: an injected one (o.executor: {measure(plan, ctx) -> report, safePlan?}; null for none), else web/export/shots.js when
- * this build has it. A report is {ok, checks: [{shot, check, ok, why}], shots: [...], duration}. -> executor or null.
- */
-export async function loadExecutor(o = {}) {
-	if (o.executor !== undefined) return o.executor
-	let m
-	try {
-		m = await import(new URL("../web/export/shots.js", import.meta.url).href)
-	} catch (e) {
-		if (e?.code === "ERR_MODULE_NOT_FOUND" && /shots\.js/.test(String(e.message))) return null
-		throw e
-	}
-	return executorFrom(m)
+/** The plan's executor: web/export/shots.js (o.executor: one in its place, for tests). */
+export function loadExecutor(o = {}) {
+	return o.executor ?? executorFrom(Shots)
 }
-/** The executor's input for the step's runs (web/export/shots.js makeWorld): one run, or one per lane, with their scenes, hints and recognition. */
+/** The executor's input for the step's runs (web/export/shots.js makeWorld): one run, or one per lane, with their scenes, hints, recognition and
+ *  the page's model boxes when the caller sent them. */
 export function worldInput(ctx) {
 	const lanes = Object.keys(ctx.runs ?? {})
-	const one = (r) => ({ run: r.run, scene: r.scene, ...(r.hints ? { hints: r.hints } : {}), ...(r.recog ? { recog: r.recog } : {}) })
+	const one = (r) => ({ run: r.run, scene: r.scene, ...(r.hints ? { hints: r.hints } : {}), ...(r.recog ? { recog: r.recog } : {}), ...(r.boxes ? { boxes: r.boxes } : {}) })
 	if (lanes.length === 1 && lanes[0] === "") return { ...one(ctx.runs[""]), catalog: ctx.catalog, registry: ctx.registry }
-	return { runs: Object.fromEntries(lanes.map((l) => [l, one(ctx.runs[l])])), catalog: ctx.catalog, registry: ctx.registry }
+	return { runs: Object.fromEntries(lanes.map((l) => { const { run, ...rest } = one(ctx.runs[l]); return [l, { sim: run, ...rest }] })), catalog: ctx.catalog, registry: ctx.registry }
 }
 /** A report from web/export/shots.js checkPlan's answer ({ok, errors, report, messages}): its resolution errors as failed checks. */
 function fromCheck(r) {
@@ -191,31 +236,23 @@ function fromCheck(r) {
 	return { ok: !!r?.ok, checks: errs.map((e) => ({ shot: null, check: "resolve", ok: false, why: `${e.at ?? "plan"}: ${e.message ?? e}${e.nearest?.length ? ` (nearest: ${e.nearest.join(", ")})` : ""}` })), shots: [] }
 }
 /**
- * An executor from a module. web/export/shots.js (makeWorld, checkPlan, autoPlan): the step builds the run's world once, reads its moments
- * (so the digest's ids are the ones it resolves), and checks each plan with checkPlan (resolution, compile, the safety net); its autoPlan is
- * the automatic plan. Else measurePlan(plan, ctx), measure(plan, ctx), or compile(plan, ctx) then measure(compiled, plan, ctx).
+ * The executor over web/export/shots.js (makeWorld, checkPlan, autoPlan): the step builds the run's world once, reads its moments (so the
+ * digest's ids are the ones it resolves), and checks each plan with checkPlan (resolution, compile, the safety net); its autoPlan is one of the
+ * automatic plans.
  */
 export function executorFrom(m) {
-	if (!m) return null
-	if (typeof m.checkPlan === "function" && typeof m.makeWorld === "function") {
-		const worldOf = (ctx) => (ctx.world ??= m.makeWorld(worldInput(ctx)))
-		const opts = (ctx) => ({ width: ctx.W ?? 1920, height: ctx.H ?? 1080, fps: ctx.fps ?? 30 })
-		return {
-			name: "web/export/shots.js",
-			world: (input) => m.makeWorld(input),
-			momentsOf: (w, lane) => {
-				const R = w?.runs?.get?.(lane)
-				return R?.M ? { index: Object.fromEntries(R.M), what: R.WHAT ? Object.fromEntries(R.WHAT) : {} } : null
-			},
-			measure: (plan, ctx) => fromCheck(m.checkPlan(plan, worldOf(ctx), opts(ctx))),
-			safePlan: typeof m.autoPlan === "function" ? (digest, src, ctx) => m.autoPlan(worldOf(ctx), opts(ctx)) : null
-		}
+	const worldOf = (ctx) => (ctx.world ??= m.makeWorld(worldInput(ctx)))
+	const opts = (ctx) => ({ width: ctx.W ?? 1920, height: ctx.H ?? 1080, fps: ctx.fps ?? 30 })
+	return {
+		name: "web/export/shots.js",
+		world: (input) => m.makeWorld(input),
+		momentsOf: (w, lane) => {
+			const R = w?.runs?.get?.(lane)
+			return R?.M ? { index: Object.fromEntries(R.M), what: R.WHAT ? Object.fromEntries(R.WHAT) : {} } : null
+		},
+		measure: (plan, ctx) => fromCheck(m.checkPlan(plan, worldOf(ctx), opts(ctx))),
+		safePlan: (digest, src, ctx) => m.autoPlan(worldOf(ctx), opts(ctx))
 	}
-	const safe = typeof m.safePlan === "function" ? m.safePlan : typeof m.autoPlan === "function" ? m.autoPlan : null
-	if (typeof m.measurePlan === "function") return { name: "measurePlan", measure: (plan, ctx) => m.measurePlan(plan, ctx), safePlan: safe }
-	if (typeof m.compile === "function" && typeof m.measure === "function") return { name: "compile+measure", measure: (plan, ctx) => m.measure(m.compile(plan, ctx), plan, ctx), safePlan: safe }
-	if (typeof m.measure === "function") return { name: "measure", measure: (plan, ctx) => m.measure(plan, ctx), safePlan: safe }
-	return null
 }
 /** A report in the one shape the loop reads: {ok, checks, shots, duration}; a thrown measure is a report with one failed check. */
 async function measured(executor, plan, ctx) {
@@ -428,13 +465,21 @@ export function sumUsage(...us) {
 	return t
 }
 const FALLBACK_CODES = new Set(["invalid_output", "budget", "timeout"])
+/** The checks a plan may still fail and be filmed: the picture smaller or emptier than the net asks (a scene's layout can make that
+ *  framing-infeasible). Every other failure breaks the video (cut off, too fast, a jump, a repeat, a name the run lacks). */
+export const SOFT_CHECKS = new Set(["subject-size", "must-see", "fill", "face", "beam-visible"])
+const hardOf = (report) => (report?.checks ?? []).filter((c) => c && c.ok === false && !SOFT_CHECKS.has(c.check))
+const softOf = (report) => (report?.checks ?? []).filter((c) => c && c.ok === false && SOFT_CHECKS.has(c.check))
+/** The better of two measured plans: fewer hard failures, then the director's story over an automatic plan, then fewer soft failures. */
+const better = (a, b) => hardOf(a.report).length - hardOf(b.report).length || (a.director ? 0 : 1) - (b.director ? 0 : 1) || softOf(a.report).length - softOf(b.report).length
 /**
- * Direct, check, repair, fall back.
- *   step, system, user: the model call (models.json route `step`); digest; src (directSource's); runs: {lane: {scene, run}} for the executor;
- *   executor (loadExecutor's, or null: then the plan is only validated); o: the step's options (signal, routing, env, fetch, params, budgetMs,
- *   onProgress, backoffScale, log)
+ * Direct, check, repair, judge.
+ *   step, system, user: the model call (models.json route `step`); digest; src (directSource's); runs: {lane: {scene, run, boxes?}} for the
+ *   executor; executor (loadExecutor's); o: the step's options (signal, routing, env, fetch, params, budgetMs, onProgress, backoffScale, log)
+ * After the repair turns, the director's best plan (the fewest hard failures, then soft) is the video when it breaks no hard check (its soft
+ * failures are said in the warnings and result.soft); else the better of it and the automatic plans.
  * -> {result: {plan, source: "director"|"automatic", shots: [{id, beat, move, seconds, why}], report, measured, rounds, timing, digest_hash,
- *    fallback?}, model, servedModel, ms, usage, attempts, warnings, repaired}
+ *    soft?, fallback?}, model, servedModel, ms, usage, attempts, warnings, repaired}
  */
 export async function runDirector({ step = "direct", system, user, digest, src, runs, executor, extra = {}, o = {} }) {
 	const t0 = Date.now()
@@ -491,20 +536,25 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 		return { result, model, servedModel, ms: Date.now() - t0, usage, attempts, warnings, repaired }
 	}
 	const fallback = async (reason, last) => {
-		// the automatic plans: the executor's own (its focus camera) and this file's; the first that passes the engine's checks, else the one that
-		// fails the fewest
+		// the automatic plans: the executor's own (its focus camera) and this file's, measured; the director's best plan stays a candidate (its
+		// story wins a tie on hard failures)
 		const cands = []
-		const auto = executor?.safePlan ? await Promise.resolve().then(() => executor.safePlan(digest, src, ctx)).catch(() => null) : null
+		const auto = await Promise.resolve().then(() => executor.safePlan?.(digest, src, ctx)).catch(() => null)
 		const va = auto ? validate(auto) : null
 		if (va?.ok) cands.push({ plan: va.value, by: "executor" })
 		const vs = validate(safePlan(digest, src))
 		if (vs.ok) cands.push({ plan: vs.value, by: "director.mjs" })
 		else warnings.push(`the automatic plan has problems: ${vs.errors.slice(0, 3).join("; ")}`)
 		if (!cands.length) cands.push({ plan: vs.value, by: "director.mjs" })
-		for (const c of cands) c.report = executor ? await measured(executor, c.plan, ctx) : null
-		const pick = cands.find((c) => !c.report || c.report.ok) ?? cands.reduce((a, b) => (failedChecks(b.report).length < failedChecks(a.report).length ? b : a))
-		if (pick.report && !pick.report.ok) warnings.push(`the automatic plan fails the engine's checks too (framing-infeasible: the scene must change): ${failedChecks(pick.report).slice(0, 3).join("; ")}`)
-		return finish(pick.plan, pick.report, "automatic", { fallback: { reason, plan_by: pick.by, ...(last ? { director_plan: last.plan, director_failed: last.failed } : {}) } })
+		for (const c of cands) c.report = await measured(executor, c.plan, ctx)
+		if (last?.report) cands.push({ plan: last.plan, report: last.report, by: "director", director: true })
+		const pick = [...cands].sort(better)[0]
+		if (pick.director) {
+			warnings.push(`the director's plan breaks ${hardOf(pick.report).length} check(s) of the net, and no automatic plan breaks fewer: ${failedChecks(pick.report).slice(0, 3).join("; ")}`)
+			return finish(pick.plan, pick.report, "director", { soft: softOf(pick.report).map((c) => `${c.shot} ${c.check}: ${c.why}`), fallback: { reason, plan_by: "director" } })
+		}
+		if (!pick.report.ok) warnings.push(`the automatic plan fails the engine's checks too (framing-infeasible: the scene must change): ${failedChecks(pick.report).slice(0, 3).join("; ")}`)
+		return finish(pick.plan, pick.report, "automatic", { fallback: { reason, plan_by: pick.by, ...(last ? { director_plan: last.plan, director_failed: failedChecks(last.report) } : {}) } })
 	}
 
 	// turn 0: the director's plan (callModel repairs a plan that does not validate once, then tries the next route)
@@ -521,14 +571,11 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 		throw e
 	}
 	let plan = out.result
-	if (!executor) {
-		warnings.push("not measured: this build has no plan executor (web/export/shots.js), so the plan was checked against the schema and the digest only")
-		return finish(plan, null, "director")
-	}
 	// (each round keeps the plan it measured and what its model turn took, so a caller can see what the director tried)
 	const roundOf = (turn, o2, rep) => ({ round: turn, ok: rep.ok, failed: failedChecks(rep), ms: o2.ms, usd: Number.isFinite(Number(o2.usage?.costInUSD)) ? Number(o2.usage.costInUSD) : null, plan: o2.result })
 	let report = await measured(executor, plan, ctx)
 	rounds.push(roundOf(0, out, report))
+	const tried = [{ plan, report, director: true }]
 	const convo = [{ role: "system", content: system }, { role: "user", content: user }]
 	for (let turn = 1; !report.ok && turn <= REPAIR_TURNS; turn++) {
 		if (left() < repairNeeds) {
@@ -550,9 +597,17 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 		plan = out.result
 		report = await measured(executor, plan, ctx)
 		rounds.push(roundOf(turn, out, report))
+		tried.push({ plan, report, director: true })
 	}
 	if (report.ok) return finish(plan, report, "director")
-	return fallback("the director's plan still failed the engine's checks", { plan, failed: failedChecks(report) })
+	// the director's best try (the later one on a tie): its story, when what still fails is only the picture's size or fill
+	const best = tried.reduceRight((a, b) => (better(b, a) < 0 ? b : a))
+	if (!hardOf(best.report).length) {
+		const soft = softOf(best.report).map((c) => `${c.shot} ${c.check}: ${c.why}`)
+		warnings.push(`the director's plan is filmed with ${soft.length} size or fill check(s) under the net after ${rounds.length - 1} repair(s) (framing-infeasible there: a bigger thing or a closer layout is the scene's to change): ${soft.slice(0, 3).join("; ")}`)
+		return finish(best.plan, best.report, "director", { soft })
+	}
+	return fallback("the director's plan still breaks the engine's checks", best)
 }
 
 /** The physics modules' goal kinds as web/export/subjects.js recognize() reads them (its registryOf), from web/sim/plugins.js's registry. */
@@ -564,14 +619,7 @@ export function registryFrom(reg) {
 	return out
 }
 
-/** web/export/subjects.js recognize() when this build has it (o.recognize: an injected one, null for none). */
-export async function loadRecognizer(o = {}) {
-	if (o.recognize !== undefined) return o.recognize
-	try {
-		const m = await import(new URL("../web/export/subjects.js", import.meta.url).href)
-		return typeof m.recognize === "function" ? m.recognize : null
-	} catch (e) {
-		if (e?.code === "ERR_MODULE_NOT_FOUND" && /subjects\.js/.test(String(e.message))) return null
-		throw e
-	}
+/** The cast's recognizer: web/export/subjects.js recognize() (o.recognize: one in its place, or null for the digest's own ranking, for tests). */
+export function loadRecognizer(o = {}) {
+	return o.recognize !== undefined ? o.recognize : recognizeSubjects
 }

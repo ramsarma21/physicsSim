@@ -4,7 +4,8 @@
 //   synthesizeImpacts(impacts, doc, {duration, sampleRate?, track?, stage?, panAt?, room?, gain?, normalize?}) → Promise<AudioBuffer>   (needs OfflineAudioContext)
 //   renderImpacts(impacts, doc, {duration, sampleRate?, track?, stage?, panAt?, gain?}) → {left, right, sampleRate, events}  (pure: no Web Audio)
 //
-// impacts: track.impacts ([{t, a, b (solid ids), speed}]); doc: sim.doc (solids, materials); track (sim.track): where each impact is, for the pan
+// impacts: track.impacts ([{t, a, b (solid ids), speed, runT?}]: t is when it sounds; runT, when given, the run time it happened at, for where it was:
+// a directed video's retime(film, impacts)); doc: sim.doc (solids, materials); track (sim.track): where each impact is, for the pan
 // (without it the solids' starting places are used); panAt(t, x, y) → −1 … 1: where the machine-plane point (x, y) m shows across the picture at
 // run time t (the export's own camera: view.exportProject), so a hit is heard where it is seen (null or not a number: the stage's fallback below);
 // stage: {x0, x1} (scene.stage; else read from doc.camera): the fallback pan, by where the hit is across the stage; duration: seconds of sound
@@ -344,7 +345,7 @@ export function renderImpacts(impacts, doc, opts = {}) {
 		const mover = !A.isStatic && (B.isStatic || A.mass <= B.mass) ? A : B
 		let x = mover.solid.at?.x ?? 0
 		let y = mover.solid.at?.y ?? 0
-		if (opts.track?.frames?.length) { const p = placementsAt(opts.track, im.t)[mover.id]; if (p) { x = p.x; y = p.y } }
+		if (opts.track?.frames?.length) { const p = placementsAt(opts.track, im.runT ?? im.t)[mover.id]; if (p) { x = p.x; y = p.y } } // (runT: a hit retimed to when a directed video shows it, web/export/shots.js retime, is where it was at its run time)
 		let seen = null
 		if (typeof opts.panAt === "function") { try { const v = opts.panAt(im.t, x, y); seen = typeof v === "number" ? v : null } catch { seen = null } }
 		const pan = Math.max(-0.8, Math.min(0.8, Number.isFinite(seen) ? seen : ((x - stage.x0) / (stage.x1 - stage.x0)) * 2 - 1))
