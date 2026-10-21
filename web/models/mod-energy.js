@@ -109,14 +109,14 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const mm = P.axle_mm ?? 6
 		if (mm > 6.5) head.add(put(mesh(kit.cylinderY(mm / 2000, 0.02, 32).clone().rotateZ(Math.PI / 2), wood()), sx, 0, 0))
 		else if (mm < 5.5) head.add(put(mesh(kit.cylinderY(mm / 2000, 0.03, 12).clone().rotateZ(Math.PI / 2), M("skewer", { color: "#d8b98a", roughness: 0.7 })), sx + s * 0.01, 0, 0))
-		// the sails: B twisted paper sails round a bead, their solidity 0.4 (each B-th of a square's corners folded in)
+		// the sails: B twisted paper sails round a bead, their solidity 0.3 (machines/mod_energy.py PIN_SOLIDITY, PIN_TWIST)
 		const B = Math.max(2, Math.round(P.blades ?? 4))
 		const R = (P.diameter ?? 0.2) / 2
 		const r0 = 0.012
-		const c0 = (0.4 * 2 * Math.PI * r0) / B
-		const c1 = (0.4 * 2 * Math.PI * R) / B
-		const pitch = P.pitch ?? 15
-		const geo = ribbon(r0, R, c0, c1, Math.min(80, pitch + 20) * DEG, pitch * DEG, 0.18, `sail|${B}|${f5(R)}|${f5(pitch)}`)
+		const c0 = (0.3 * 2 * Math.PI * r0) / B
+		const c1 = (0.3 * 2 * Math.PI * R) / B
+		const pitch = P.pitch ?? 18
+		const geo = ribbon(r0, R, c0, c1, Math.min(80, pitch + 15) * DEG, pitch * DEG, 0.18, `sail|${B}|${f5(R)}|${f5(pitch)}`)
 		const spin = new T.Group()
 		for (let b = 0; b < B; b++) {
 			const sail = mesh(geo, M(`sail${b % SAIL_COLORS.length}`, { color: SAIL_COLORS[b % SAIL_COLORS.length], roughness: 0.75, metalness: 0, side: T.DoubleSide }))

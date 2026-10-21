@@ -19,8 +19,8 @@ current holds it back (circuits). The 3D view turns the drawn blades by the roto
 Sources:
   [JWEA] Pinwheel type wind turbines in a wind tunnel (Wind Engineering 27, 2003; J. Japan Wind Energy Assoc. 27-1): a conventional
          four-blade pinwheel C_p,max 0.17 at tip speed ratio 2; a high-speed one 0.22 at 3.5 (no-load ratio 3-6); a high-torque one
-         C_Q,max 0.24 at 0.32. The default pinwheel's blade elements (solidity 0.4, sails at 15 deg at the tips twisting to 35 deg at the
-         hub) give 0.175 at 2.0 (research/rw-validate-energy.ts).
+         C_Q,max 0.24 at 0.32. The default pinwheel's blade elements (solidity 0.3, sails at 18 deg at the tips twisting to 33 deg at the
+         hub) give 0.172 at 1.95 (research/rw-validate-energy.ts).
   [VERNIER] Vernier/KidWind "Wind Turbine Generator / Motor, specifications for using as a generator" (generator_data.pdf): open circuit
          2.13 V at 720 rpm, 4.25 V at 1440, 6.54 at 2450, 9.81 at 3630; with 100 ohm 1.59 V at 720 rpm and 3.14 V at 1440 (internal
          resistance about 38 ohm from those rows); KidWind generator KW-GEN3 (1.25 in, 2 mm shaft, 0-10 V, 0-0.3 A, rated 5.9 V at
@@ -48,8 +48,8 @@ CUP_G = 3.0                     # g: a 3 oz paper cup [PENNY]
 CUP_W, CUP_H, CUP_D = 0.05, 0.06, 0.05      # m: the load's cup (its body: a box as wide and tall as the cup)
 SPOOL_GAP = 0.02                # m: the cup's handle stops this far under the spool (the thread is wound up)
 # a pinwheel: its sails as blade elements (solidity, the sails' twist toward the middle, skin friction)
-PIN_SOLIDITY = 0.4
-PIN_TWIST = 20.0                # deg more at the hub than at the tips
+PIN_SOLIDITY = 0.3
+PIN_TWIST = 15.0                # deg more at the hub than at the tips
 PIN_HUB = 0.012                 # m: the sails start this far from the axle (the bead and pin at the middle)
 CD0 = 0.02                      # a thin sheet's skin friction (both faces), laminar at Re about 2e4 (1.328/sqrt(Re) a face)
 PAPERS = {"copy paper": 0.080, "card": 0.200, "plastic sheet": 0.140}           # kg/m2 (provisional)
@@ -225,7 +225,7 @@ def _pinwheel():
     register(ItemType("pinwheel", "Paper windmill", CAT, build, dynamic=False, module=MODULE,
                       props=[Prop("diameter", "Across its sails", 0.2, 0.1, 0.4, 0.01, "m"),
                              Prop("blades", "Sails", 4, 2, 8, 1, "", "How many sails (cut from one square: more sails, narrower ones)", kind="int"),
-                             Prop("pitch", "Sail angle", 15.0, 5.0, 45.0, 1.0, "°", "How far the sails' tips are turned from the windmill's face (they twist 20° more toward the middle)"),
+                             Prop("pitch", "Sail angle", 18.0, 5.0, 45.0, 1.0, "°", "How far the sails' tips are turned from the windmill's face (they twist 15° more toward the middle)"),
                              Prop("paper", "Made of", "copy paper", kind="choice", choices=list(PAPERS)),
                              Prop("height", "Axle height", 0.3, 0.12, 0.6, 0.01, "m", "The straw axle's height above its foot"),
                              Prop("facing", "Wind from", "left", kind="choice", choices=["left", "right"], help="The side its sails face: the wind must blow from there"),

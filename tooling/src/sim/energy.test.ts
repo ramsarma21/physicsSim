@@ -9,7 +9,7 @@ const near = (a: number, b: number, tol: number, what = "") => assert.ok(Math.ab
 /** The default model wind turbine's rotor (3 flat blades 15 × 6 cm at 20° from a 3 cm hub) and the default paper windmill's (4 sails). */
 const turbine: Rotor = { blades: 3, r0: 0.03, R: 0.18, chord: [0.06, 0.06], pitch: [20 * D2R, 20 * D2R], ar: 2.5, cd0: 0.02, stations: 8 }
 const pinwheel: Rotor = {
-	blades: 4, r0: 0.012, R: 0.1, chord: [(0.4 * 2 * Math.PI * 0.012) / 4, (0.4 * 2 * Math.PI * 0.1) / 4], pitch: [35 * D2R, 15 * D2R], ar: 2.5, cd0: 0.02, stations: 8
+	blades: 4, r0: 0.012, R: 0.1, chord: [(0.3 * 2 * Math.PI * 0.012) / 4, (0.3 * 2 * Math.PI * 0.1) / 4], pitch: [33 * D2R, 18 * D2R], ar: 3.3333, cd0: 0.02, stations: 8
 }
 /** The steady loads at a fixed turning in an even wind (the induction relaxed to its fixed point). */
 const steady = (rot: Rotor, U: number, omega: number, rho = 1.2, steps = 150) => {
@@ -31,8 +31,8 @@ test("annuli: equal widths from r0 to R, chord and pitch straight between their 
 	near(ans.reduce((s, a) => s + a.dr, 0), pinwheel.R - pinwheel.r0, 1e-12, "widths")
 	const a0 = ans[0] as (typeof ans)[0]
 	near(a0.sigma, (4 * a0.c) / (2 * Math.PI * a0.r), 1e-12, "solidity")
-	// the pinwheel's chord grows with r at a fixed solidity of 0.4
-	for (const a of ans) near(a.sigma, 0.4, 1e-9, `solidity at ${a.r}`)
+	// the pinwheel's chord grows with r at a fixed solidity of 0.3
+	for (const a of ans) near(a.sigma, 0.3, 1e-9, `solidity at ${a.r}`)
 })
 
 test("Prandtl's loss: 1 far from the tip and hub, toward 0 at the tip; Glauert below a = 0.4, Buhl above, continuous there", () => {

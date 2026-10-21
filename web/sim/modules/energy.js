@@ -18,8 +18,8 @@ const CUP_W = 0.05
 const CUP_H = 0.06
 const CUP_D = 0.05
 const SPOOL_GAP = 0.02
-const PIN_SOLIDITY = 0.4
-const PIN_TWIST = 20.0
+const PIN_SOLIDITY = 0.3
+const PIN_TWIST = 15.0
 const PIN_HUB = 0.012
 const CD0 = 0.02
 const PAPERS = { "copy paper": 0.08, card: 0.2, "plastic sheet": 0.14 }
@@ -170,7 +170,7 @@ function _pinwheel() {
 		props: [
 			new Prop("diameter", "Across its sails", 0.2, 0.1, 0.4, 0.01, "m"),
 			new Prop("blades", "Sails", 4, 2, 8, 1, "", "How many sails (cut from one square: more sails, narrower ones)", { kind: "int" }),
-			new Prop("pitch", "Sail angle", 15.0, 5.0, 45.0, 1.0, "°", "How far the sails' tips are turned from the windmill's face (they twist 20° more toward the middle)"),
+			new Prop("pitch", "Sail angle", 18.0, 5.0, 45.0, 1.0, "°", "How far the sails' tips are turned from the windmill's face (they twist 15° more toward the middle)"),
 			new Prop("paper", "Made of", "copy paper", { kind: "choice", choices: Object.keys(PAPERS) }),
 			new Prop("height", "Axle height", 0.3, 0.12, 0.6, 0.01, "m", "The straw axle's height above its foot"),
 			new Prop("facing", "Wind from", "left", { kind: "choice", choices: ["left", "right"], help: "The side its sails face: the wind must blow from there" }),
