@@ -2,11 +2,12 @@
 // still until the scene's release (doc.release), a pusher pushes with its own force, a pitcher is tipped by its own process; the hand shows who does it.
 //   holding    a held item (held: true) whose `hand` prop is set: a pinch (thumb and finger), an open palm under it, a fingertip pressing it down or the
 //              whole hand round it, in place of the pull pin on its post (or a starting gate). At the release the fingers open (0.08 s) and the hand
-//              goes out of the picture along its arm; it never passes through the thing it let go (it is kept clear of it frame by frame, from the
-//              track). A thing that leaves moving (start_speed: a throw) is followed through first.
+//              goes out of the picture along its arm (a press flicks off to the side, then rises calmly); it never passes through the thing it
+//              let go (it is kept clear of it frame by frame, from the track). A thing that leaves moving (start_speed: a throw) is followed
+//              through first.
 //   fixed      a fixed item whose `hand` prop is set (a magnet held in a fist) is held for the whole run, in place of its stand.
-//   pushing    a pusher whose `hand` is finger | hand | two hands | fist: the hand stands at the paddle's face and moves with it (the paddle is the
-//              engine's push); housing, rod and paddle are not drawn.
+//   pushing    a pusher whose `hand` is finger | hand | two hands | fist: the hand rests on the thing it pushes and moves with the paddle's face
+//              once that reaches it (the paddle is the engine's push); housing, rod and paddle are not drawn; one arm for every skin.
 //   pouring    a pitcher whose `hand` is "hand": the hand grips its handle (a cup round its body) and tips with it.
 // Every hand is real size (a child's of about nine, 14.5 cm from the wrist crease to the middle fingertip: the hand the engine's document names,
 // "a child's hand and forearm in a blue sleeve") whatever the push: a harder push is the pusher's force and time, never a bigger hand. Skin a
@@ -71,6 +72,8 @@ export const POSES = {
 	// (curled fingers: the knuckle about 80 degrees and the middle joint 112, so the tips come back to the palm, as in a real fist)
 	fist: pose([[-2, 80, 112, 70], [0, 82, 114, 70], [2, 82, 114, 68], [6, 80, 110, 66]], [-12, -38, 100, 34, 28]),
 	point: pose([[0, 2, 4, 2], [0, 80, 112, 68], [2, 82, 112, 66], [6, 80, 108, 64]], [-14, -36, 98, 30, 22]),
+	// (a fingertip pressing down: the index a little bent at each joint, as a pressing finger is, never a straight rod; the others curled)
+	press: pose([[0, 6, 14, 10], [0, 80, 112, 68], [2, 82, 112, 66], [6, 80, 108, 64]], [-14, -36, 98, 30, 22]),
 	pinch: pose([[2, 32, 40, 14], [0, 60, 96, 60], [2, 70, 104, 62], [6, 74, 106, 62]], [-24, -46, 112, 14, 6]),
 	cup: pose([[6, 6, 8, 4], [0, 6, 8, 4], [-4, 6, 8, 4], [-10, 6, 8, 4]], [-44, -14, 88, 6, 4])
 }
@@ -512,6 +515,9 @@ function refs() {
 	ref.pinchAxis = it.clone().sub(tt).normalize() // (from the thumb's pad to the index's)
 	applyPose(r, POSES.point)
 	ref.pointTip = tipOf(r, 0).add(new THREE.Vector3(FINGERS[0].r * TAPER[3], 0, 0)) // (the index's very tip)
+	applyPose(r, POSES.press)
+	ref.pressCap = tipOf(r, 0) // (the centre of the bent index's round tip: the hand's lowest point when it presses down)
+	ref.tipR = FINGERS[0].r * TAPER[3]
 	// a fist's front: the farthest point along +x of its fingers' spheres (the flats of the first bones)
 	applyPose(r, POSES.fist)
 	r.root.updateMatrixWorld(true)
@@ -685,13 +691,20 @@ function densityOf(list, doc) {
 function roomAround(E, statics, pf, reach = 0.15, reachBelow = 0.5) {
 	let above = Infinity
 	let below = Infinity
+	let left = Infinity
+	let right = Infinity
 	for (const s of statics) {
 		const e = extentOf([s], pf)
+		if (e.y1 > E.y0 + 0.002 && e.y0 < E.y1 + 0.1) {
+			// (beside it, up to as high as a hand on it reaches: a tank's wall)
+			if (e.x1 <= E.x0 + 0.002) left = Math.min(left, E.x0 - e.x1)
+			if (e.x0 >= E.x1 - 0.002) right = Math.min(right, e.x0 - E.x1)
+		}
 		if (e.x1 < E.x0 + 0.002 || e.x0 > E.x1 - 0.002) continue
 		if (e.y0 >= E.y1 - 0.001) above = Math.min(above, e.y0 - E.y1)
 		if (e.y1 <= E.y0 + 0.004) below = Math.min(below, E.y0 - e.y1)
 	}
-	return { above: above <= reach ? above : Infinity, below: below <= reachBelow ? below : Infinity }
+	return { above: above <= reach ? above : Infinity, below: below <= reachBelow ? below : Infinity, left, right }
 }
 
 /** The grip a held thing gets for `auto`: from its size, whether it is in a liquid, which way it goes once let go and what is round it. */
@@ -731,7 +744,7 @@ export function fromFor(grip, from, { move, inWater, room, near = "left" }) {
 
 /** The hold of one thing: {rig, wrist, X, Y, armDir, exit: [{dir, len}] (the way out once it is let go: straight lines, the last one open-ended),
  *  pose} with the fingers closed round it (field d, its extent E, its first move). */
-function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infinity }) {
+function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infinity }, near = "left") {
 	const R = refs()
 	const side = from === "right" ? -1 : 1 // (from the side: +1 the arm comes from the left and the hand reaches to +x)
 	const falls = !!move && move.y < 0.3 // (what it does once let go: the fingers never wrap under a thing that will drop out of them)
@@ -744,16 +757,24 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 	let pace = null // the way out's start and speed (m/s², m/s), else WA and WV
 	let close = []
 	if (grip === "press") {
-		// one fingertip on its top, pressing it down; the palm turned to the camera; the arm straight up
-		rig = makeRig("left")
+		// one fingertip on its top, pressing it down, the index a little bent; the little finger's side turned toward the camera (the curled
+		// fingers show in profile, the index beside them, its nail at its tip), leaning back so the bent finger's end is upright; the arm from
+		// above. Let go, the finger flicks off it to the little finger's side (away from where it goes, else toward the side with more room) and
+		// the hand rises calmly out of the picture, the thing (a floater shoots up) clear of it beside it
+		const fs = move && Math.abs(move.x) > 0.3 ? -Math.sign(move.x) : Math.abs(room.left - room.right) > 0.01 ? (room.right > room.left ? 1 : -1) : near === "left" ? -1 : 1
+		rig = makeRig(fs > 0 ? "left" : "right") // (its little finger's side toward fs)
 		const top = hitAlong(d, V(E.cx, E.y1 + 0.3, 0), V(0, -1, 0), 0.6)
 		const T = V(E.cx, top === null ? E.y1 : E.y1 + 0.3 - top, 0)
-		X = V(0, -1, 0)
-		Y = V(-0.45, 0, -0.89)
-		applyPose(rig, POSES.point)
-		W.copy(T).sub(offsetOf(rig, R.pointTip, X, Y)).add(V(0, 0.0004, 0))
-		A = V(0.05, 1, -0.12)
-		rig.pose = copyPose(POSES.point)
+		const back = V(-Math.sin(60 * D2R) * fs, 0, Math.cos(60 * D2R))
+		X = V(0, -Math.cos(20 * D2R), 0).addScaledVector(back, Math.sin(20 * D2R)).normalize()
+		Y = back.clone().addScaledVector(X, -back.dot(X)).normalize()
+		applyPose(rig, POSES.press)
+		W.copy(T).sub(offsetOf(rig, R.pressCap, X, Y)).add(V(0, R.tipR * SIZE + 0.0004, 0))
+		A = V(-0.1 * fs, 1, -0.18)
+		rig.pose = copyPose(POSES.press)
+		const flick = clamp((fs > 0 ? room.right : room.left) - 0.06, 0.025, 0.05)
+		exit = [{ dir: V(fs * 0.85, 0.5, 0), len: flick }, { dir: V(0, 1, 0.04), len: Infinity, calm: true }]
+		pace = { a: 60, v: 1.6 }
 	} else if (grip === "pinch") {
 		// thumb and finger on either side of it, across the way it will go (it slides out from between them); from above, or from the side
 		const above = from === "above"
@@ -865,7 +886,7 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 	rig.root.updateMatrixWorld(true)
 	for (const [i, o] of close) closeFinger(rig, d, i, o ?? {})
 	A.normalize()
-	const way = (exit ?? [{ dir: A, len: Infinity }]).map((e) => ({ dir: e.dir.clone().normalize(), len: e.len }))
+	const way = (exit ?? [{ dir: A, len: Infinity }]).map((e) => ({ dir: e.dir.clone().normalize(), len: e.len, calm: !!e.calm }))
 	return { rig, wrist: W.clone(), X: X.clone(), Y: Y.clone(), armDir: A, exit: way, pace: pace ?? { a: WA, v: WV }, pose: copyPose(rig.pose) }
 }
 /** The field's sphere when it is one ball (not a cylinder): {c, r}, else null. */
@@ -1042,7 +1063,7 @@ function holdRig(p, pf, C) {
 			E.cx = at
 		}
 	}
-	const S = solveHold(grip, from, d, E, move, room)
+	const S = solveHold(grip, from, d, E, move, room, near)
 	const rig = S.rig
 	const W0 = S.wrist
 	const hold = S.pose
@@ -1088,16 +1109,35 @@ function holdRig(p, pf, C) {
 		return 0.6 * v.length() * (u - (u * u) / (2 * FT)) // (it starts at 0.6 of the thing's speed and stops at FT)
 	}
 	const vdir = thrown ? v.clone().normalize() : V(0, 0, 0)
-	// the way out: a brisk start (WA, faster than a floater shoots up or a dropped thing falls, so the hand is seen to leave it, never to lift or
-	// carry it) to a steady WV, out of the picture
+	// the way out: a brisk start (the pace's a, faster than a floater shoots up or a dropped thing falls, so the hand is seen to leave it, never to
+	// lift or carry it) to a steady speed (WV; a palm's whip; a press's calm rise once its flick has taken it clear), out of the picture
 	const T0 = thrown ? FT * 0.6 : 0
 	const { a: PA, v: PV } = S.pace
-	const tA = PV / PA
-	const TW = tA + Math.max(0, gone - 0.5 * PA * tA * tA) / PV
+	// (a calm stretch, the press's rise after its flick: 0.3 m/s, out of the picture in 0.9 s at most; it is entered at its speed at once)
+	const calmV = Math.max(0.3, (gone - before) / 0.9)
+	const vOf = (sv) => {
+		let acc = 0
+		for (const e of way) {
+			acc += e.len
+			if (sv < acc - 1e-9) return e.calm ? calmV : PV
+		}
+		return last.calm ? calmV : PV
+	}
+	const planTab = [0] // (s at 1/120 s steps from T0: PA up to each stretch's speed)
+	for (let sv = 0, vel = 0; sv < gone && planTab.length < 2400; ) {
+		for (let i = 0; i < 10; i++) {
+			vel = Math.min(vel + PA / 1200, vOf(sv))
+			sv += vel / 1200
+		}
+		planTab.push(sv)
+	}
+	const TW = (planTab.length - 1) / 120
 	const plan = (tau) => {
-		const u = tau - T0
+		const u = (tau - T0) * 120
 		if (u <= 0) return 0
-		return u < tA ? 0.5 * PA * u * u : 0.5 * PA * tA * tA + PV * (u - tA)
+		const i = Math.floor(u)
+		if (i >= planTab.length - 1) return planTab[planTab.length - 1] + ((u - planTab.length + 1) / 120) * vOf(Infinity)
+		return planTab[i] + (planTab[i + 1] - planTab[i]) * (u - i)
 	}
 	const N = Math.ceil((T0 + TW + 0.05) * 120)
 	const sTab = new Float32Array(N + 1)
@@ -1192,12 +1232,35 @@ function pushRig(p, pf, C) {
 		}
 	}
 	const skin = p.skin
-	// a ball pushed by open hands: each palm lies flat on it where it touches it (tangent there), a single hand a little toward the camera
+	// the air the paddle's face starts with in front of the thing at o (on the face's plane): a hand rests on the thing while the paddle crosses
+	// that air, then goes with the paddle (the thing does not move before it is reached)
+	const gapAt = (o) => {
+		if (!target) return 0
+		const hit = hitAlong(target.d, o.clone().addScaledVector(u0, -0.2), u0, 0.5)
+		return hit === null ? 0 : clamp(hit - 0.2, 0, 0.05)
+	}
+	const gap = gapAt(face0)
+	// a ball pushed by open hands: each palm lies flat on it where it touches it (tangent there), the heel of the hand on it; a single hand on its
+	// back a little above its middle (RISE), round toward the camera by TURN so the back of the hand shows (a palm square to the push is seen
+	// edge-on: a few fingers)
 	const ball = target && (skin === "hand" || skin === "two hands") ? sphereOf(target.d) : null
+	const TURN = 38
+	const RISE = 8
 	const hands =
 		skin === "two hands"
 			? [{ side: "left", dz: -0.041 * SIZE, dy: 0.022 * SIZE }, { side: "right", dz: 0.041 * SIZE, dy: -0.022 * SIZE }]
-			: [{ side: "left", dz: ball ? Math.min(0.04, 0.35 * ball.r) : 0, dy: 0 }]
+			: [ball ? { side: "left", dz: ball.r * Math.cos(RISE * D2R) * Math.sin(TURN * D2R), dy: ball.r * Math.sin(RISE * D2R) } : { side: "left", dz: 0, dy: 0 }]
+	// one arm for every skin (a finger, a hand or a fist: the sleeve comes from the same place, so a change of skin changes only the hand): from
+	// behind the push, rising 12 degrees and turned 10 toward the camera; two hands' arms turned apart (each as far as its palm is on a ball)
+	const along = u0.clone()
+	const across = V(0, 0, 1)
+	const side3 = across.clone().cross(along) // (up in the push's frame)
+	const ARM = along
+		.clone()
+		.multiplyScalar(-Math.cos(12 * D2R) * Math.cos(10 * D2R))
+		.addScaledVector(side3, Math.sin(12 * D2R))
+		.addScaledVector(across, Math.cos(12 * D2R) * Math.sin(10 * D2R))
+		.normalize()
 	const rigs = []
 	const lay = []
 	const up = V(0, 1, 0)
@@ -1205,50 +1268,39 @@ function pushRig(p, pf, C) {
 		const rig = makeRig(h.side)
 		let X
 		let Y
-		let at // the hand's point that meets the paddle's face, in its own frame
+		let at // the hand's point that meets the thing, in its own frame
 		let pz
-		let A
-		const k = (deg) => [Math.cos(deg * D2R), Math.sin(deg * D2R)]
+		const A = ARM.clone()
 		if (skin === "finger" || skin === "fist") {
-			// the index's tip (or the flat of the fist's first bones) at the face; the forearm behind it, rising a little
+			// the index's tip (or the flat of the fist's first bones) on it
 			X = u0.clone()
 			Y = up.clone()
 			pz = copyPose(skin === "finger" ? POSES.point : POSES.fist)
 			at = skin === "finger" ? R.pointTip.clone() : V(R.fistFront, -0.004, 0.006)
-			const [c, sn] = k(skin === "finger" ? 14 : 10)
-			A = u0.clone().multiplyScalar(-c).addScaledVector(up, sn)
 		} else {
-			// a flat hand, its palm to the push, the fingers up: on a ball, tangent to it where it touches; else leaning 15 degrees into the push; the
-			// forearm level behind it (the wrist bent back 80 degrees, as a hand pushing low is)
-			const [c, sn] = k(15)
+			// a flat hand, its palm to the push, the fingers up: on a ball, tangent to it where it touches; else leaning 15 degrees into the push
+			// (the wrist bent back, as a hand pushing low is); on a ball the heel of the hand meets it (its palm curves away above)
+			const c = Math.cos(15 * D2R)
+			const sn = Math.sin(15 * D2R)
 			X = u0.clone().multiplyScalar(sn).addScaledVector(up, c)
 			Y = u0.clone().multiplyScalar(-c).addScaledVector(up, sn)
 			pz = copyPose(POSES.flat)
-			at = V(0.05, -PALM_T / 2, 0)
-			const [c2, s2] = k(5)
-			A = u0.clone().multiplyScalar(-c2).addScaledVector(up, s2)
+			at = V(ball ? 0.035 : 0.05, -PALM_T / 2, 0)
 		}
-		A.add(V(0, 0, h.dz * 1.5)).normalize()
-		// where on the thing the hand meets it, as an offset from the paddle's face (which carries it): a hand beside a ball's middle stands where the
-		// ball's back is at its height and depth, a little ahead of the face
-		let off = V(0, h.dy, h.dz)
+		// where the hand meets the thing at the start, as an offset from the paddle's face: on a ball's back at its height and depth; else on the
+		// face's line as far ahead as the thing is there
+		let off
+		let turn = hands.length > 1 ? new THREE.Quaternion().setFromAxisAngle(side3, (h.dz > 0 ? -15 : 15) * D2R) : null
 		if (ball) {
-			const along = u0.clone()
-			const across = V(0, 0, 1)
-			const side3 = across.clone().cross(along) // (up in the push's frame)
 			const r2 = ball.r * ball.r - h.dy * h.dy - h.dz * h.dz
-			const P = ball.c.clone().addScaledVector(along, -Math.sqrt(Math.max(0, r2))).addScaledVector(side3, h.dy).addScaledVector(across, h.dz)
-			const n = ball.c.clone().sub(P).normalize() // (into the ball)
+			const Pc = ball.c.clone().addScaledVector(along, -Math.sqrt(Math.max(0, r2))).addScaledVector(side3, h.dy).addScaledVector(across, h.dz)
+			const n = ball.c.clone().sub(Pc).normalize() // (into the ball)
 			Y = n.clone().negate()
 			X = up.clone().addScaledVector(n, -up.dot(n)).normalize()
-			// (less the air the paddle's face starts with in front of it, so the palm meets the ball when the paddle does)
-			const gap = hitAlong(target.d, face0.clone().addScaledVector(u0, -0.2), u0, 0.5)
-			off = P.sub(face0).addScaledVector(u0, -(gap === null ? 0 : clamp(gap - 0.2, 0, 0.05)))
-		} else if (target && (h.dz || h.dy)) {
-			const o = V(q0.x, q0.y, 0).add(V(0, h.dy, h.dz)).addScaledVector(u0, -0.2)
-			const hit = hitAlong(target.d, o, u0, 0.5)
-			if (hit !== null) off.addScaledVector(u0, clamp(hit - (0.2 + pad.width / 2), 0, 0.03))
-		}
+			if (turn) turn = new THREE.Quaternion().setFromUnitVectors(along, n.clone().addScaledVector(side3, -n.dot(side3)).normalize())
+			off = Pc.sub(face0)
+		} else off = V(0, h.dy, h.dz).addScaledVector(u0, gapAt(face0.clone().add(V(0, h.dy, h.dz))))
+		if (turn) A.applyQuaternion(turn).normalize()
 		applyPose(rig, pz)
 		const atW = offsetOf(rig, at, X, Y)
 		rigs.push(rig)
@@ -1258,12 +1310,17 @@ function pushRig(p, pf, C) {
 	for (const r of rigs) setArm(r, clamp(reach + 0.3 + (P.stroke ?? 0.15), 0.45, 3.2))
 	const q = { x: 0, y: 0, angle: 0 }
 	const W = new THREE.Vector3()
+	const dv = new THREE.Vector3()
 	const at = (t) => {
 		const pp = poseAt(C.track, paddle.id, t, q) ?? q0
 		const u = V(Math.cos(pp.angle ?? 0), Math.sin(pp.angle ?? 0), 0)
 		const face = V(pp.x, pp.y, 0).addScaledVector(u, pad.width / 2)
+		const adv = dv.copy(face).sub(face0).dot(u0) // (how far the paddle has come: the hands wait on the thing until it has come `gap`)
 		for (const l of lay) {
-			W.copy(face).add(l.off).addScaledVector(u, 0.0004).sub(l.atW)
+			W.copy(face)
+				.add(l.off)
+				.addScaledVector(u, -Math.min(adv, gap) - 0.0004)
+				.sub(l.atW)
 			placeHand(l.rig, W, l.X, l.Y)
 			applyPose(l.rig, l.pose)
 			placeArm(l.rig, l.A)

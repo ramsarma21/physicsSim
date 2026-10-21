@@ -3624,7 +3624,8 @@ above (and a starting gate: the hand wins when an item sets both).
 - **Props** (common props, so only the catalog lists them: `ItemType.defaults()` and every document and resolved entry are as they were until an item
   sets one; nothing is built: they stay in the item's resolved props, which the view reads):
   - `hand` on every dynamic type but the pusher (207 types): `none` (default: the pull pin) | `auto` | `pinch` (thumb and index on either side) |
-    `palm` (it rests on the open palm, the fingers cupped round it) | `press` (one fingertip holds it down from above: a cork on a tank's floor) |
+    `palm` (it rests on the open palm, the fingers cupped round it) | `press` (one fingertip, the index a little bent, holds it down from above: a
+    cork on a tank's floor; the little finger's side toward the camera, so the curled fingers show and the index's nail is at its tip) |
     `grip` (the whole hand round it). It acts while the item is held (`held: true`, until the scene's release) or fixed (`fixed: true`: held for
     the whole run, in place of its stand: a magnet in a fist).
   - `hand_from` on the same types: `auto` (default) | `left` | `right` | `above`: where the arm comes from (a press is always from above; a palm from
@@ -3661,18 +3662,23 @@ above (and a starting gate: the hand wins when an item sets both).
 - **Letting go**: at the release the fingers open (0.08 s, as `doc.release.holder`'s opening) and the hand leaves along its way out (the arm's line;
   a palm drops straight down from under the thing, up to 5 cm and never into what is under it, then goes out to its side, and down only with 40 cm
   of room), starting at 30 m/s² up to 1.4 m/s (a palm 40 m/s² and
-  2.5 m/s: a thing falls at g, and a hand left under it would be seen to carry it; a cork shoots up at under 20 m/s², so the finger is seen to leave
-  it, not to lift it). Frame by frame the hand is also kept 0.8 mm clear of the thing it let go, from the track (the hand is pushed further along its
+  2.5 m/s: a thing falls at g, and a hand left under it would be seen to carry it). A press flicks off the thing to its little finger's side (away
+  from where the thing goes, else toward the side with more room to a wall beside it; 2.5 to 5 cm, up and out, at 60 m/s² up to 1.6 m/s), then
+  rises calmly out of the picture (0.3 m/s, faster only to be out within 0.9 s): a cork shoots up beside the hand, so the finger is seen to leave
+  it, never to lift it or ride on it, and the hand is still seen going a few tenths of a second later. Frame by frame the hand is also kept 0.8 mm clear of the thing it let go, from the track (the hand is pushed further along its
   way when the thing would reach it: it never passes through it and never comes back); it is hidden once out of the picture. A thing that leaves at
   more than 0.35 m/s (a throw: `start_speed`) is followed through first: the hand moves along its throw at 0.6 of its speed, slowing to rest in 0.1 s,
   then leaves. The export's motion blur takes sub-frames while a hand moves (`busy`).
 - **A fixed thing** in a hand: held for the whole run, its stand (the view's mount) not drawn; a bar in a fist is held 4.5 cm in from its end away
   from what moves (a magnet by its far end, from above).
 - **A pusher** with a hand: housing, rod and paddle are not drawn (they still act in the physics: the housing stands where it stands, unseen); the
-  hand stands at the paddle's face and moves with it, from the paddle's own track. `finger`: the index's tip at the face (the forearm behind it,
-  rising 14 degrees); `fist`: the flats of the fingers' first bones; `hand`: the palm, the fingers up (on a ball, tangent to it where it touches it,
-  0.35 of its radius toward the camera and at most 4 cm; else leaning 15 degrees into the push); `two hands`: a left and a right side by side
-  (±3.4 cm across, ±1.8 cm up and down). Each meets the thing when the paddle does (the face's starting gap kept).
+  hand moves with the paddle's face, from the paddle's own track, and rests on the thing it pushes while the paddle crosses the air its face starts
+  with (up to 5 cm; the thing does not move before the paddle reaches it), so a hand is on the thing before the push, never short of it. `finger`:
+  the index's tip on it; `fist`: the flats of the fingers' first bones; `hand`: the palm, the fingers up (on a ball, the heel of the hand on its back
+  8 degrees above its middle, tangent there, turned 38 degrees round it toward the camera so the back of the hand shows: a palm square to the push
+  is seen edge-on, a few fingers; else leaning 15 degrees into the push); `two hands`: a left and a right side by side (±3.4 cm across, ±1.8 cm up
+  and down). One arm for every skin, so a change of skin changes only the hand: from behind the push, rising 12 degrees and turned 10 toward the
+  camera (two hands' arms turned apart, 15 degrees each, or as far as each palm is round a ball).
 - **A pitcher** with a hand: a right hand for `pour_to: right` (a left for left) round its handle's outer side (a cup: round its body, the thumb by
   the rim), turning with the flow module's `tilt_deg` reading exactly as the model does; the forearm turns half as far.
 - **AI** (`web/sim/modules/hands.js` `plugin`): the catalog digest's paragraph (props.hand and hand_from on held, fixed, pusher and pitcher items),
@@ -3685,7 +3691,9 @@ above (and a starting gate: the hand wins when an item sets both).
   the props on every dynamic type but the pusher, the pusher's and the pitcher's; the 14 proof scenes build the same documents in Python and JS
   with and without their hand props, resolved differing only by them, and run to the same tracks on the browser bundle; the 12 scenarios and 10
   gallery scenes the same documents, resolved props and warnings with the module and without it, in Python and JS; bad choices refused alike; the
-  AI registry, and a request naming a hand carrying the module's section). `node tools/hands/browser.mjs` (the app with `?engine=browser`, headless Chromium): 83 of 83 (every proof scene's hands as asked;
-  no pin, gate, stand or pusher machinery where a hand is; the hand in the export's picture and gone once it has let go; the same moment drawn
-  twice alike; hands `off` and `all`; the starter's pixels the same with the hands on and off; the live canvas, the library card's photo and an MP4
-  from the export's encoder show the hand).
+  AI registry, and a request naming a hand carrying the module's section; `tools/parity/run.sh` runs it). `node tools/hands/browser.mjs` (the app
+  with `?engine=browser`, headless Chromium): 85 of 85 (every proof scene's hands as asked; no pin, gate, stand or pusher machinery where a hand is;
+  the hand in the export's picture and gone once it has let go; the same moment drawn twice alike; hands `off` and `all`; the starter's pixels the
+  same with the hands on and off; the live canvas, the library card's photo and an MP4 from the export's encoder show the hand; every dynamic type
+  held (`auto`) and fixed (`grip`), every pusher skin and every pitcher: hands made and finite through the release, 416 of 426 scenes with a hand,
+  under 10 ms a scene).
