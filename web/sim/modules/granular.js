@@ -5,7 +5,7 @@
 // Sources: see the Python file's docstring and tooling/src/sim/granular.ts ([WENTWORTH22], [CRC], [FREEZE79], [ETB-REPOSE], [ETB-BULK],
 // [BEVERLOO61], [ZURIGUEL05], [UEHARA03], [WP06], [FISCHENICH01], [EMRIVER], [HOURGLASS]).
 // (a module file takes everything from the framework object register_all gets: web/sim/items.js FRAMEWORK, its `py` = pymath.js)
-let register, ItemType, Prop, Readout, add_look, D2R, register_goal_kind, CATEGORIES
+let register, ItemType, Prop, Readout, add_look, D2R, register_goal_kind, register_build_hook, CATEGORIES
 let pyRound, pymin, pymax, fmtF, truthy, sin, cos
 let F = null
 
@@ -13,13 +13,15 @@ export const MODULE = "granular"
 const CATEGORY = "Sand & soil"
 
 export function register_all(g) {
-	;({ register, ItemType, Prop, Readout, add_look, D2R, register_goal_kind, CATEGORIES } = g)
+	;({ register, ItemType, Prop, Readout, add_look, D2R, register_goal_kind, register_build_hook, CATEGORIES } = g)
 	;({ pyRound, pymin, pymax, fmtF, truthy, sin, cos } = g.py)
 	F = g
 	if (!CATEGORIES.includes(CATEGORY)) CATEGORIES.push(CATEGORY)
 	_looks()
 	_types()
 	_goals()
+	register_build_hook(_pours)
+	register_build_hook(_holders)
 }
 
 // ---------------------------------------------------------------- the grains (tooling/src/sim/granular.ts GRAINS: the same numbers)
@@ -31,7 +33,11 @@ export const GRAINS = {
 	gravel: [0.006, 2650.0, 0.38, 38.0, 0.781286, 34.0, 0.674509, "gravel"],
 	pebbles: [0.02, 2650.0, 0.38, 40.0, 0.8391, 38.0, 0.781286, "pebbles"],
 	soil: [0.00005, 2600.0, 0.5, 35.0, 0.700208, 20.0, 0.36397, "soil"],
-	flour: [0.00005, 1450.0, 0.59, 45.0, 1.0, 45.0, 1.0, "flour"]
+	flour: [0.00005, 1450.0, 0.59, 45.0, 1.0, 45.0, 1.0, "flour"],
+	// the kitchen grains (2026-10-20): granulated sugar, table salt, long-grain rice
+	sugar: [0.0005, 1587.0, 0.4959, 35.0, 0.700208, 25.0, 0.466308, "sugar"],
+	salt: [0.0004, 2165.0, 0.4457, 32.0, 0.624869, 25.0, 0.466308, "salt"],
+	rice: [0.0028, 1450.0, 0.469, 32.0, 0.624869, 28.0, 0.531709, "rice"]
 }
 export const GRAIN_NAMES = Object.keys(GRAINS)
 export const WETNESS = ["dry", "damp", "soaked"]
@@ -95,12 +101,18 @@ function _looks() {
 	add_look("pebbles", { fill: "#8a8178", shade: "#625b53", roughness: 0.85, metalness: 0.0, clearcoat: 0.0, grain: true })
 	add_look("soil", { fill: "#6e5136", shade: "#4b3622", roughness: 0.95, metalness: 0.0, clearcoat: 0.0, grain: true })
 	add_look("flour", { fill: "#f3eee2", shade: "#cfc8b6", roughness: 0.98, metalness: 0.0, clearcoat: 0.0 })
+	add_look("sugar", { fill: "#f7f5ee", shade: "#d6d1c3", roughness: 0.55, metalness: 0.0, clearcoat: 0.3, grain: true })
+	add_look("salt", { fill: "#f4f4f2", shade: "#d2d2cf", roughness: 0.6, metalness: 0.0, clearcoat: 0.2, grain: true })
+	add_look("rice", { fill: "#f1ebdc", shade: "#cfc6b0", roughness: 0.7, metalness: 0.0, clearcoat: 0.1, grain: true })
 	add_look("timer glass", { fill: "#e6f0f4", shade: "#b9c8cf", roughness: 0.05, metalness: 0.0, clearcoat: 1.0, transmission: 0.92, ior: 1.5, thickness: 0.002 })
 	add_look("stream tray", { fill: "#4f8fd8", shade: "#2f6bb0", roughness: 0.4, metalness: 0.0, clearcoat: 0.2 })
 }
 
 const _grain_props = (def = "sand", wet = "dry") => [
-	new Prop("grain", "Grains", def, { kind: "choice", choices: GRAIN_NAMES, help: "sand 0.4 mm; fine sand 0.18 mm; coarse sand 1 mm; gravel 6 mm; pebbles 2 cm; soil (silt loam); flour (a powder)" }),
+	new Prop("grain", "Grains", def, {
+		kind: "choice", choices: GRAIN_NAMES,
+		help: "sand 0.4 mm; fine sand 0.18 mm; coarse sand 1 mm; gravel 6 mm; pebbles 2 cm; soil (silt loam); flour (a powder); " + "sugar 0.5 mm; salt 0.4 mm; rice (long grains)"
+	}),
 	new Prop("wetness", "Wetness", wet, { kind: "choice", choices: WETNESS, help: "dry: flows and heaps at its angle of repose; damp: sticks (a sandcastle stands); soaked: slumps flat (its pores full of water)" })
 ]
 const _tint = () => new Prop("sand_color", "Sand colour", "natural", { kind: "choice", choices: TINT_NAMES, help: "Coloured sand (only how it looks; the catalog-wide colour paints the item)" })
@@ -339,8 +351,9 @@ function _types() {
 			new Readout("left_g", "Left", { unit: "g", digits: 0 }), new Readout("poured_g", "Poured", { unit: "g", digits: 0 }),
 			new Readout("flow_gs", "Flow", { unit: "g/s", digits: 1 }), new Readout("clogged", "Clogged", { unit: "", digits: 0, help: "1 while its grains jam", words: { 0: "no", 1: "yes" } }),
 			new Readout("heap_mm", "Heap height", { unit: "mm", digits: 0, help: "The heap it has poured: its top over where it lies" }),
-			new Readout("heap_deg", "Heap slope", { unit: "°", digits: 1, help: "The poured heap's sides: atan(height ÷ footprint radius)" }),
-			new Readout("heap_g", "Heap", { unit: "g", digits: 0, help: "The grains in the heap under it" })
+			new Readout("heap_deg", "Heap slope", { unit: "°", digits: 1, help: "The poured heap's sides: atan(height ÷ footprint radius); in a jar or glass it fills, " + "the cone's slope from its top down to the wall" }),
+			new Readout("heap_g", "Heap", { unit: "g", digits: 0, help: "The grains in the heap under it" }),
+			new Readout("outside_g", "Outside", { unit: "g", digits: 0, help: "Grains that landed outside the jar, glass, cup or box it pours into" })
 		]
 	}))
 	register(new ItemType("hourglass", "Hourglass (sand timer)", CATEGORY, build_hourglass, {
@@ -389,6 +402,79 @@ function _types() {
 			new Readout("channel_mm", "Channel", { unit: "mm", digits: 0, help: "The deepest cut" }), new Readout("water_lpm", "Water", { unit: "L/min", digits: 1 })
 		]
 	}))
+}
+
+// ---------------------------------------------------------------- containers hold grains; a pitcher of grains pours them (2026-10-20)
+// type -> [its floor's part, its left walls' parts, its right walls' parts, round] (machines/mod_granular.py HOLDERS: the same)
+export const HOLDERS = {
+	"glass-jar": ["floor", ["left"], ["right"], true],
+	cup: ["floor", ["left"], ["right"], true],
+	"plastic-cup": ["floor", ["left"], ["right"], true],
+	bucket: ["floor", ["left"], ["right"], true],
+	basket: ["floor", ["left"], ["right"], false],
+	box: ["floor", ["left"], ["right"], false],
+	beaker: ["floor", ["wall-left"], ["wall-right"], true],
+	"graduated-cylinder": ["floor", ["wall-left"], ["wall-right"], true],
+	"measuring-jug": ["floor", ["wall-left"], ["wall-right"], true],
+	"coffee-mug": ["body", ["wall-left"], ["wall-right"], true],
+	bowl: ["base", ["wall-left"], ["wall-right"], true]
+}
+const HOLDER_NEAR = 0.6 // m: a container whose floor's middle is this near a region (in x) is named for it (the engine checks exactly)
+
+/** A pitcher, jug or cup of the flow module that holds grains: the engine's record of its grains and the landing region under its lip
+ *  (machines/mod_granular.py _pours, line by line). */
+function _pours(sb, scene) {
+	void scene
+	for (const rec of [...sb.processes]) {
+		if (rec.kind !== "flow-pour" || rec.contents !== "grains" || !(typeof rec.grain === "string" && Object.prototype.hasOwnProperty.call(GRAINS, rec.grain))) continue
+		const root = sb.solids.find((s) => s.id === rec.solid)
+		if (root === undefined) continue
+		const iid = rec.item
+		const grain = rec.grain
+		const lx = root.at.x
+		const ly = root.at.y
+		const side = rec.tilt > 0 ? -1.0 : 1.0 // (pouring to the right tips it clockwise: a negative tilt)
+		const ins = rec.inside
+		const h = ins[3].y - ins[0].y
+		const vol = rec.grains ?? 0.0
+		const spread = cbrt((3 * vol) / (PI * tan_low(grain, "dry")))
+		const reach = pymax(0.12, spread * 1.4 + 0.04)
+		const x = lx + side * 0.03
+		const top = ly - h - rec.wall - 0.004
+		const own = sb.solids.filter((s) => s.item === iid).map((s) => s.id)
+		sb.processes.push({
+			kind: "sand-region", id: `${iid}/landing`, item: iid, x0: _r(x - reach), x1: _r(x + reach), z0: _r(-reach), z1: _r(reach), base: _r(top - 1.0), top: _r(top),
+			cell: _cell(reach), grain, wet: "dry", role: "landing", deposit: { shape: "none" }, exclude: own
+		})
+		const pour = { kind: "sand-pour", id: `${iid}/grains`, item: iid, solid: rec.solid, inside: rec.inside, depth: rec.depth, wall: rec.wall, grain, wet: "dry", volume: vol }
+		if (Object.prototype.hasOwnProperty.call(rec, "grains_asked")) pour.asked = rec.grains_asked
+		sb.processes.push(pour)
+	}
+}
+
+/** Every container of the scene that grains could be poured or heaped into, named in each heap's and each pour's landing region near it
+ *  (machines/mod_granular.py _holders, line by line). */
+function _holders(sb, scene) {
+	const regions = sb.processes.filter((p) => p.kind === "sand-region" && (p.role === "pile" || p.role === "landing"))
+	if (!regions.length) return
+	const have = new Map(sb.solids.map((s) => [s.id, s]))
+	const found = []
+	for (const it of scene.items ?? []) {
+		if (it === null || typeof it !== "object" || Array.isArray(it) || truthy(it.held) || !Object.prototype.hasOwnProperty.call(HOLDERS, it.type)) continue
+		const iid = it.id
+		const [fl, left, right, rnd] = HOLDERS[it.type]
+		const fid = `${iid}/${fl}`
+		const ls = left.map((p) => `${iid}/${p}`).filter((id) => have.has(id))
+		const rs = right.map((p) => `${iid}/${p}`).filter((id) => have.has(id))
+		if (!have.has(fid) || !ls.length || !rs.length) continue
+		const depth = have.get(ls[0]).body.depth
+		if (typeof depth !== "number" || !(depth > 0)) continue
+		found.push([have.get(fid).at.x, { item: iid, floor: fid, left: ls, right: rs, round: rnd, depth }])
+	}
+	for (const r of regions) {
+		const near = found.filter(([x]) => r.x0 - HOLDER_NEAR <= x && x <= r.x1 + HOLDER_NEAR).map(([, h]) => h)
+		if (near.length) r.holders = near
+	}
 }
 
 // ---------------------------------------------------------------- goal kinds (machines/mod_granular.py: the same, number for number)
@@ -558,7 +644,7 @@ const startOf = (run, iid, key) => {
 const n0 = (v, d = 0) => (v === null || v === undefined ? "?" : _fmt(v, d))
 const cmOf = (m) => `${_fmt(m * 100, 1)} cm`
 /** The narrowest spout or neck a dry grain runs through (mm; tooling/src/sim/granular.ts jamDiameter: 5 grains [ZURIGUEL05], flour and soil arch). */
-const JAM_MM = { "fine sand": 0.9, sand: 2, "coarse sand": 5, gravel: 30, pebbles: 100, soil: 15, flour: 20 }
+const JAM_MM = { "fine sand": 0.9, sand: 2, "coarse sand": 5, gravel: 30, pebbles: 100, soil: 15, flour: 20, sugar: 2.5, salt: 2, rice: 14 }
 const yes = (e) => (e.ok ? "yes" : "no")
 const TIMER_KINDS = ["timer", "times", "sand_timer", "runs_for", "hourglass_time"]
 /**

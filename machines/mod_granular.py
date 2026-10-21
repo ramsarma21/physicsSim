@@ -24,11 +24,18 @@ Sources (the engine file's header has them all; the catalog's numbers are its):
   [WP06] Wong & Parker, J. Hydraul. Eng. 132, 1159 (2006): bed load. [FISCHENICH01] grass-covered soil takes 15-170 Pa of running water.
   [EMRIVER] Classroom stream tables (Emriver Em2, LRRD 2012): 0.5-2 L/min of water on a 3-10 % sand slope; channels form in minutes.
   [HOURGLASS] A 1-minute sand timer: about 60-70 g of fine sand through a 3 mm neck (Beverloo: 1.1 g/s).
+  The kitchen grains (2026-10-20; tooling/src/sim/granular.ts's header has them in full): granulated sugar 0.5 mm [SANTOS17], sucrose 1587 kg/m³
+  [CRC], 800 kg/m³ poured [ETB-BULK], 35°; table salt 0.4 mm, 2165 kg/m³ [CRC], 1200 kg/m³ [SALT-SPEC], 32°; long-grain rice 6.6 × 2 × 1.6 mm
+  (an equal-volume 2.8 mm), 1450 kg/m³ [USDA], 770 kg/m³ [ETB-BULK], 32° (the angles provisional within [ETB-REPOSE]'s 30-45°).
+  Containers (2026-10-20): a jar, a cup, a beaker, a bucket, a mug, a bowl or a box that grains are poured or heaped into holds them (the build
+  hook _holders names each in the scene near a sand region; the engine makes its inside the bed's floor and its walls a ring all round). A
+  pitcher, jug or cup of the flow module with contents "grains" pours its grains when tipped (the build hook _pours: its "sand-pour" record
+  and the landing region under its lip).
 """
 from crmath import cos, sin  # noqa: F401  (the same bits as web/sim's port on any machine)
 
 NEEDED = ("register", "ItemType", "Prop", "Readout", "MATERIALS", "add_look", "LOOK_FILL", "LOOK_SHADE", "D2R", "register_goal_kind",
-          "TYPES", "CATEGORIES", "props_of")
+          "TYPES", "CATEGORIES", "props_of", "register_build_hook")
 
 MODULE = "granular"
 CATEGORY = "Sand & soil"
@@ -43,6 +50,10 @@ GRAINS = {
     "pebbles": (0.02, 2650.0, 0.38, 40.0, 0.839100, 38.0, 0.781286, "pebbles"),
     "soil": (0.00005, 2600.0, 0.50, 35.0, 0.700208, 20.0, 0.363970, "soil"),
     "flour": (0.00005, 1450.0, 0.59, 45.0, 1.0, 45.0, 1.0, "flour"),
+    # the kitchen grains (2026-10-20): granulated sugar, table salt, long-grain rice
+    "sugar": (0.0005, 1587.0, 0.4959, 35.0, 0.700208, 25.0, 0.466308, "sugar"),
+    "salt": (0.0004, 2165.0, 0.4457, 32.0, 0.624869, 25.0, 0.466308, "salt"),
+    "rice": (0.0028, 1450.0, 0.469, 32.0, 0.624869, 28.0, 0.531709, "rice"),
 }
 GRAIN_NAMES = list(GRAINS)
 WETNESS = ["dry", "damp", "soaked"]
@@ -121,13 +132,17 @@ def _looks():
     add_look("pebbles", fill="#8a8178", shade="#625b53", roughness=0.85, metalness=0.0, clearcoat=0.0, grain=True)
     add_look("soil", fill="#6e5136", shade="#4b3622", roughness=0.95, metalness=0.0, clearcoat=0.0, grain=True)
     add_look("flour", fill="#f3eee2", shade="#cfc8b6", roughness=0.98, metalness=0.0, clearcoat=0.0)
+    add_look("sugar", fill="#f7f5ee", shade="#d6d1c3", roughness=0.55, metalness=0.0, clearcoat=0.3, grain=True)
+    add_look("salt", fill="#f4f4f2", shade="#d2d2cf", roughness=0.6, metalness=0.0, clearcoat=0.2, grain=True)
+    add_look("rice", fill="#f1ebdc", shade="#cfc6b0", roughness=0.7, metalness=0.0, clearcoat=0.1, grain=True)
     add_look("timer glass", fill="#e6f0f4", shade="#b9c8cf", roughness=0.05, metalness=0.0, clearcoat=1.0, transmission=0.92, ior=1.5, thickness=0.002)
     add_look("stream tray", fill="#4f8fd8", shade="#2f6bb0", roughness=0.4, metalness=0.0, clearcoat=0.2)
 
 
 def _grain_props(default="sand", wet="dry"):
     return [Prop("grain", "Grains", default, kind="choice", choices=GRAIN_NAMES,
-                 help="sand 0.4 mm; fine sand 0.18 mm; coarse sand 1 mm; gravel 6 mm; pebbles 2 cm; soil (silt loam); flour (a powder)"),
+                 help="sand 0.4 mm; fine sand 0.18 mm; coarse sand 1 mm; gravel 6 mm; pebbles 2 cm; soil (silt loam); flour (a powder); "
+                      "sugar 0.5 mm; salt 0.4 mm; rice (long grains)"),
             Prop("wetness", "Wetness", wet, kind="choice", choices=WETNESS,
                  help="dry: flows and heaps at its angle of repose; damp: sticks (a sandcastle stands); soaked: slumps flat (its pores full of water)")]
 
@@ -327,8 +342,10 @@ def _types():
                       readouts=[Readout("left_g", "Left", "g", 0), Readout("poured_g", "Poured", "g", 0),
                                 Readout("flow_gs", "Flow", "g/s", 1), Readout("clogged", "Clogged", "", 0, "1 while its grains jam", words={0: "no", 1: "yes"}),
                                 Readout("heap_mm", "Heap height", "mm", 0, "The heap it has poured: its top over where it lies"),
-                                Readout("heap_deg", "Heap slope", "°", 1, "The poured heap's sides: atan(height ÷ footprint radius)"),
-                                Readout("heap_g", "Heap", "g", 0, "The grains in the heap under it")]))
+                                Readout("heap_deg", "Heap slope", "°", 1, "The poured heap's sides: atan(height ÷ footprint radius); in a jar or glass it fills, "
+                                        "the cone's slope from its top down to the wall"),
+                                Readout("heap_g", "Heap", "g", 0, "The grains in the heap under it"),
+                                Readout("outside_g", "Outside", "g", 0, "Grains that landed outside the jar, glass, cup or box it pours into")]))
     register(ItemType("hourglass", "Hourglass (sand timer)", CATEGORY, build_hourglass, dynamic=False, module=MODULE,
                       props=[Prop("sand_kg", "Sand", 0.066, 0.001, 2.0, 0.001, "kg", "66 g of fine sand through a 3 mm neck: one minute"),
                              Prop("neck_mm", "Neck", 3.0, 0.8, 12.0, 0.1, "mm", "Wider: it runs out sooner"),
@@ -534,6 +551,86 @@ def _goals():
         register_goal_kind(kind, fn)
 
 
+# ---------------------------------------------------------------- containers hold grains; a pitcher of grains pours them (2026-10-20)
+# type -> (its floor's part, its left walls' parts, its right walls' parts, round): what holds grains poured or heaped into it. The engine works out
+# its inside from these solids' outlines at the start (tooling/src/sim/granular.ts holderOf): only the walls of its body (a jar's, not its shoulder
+# and neck), whose front-to-back size is its depth.
+HOLDERS = {
+    "glass-jar": ("floor", ("left",), ("right",), True),
+    "cup": ("floor", ("left",), ("right",), True),
+    "plastic-cup": ("floor", ("left",), ("right",), True),
+    "bucket": ("floor", ("left",), ("right",), True),
+    "basket": ("floor", ("left",), ("right",), False),
+    "box": ("floor", ("left",), ("right",), False),
+    "beaker": ("floor", ("wall-left",), ("wall-right",), True),
+    "graduated-cylinder": ("floor", ("wall-left",), ("wall-right",), True),
+    "measuring-jug": ("floor", ("wall-left",), ("wall-right",), True),
+    "coffee-mug": ("body", ("wall-left",), ("wall-right",), True),
+    "bowl": ("base", ("wall-left",), ("wall-right",), True),
+}
+HOLDER_NEAR = 0.6      # m: a container whose floor's middle is this near a region (in x) is named for it (the engine checks exactly)
+
+
+def _pours(sb, scene):
+    """A pitcher, jug or cup of the flow module that holds grains (its flow-pour record says contents "grains": the flow module tips it and
+    pours no liquid): the engine's record of its grains, which pour over its lip once tipped past their angle of repose, and the landing
+    region under its lip that they fall onto (a funnel's, as its: it reads the heap they make, heap_mm, heap_deg, heap_g)."""
+    del scene
+    for rec in list(sb.processes):
+        if rec.get("kind") != "flow-pour" or rec.get("contents") != "grains" or rec.get("grain") not in GRAINS:
+            continue
+        root = next((s for s in sb.solids if s["id"] == rec["solid"]), None)
+        if root is None:
+            continue
+        iid, grain = rec["item"], rec["grain"]
+        lx, ly = root["at"]["x"], root["at"]["y"]
+        side = -1.0 if rec["tilt"] > 0 else 1.0      # (pouring to the right tips it clockwise: a negative tilt)
+        ins = rec["inside"]
+        h = ins[3]["y"] - ins[0]["y"]
+        vol = rec.get("grains", 0.0)
+        spread = cbrt(3 * vol / (3.141592653589793 * tan_low(grain, "dry")))
+        reach = max(0.12, spread * 1.4 + 0.04)
+        x = lx + side * 0.03
+        top = ly - h - rec["wall"] - 0.004
+        own = [s["id"] for s in sb.solids if s["item"] == iid]
+        sb.processes.append({"kind": "sand-region", "id": f"{iid}/landing", "item": iid, "x0": _r(x - reach), "x1": _r(x + reach), "z0": _r(-reach),
+                             "z1": _r(reach), "base": _r(top - 1.0), "top": _r(top), "cell": _cell(reach), "grain": grain, "wet": "dry", "role": "landing",
+                             "deposit": {"shape": "none"}, "exclude": own})
+        pour = {"kind": "sand-pour", "id": f"{iid}/grains", "item": iid, "solid": rec["solid"], "inside": rec["inside"], "depth": rec["depth"],
+                "wall": rec["wall"], "grain": grain, "wet": "dry", "volume": vol}
+        if "grains_asked" in rec:
+            pour["asked"] = rec["grains_asked"]
+        sb.processes.append(pour)
+
+
+def _holders(sb, scene):
+    """Every container of the scene that grains could be poured or heaped into (HOLDERS, not one held to be let go), named in each heap's and
+    each pour's landing region near it: the engine keeps those grains inside it (round or square walls all round, front and back too)."""
+    regions = [p for p in sb.processes if p.get("kind") == "sand-region" and p.get("role") in ("pile", "landing")]
+    if not regions:
+        return
+    have = {s["id"]: s for s in sb.solids}
+    found = []
+    for it in scene.get("items", []):
+        if not isinstance(it, dict) or it.get("held") or it.get("type") not in HOLDERS:
+            continue
+        iid = it["id"]
+        fl, left, right, rnd = HOLDERS[it["type"]]
+        fid = f"{iid}/{fl}"
+        ls = [f"{iid}/{p}" for p in left if f"{iid}/{p}" in have]
+        rs = [f"{iid}/{p}" for p in right if f"{iid}/{p}" in have]
+        if fid not in have or not ls or not rs:
+            continue
+        depth = have[ls[0]]["body"].get("depth")
+        if not isinstance(depth, (int, float)) or not depth > 0:
+            continue
+        found.append((have[fid]["at"]["x"], {"item": iid, "floor": fid, "left": ls, "right": rs, "round": rnd, "depth": depth}))
+    for r in regions:
+        near = [h for x, h in found if r["x0"] - HOLDER_NEAR <= x <= r["x1"] + HOLDER_NEAR]
+        if near:
+            r["holders"] = near
+
+
 def register_all(g):
     globals().update({k: g[k] for k in NEEDED})
     if CATEGORY not in CATEGORIES:
@@ -541,3 +638,5 @@ def register_all(g):
     _looks()
     _types()
     _goals()
+    register_build_hook(_pours)
+    register_build_hook(_holders)

@@ -35,7 +35,10 @@ export const LIQUIDS = {
 	honey: [1420.0, 10.0, "Honey: about 1420 kg/m³; 2-20 Pa·s by its water, 10 used [YANNIOTIS] (approximate)."],
 	"corn syrup": [1380.0, 2.5, "Light corn syrup: about 1380 kg/m³, about 2.5 Pa·s (approximate: brands differ)."],
 	"dish soap": [1050.0, 0.5, "Liquid dish soap: about 1050 kg/m³, about 0.5 Pa·s (manufacturers' data; approximate)."],
-	"rubbing alcohol": [880.0, 0.0025, "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."]
+	"rubbing alcohol": [880.0, 0.0025, "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."],
+	milk: [1030.5, 0.0021, "Whole milk at 20 °C: 1030.5 kg/m³ [MILK-RHO], 2.1 mPa·s [MILK-MU]; white and opaque (its fat droplets and casein scatter light)."],
+	"chocolate milk": [1065.0, 0.008, "Chocolate milk at 20 °C: about 1065 kg/m³ (provisional); about 8 mPa·s as it pours (7.1 at 150 1/s, 13.2 at " +
+		"10 1/s: it thins as it flows [DRINKS-RHEO]); brown and opaque."]
 }
 export const LIQUID_NAMES = Object.keys(LIQUIDS)
 const SALT = [
@@ -76,15 +79,21 @@ export function liquid_of(P) {
 }
 
 // Food colouring, as absorbance per centimetre of light path (red, green, blue): what shows through is exp(−a·path) (provisional strengths).
-export const DYES = { none: [0.0, 0.0, 0.0], red: [0.0, 0.5, 0.25], orange: [0.0, 0.18, 0.5], yellow: [0.0, 0.02, 0.5], green: [0.45, 0.02, 0.4], blue: [0.5, 0.08, 0.005], purple: [0.2, 0.5, 0.05] }
+// White colouring scatters light instead: its fourth number, scattering per cm (machines/mod_flow.py DYES: the same).
+export const DYES = {
+	none: [0.0, 0.0, 0.0], red: [0.0, 0.5, 0.25], orange: [0.0, 0.18, 0.5], yellow: [0.0, 0.02, 0.5], green: [0.45, 0.02, 0.4], blue: [0.5, 0.08, 0.005], purple: [0.2, 0.5, 0.05],
+	white: [0.0, 0.0, 0.0, 20.0], brown: [0.22, 0.38, 0.6]
+}
 export const DYE_NAMES = Object.keys(DYES)
 // The named colours a mixture is told by (goal "mixes_to"): shares of brightness (r, g, b over their sum) through 5 cm of water.
 export const COLOR_REF = { red: [0.7275, 0.0605, 0.212], orange: [0.6688, 0.2753, 0.0558], yellow: [0.5001, 0.4582, 0.0418], green: [0.0909, 0.7903, 0.1187], blue: [0.0468, 0.3872, 0.5659], purple: [0.2959, 0.0669, 0.6372] }
-export const COLOR_NAMES = ["clear", "brown", ...Object.keys(COLOR_REF)]
+export const COLOR_NAMES = ["clear", "brown", ...Object.keys(COLOR_REF), "white"]
 
-/** The name of a transmitted colour (each 0…1). */
-export function color_name(r, g, b) {
-	if (Math.min(r, g, b) >= 0.85) return "clear"
+/** The name of a liquid's colour (each 0…1): what shows through it, or, for one that scatters back half the light or more (o, its tint_o
+ *  reading: milk, white colouring), what it looks like: "white" when every channel is 0.7 or more. */
+export function color_name(r, g, b, o = 0.0) {
+	if (o >= 0.5 && Math.min(r, g, b) >= 0.7) return "white"
+	if (o < 0.5 && Math.min(r, g, b) >= 0.85) return "clear"
 	if (Math.max(r, g, b) < 0.4) return "brown"
 	const s = r + g + b
 	if (!(s > 0)) return "brown"
@@ -105,9 +114,9 @@ export function color_name(r, g, b) {
 
 function _liquid_props(def = "water") {
 	return [
-		new Prop("liquid", "Liquid", def, { kind: "choice", choices: LIQUID_NAMES, help: "What is in it (each at 20 °C): honey and syrup pour slowly, water and alcohol fast" }),
+		new Prop("liquid", "Liquid", def, { kind: "choice", choices: LIQUID_NAMES, help: "What is in it (each at 20 °C): honey and syrup pour slowly, water, milk and alcohol fast" }),
 		new Prop("salt_pct", "Salt", 10.0, 0.0, SALT_MAX, 0.5, "%", "Salt water only: grams of salt in 100 g of it"),
-		new Prop("dye", "Food colouring", "none", { kind: "choice", choices: DYE_NAMES, help: "A few drops of food colouring: liquids of two colours mix (blue and yellow make green)" })
+		new Prop("dye", "Food colouring", "none", { kind: "choice", choices: DYE_NAMES, help: "A few drops of food colouring: liquids of two colours mix (blue and yellow make green); white makes water look like milk" })
 	]
 }
 
@@ -144,9 +153,17 @@ function _pour_readouts() {
 	return [
 		new Readout("left_ml", "Left in it", { unit: "mL", digits: 1 }), new Readout("poured_ml", "Poured out", { unit: "mL", digits: 1 }),
 		new Readout("flow_ml_s", "Pouring", { unit: "mL/s", digits: 1, help: "How fast it pours now" }), new Readout("tilt_deg", "Tipped", { unit: "°", digits: 0 }),
-		new Readout("lands_x", "Stream lands at", { unit: "m", digits: 3, help: "Where along the table its stream comes down (x)" })
+		new Readout("lands_x", "Stream lands at", { unit: "m", digits: 3, help: "Where along the table its stream comes down (x)" }),
+		new Readout("left_g", "Grains left in it", { unit: "g", digits: 0, help: "A cup of grains (sugar, salt, rice, sand): what is still in it" }),
+		new Readout("poured_g", "Grains poured", { unit: "g", digits: 0, help: "A cup of grains: what has poured out over its lip" }),
+		new Readout("heap_mm", "Heap height", { unit: "mm", digits: 0, help: "A cup of grains: the heap its grains make where they land (in a jar or glass, over its floor)" }),
+		new Readout("heap_deg", "Heap slope", { unit: "°", digits: 1, help: "A cup of grains: the heap's sides (in a jar or glass it fills, from its top down to the wall)" }),
+		new Readout("outside_g", "Grains outside", { unit: "g", digits: 0, help: "A cup of grains: what landed outside the jar, glass or box it pours into" })
 	]
 }
+
+// the grains a pitcher, jug or cup can hold (machines/mod_granular.py GRAINS: the granular module pours them; its names)
+export const POUR_GRAINS = ["sugar", "salt", "rice", "sand", "fine sand", "coarse sand", "gravel", "soil", "flour"]
 
 // ---------------------------------------------------------------- pitchers, jugs and cups that a hand tips to pour
 // inner width (round: its diameter), inner height, wall, spout width, material, look, default mL, words, handle
@@ -165,6 +182,7 @@ function _pourers() {
 		const D = (Math.PI / 4) * w
 		const cap = w * h * D * 1e6
 		const fill = pymin(P.fill_ml, 0.97 * cap)
+		const grains = P.contents === "grains"
 		const side = P.pour_to === "right" ? 1.0 : -1.0
 		const m = c.mat({ base: mat, overrides: {} })
 		// the root is the pour lip at the item's anchor (the hand turns the whole pitcher about it); the rest welded to it
@@ -175,11 +193,18 @@ function _pourers() {
 		if (handle) _child(c, "handle", root, _slab(0.012, 0.6 * h, 0.014), [-side * (w + t + 0.03), -0.45 * h], m, look, `${words}'s handle`)
 		const inside = side > 0 ? _box(-w, -h, 0.0, 0.0) : _box(0.0, -h, w, 0.0)
 		// (more than fits: filled to the brim, and the record keeps what was asked, so the run says "only 355 mL fits in it")
-		const asked = P.fill_ml > 0.97 * cap + 1e-9 ? { asked: pyRound(P.fill_ml, 1) } : {}
+		let asked = P.fill_ml > 0.97 * cap + 1e-9 ? { asked: pyRound(P.fill_ml, 1) } : {}
+		// (a cup of grains: this module tips it and pours no liquid; web/sim/modules/granular.js's build hook pours its grains: `grains` m³ packed)
+		let extra = {}
+		if (grains) {
+			extra = { contents: "grains", grain: P.grain, grains: pyRound(fill / 1e6, 9) }
+			if (Object.keys(asked).length) extra.grains_asked = asked.asked
+			asked = {}
+		}
 		c.process("flow-pour", "pour", {
 			solid: root, inside, depth: pyRound(D, 6), lip, wall: t, liquid: liquid_of(P), dye: [...DYES[P.dye]],
-			volume: pyRound(fill / 1e6, 9), tilt: pyRound(-side * P.tilt * D2R, 6), at: P.pour_at, turn: P.tip_s,
-			back: P.back_at > 0 ? P.back_at : null, ...asked
+			volume: grains ? 0.0 : pyRound(fill / 1e6, 9), tilt: pyRound(-side * P.tilt * D2R, 6), at: P.pour_at, turn: P.tip_s,
+			back: P.back_at > 0 ? P.back_at : null, ...asked, ...extra
 		})
 		P.capacity_ml = pyRound(cap, 1)
 		P.inner_width = w
@@ -191,7 +216,15 @@ function _pourers() {
 		props: [
 			new Prop("vessel", "Kind", "pitcher", { kind: "choice", choices: Object.keys(VESSELS),
 				help: "pitcher: a 1.3 L glass pitcher; jug: a 2.9 L plastic jug; measuring cup: 0.85 L; cup: a 0.37 L plastic cup" }),
-			new Prop("fill_ml", "Liquid in it", 750.0, 0.0, 2900.0, 5.0, "mL", "How much it holds at the start (follows the kind until you set it)", { auto: ["vessel"] }),
+			new Prop("contents", "Holds", "liquid", {
+				kind: "choice", choices: ["liquid", "grains"],
+				help: "liquid (its Liquid below) or grains (its Grains: sugar, salt, rice, sand...), which pour out once it is tipped past " + "their angle of repose and heap up where they land"
+			}),
+			new Prop("grain", "Grains", "sugar", {
+				kind: "choice", choices: POUR_GRAINS,
+				help: "What grains it holds when it holds grains: sugar 0.5 mm, salt 0.4 mm, rice (long grains), sand, fine sand, coarse sand, " + "gravel, soil, flour"
+			}),
+			new Prop("fill_ml", "Amount in it", 750.0, 0.0, 2900.0, 5.0, "mL", "How much it holds at the start, liquid or grains (200 mL of " + "sugar is about 160 g; follows the kind until you set it)", { auto: ["vessel"] }),
 			..._liquid_props(),
 			new Prop("pour_to", "Pours to the", "right", { kind: "choice", choices: ["right", "left"], help: "The side its spout faces and it tips toward" }),
 			new Prop("pour_at", "Starts tipping at", 1.0, 0.0, 20.0, 0.1, "s"),
@@ -200,11 +233,13 @@ function _pourers() {
 			new Prop("back_at", "Tips back at", 0.0, 0.0, 30.0, 0.1, "s", "When the hand stands it up again (0: never)")
 		],
 		links: [], readouts: _pour_readouts(),
-		tags: ["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill"],
+		tags: ["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill",
+			"chocolate milk", "cup of sugar", "pour sugar", "cup of rice", "pour rice", "pour salt", "pour sand", "cup of sand"],
 		description: "A pitcher, jug or cup of liquid that a hand tips to pour, from the moment you set and as far as you set. Its item position is " +
 			"its pour lip, where the stream starts: put the lip above the container to fill (a few cm to its side the stream lands a " +
 			"little further). The level inside stays flat as it tips; it pours over the lip like water over a weir, so honey pours far " +
-			"slower than water.",
+			"slower than water. Set it to hold grains (sugar, salt, rice, sand) and they stay put until it is tipped past their angle " +
+			"of repose, then slide out over the lip and heap up where they land.",
 		source: "Pouring over a lip: a sharp-crested weir, q = 0.62·⅔·√(2g)·H^1.5 per metre of lip, and a viscous film's g·H³/(3ν) for thick " +
 			"liquids (Henderson 1966; Nusselt 1916). A glass pitcher 10 cm across, 17 cm deep inside; spout widths approximate.",
 		anchor: "its pour lip (the spout's top edge): the stream starts there", facts: "1.3 L glass pitcher, 750 mL of water, tips at 1 s",
@@ -476,11 +511,14 @@ function fills(ctx, g) {
 function empties(ctx, g) {
 	if (!ctx.known(g.item)) return null
 	const by = ctx.num(g.before_s)
-	const v = ctx.state(g.item, "left_ml")
+	// (a pitcher of grains reads grams: its left_g)
+	const lm = ctx.state(g.item, "left_ml")
+	const key = lm && lm.length ? "left_ml" : "left_g"
+	const v = ctx.state(g.item, key)
 	let t = null
 	if (v && v.length) {
 		const lim = pymax(1.0, 0.01 * v[0])
-		t = ctx.first_time(g.item, "left_ml", (x) => x <= lim)
+		t = ctx.first_time(g.item, key, (x) => x <= lim)
 	}
 	return { label: label_of(g, `${ctx.name(g.item)} empties${when_text(by)}`), ok: t !== null && (by === null || t <= by), kind: "empties", item: g.item, t: t === null ? null : pyRound(t, 3) }
 }
@@ -679,7 +717,8 @@ function mixes_to(ctx, g) {
 	const r = last(ctx, cid, "tint_r")
 	const gg = last(ctx, cid, "tint_g")
 	const b = last(ctx, cid, "tint_b")
-	const got = r === null || gg === null || b === null ? null : color_name(r, gg, b)
+	const o = last(ctx, cid, "tint_o")
+	const got = r === null || gg === null || b === null ? null : color_name(r, gg, b, o === null ? 0.0 : o)
 	return { label: label_of(g, `the liquid in ${ctx.name(cid)} ends ${want}`), ok: got === want, kind: "mixes_to", container: cid, color: got }
 }
 
