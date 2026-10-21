@@ -129,7 +129,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const h = Math.max(1e-5, top - bot)
 		obj.scale.y = h
 		obj.position.y = a.y0 + bot + h / 2
-		obj.visible = top - bot > 2e-5
+		// (a container's one liquid that milk poured in has made one that is not seen into (its tint_o, the flow module's reading): the flow
+		// module's view draws it, its colour up to this level (web/models/mod-flow.js), and this body, the liquid it began with, is not drawn)
+		obj.visible = top - bot > 2e-5 && !(a.key === "level_mm" && f.state?.tint_o >= 0.5)
 		// (the ripples drift slowly: 2 cm a second, the same picture for the same t)
 		const m = obj.material
 		if (m?.normalMap && a.ripple) {
@@ -161,8 +163,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	addFrameHook("fluids:surface", (obj, f, a) => {
 		if (!Number.isFinite(f.state?.[a.key])) return
 		obj.position.y = a.y0 + f.state[a.key] / 1000
-		// (the meniscus of an empty vessel shows once liquid stands in it)
-		obj.visible = f.state[a.key] > 0.02
+		// (the meniscus of an empty vessel shows once liquid stands in it; not once milk poured in has made it a liquid one does not see into:
+		// its tint_o, the flow module's reading; web/models/mod-flow.js then draws that liquid, its top the reading line)
+		obj.visible = f.state[a.key] > 0.02 && !(f.state.tint_o >= 0.5)
 	})
 	/** A unit-high box of liquid (x0…x1 by z depth) on a floor at y0: the hook sets its height. `tint` < 1 deepens its colour (a narrow vessel).
 	 *  A clear liquid's body only tints; its top is a separate rippled surface (a child at the box's top, so the level hook carries it). */

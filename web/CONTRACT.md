@@ -3558,10 +3558,24 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
   |poured − heap − outside| 7e-15 g; the AI's scene 160 g in the jar; a cup 1 m up tipped 170°: 158 g outside, all of it read, the spill said) and
   `cup` (turned to 135° at 90°/s: at most 0.81 mL a step, 0.41 m/s; the old rule failed both, 66.6 mL and 1.79 m/s); every earlier kitchen and
   granular check as before (the cup's onset and what rests on its spout wall at 115° unchanged); tools/parity/granular.mjs 0 mismatches.
+- **Milk mixes with water (repair of 2026-10-21)**: milk or chocolate milk poured into a beaker of water lay under it as a layer of its own
+  (milk 1030.5 kg/m³ to water's 998.2): the beaker read clear water, the same for both, and the view drew blue water. Milk is 88 % water and
+  clouds water at once: water, milk and chocolate milk (flow.ts `WATERY`) now mix as ONE liquid when poured together, in a liquids-module
+  container (beaker, measuring jug, graduated cylinder, water tank) and in the flow module's (a jar, a cup, a pitcher, a bottle): the layer of
+  the one already there takes it, its words kept, its density by volume, its viscosity by Arrhenius' rule (ln μ by volume [ARRHENIUS87], the
+  engine's pow), its colour by volume, each liquid's own colour carried in its dye (milk's 25 per cm of scattering, chocolate milk's absorbance);
+  a layer it makes denser or lighter than a neighbour moves to where its density puts it. Every other pair layers by density as before (oil on
+  water, honey under it; salt and sea water, syrup, soap and alcohol: a density column's lesson). The view: a fluids container whose liquid one
+  does not see into (its `tint_o` ≥ 0.5) is drawn in the colour it shows, opaque, up to its level (web/models/mod-flow.js; round ones a round
+  body, no longer a box whose corners stood out of the glass), and its own body and meniscus are not (web/models/mod-fluids.js). Measured: 150 mL
+  of milk into 300 mL of water, one layer of 1008.97 kg/m³ and 1.282 mPa·s, tint 0.961/0.969/0.967 and tint_o 1 ("white"); chocolate milk
+  0.259/0.110/0.050 ("brown"); dyed water unchanged (0.967/0.732/0.432 and 0.420/0.864/0.987). Checked: `rw-validate-kitchen.ts liquids`
+  (milk and chocolate milk into water and water into milk: one layer, density and viscosity exactly the rule's (2e-15), named white and brown;
+  water from a tap then milk into a glass jar: one white liquid; oil onto water: two layers), rw-validate-fluids.ts, -flow.ts and -crossmod.ts
+  all pass; tools/parity/flow.mjs and fluids.mjs --engine 0 mismatches.
 - **Known limits**: a container keeps grains where it stood at the start (moved or tipped in the run, its walls for the grains stay where it began;
   one `held` to be let go is not a holder); a jar filled past its shoulder heaps as if its body went straight up (its neck is not a wall for the grains); grains and liquids do not meet (milk on
-  sugar neither wets nor dissolves it; the matter module's dissolving is its own); milk and water do not mix (different liquids layer by density in the
-  flow module, so milk poured into water sinks under it as a layer; white colouring in water does mix); a cup of grains is its 2-D section × its depth
+  sugar neither wets nor dissolves it; the matter module's dissolving is its own); a cup of grains is its 2-D section × its depth
   (a round cup's grains pour as a box's would); the flow module's goals `fills`/`delivers` count liquid only (grains: `piles`, `outside_g`); a kitchen
   scale under a fixed cup, jar, beaker, bucket or box weighs none of its grains (a bowl or a mug standing on a scale by its own weight is weighed
   with them: "Cross-module gaps (engine6 crossmod)").
@@ -3873,7 +3887,8 @@ validator `research/rw-validate-flow.ts` (a gate: exits 1 on any failure). Categ
 - **Readings** (track.state): pitcher `left_ml, poured_ml, flow_ml_s, tilt_deg, lands_x` (where its stream came down); tap `flowed_ml, flow_ml_s,
   lands_x`; leaky-bottle `left_ml, level_mm, poured_ml, flow_ml_s, jet<k>_ms, reach<k>_m` (k = 1 the lowest hole; reach measured out from the hole at
   the level the bottle stands on); hose `moved_ml, flow_ml_s`; a catching container `liquid_ml, level_mm, overflow_ml` (gone over its rim), `tint_r,
-  tint_g, tint_b` (what shows through 5 cm of its BIGGEST layer, 0…1: liquids that do not mix, oil on blue water, are never blended into green) and
+  tint_g, tint_b` (what shows through 5 cm of its BIGGEST layer, 0…1: liquids that do not mix, oil on blue water, are never blended into green;
+  milk, chocolate milk and water mix, 2026-10-21) and
   `puddle_ml`; a liquids-module container `received_ml` (and its own `volume_ml`, `level_mm`); waterwheel `rpm, turns`. Events: "<tap> turns on (100
   mL/s)", "<tap> turns off after 400 mL", "<pitcher> starts pouring", "<pitcher> is empty", "<bottle>'s jets start (3 holes)", "<bottle>'s holes open,
   but its cap is on: no air gets in, so no water comes out", "<hose> starts siphoning" (after its first mL), "<hose> runs from <b> to <a>: that

@@ -36,6 +36,9 @@
  *           (K ≈ 2 × the absorption coefficient for diffuse light). What a scattering liquid (milk, white food colouring) looks like (seenOf).
  *   [MILK-SCAT] whole milk's reduced scattering coefficient about 2-3 mm⁻¹ in the visible (Aernouts et al., J. Dairy Sci. 98 (2015) 6727:
  *           raw milk's bulk optical properties): 25 per cm used for milk (provisional).
+ *   [USDA-MILK] USDA FoodData Central, whole milk 3.25 % fat: 88 g of water in 100 g; it mixes with water in any share (WATERY).
+ *   [ARRHENIUS87] S. Arrhenius, Z. Phys. Chem. 1 (1887) 285: the viscosity of a mixture of liquids that mix, ln μ = Σ φ_i ln μ_i (volume
+ *           shares); used for milk, chocolate milk and water poured together (mixOf; provisional for an emulsion).
  */
 import type { Point } from "#sim/plugins.ts"
 
@@ -59,6 +62,41 @@ export const dyePlus = (a: Dye, own: Dye): Dye => {
 	const r: [number, number, number] = [(a[0] as number) + (own[0] as number), (a[1] as number) + (own[1] as number), (a[2] as number) + (own[2] as number)]
 	const s = scatterOf(a) + scatterOf(own)
 	return s !== 0 ? [r[0], r[1], r[2], s] : r
+}
+/** A colour less a liquid's own (what a layer keeps as its dye when its own colour is added back where it is seen): may go below 0. */
+export const dyeLess = (a: Dye, own: Dye): Dye => {
+	const r: [number, number, number] = [(a[0] as number) - (own[0] as number), (a[1] as number) - (own[1] as number), (a[2] as number) - (own[2] as number)]
+	const s = scatterOf(a) - scatterOf(own)
+	return s !== 0 || a.length > 3 ? [r[0], r[1], r[2], s] : r
+}
+/** v0 m³ of colour a and v1 m³ of colour b mixed (absorbances and scattering per cm, by volume). */
+export const dyeMix = (a: Dye, v0: number, b: Dye, v1: number): Dye => {
+	const t = v0 + v1
+	if (!(t > 0)) return a
+	const r: [number, number, number] = [((a[0] as number) * v0 + (b[0] as number) * v1) / t, ((a[1] as number) * v0 + (b[1] as number) * v1) / t, ((a[2] as number) * v0 + (b[2] as number) * v1) / t]
+	const s0 = scatterOf(a)
+	const s1 = scatterOf(b)
+	return s0 !== 0 || s1 !== 0 ? [r[0], r[1], r[2], (s0 * v0 + s1 * v1) / t] : r
+}
+
+/**
+ * Liquids that are mostly water and mix with it, and with one another, as soon as they are poured together (2026-10-21): water, milk (88 %
+ * water [USDA-MILK]) and chocolate milk. Milk poured into water (or water into milk) clouds all of it at once: ONE liquid, never milk lying
+ * under the water as oil lies on it. Every other pair keeps to its own layer by density as before (oil on water, honey under it, and a
+ * density column's salt water, syrup, soap and alcohol, whose layers are the lesson).
+ */
+export const WATERY: ReadonlySet<string> = new Set(["water", "milk", "chocolate milk"])
+export const mixesWith = (a: string, b: string) => WATERY.has(a) && WATERY.has(b)
+/** v0 m³ of liquid a and v1 m³ of b mixed into one: its density by volume (they mix with no change of volume), its viscosity by Arrhenius'
+ *  rule for liquids that mix, ln μ by volume [ARRHENIUS87] (μa^φa · μb^φb: the engine's pow, the same bits everywhere; no Math.log). */
+export const mixOf = (a: { readonly density: number; readonly viscosity: number }, v0: number, b: { readonly density: number; readonly viscosity: number }, v1: number) => {
+	const t = v0 + v1
+	if (!(t > 0) || !(v1 > 0)) return { density: a.density, viscosity: a.viscosity }
+	if (!(v0 > 0)) return { density: b.density, viscosity: b.viscosity }
+	return {
+		density: (a.density * v0 + b.density * v1) / t,
+		viscosity: a.viscosity > 0 && b.viscosity > 0 ? Math.pow(a.viscosity, v0 / t) * Math.pow(b.viscosity, v1 / t) : (a.viscosity * v0 + b.viscosity * v1) / t
+	}
 }
 
 // ------------------------------------------------------------------------------------------------ flow laws (pure)

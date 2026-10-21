@@ -760,11 +760,17 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				if (!rows) continue
 				const dyed = rows.some((row) => row[2] !== 0xfff && row[2] !== undefined)
 				if (!dyed) continue
-				const depth = Math.max(0.004, r.area / Math.max(1e-6, r.x1 - r.x0) - 0.004)
-				const m = new T.Mesh(kit.box(r.x1 - r.x0 - 0.002, 1, depth, 0.0005), liquidMat([1, 1, 1]))
+				// (a round one, a beaker, a cylinder, a jug (its horizontal area π/4 × its width²): a round body just outside the liquid's own
+				// (web/models/mod-fluids.js draws it at 0.995 of its radius), so milk poured into its water shows as the white it is, never a box
+				// whose corners stood out of the glass with the blue water drawn in front of it; a tank: a box, as before)
+				const wd = r.x1 - r.x0
+				const round = Math.abs(r.area - (Math.PI / 4) * wd * wd) <= 1e-6 + 1e-4 * r.area
+				const depth = Math.max(0.004, r.area / Math.max(1e-6, wd) - 0.004)
+				const geo = round ? kit.geo(`flow-tintcyl|${Math.round(wd * 1e5)}`, () => new T.CylinderGeometry(wd * 0.4985, wd * 0.4985, 1, 64, 1)) : kit.box(wd - 0.002, 1, depth, 0.0005)
+				const m = new T.Mesh(geo, liquidMat([1, 1, 1]))
 				m.renderOrder = 2
 				g.add(m)
-				tints.push({ rows, r, m, look: -1 })
+				tints.push({ rows, r, m, look: -1, round })
 			}
 			const drawTint = (Tn, t) => {
 				const w = around(Tn.rows, t)
@@ -773,7 +779,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				const look = w.a[2]
 				const h = top - Tn.r.floor
 				Tn.m.visible = look !== 0xfff && h > 0.001
-				Tn.m.scale.y = Math.max(1e-4, h - 0.001)
+				// (one that is not seen through IS the liquid, up to its level: web/models/mod-fluids.js hides its own body then, by the tint_o reading)
+				const whole = opaqueLook(look)
+				Tn.m.scale.y = Math.max(1e-4, whole ? h : h - 0.001)
 				Tn.m.position.set((Tn.r.x0 + Tn.r.x1) / 2, Tn.r.floor + h / 2, 0)
 				if (look !== Tn.look) {
 					Tn.look = look

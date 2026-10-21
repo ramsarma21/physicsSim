@@ -317,6 +317,53 @@ if (want === "all" || want === "liquids") {
 	const tc = half("chocolate milk")
 	within("a cup tipped 75°: milk pours half as soon as water does", tm, tw, 0.1, "s")
 	claim(`a cup tipped 75°: chocolate milk pours half no sooner than water (${fmt(tc)} s against ${fmt(tw)} s)`, tc >= tw - 1e-9)
+	// milk and chocolate milk MIX with water (2026-10-21; flow.ts WATERY): poured into a beaker of water (the liquids module's) or a jar of water
+	// (the flow module's), or water into milk, they make one liquid, its density by volume, its viscosity by Arrhenius' rule (ln μ by volume),
+	// its colour by volume (before: milk lay under the water as its own layer and the beaker read clear water); oil on water still layers
+	{
+		const fl = (await import(`${PG}/tooling/src/sim/modules/fluids.ts`)) as { liquidsIn: (s: unknown) => { regions: { region: { item: string; layers: { words: string; density: number; viscosity: number }[] }; volumes: number[] }[] } | undefined }
+		const fw = (await import(`${PG}/tooling/src/sim/modules/flow.ts`)) as { flowIn: (s: unknown) => { basins: { item: string; basin: { layers: { liq: number; vol: number }[] }; liquids: { list: { words: string; density: number; viscosity: number }[] } }[] } | undefined }
+		const runKept = (s: Scene) => {
+			const c = sim.clean(s)
+			const { doc, resolved } = sim.layout(c)
+			const adm = admitDocument(doc).scene
+			const raw = simulate(adm, 120)
+			const track = { ...raw, ...plug.slimExtras(raw, (v, d) => Number(v.toFixed(d))) } as Track
+			return { track, summary: sim.finish(c, doc, resolved, track).summary, adm, doc }
+		}
+		const W = { density: 998.2, viscosity: 0.001002 }
+		const LIQ: Record<string, { density: number; viscosity: number }> = { milk: { density: 1030.5, viscosity: 0.0021 }, "chocolate milk": { density: 1065, viscosity: 0.008 } }
+		const mixed = (a: { density: number; viscosity: number }, va: number, b: { density: number; viscosity: number }, vb: number) => ({
+			density: (a.density * va + b.density * vb) / (va + vb),
+			viscosity: Math.exp((Math.log(a.viscosity) * va + Math.log(b.viscosity) * vb) / (va + vb))
+		})
+		for (const [into, poured, color] of [["water", "milk", "white"], ["water", "chocolate milk", "brown"], ["milk", "water", "white"]] as const) {
+			const R = runKept(scene([{ id: "g", type: "beaker", x: 1.2, y: 0, props: { liquid: into, fill_ml: 300 } }, { id: "p", type: "pitcher", x: 1.165, y: 0.2, props: { vessel: "cup", fill_ml: 150, liquid: poured, pour_to: "right", tilt: 110, pour_at: 0.5, tip_s: 2.5 } }], 6, { goals: [{ kind: "mixes_to", container: "g", color }] }))
+			const st = fl.liquidsIn(R.adm)?.regions.find((r) => r.region.item === "g")
+			const layers = st?.region.layers ?? []
+			// (what it held, as built (its layer's height × its area: the 300 mL rounded to a micrometre of height), and what it caught: its liquid's
+			// volume now less that, exactly; the received_ml reading is rounded)
+			const rec = (R.doc.processes ?? []).find((q) => q.kind === "liquid" && q.item === "g") as { area: number; layers: { height: number }[] } | undefined
+			const held = rec ? (rec.layers[0]?.height ?? 0) * rec.area * 1e6 : 300
+			const got = (st?.volumes ?? []).reduce((a, b) => a + b, 0) * 1e6 - held
+			const want = mixed(into === "water" ? W : LIQ[into]!, held, poured === "water" ? W : LIQ[poured]!, got)
+			claim(`${poured} into a beaker of ${into}: one liquid (${layers.length} layer${layers.length === 1 ? "" : "s"}: ${layers.map((l) => l.words).join(", ")}; no layer2_mm: ${Number.isNaN(last(R.track, "g", "layer2_mm"))})`, layers.length === 1 && Number.isNaN(last(R.track, "g", "layer2_mm")))
+			within(`${poured} into ${into}: its density by volume (${fmt(got)} mL into 300; off by ${((layers[0]?.density ?? Number.NaN) / want.density - 1).toExponential(1)})`, layers[0]?.density ?? Number.NaN, want.density, 1e-12, "kg/m³", "ρ by volume")
+			within(`${poured} into ${into}: its viscosity, ln μ by volume (off by ${((layers[0]?.viscosity ?? Number.NaN) / want.viscosity - 1).toExponential(1)})`, (layers[0]?.viscosity ?? Number.NaN) * 1000, want.viscosity * 1000, 1e-12, "mPa·s", "ARRHENIUS87")
+			claim(`${poured} into ${into}: the beaker is called "${R.summary.goals[0]?.color}" (want ${color}; opacity ${fmt(last(R.track, "g", "tint_o"))})`, R.summary.goals[0]?.ok === true && last(R.track, "g", "tint_o") >= 0.5)
+		}
+		// the flow module's own container: water from a tap into a glass jar, then a cup of milk: one liquid, white
+		const J = runKept(scene([{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "tap", type: "tap", x: 1.2, y: 0.3, props: { flow_ml_s: 100, on_at: 0.2, off_at: 2.2 } }, { id: "cup", type: "pitcher", x: 1.165, y: 0.18, props: { vessel: "cup", liquid: "milk", fill_ml: 100, tilt: 115, tip_s: 1.5, pour_at: 2.6 } }], 7, { goals: [{ kind: "mixes_to", container: "jar", color: "white" }] }))
+		const jb = fw.flowIn(J.adm)?.basins.find((b) => b.item === "jar")
+		const jl = jb?.basin.layers ?? []
+		claim(`water then milk into a glass jar: one liquid (${jl.length} layer${jl.length === 1 ? "" : "s"}, ${fmt(last(J.track, "jar", "liquid_ml"))} mL), called "${J.summary.goals[0]?.color}" (want white)`, jl.length === 1 && J.summary.goals[0]?.ok === true)
+		const jd = jb && jl[0] ? (jb.liquids.list[jl[0].liq]?.density ?? Number.NaN) : Number.NaN
+		claim(`... its density between water's and milk's (${fmt(jd)} kg/m³)`, jd > 998.2 && jd < 1030.5)
+		// oil does not mix: 100 mL of vegetable oil poured onto a beaker of water stays a layer on top
+		const O = runKept(scene([{ id: "g", type: "beaker", x: 1.2, y: 0, props: { liquid: "water", fill_ml: 300 } }, { id: "p", type: "pitcher", x: 1.165, y: 0.2, props: { vessel: "cup", fill_ml: 100, liquid: "vegetable oil", pour_to: "right", tilt: 120, pour_at: 0.5, tip_s: 2 } }], 8))
+		const ol = fl.liquidsIn(O.adm)?.regions.find((r) => r.region.item === "g")?.region.layers ?? []
+		claim(`oil onto a beaker of water: two layers, oil on top (${ol.map((l) => l.words).join(" under ")})`, ol.length === 2 && ol[1]?.words === "vegetable oil")
+	}
 	// floating: a grape (1060 kg/m³) sinks in milk (1030.5) and floats in chocolate milk (1065); an egg (1080) sinks in both
 	for (const [liquid, thing, floats] of [["milk", "grape", false], ["chocolate milk", "grape", true], ["chocolate milk", "egg", false]] as const) {
 		const R = run(scene([{ id: "tank", type: "water-tank", x: 1.2, y: 0, props: { liquid } }, { id: "it", type: thing, x: 1.2, y: 0.12 }], 4, { goals: [{ kind: floats ? "floats" : "sinks", item: "it" }] }))

@@ -28,7 +28,9 @@
  * All of a run's flow records are worked by ONE process (the first in the document), every 480 Hz step from t = 0: the pitchers' tilt,
  * the basins' levels and outflows, the sources' particles, the particles' step against every solid, then what the particles fell into.
  * The fluids module's fixed containers (water tanks, beakers, cylinders, jugs, density columns) take poured liquid and give it to hoses
- * (its exported liquidsIn / pourInto: modules/fluids.ts); a different liquid poured in is a new layer where its density puts it.
+ * (its exported liquidsIn / pourInto: modules/fluids.ts); a different liquid poured in is a new layer where its density puts it, except
+ * milk, chocolate milk and water (flow.ts WATERY), which mix into the layer of one already there: one liquid, its density, viscosity and
+ * colour by volume (2026-10-21), in this module's containers too.
  * Readings (track.state): a pitcher left_ml, poured_ml, flow_ml_s, tilt_deg; a tap flowed_ml, flow_ml_s; a vessel left_ml, level_mm,
  * poured_ml, flow_ml_s, jet<k>_ms and reach<k>_m per hole (1 = lowest); a hose moved_ml, flow_ml_s; a container that catches liquid
  * liquid_ml, level_mm, tint_r, tint_g, tint_b (what shows through 5 cm of it, 0…1); a fluids container received_ml (and tint_*); a
@@ -51,7 +53,7 @@
  * opening whose rim stands above the surface round it falls into it: a tap or a pitcher fills a bowl floating in a fluids tank, a cup standing in a
  * bucket. A puddle on a kitchen scale's platform is weighed (puddlesOn).
  */
-import { Basin, type BasinLayer, type Collider, type Dye, dyePlus, Emitter, FlowSim, type FlowLiquid, flatCentroid, clipBelowFlat, makeCollider, orificeFlow, pipeSpeed, scatterOf, seenOf, shapeCollider, tintOf, weirFlow } from "#sim/flow.ts"
+import { Basin, type BasinLayer, type Collider, type Dye, dyeLess, dyeMix, dyePlus, Emitter, FlowSim, type FlowLiquid, flatCentroid, clipBelowFlat, makeCollider, mixesWith, mixOf, orificeFlow, pipeSpeed, scatterOf, seenOf, shapeCollider, tintOf, weirFlow } from "#sim/flow.ts"
 import { type FluidBody, type FluidShape, fluidPushes, type RegionState } from "#sim/fluids.ts"
 import { liquidsIn } from "#sim/modules/fluids.ts"
 import type { SimScene } from "#sim/part.ts"
@@ -254,8 +256,45 @@ class BasinStore implements Store {
 		return this.basin.pressure(y, this.liquids.list, g)
 	}
 	add(vol: number, liq: number, dye: Dye) {
-		this.basin.add(vol, liq, dye, this.liquids.list)
+		if (!this.mixIn(vol, liq, dye)) this.basin.add(vol, liq, dye, this.liquids.list)
 		this.received += vol
+	}
+	/**
+	 * Liquid that mixes into a layer already in it, as ONE liquid (WATERY: milk into water, water into milk or chocolate milk; or more of a
+	 * layer made so, whose density is no longer its words' own): its density, viscosity and colour by volume (each one's own colour carried in
+	 * its dye: the layer keeps its words). False for every other pour, which Basin.add puts in its own layer or a new one, as before.
+	 */
+	private mixIn(vol: number, liq: number, dye: Dye): boolean {
+		if (!(vol > 0)) return false
+		const list = this.liquids.list
+		const L = list[liq] as FlowLiquid
+		const layers = this.basin.layers
+		let k = layers.findIndex((l) => (list[l.liq] as FlowLiquid).words === L.words)
+		if (k >= 0) {
+			const K = list[(layers[k] as BasinLayer).liq] as FlowLiquid
+			if (K.density === L.density && K.viscosity === L.viscosity) return false
+		} else
+			for (let i = 0; i < layers.length; i++)
+				if (mixesWith(L.words, (list[(layers[i] as BasinLayer).liq] as FlowLiquid).words) && (k < 0 || (layers[i] as BasinLayer).vol > (layers[k] as BasinLayer).vol)) k = i
+		if (k < 0) return false
+		const l = layers[k] as BasinLayer
+		const K = list[l.liq] as FlowLiquid
+		const ownK = dyeOfWords(K.words)
+		l.a = dyeLess(dyeMix(dyePlus(l.a, ownK), l.vol, dyePlus(dye, dyeOfWords(L.words)), vol), ownK) as BasinLayer["a"]
+		const m = mixOf(K, l.vol, L, vol)
+		l.liq = this.liquids.of({ words: K.words, density: m.density, viscosity: m.viscosity })
+		l.vol += vol
+		// (denser or lighter now than a layer beside it: it goes where its density puts it, densest at the bottom)
+		const dens = (i: number) => (list[(layers[i] as BasinLayer).liq] as FlowLiquid).density
+		while (k > 0 && dens(k) > dens(k - 1)) {
+			;[layers[k - 1], layers[k]] = [layers[k] as BasinLayer, layers[k - 1] as BasinLayer]
+			k--
+		}
+		while (k < layers.length - 1 && dens(k) < dens(k + 1)) {
+			;[layers[k + 1], layers[k]] = [layers[k] as BasinLayer, layers[k + 1] as BasinLayer]
+			k++
+		}
+		return true
 	}
 	take(layer: number, vol: number) {
 		const got = this.basin.take(layer, vol)
@@ -339,6 +378,42 @@ class RegionStore implements Store {
 		const L = this.liquids.list[liq] as FlowLiquid
 		const layers = this.st.region.layers as unknown as { words: string; density: number; viscosity: number; height: number }[]
 		let i = layers.findIndex((l) => l.words === L.words)
+		// (a liquid that mixes into a layer already in it, as ONE liquid: milk into water, water into milk or chocolate milk (WATERY), or more of a
+		// layer made so, whose density is no longer its words' own: its density, viscosity and colour by volume, the layer keeping its words;
+		// before, milk poured into a beaker of water lay under it as its own layer and the beaker showed clear water)
+		let k = i >= 0 && ((layers[i] as { density: number }).density !== L.density || (layers[i] as { viscosity: number }).viscosity !== L.viscosity) ? i : -1
+		if (i < 0)
+			for (let j = 0; j < layers.length; j++)
+				if (mixesWith(L.words, (layers[j] as { words: string }).words) && (k < 0 || (this.st.volumes[j] as number) > (this.st.volumes[k] as number))) k = j
+		if (k >= 0) {
+			const K = layers[k] as { words: string; density: number; viscosity: number }
+			const v0 = this.st.volumes[k] as number
+			const ownK = dyeOfWords(K.words)
+			const d = (this.dyes[k] as Dye | undefined) ?? [0, 0, 0]
+			// (the colour it shows now, as mixedRegion reads it: a layer's dye starts as its own colour)
+			const shown = d[0] === ownK[0] && d[1] === ownK[1] && d[2] === ownK[2] && scatterOf(d) === scatterOf(ownK) ? d : dyePlus(d, ownK)
+			this.dyes[k] = [...dyeLess(dyeMix(shown, v0, dyePlus(dye, dyeOfWords(L.words)), vol), ownK)]
+			const m = mixOf(K, v0, L, vol)
+			K.density = m.density
+			K.viscosity = m.viscosity
+			this.st.volumes[k] = v0 + vol
+			// (denser or lighter now than a layer beside it: it goes where its density puts it, densest at the bottom, with its volume, top and dye)
+			const swap = (a: number, b: number) => {
+				for (const arr of [layers, this.st.volumes, this.st.tops, this.dyes] as unknown[][]) [arr[a], arr[b]] = [arr[b], arr[a]]
+			}
+			while (k > 0 && (layers[k] as { density: number }).density > (layers[k - 1] as { density: number }).density) {
+				swap(k - 1, k)
+				k--
+			}
+			while (k < layers.length - 1 && (layers[k] as { density: number }).density < (layers[k + 1] as { density: number }).density) {
+				swap(k, k + 1)
+				k++
+			}
+			const r = this.st.region
+			this.st.tops[this.st.tops.length - 1] = (this.st.tops[this.st.tops.length - 1] ?? r.floor) + vol / r.area
+			this.received += vol
+			return
+		}
 		if (i < 0) {
 			// a new layer where its density belongs (densest at the bottom), in that module's own arrays
 			i = layers.length
@@ -1688,7 +1763,7 @@ export class Flow {
 	/**
 	 * The colour of a container's liquid: its biggest layer's (its dye and its own colour). Liquids that do not mix stay apart (blue water
 	 * under yellow oil is blue below and yellow above, never green): only what pours into the same liquid mixes, by volume (blue + yellow
-	 * water is green).
+	 * water is green), and milk, chocolate milk and water into one another (WATERY: one layer, its colour by volume).
 	 */
 	mixed(layers: readonly BasinLayer[]): Dye {
 		let big: BasinLayer | undefined
