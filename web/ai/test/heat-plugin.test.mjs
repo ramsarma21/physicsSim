@@ -4,7 +4,7 @@
 // ice cube, its salt, a lamp and its target, a thermometer, a cup), its change words, and a make-it-work search that re-aims a lamp.
 //   node --test web/ai/test/heat-plugin.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"

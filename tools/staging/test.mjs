@@ -5,7 +5,7 @@
 //   engine    doc.view changes no track: the browser bundle runs a document with and without it to the same bytes; the server too (--server <port>)
 //   plugins   the AI's registry has the module's digest paragraph, prompt lines and change words; the AI schema takes settings.camera
 //   node tools/staging/test.mjs [--server 8972]
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"

@@ -9,7 +9,7 @@
 //             band cars at 30 turns of each band; clay under 5 kg); the readings finite and bounded (no stored energy above 1 kJ, nothing past
 //             250 m/s); and the summaries (goal kinds, readings) Python == JS on those runs, every goal kind sampled
 //   node tools/parity/softbody.mjs [--n 20] [--engine] [--per 2] [--seed 7]
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { isDeepStrictEqual } from "node:util"

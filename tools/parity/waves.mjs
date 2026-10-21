@@ -7,7 +7,7 @@
 //   summary   items.py summarize == web/sim finish (every waves goal kind, random fields)
 //   sane      no NaN or Infinity in any reading; every engine run under its time budget
 //   node tools/parity/waves.mjs [--n 60] [--seed 7] [--browser]   (--browser: the bundle in headless Chromium too, on every 4th scene)
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import os from "node:os"

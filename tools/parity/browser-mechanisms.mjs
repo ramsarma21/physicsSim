@@ -8,7 +8,7 @@
 // ?engine=browser: web/sim/api.js's local API in a fresh page (index.js: all three catalog ports registered; the engine in a Web Worker) simulates the scenario files
 // that use mechanisms types and each mechanisms type dropped on a table, and doc, resolved, warnings, summary and the TRACK are compared (by digest) with what the
 // running server's POST /api/simulate answers for the same scene (read only): the same physics in the browser as in the server. Uses the playwright-core in ~/.bun/install/cache (the same Chromium the other agents drive) with `headless: true` only.
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import fs from "node:fs"
 import http from "node:http"
 import os from "node:os"

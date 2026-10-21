@@ -7,7 +7,7 @@
 //   identity  a scene without module items builds and runs exactly as without the framework (the 22 scenes: tools/plugin-toy/identity.sh)
 //   node tools/plugin-toy/test.mjs   (a step of tools/parity/run.sh, so CI's parity jobs run it; TOY_OUT=<dir> node tools/plugin-toy/browser.mjs
 //                                     then runs the bundle it built in headless Chromium)
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"

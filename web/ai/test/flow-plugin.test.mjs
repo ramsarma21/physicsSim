@@ -4,7 +4,7 @@
 // its change words, and make-it-work searches that find a fix with its knobs or a move: a pour that misses its jar, a waterwheel too loaded.
 //   node --test web/ai/test/flow-plugin.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"

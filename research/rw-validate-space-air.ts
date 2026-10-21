@@ -15,7 +15,7 @@
 //            primary's mass)
 //   node --no-warnings research/rw-validate-space-air.ts [air|doc|warn|words|all]
 import "../tools/engine-math-node.mjs"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { readFileSync, readdirSync } from "node:fs"
 import { isDeepStrictEqual } from "node:util"
 

@@ -35,7 +35,8 @@
 // What clean() is given: the app sent JSON.stringify(scene) over HTTP, so a NaN or an infinity arrived as null. clean() does the same to the scene
 // it is handed (a NaN in a scene means null, as it did over HTTP), so the cases that carry a NaN or an infinity ("@@float" markers) are sent to
 // Python as null, which is what its server received; the "direct" group hands in-memory scenes (real NaN, undefined, Date, toJSON) to clean() itself.
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"

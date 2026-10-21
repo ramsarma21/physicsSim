@@ -13,7 +13,7 @@
 //   cross     scenes with other modules' things (softbody balls and clay, a trampoline, a water tank of fresh and salt water, a vacuum jar):
 //             the same parity checks as the random scenes
 //   node tools/fracture/test.mjs [--n 60]
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { isDeepStrictEqual } from "node:util"

@@ -5,7 +5,7 @@
 // and two make-it-work searches through its knobs (flipped carts, a balloon rubbed too little).
 //   node --test web/ai/test/magnetism-plugin.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"

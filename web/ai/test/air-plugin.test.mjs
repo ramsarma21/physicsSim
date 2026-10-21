@@ -4,7 +4,7 @@
 // searches that find a fix through the module's knobs (a suction cup that lets go, a hot-air balloon that will not lift off).
 //   node --test web/ai/test/air-plugin.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { test } from "node:test"

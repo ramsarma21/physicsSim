@@ -11,7 +11,8 @@
 //   ENGINE_DIR=<a folder holding physics.ts and document.ts> runs the same scenes on another copy of the engine; MACHINES_DIR=<a folder holding
 //   items.py and the catalog modules> builds the catalog's scenes with another copy of the builder.
 //   FUZZ_N (default 5000) and FUZZ_JOBS (default 8): the crash fuzz's size (tools/parity/engine-fuzz.mjs, in that many processes).
-import { execFileSync, spawnSync } from "node:child_process"
+import { spawnSync } from "node:child_process"
+import { execFileSync } from "../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"

@@ -8,7 +8,8 @@
 //   plugins   the AI's registry: goal kinds and aliases, knobs, prompt snippets, digest lines, change words, checkModuleGoal == summarize
 //   physics   a few outcomes (the validator research/rw-validate-space.ts has the full set)
 //   node tools/space/test.mjs [--n 60] [--seed 7]
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { createInterface } from "node:readline"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"

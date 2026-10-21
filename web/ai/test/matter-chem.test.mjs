@@ -5,7 +5,7 @@
 // hand warmer with the module's own knobs, checked in the engine. (The worked requests are run by matter-plugin.test.mjs with the module's others.)
 //   node --test web/ai/test/matter-chem.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"

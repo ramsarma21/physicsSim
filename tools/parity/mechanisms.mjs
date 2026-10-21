@@ -32,7 +32,8 @@
 // catalog_everyday, catalog_mechanisms) and compare against the whole server: then the scene files in web/scenarios are compared with every item in them, and the
 // tables, catalog and registration checks hold for the whole of web/sim. (The default run needs only this module's port; this is the integration check.)
 // --export writes the layout/clean cases and Python's answers (with the "before" tables) for tools/parity/browser-mechanisms.mjs, which replays them in headless Chromium.
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import fs from "node:fs"
 import path from "node:path"
 import readline from "node:readline"

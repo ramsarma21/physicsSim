@@ -4,7 +4,7 @@
 // catalog-wide props (color, glow, start_speed, start_dir, start_spin) listed for every type but kept out of the catalog digest's per-type lines;
 // and the make-it-work search finding a checked fix through the module's knobs.   node --test web/ai/test/mechanics-plugin.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"

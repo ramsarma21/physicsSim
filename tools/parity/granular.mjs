@@ -5,7 +5,7 @@
 //   engine    (--engine) the server's engine (node, the bundle's math) == the browser bundle web/sim/engine-worker.js, byte for byte, on a
 //             scene of each type; and the summaries (goal kinds, readings) Python == JS on those runs, with every goal kind sampled
 //   node tools/parity/granular.mjs [--n 40] [--engine] [--seed 7]
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { isDeepStrictEqual } from "node:util"

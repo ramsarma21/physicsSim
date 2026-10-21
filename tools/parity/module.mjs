@@ -10,7 +10,7 @@
 //             readings, happenings) Python == JS on those runs, with goals of every kind of the module sampled (its kinds' sample())
 //   node --no-warnings tools/parity/module.mjs --module circuits [--n 12] [--mix 40] [--engine] [--per 2] [--seed 7]
 // A module's own test may call runModuleParity({module, partners, ...}) with the partner items its scenes need (tools/air/test.mjs).
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { isDeepStrictEqual } from "node:util"

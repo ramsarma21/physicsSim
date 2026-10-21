@@ -9,7 +9,7 @@
 //             not_attracted)
 //   node --no-warnings tools/parity/magnetism.mjs [--n 150] [--engine 12] [--seed 11]
 // Exits 1 on any mismatch. Needs nothing running (it builds with machines/ and web/sim directly).
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"

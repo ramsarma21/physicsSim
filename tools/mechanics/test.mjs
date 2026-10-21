@@ -5,7 +5,7 @@
 //     random on every type of the catalog: the same documents (a `start` record per moving body, paint and glow on the solids)
 //   - the module's goal kinds summarised on real runs (the engine: tooling/src/sim with the bundle's math): the same summary text
 //   node tools/mechanics/test.mjs [--n 400] [--seed 12345]
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 

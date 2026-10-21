@@ -29,7 +29,8 @@
 //                 classified: real / the other catalog modules (python with every module agrees with the server, not with this side) / server stale
 //                 (the server's own answer is not what python gives now: its modules were loaded before a file changed)
 //   browser       the same cases in headless Chromium (never a visible window): web/sim as a page loads it, over HTTP from a throwaway server here
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import crypto from "node:crypto"
 import fs from "node:fs"
 import http from "node:http"

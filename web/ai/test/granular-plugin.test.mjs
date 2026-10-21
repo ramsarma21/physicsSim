@@ -4,7 +4,7 @@
 // that find a fix through the module's knobs (a funnel of gravel that clogs, a sand timer that runs too long).
 //   node --test web/ai/test/granular-plugin.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"

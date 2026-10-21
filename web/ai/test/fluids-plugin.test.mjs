@@ -5,7 +5,7 @@
 // digest's lines (a container, a floater, a sinker, a boat whose fan misses its sail), its change words, and a make-it-work search that finds a sail.
 //   node --test web/ai/test/fluids-plugin.test.mjs
 import assert from "node:assert/strict"
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../../../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"

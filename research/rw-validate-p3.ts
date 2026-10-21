@@ -8,7 +8,7 @@
 //   node --no-warnings research/rw-validate-p3.ts [weld|spring|pulley|swing|friction|chain|wheel|belt|spin|drag|all]
 //   ENGINE_DIR=<a folder holding physics.ts and document.ts> runs the same scenes on another copy of the engine (the numbers before
 //   this batch: the checks then report what that engine does; they are written for this one).
-import { execFileSync } from "node:child_process"
+import { execFileSync } from "../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
