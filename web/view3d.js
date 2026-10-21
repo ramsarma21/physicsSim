@@ -8375,8 +8375,8 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		}
 		return fr
 	}
-	/** The plan's marks and the shot's badge over a drawn frame (2D, through each band's own projection; type sized to the frame: key readings 4 % of
-	 *  its height, other words 3 %), the lines between split bands, an inset's frame, the look's vignette. */
+	/** The plan's marks and the shot's badge over a drawn frame (2D, through each band's own projection; type sized to the frame: key readings 5 % of
+	 *  its height (their letters 3.5 %), other words 3.5 %, corner readouts 6 %), the lines between split bands, an inset's frame, the look's vignette. */
 	function drawPlanOverlay(g, shot, fr) {
 		const film = shot.film
 		const sh = film.shots[fr.shot]
@@ -8397,9 +8397,10 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		let placed = []
 		let inBand = [0, 0, W, H] // (the band being written in: words are kept whole inside it, never cut by its edge)
 		const text = (s, x, y, anchor, key) => {
-			ctx.font = font(key ? 0.04 : 0.03)
+			// (a key reading, a measured number the answer hangs on: its letters about 3.5 % of the picture's height (type 5 %); words 3.5 %)
+			ctx.font = font(key ? 0.05 : 0.035)
 			const m = ctx.measureText(s)
-			const th = (key ? 0.04 : 0.03) * H
+			const th = (key ? 0.05 : 0.035) * H
 			const pad = 0.25 * th
 			let tx = x
 			let ty = y

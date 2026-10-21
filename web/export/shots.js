@@ -49,9 +49,9 @@ export const NET = Object.freeze({
 	spread: 0.6, // ... and covers this share of the box round it (things far apart with backdrop between belong in their own bands)
 	absentS: 0.5, // video seconds a playing shot may show none of its subject once it has been seen (it left the picture) ...
 	waitS: 1.5, // ... and before it first comes in (a cut ahead that waits for a fast thing to arrive)
-	stopBackdrop: 0.6, // a lesson's stop (a pause beat's last shot): at most this share of each band shows nothing of the scene (a low setup under one floor line with a tall one leaves its band about half empty, as the drawn originals do)
+	stopBackdrop: 0.65, // a lesson's stop (a pause beat's last shot): at most this share of each band shows nothing of the scene, a table top counted as backdrop (a low setup under one floor line with a tall one leaves its band about half empty, as the drawn originals do)
 	cutScale: 2.5, // a cut out to a wider picture while things move widens it at most this much (the movers shrink to specks in a bigger jump)
-	pathFill: 0.8, // a still whose subject is a path (an orbit, a trip): its drawn path (the mover's centre) spans at least this share of the picture's longer side, the mover kept whole
+	pathFill: 0.7, // a still whose subject is a path (an orbit, a trip): its drawn path (the mover's centre) spans at least this share of the picture's longer side, the mover kept whole
 })
 /** The named views: yaw and pitch in degrees, and the lens a view takes when the shot names none (mm on a full-frame camera). */
 export const VIEWS = Object.freeze({
@@ -72,7 +72,7 @@ export const DEFAULT_LOOK = Object.freeze({ backdrop: "studio", tone: "mid", gro
 const MARGINS = { tight: 0.06, snug: 0.1, loose: 0.18 }
 const KEEP_PAD = 0.05 // a framing by width or size: what it keeps stays at least this share of the picture inside every edge
 const PLACES = { centre: [0, 0], "left-third": [-1 / 3, 0], "right-third": [1 / 3, 0], "upper-third": [0, 1 / 3], "lower-third": [0, -1 / 3] }
-const MARK = { yellow: "#ffd84a", white: "#ffffff", blue: "#9fd0ff" }
+const MARK = { yellow: "#ffd84a", white: "#ffffff", blue: "#9fd0ff", faint: "rgba(255,255,255,0.55)" }
 
 // ------------------------------------------------------------------------------------------------ small maths
 const D2R = Math.PI / 180
@@ -2002,11 +2002,14 @@ export function measure(film) {
 					return (type === "table" && fs.look?.ground !== "table") || type === "wall" || it?.props?.invisible_in_3d === true
 				}
 				const drawn = []
+				const tableTops = [] // (a table top the look draws as a table: scene for the fill, backdrop at a lesson's stop, which a table never fills)
 				for (const id of R.itemIds()) {
 					if (hidden.has(id) || backdropItem(id)) continue
 					const P = R.itemPts(id, null, KF.t)
 					const c = P.length ? shownBox(P) : null
-					if (c) drawn.push(c)
+					if (!c) continue
+					const type = R.solidsOf.get(id)?.[0]?.itemType ?? R.scene?.items?.find((x) => x.id === id)?.type
+					;(type === "table" ? tableTops : drawn).push(c)
 				}
 				// (and what a module draws that has no body of its own: a circuit's board)
 				for (const pr of R.doc?.processes ?? [])
@@ -2024,6 +2027,7 @@ export function measure(film) {
 				const GY = Math.max(8, Math.round(GX / asp))
 				let all = 0
 				let shown = 0
+				let shownStop = 0
 				let inU = 0
 				let hitU = 0
 				const inside = (b, x, y) => x >= b.x0 && x <= b.x1 && y >= b.y0 && y <= b.y1
@@ -2033,21 +2037,23 @@ export function measure(film) {
 						const x = -1 + (2 * (gx + 0.5)) / GX
 						all++
 						const own = mine.some((b) => inside(b, x, y))
-						if (own || drawn.some((b) => inside(b, x, y))) shown++
+						const scene = own || drawn.some((b) => inside(b, x, y))
+						if (scene) shownStop++
+						if (scene || tableTops.some((b) => inside(b, x, y))) shown++
 						if (inside(U, x, y)) {
 							inU++
 							if (own) hitU++
 						}
 					}
 				}
-				fills.push({ lane, backdrop: r3(1 - shown / all), longer: r3(longer), cover: r3(inU ? hitU / inU : 1) })
+				fills.push({ lane, backdrop: r3(1 - shown / all), stopBackdrop: r3(1 - shownStop / all), longer: r3(longer), cover: r3(inU ? hitU / inU : 1) })
 			}
 			row.fill = fills
 			// a lesson's stop: the child reads this picture while the video waits, so each band is mostly the scene (the original drawn lessons fill
 			// each band with its things, edge to edge): a lane's things pushed into a corner of a band sized for the other lane's leave it empty
 			if (plan.source?.kind === "lesson" && beatKind === "pause" && meta.filter((x) => x.sh.beat === sh.beat).at(-1) === m && fills.length) {
-				const emptyBands = fills.filter((f) => f.backdrop > NET.stopBackdrop + 1e-9)
-				;(emptyBands.length ? fail : pass)(sh.id, "stop-fill", emptyBands.length ? `${emptyBands.map((f) => `${f.lane ? `${f.lane}: ` : ""}${f.backdrop}`).join("; ")} of the band is backdrop at the stop (at most ${NET.stopBackdrop}): frame closer, pan each band to its own lane's things at the same scale (align on the role), or name what belongs round them` : `the stop's bands are mostly the scene (${fills.map((f) => `${f.lane ? f.lane + " " : ""}backdrop ${f.backdrop}`).join(", ")})`)
+				const emptyBands = fills.filter((f) => f.stopBackdrop > NET.stopBackdrop + 1e-9)
+				;(emptyBands.length ? fail : pass)(sh.id, "stop-fill", emptyBands.length ? `${emptyBands.map((f) => `${f.lane ? `${f.lane}: ` : ""}${f.stopBackdrop}`).join("; ")} of the band is backdrop at the stop (at most ${NET.stopBackdrop}; a table top counts as backdrop here): frame closer on the things the question names, or pan each band to its own lane's things at the same scale (align on the role)` : `the stop's bands are mostly the scene (${fills.map((f) => `${f.lane ? f.lane + " " : ""}backdrop ${f.stopBackdrop}`).join(", ")})`)
 			}
 			const bad = fills.filter((f) => f.backdrop > NET.backdrop + 1e-9 && (f.longer < NET.fillLong - 1e-9 || f.cover < NET.spread - 1e-9))
 			const say = (f) => `${f.lane ? `${f.lane}: ` : ""}${f.backdrop} of the picture is backdrop (at most ${NET.backdrop}); what the shot names ${f.longer < NET.fillLong ? `spans ${f.longer} of the picture's longer side (${NET.fillLong} would fill it)` : ""}${f.longer < NET.fillLong && f.cover < NET.spread ? " and " : ""}${f.cover < NET.spread ? `covers ${f.cover} of the box round it (${NET.spread} would fill it): things apart with backdrop between` : ""}`
@@ -2122,21 +2128,42 @@ export function measure(film) {
 		if (beam) (beam.corePx >= NET.beamCorePx && beam.haloPx >= NET.beamHaloPx ? pass : fail)(sh.id, "beam-visible", `beam core ${beam.corePx} px, glow ${beam.haloPx} px`)
 		// a path that is the shot's subject (an orbit, a whole trip) fills the picture: the loop a child must see whole is the picture, not a ring in
 		// the middle of it
-		if (sh.move === "hold" && subjAtKey?.trail !== undefined) {
+		// (the path the shot is about: its subject, or a trail it keeps whole while something else is the subject: a whole loop held in the picture)
+		// (a kept trail counts when it is a closed loop, an orbit or a round trip: the loop is then what the picture holds; an open flight kept whole beside
+		// the things it links is not the shot's subject)
+		const closedLoop = (tg) => {
+			try {
+				const R = S.runOf(fs.bands[0].lane)
+				const a = S.momentT(tg.from, fs.bands[0].lane)
+				const b = S.momentT(tg.to, fs.bands[0].lane)
+				const C = []
+				for (let j = 0; j <= 24; j++) {
+					const Q = R.itemPts(tg.trail, tg.part ?? null, a + ((b - a) * j) / 24)
+					if (Q.length) C.push(centre3(Q))
+				}
+				if (C.length < 3) return false
+				const [lo, hi] = boundsOf(C)
+				return len3(sub(C.at(-1), C[0])) < 0.15 * Math.max(hi[0] - lo[0], hi[1] - lo[1])
+			} catch {
+				return false
+			}
+		}
+		const pathTg = subjAtKey?.trail !== undefined ? subjAtKey : (sh.keep ?? []).find((x) => x?.trail !== undefined && closedLoop(x))
+		if (sh.move === "hold" && pathTg) {
 			const fr = []
 			// (the path as the child sees it drawn: the mover's centre over the trail's window, not the boxes it sweeps)
 			for (let bi = 0; bi < nb; bi++) {
 				let ta
 				let tb
 				try {
-					ta = S.momentT(subjAtKey.from, fs.bands[bi].lane)
-					tb = S.momentT(subjAtKey.to, fs.bands[bi].lane)
+					ta = S.momentT(pathTg.from, fs.bands[bi].lane)
+					tb = S.momentT(pathTg.to, fs.bands[bi].lane)
 				} catch {
 					continue
 				}
 				const P = []
 				for (let j = 0; j <= 40; j++) {
-					const Q = tgPts({ item: subjAtKey.trail, ...(subjAtKey.part ? { part: subjAtKey.part } : {}), ...(subjAtKey.lane ? { lane: subjAtKey.lane } : {}) }, bi, ta + ((tb - ta) * j) / 40)
+					const Q = tgPts({ item: pathTg.trail, ...(pathTg.part ? { part: pathTg.part } : {}), ...(pathTg.lane ? { lane: pathTg.lane } : {}) }, bi, ta + ((tb - ta) * j) / 40)
 					if (Q.length) P.push(centre3(Q))
 				}
 				if (P.length < 2) continue
@@ -2144,7 +2171,7 @@ export function measure(film) {
 				fr.push({ lane: fs.bands[bi].lane, span: r3(Math.max((Math.min(1, b.x1) - Math.max(-1, b.x0)) / 2, (Math.min(1, b.y1) - Math.max(-1, b.y0)) / 2)) })
 			}
 			const low = fr.filter((x) => x.span < NET.pathFill - 1e-9)
-			if (fr.length) (low.length ? fail : pass)(sh.id, "path-fill", low.length ? `the path spans ${low.map((x) => `${x.lane ? x.lane + " " : ""}${x.span}`).join(", ")} of the picture's longer side (at least ${NET.pathFill}): frame it tight (fit tight), the mover whole` : `the path fills the picture (${fr.map((x) => x.span).join(", ")})`)
+			if (fr.length) (low.length ? fail : pass)(sh.id, "path-fill", low.length ? `the path spans ${low.map((x) => `${x.lane ? x.lane + " " : ""}${x.span}`).join(", ")} of the picture's longer side (at least ${NET.pathFill}): frame the path itself, tight (fit tight on the trail, or a width just over its reach), the mover kept whole` : `the path fills the picture (${fr.map((x) => x.span).join(", ")})`)
 		}
 		if (fs.rate !== 0 && fs.rate !== 1 && !sh.label) fail(sh.id, "label", "slow motion or a speed-up without its label")
 	}
@@ -2282,7 +2309,8 @@ function marksOf(film) {
 						const left = (A.x0 + A.x1) / 2 < (Bq.x0 + Bq.x1) / 2
 						const x0 = left ? A.x1 : Bq.x1
 						const x1 = left ? Bq.x0 : A.x0
-						const y = (Math.max(A.y0, Bq.y0) + Math.min(A.y1, Bq.y1)) / 2
+						// (between the two at the height they share; at: above or below, clear of both, so the bar and its number never sit on a thing)
+						const y = a.at === "above" ? Math.max(A.y1, Bq.y1) + 0.03 : a.at === "below" ? Math.min(A.y0, Bq.y0) - 0.03 : (Math.max(A.y0, Bq.y0) + Math.min(A.y1, Bq.y1)) / 2
 						const tick = 0.02
 						prims.push({ type: "line", a: [x0, y, 0], b: [x1, y, 0], color: MARK.yellow, width: 4 }, { type: "line", a: [x0, y - tick, 0], b: [x0, y + tick, 0], color: MARK.yellow, width: 4 }, { type: "line", a: [x1, y - tick, 0], b: [x1, y + tick, 0], color: MARK.yellow, width: 4 })
 						prims.push({ type: "text", at: [(x0 + x1) / 2, y + 0.03, 0], text: fill(a.text ?? "{value} cm", { value: Math.round(Math.abs(x1 - x0) * 100), label: labelOf(lane) }), anchor: "above", key: true })
@@ -2322,7 +2350,8 @@ function marksOf(film) {
 							prims.push({ type: "line", a: [bx.x0, y, 0], b: [bx.x1, y, 0], color: MARK.yellow, width: 3 }, { type: "line", a: [bx.x0, y - tick, 0], b: [bx.x0, y + tick, 0], color: MARK.yellow, width: 3 }, { type: "line", a: [bx.x1, y - tick, 0], b: [bx.x1, y + tick, 0], color: MARK.yellow, width: 3 }, { type: "text", at: [(bx.x0 + bx.x1) / 2, y - 0.02, 0], text: fill(a.text ?? "{value} cm", vars), anchor: "below", key: true })
 						}
 					} else if (a.kind === "level") prims.push({ type: "line", a: [bx.x0 - 1.5, (bx.y0 + bx.y1) / 2, 0], b: [bx.x1 + 1.5, (bx.y0 + bx.y1) / 2, 0], dash: true, color: MARK.yellow, width: 3 }, ...(a.text ? [{ type: "text", at: [bx.x1 + 0.03, bx.y1 + 0.02, 0], text: fill(a.text, { label: labelOf(lane) }), anchor: "above" }] : []))
-					else if (a.kind === "start-mark") prims.push({ type: "poly", pts: [[bx.x0, bx.y0, 0], [bx.x1, bx.y0, 0], [bx.x1, bx.y1, 0], [bx.x0, bx.y1, 0], [bx.x0, bx.y0, 0]], dash: true, color: MARK.white, width: 2 }, ...(a.text ? [{ type: "text", ...wordsAt, text: fill(a.text, vars), key: keyText }] : []))
+					// (a start mark is a reminder, not a thing: a faint dashed outline, so what is there now stays the subject)
+					else if (a.kind === "start-mark") prims.push({ type: "poly", pts: [[bx.x0, bx.y0, 0], [bx.x1, bx.y0, 0], [bx.x1, bx.y1, 0], [bx.x0, bx.y1, 0], [bx.x0, bx.y0, 0]], dash: true, color: MARK.faint, width: 1.5 }, ...(a.text ? [{ type: "text", ...wordsAt, text: fill(a.text, vars), key: keyText }] : []))
 					else if (a.kind === "finish-mark") prims.push({ type: "line", a: [(bx.x0 + bx.x1) / 2, bx.y0, 0], b: [(bx.x0 + bx.x1) / 2, bx.y1 + 0.25, 0], color: MARK.white, width: 3 }, ...(a.text ? [{ type: "text", at: [(bx.x0 + bx.x1) / 2, bx.y1 + 0.27, 0], text: a.text, anchor: "above" }] : []))
 				}
 				if (prims.length) any = true

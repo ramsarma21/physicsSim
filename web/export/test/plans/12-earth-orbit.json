@@ -124,7 +124,7 @@
 					}
 				],
 				"frame": {
-					"fit": "snug"
+					"fit": "tight"
 				},
 				"view": "side",
 				"lens": 50
