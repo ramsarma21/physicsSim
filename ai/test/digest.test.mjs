@@ -1,9 +1,10 @@
 // ai/catalog-digest.mjs and ai/scene-digest.mjs: complete, sized, cached; scenes read back with true outlines and supports.
 import assert from "node:assert/strict"
-import { mkdtempSync, readFileSync, rmSync, existsSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { pathToFileURL } from "node:url"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { test } from "node:test"
 import { detailFor, digestFromCatalog, getCatalog, promptCatalog, simFingerprint, _resetMemo } from "../catalog-digest.mjs"
 import { sceneDigest, simText } from "../scene-digest.mjs"
@@ -65,6 +66,34 @@ test("the cache: written once, then reused while web/sim is unchanged", async ()
 		assert.notEqual(c.builtAt, undefined)
 	} finally {
 		delete process.env.AI_CACHE_DIR
+		rmSync(dir, { recursive: true, force: true })
+	}
+})
+
+test("a digest read from the cache still loads web/sim: a fresh process knows the physics modules' goal kinds after getCatalog() (2026-10-21)", async () => {
+	// (since the committed digest stays current, a process's first getCatalog() is mostly a cache hit; it never loaded web/sim, so the modules'
+	// registry was empty and validate() rejected a plan's "piles" goal: "must be one of "in", "falls", "hits", "moves", "off"")
+	const d = await getCatalog()
+	const dir = mkdtempSync(join(tmpdir(), "ai-digest-hit-"))
+	try {
+		writeFileSync(join(dir, "catalog-digest.json"), JSON.stringify(d))
+		const code = `const { getCatalog } = await import(${JSON.stringify(new URL("../catalog-digest.mjs", import.meta.url).href)})
+const { validate } = await import(${JSON.stringify(new URL("../schemas.mjs", import.meta.url).href)})
+const had = !!globalThis[Symbol.for("sandbox.plugins")]
+const cat = await getCatalog()
+const { allGoalKinds } = await import(${JSON.stringify(new URL("../goals.mjs", import.meta.url).href)})
+const plan = { title: "Sugar", seconds: 10, items: [{ id: "jar", type: "glass-jar", place: { on: "table", x: 1.2 } }, { id: "funnel", type: "sand-funnel", props: { grain: "sugar" }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "piles", item: "funnel", label: "The sugar piles up" }] }
+console.log(JSON.stringify({ had, builtAt: cat.builtAt, kinds: allGoalKinds(), errors: validate("plan", plan, { catalog: cat.index }).errors }))`
+		const out = JSON.parse(execFileSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", code], { cwd: fileURLToPath(PG), env: { ...process.env, AI_CACHE_DIR: dir, AI_CATALOG_URL: "http://127.0.0.1:9/none" }, maxBuffer: 1 << 24 }).toString().trim().split("\n").at(-1))
+		assert.equal(out.had, false, "the child starts without web/sim")
+		assert.equal(out.builtAt, d.builtAt, "its digest came from the cache, not rebuilt")
+		const modules = typeof process.env.PLAYGROUND_MODULES === "string" ? process.env.PLAYGROUND_MODULES.split(",").map((s) => s.trim()).filter(Boolean) : null
+		if (!modules || modules.includes("granular")) {
+			assert.ok(out.kinds.includes("piles"), `the granular module's goal kinds are known: ${out.kinds.join(", ")}`)
+			assert.deepEqual(out.errors, [], "a piles goal validates")
+		}
+		if (!modules || modules.length) assert.ok(out.kinds.length > 5, "some module's goal kinds are known")
+	} finally {
 		rmSync(dir, { recursive: true, force: true })
 	}
 })

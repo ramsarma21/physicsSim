@@ -795,16 +795,35 @@ export function digestFromCatalog(raw, { source = "given", fingerprint = "given"
 
 // ---------------------------------------------------------------- the cache
 let memo = null
+let simP = null
 
-/** The digest: from memory, else the disk cache (when web/sim is unchanged), else built anew (and cached). */
+/** web/sim loaded in this process when no physics module is registered yet (best effort): its modules' registry (web/sim/plugins.js, kept on
+ *  globalThis) is what ai/goals.mjs, ai/schemas.mjs and the steps read the modules' goal kinds from, so a plan's "piles" or "melts" goal is known
+ *  after any getCatalog(). Building the digest loads web/sim; a digest read from the cache did not, and since the cache stays current across
+ *  checkouts (b3d2e36) a process whose first digest came from it validated plans against no module goal kinds at all ("plan.goals[0].kind must be
+ *  one of "in", "falls", "hits", "moves", "off", not "piles"", 2026-10-21). A registry another copy of web/sim filled is left as it is. */
+async function withModules() {
+	const S = globalThis[Symbol.for("sandbox.plugins")]
+	if (S && S.modules.size) return
+	try {
+		await (simP ??= import(pathToFileURL(join(SIM, "index.js")).href))
+	} catch {} // (web/sim mid-edit, or no engine files: the digest still serves; module goal kinds are then unknown, as before)
+}
+
+/** The digest: from memory, else the disk cache (when web/sim is unchanged), else built anew (and cached). Either way web/sim is loaded in this
+ *  process when it can be (withModules). */
 export async function getCatalog({ rebuild = false, catalogUrl } = {}) {
 	const fp = simFingerprint()
 	if (!rebuild && memo && memo.fingerprint === fp) return memo
 	if (!rebuild) {
+		let c = null
 		try {
-			const c = JSON.parse(readFileSync(CACHE_FILE, "utf8"))
-			if (c.version === DIGEST_VERSION && c.fingerprint === fp && c.index?.types) return (memo = c)
+			c = JSON.parse(readFileSync(CACHE_FILE, "utf8"))
 		} catch {}
+		if (c && c.version === DIGEST_VERSION && c.fingerprint === fp && c.index?.types) {
+			await withModules()
+			return (memo = c)
+		}
 	}
 	let raw
 	try {
