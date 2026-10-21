@@ -1810,7 +1810,9 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
     puddles, shadow-only proxies (no colour written: a glass tank's faint shadow box) and parts shaped in their vertex shader (springs, ropes). A
     composite pass weighs each pixel by the share of its sub-pixels within the width of another thing: anti-aliased. Export frames outline each
     (sub-)frame after its main pass (with motion blur, before the frames are summed); the canvas draws its picture into a 4× MSAA target of its own,
-    outlines it with one sub-pixel and copies it out (so its lesson picture can differ from the export's in the lines' anti-aliasing).
+    outlines it with one sub-pixel and copies it out (so its lesson picture can differ from the export's in the lines' anti-aliasing); on the low tier
+    the canvas draws no outlines (a slow machine's frame; the export, always high, has them). Measured (1920 × 1080 export, MA-25's tank, Apple M5
+    Pro under load): 9.1 ms a frame in the real look, 11.0 in the lesson look without outlines, 10.8 (p90 18) with them.
 - **Release stands** (web/release-stand.js; `doc.view.release_stand`, the view's `releaseStand`; default "post" in the real look, "auto" in the lesson
   look). For a held item (`held: true`) without a starting gate:
   - "post": the pull pin on its post, as before (the pin slides out at the release, the post stays);

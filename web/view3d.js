@@ -6045,7 +6045,7 @@ ${GRADE}
 		trans.hold = hold // (the transmission pass held: see `trans` above)
 		trans.cam = camera
 		try {
-			if (run.lesson?.outline) outlinerOf().present(scene, camera, run) // (the lesson look's outlines: web/lesson-outline.js)
+			if (run.lesson?.outline && Q.tier !== "low") outlinerOf().present(scene, camera, run) // (the lesson look's outlines: web/lesson-outline.js; not on the low tier's canvas)
 			else renderer.render(scene, camera)
 		} finally {
 			trans.hold = false
