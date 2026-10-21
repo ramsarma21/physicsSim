@@ -194,7 +194,7 @@ if (want === "all" || want === "cup") {
 
 // ---------------------------------------------------------------- the tipped cup in the engine: the flow module's hand tips it, its grains land in a jar
 if (want === "all" || want === "cupengine") {
-	console.log("\n# cupengine: a cup of sugar, salt or rice tipped by the hand into the pint jar: all of it lands in, none outside; mass kept exactly")
+	console.log("\n# cupengine: a cup of sugar, salt or rice tipped by the hand into the pint jar: all of it lands in, none outside; mass kept exactly; no pillar under the stream")
 	for (const grain of ["sugar", "salt", "rice"] as const) {
 		const R = run(scene([{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "cup", type: "pitcher", x: 1.185, y: 0.15, props: { vessel: "cup", contents: "grains", grain, fill_ml: 200, tilt: 135, tip_s: 3, pour_at: 0.6 } }], 7))
 		const kg = 200e-6 * bulk(grain) * 1000
@@ -209,6 +209,23 @@ if (want === "all" || want === "cupengine") {
 		claim(`${grain}: the run says it is empty`, (R.track.events ?? []).some((e) => /is empty: all its/.test(e.text)))
 		const lx = last(R.track, "cup", "lands_x")
 		claim(`${grain}: its stream comes down in the jar's opening (lands_x ${fmt(lx)} m, the jar 1.1665…1.2335 m)`, lx > 1.1665 && lx < 1.2335)
+		// a heap fed by a stream grows at its angle of repose: while the cup pours, its top stands no more than a few grains' layers over where
+		// it ends (granular.ts Bed.rain: before it, the stream's grains stayed where they landed on the jar's 4 mm columns faster than the bed's
+		// avalanches could carry them off, and a pillar stood up to 1.4 m tall in the 11 cm jar)
+		const hm = series(R.track, "cup", "heap_mm")
+		const top = hm.reduce((a, b) => Math.max(a, b), 0)
+		claim(`${grain}: while it pours, its heap stands no more than 15 mm over its end (highest ${fmt(top)} mm, at the end ${fmt(last(R.track, "cup", "heap_mm"))} mm)`, top <= last(R.track, "cup", "heap_mm") + 15)
+	}
+	// the same for a cup of sugar poured onto the bare table (a bed of coarser columns: before, 0.19 m) and a wide funnel's stream into the jar
+	// (a 20 mm spout, about 100 g of sugar a second: before, 0.55 m)
+	for (const [label, items, src] of [
+		["a cup of sugar onto the table", [{ id: "cup", type: "pitcher", x: 1.185, y: 0.15, props: { vessel: "cup", contents: "grains", grain: "sugar", fill_ml: 250, tilt: 115, tip_s: 3, pour_at: 0.5 } }], "cup"],
+		["sugar through a 20 mm funnel into the pint jar", [{ id: "jar", type: "glass-jar", x: 1.2, y: 0 }, { id: "f", type: "sand-funnel", x: 1.2, y: 0, props: { grain: "sugar", sand_kg: 0.2, height: 0.21, outlet_mm: 20 } }], "f"]
+	] as const) {
+		const R = run(scene(items as unknown as Item[], 7))
+		const hm = series(R.track, src, "heap_mm")
+		const top = hm.reduce((a, b) => Math.max(a, b), 0)
+		claim(`${label}: while it pours, its heap stands no more than 15 mm over its end (highest ${fmt(top)} mm, at the end ${fmt(last(R.track, src, "heap_mm"))} mm)`, top <= last(R.track, src, "heap_mm") + 15)
 	}
 }
 

@@ -4346,3 +4346,37 @@ groups drew or computed the same thing, the merge decides it once:
   generated files (bundle, module indexes, sprites, unicode, trig) regenerate byte for byte; the 12 scenarios and 10 gallery scenes byte-identical to
   2cbfe0e through web/sim + the bundle and through the server (documents, summaries, tracks, layouts). A pitcher of grains (the matter group's
   contents "grains") tipped by a hand pours as the hands group's pour rig expects (its tilt_deg reading); the sand lands and stays in a glass jar.
+
+## Landing grains settle down the heap (engine6 proof, 2026-10-20, branch `e6-proof`): tooling/src/sim/granular.ts `Bed.rain`
+Found by the five-lesson benchmark's proof on engine6 (lesson-regen/bench/proto/MA-50/v2: a hand tips a cup of sugar into a glass jar). On
+engine6 as merged a pillar of sugar stood under the cup's stream: the run's own `heap_mm` read 651 mm in the 112 mm pint jar
+(MA-50/v2/as-merged/pillar-vs-fix.png); the kitchen validator's cups tipped to 135° stood pillars of 1403, 1451 and 1591 mm (sugar, salt, rice),
+a cup of sugar onto the bare table 190 mm, sugar through a 20 mm funnel into the jar 548 mm. Cause: a parcel's grains landed in a fixed spot of
+3 × 3 columns, so a fast stream (a cup pours about 180 g a second) laid metres of height a second onto one column of the jar's 4 mm bed, and a
+column sinks no faster than √(g·h) [LUBE04]: it stood until it was tall enough to drain. A narrow, slow stream (an 8 mm funnel's 14 g a second)
+never fed one column fast enough to show it.
+- Now each share of a landing parcel settles as landing grains do (`World.land` → `Bed.rain`): a layer at a time (a quarter of the drop its
+  grains stand at across one column, or a 64th of what lands), each resting where it lands unless that would stand it steeper over a
+  neighbouring column (not a wall or an edge) than a fresh heap's face stands, its grains' standing slope + 3° (`TAN_STABLE`: the angle of
+  maximum stability, a few degrees over repose [JNB96]; damp grains, whose faces stand vertical, rest where they land); then it runs on down to
+  the lowest such neighbour, 64 columns at most (`ROLL`); ties go round the four ways in turn, so a heap fed at a point grows round. The bed's
+  avalanches then bring the faces to repose as before. A layer that rests where it lands is laid exactly as before; nothing else changed.
+- Measured (the highest a heap stands while it is poured / at the end, mm; engine6 → now): the lesson's cup of sugar into the pint jar 651 / 67 →
+  57 / 57; the validator's cups at 135° (sugar, salt, rice) 1403 / 57, 1451 / 55, 1591 / 55 → 74 / 70, 69 / 65, 70 / 65; a cup of sugar onto the
+  table 190 / 44 → 47 / 44; sugar through a 20 mm funnel into the jar 548 / 67 → 70 / 66; sand through an 8 mm funnel onto the table 32.5 / 31.2
+  → 30.4 / 30.3. Poured heaps' slopes (rw-validate-granular "repose", rw-validate-kitchen "grains"; their references): sand 35.2° → 34.3° (34°),
+  fine sand 32.9° → 32.5° (32°), coarse sand 36.0° → 35.2° (35°), gravel 38.5° → 37.4° (38°), flour 45.7° → 45.1° (45°), sugar 35.8° → 35.3°
+  (35°), salt 33.3° → 32.3° (32°), rice 32.3° → 31.3° (32°): a mean of 0.35° from the references, against 0.84° before.
+- rw-validate-kitchen.ts `cupengine`: five new gates, "while it pours, its heap stands no more than 15 mm over its end" (the three cups into the
+  jar, a cup onto the table, a 20 mm funnel into the jar); engine6 as merged fails all five.
+- Checked (against engine6 9a22f9c, Python 3.13, in copies with their own servers; the live :8790 never touched): the 12 scenarios and 10 gallery
+  scenes byte for byte through web/sim + the bundle and through the server (documents, summaries, tracks, layouts); every research/rw-validate*.ts
+  (27, FUZZ_N 1500: granular 130, kitchen 128 with the new gates, crossmod 44, matter 232, waves 54, p4 56 with its crash fuzz, the rest as before;
+  optics' 2 ms timing gate read 2.02 ms only while two validator sets and the parity suite ran beside it, 1.52 ms alone); tools/parity granular,
+  flow and matter --engine (392, 428 and 1487 checks), fuzz-live --n 300 (971 cases) and parity-engine --catalog (348 scenes × 3 runs, node ==
+  Chromium), 0 mismatches; the 810 node:test cases; build:static:nogen (the bundle byte-identical to a fresh build; with a real node_modules
+  folder: a symlinked one makes vendor:media:check differ, with or without this change).
+- Known limit: a cup tipped past 90° + φ still lets out all it holds in a step or two (TipCup's flowing layer δ = excess ÷ chord grows as the
+  chord shrinks: about 70 g in one parcel); its grains now settle where they land, but its stream is drawn as a burst. Through its whole mouth a
+  cup empties at about w·√(g·w) a second for each metre of its depth at most (a slot's Beverloo scaling): capping δ at the mouth's width is the
+  fix, not made here.
