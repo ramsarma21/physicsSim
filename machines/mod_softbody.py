@@ -28,6 +28,9 @@ Sources:
   [ISO2533] the standard atmosphere, 101 325 Pa (the gas inside an inflated ball is compressed from it plus the gauge pressure).
   [JOHNSON] Johnson, Contact Mechanics (1985), §4.2: Hertz, F = (4/3)·E*·√R·δ^1.5.
   [GIBSON] Gibson & Ashby, Cellular Solids, 2nd ed. (1997): flexible polyurethane foams of 50-150 kg/m³ have E ≈ 0.05-0.5 MPa.
+  [D3574] ASTM D3574 test H (ball rebound resilience: a steel ball dropped on the foam): conventional flexible polyurethane foam rebounds about
+        35-50 %, viscoelastic ("memory", slow-recovery) foam under 10 %; a foam ball's own bounce off a hard floor loses its energy in the same
+        foam, so e ≈ √(rebound share): e 0.55 a springy stress ball (30 %), e 0.2 slow foam (4 %; approximate).
   [FPL] USDA Forest Products Laboratory, Wood Handbook FPL-GTR-190 (2010), table 5-3a: sugar maple E 12.6 GPa, MOR 109 MPa; beech 11.9 GPa,
         103 MPa; eastern white pine 8.5 GPa, 59 MPa; ponderosa pine 8.9 GPa, 65 MPa.
   [PMMA] Acrylic (PMMA) sheet data (Plexiglas G): E 3.1-3.3 GPa, flexural strength about 110 MPa, density 1190 kg/m³.
@@ -110,6 +113,8 @@ def bounce_e(fit, kpa):
     e_flat, e_top, half = fit
     p = max(0.0, kpa)
     return e_flat + (e_top - e_flat) * p / (p + half)
+# the foams a foam ball can be, and the share of its landing speed it leaves the floor with [D3574] (approximate)
+FOAMS = {"stress ball": 0.55, "slow foam": 0.2}
 FOAM = ("Foam ball", 0.07, 0.022, 100000.0, 0.3, 0.55,
         "A squishy foam stress ball (7 cm). Squeeze it and it springs back.",
         "Flexible polyurethane foam ball, 7 cm, about 22 g (≈ 120 kg/m³): E about 0.1 MPa, ν 0.3 [GIBSON]; Hertz contact [JOHNSON]; bounce e ≈ 0.55 (approximate).")
@@ -229,17 +234,22 @@ def _balls():
     def build_foam(c, P):
         R = P["diameter"] / 2
         vol = (4.0 / 3.0) * math.pi * R * R * R
-        sid = c.ball("ball", R, material=c.mat(density=round(P["mass"] / vol, 3)), look="foam ball", words="a foam stress ball")
-        c.process("softbody", "soft", role="ball", solid=sid, law="hertz", R=round(R, 5), E=round(P["stiffness"] * 1000.0, 1), nu=nu, e=e, hard=round(0.6 * R, 5))
+        slow = P["foam"] == "slow foam"
+        sid = c.ball("ball", R, material=c.mat(density=round(P["mass"] / vol, 3)), look="foam ball", words="a slow-foam ball" if slow else "a foam stress ball")
+        c.process("softbody", "soft", role="ball", solid=sid, law="hertz", R=round(R, 5), E=round(P["stiffness"] * 1000.0, 1), nu=nu, e=FOAMS[P["foam"]], hard=round(0.6 * R, 5))
     register(ItemType("foam-ball", name, CATEGORY, build_foam, material="polyurethane foam", materials=["polyurethane foam"], module=MODULE,
                       props=[Prop("diameter", "Diameter", d0, 0.03, 0.2, 0.002, "m"),
                              Prop("mass", "Weight", m0, 0.005, 0.2, 0.001, "kg"),
-                             Prop("stiffness", "Foam stiffness", round(E / 1000.0, 1), 20.0, 1000.0, 5.0, "kPa", "Its foam's Young's modulus: softer squashes more")],
+                             Prop("stiffness", "Foam stiffness", round(E / 1000.0, 1), 20.0, 1000.0, 5.0, "kPa", "Its foam's Young's modulus: softer squashes more"),
+                             Prop("foam", "Foam", "stress ball", kind="choice", choices=list(FOAMS),
+                                  help="stress ball: springy polyurethane foam, it leaves the floor at 0.55 of the speed it lands with; slow foam: "
+                                       "memory foam that barely bounces (0.2: a soft ball that lands and stays)")],
                       readouts=[Readout("squash_mm", "Squash", "mm", 1, "How flat it is pressed where it touches, now"),
                                 Readout("force_n", "Pushing force", "N", 2, "What presses on it where it touches"),
                                 Readout("energy_j", "Stored energy", "J", 4, "The energy its squash holds")],
-                      tags=["stress ball", "foam", "squishy", "squeeze", "elastic", "springs back", "soft", "sponge ball", "deform"],
-                      description=description, source=source + " tooling/src/sim/softbody.ts law hertz.",
+                      tags=["stress ball", "foam", "squishy", "squeeze", "elastic", "springs back", "soft", "sponge ball", "deform", "soft ball", "memory foam"],
+                      description=description + " Slow foam (memory foam) barely bounces: a soft ball that lands and stays.",
+                      source=source + " Slow foam e ≈ 0.2 [D3574]. tooling/src/sim/softbody.ts law hertz.",
                       anchor="its middle", facts="7 cm · 22 g · soft foam", edit=[{"kind": "radius", "prop": "diameter"}]))
 
 

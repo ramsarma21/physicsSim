@@ -125,7 +125,7 @@ const fbm3 = (x, y, z, s, oct = 3) => {
 	return a / norm
 }
 
-export default function register({ addModel, kit, THREE }) {
+export default function register({ addModel, addFrameHook, ownMaterial, kit, THREE }) {
 	const lerp3 = (a, b, t) => [mix(a[0], b[0], t), mix(a[1], b[1], t), mix(a[2], b[2], t)]
 
 	// ------------------------------------------------------------------------------------------ baked textures
@@ -1407,6 +1407,17 @@ export default function register({ addModel, kit, THREE }) {
 	addModel("steel-weight-5kg", "weight", steelWeight)
 
 	// ------------------------------------------------------------------------------------------ ice cube (and glass)
+	// (a cube's frost melts off as it warms: the heat module's `temp` reading of its item, °C; a run without one leaves the frost as built)
+	addFrameHook?.("ice:frost", (obj, f, a) => {
+		const temp = f.state?.temp
+		if (!Number.isFinite(temp)) return
+		const k = Math.min(1, Math.max(0, (-1 - temp) / 7))
+		const want = a.opacity * k
+		if (obj.userData.frostSeen === want) return
+		obj.userData.frostSeen = want
+		ownMaterial(obj).opacity = want
+		obj.visible = want > 0.005
+	})
 	function frostTex() {
 		const edgeN = pfbmS(5, 5, 5, 3), patchN = pfbmS(3, 3, 7, 3), fineN = pfbmS(24, 24, 3, 2)
 		return bake("ice-frost2", 256, 256, (u, v, o) => {
@@ -1530,7 +1541,7 @@ export default function register({ addModel, kit, THREE }) {
 	function iceShell(glass, geo, F = frostTex()) {
 		const shell = M(`ice-shell3|${glass}`, glass
 			? { color: new THREE.Color("#ffffff"), roughness: 0.02, metalness: 0, transmission: 1, thickness: 0.02, ior: 1.5, attenuationColor: new THREE.Color("#cfeee6"), attenuationDistance: 0.12, envMapIntensity: 0.9 }
-			: { color: new THREE.Color("#ffffff"), roughness: 1, roughnessMap: F.roughMap, metalness: 0, transmission: 1, thickness: 0.03, ior: 1.31, attenuationColor: new THREE.Color("#a9d6f0"), attenuationDistance: 0.25, envMapIntensity: 0.9 }, true)
+			: { color: new THREE.Color("#ffffff"), roughness: 1, roughnessMap: F.roughMap, metalness: 0, transmission: 1, thickness: 0.03, ior: 1.31, attenuationColor: new THREE.Color("#8fc5e8"), attenuationDistance: 0.09, envMapIntensity: 0.9 }, true)
 		shell.depthWrite = false // so the translucent cloud and fractures inside still draw over it
 		const shellMesh = kit.mesh(geo, shell, { cast: true })
 		shellMesh.customDepthMaterial = iceDepth()
@@ -1668,14 +1679,17 @@ export default function register({ addModel, kit, THREE }) {
 		if (!glass) {
 			const s = Math.min(w, h, d)
 			const sc = s / 0.04
-			// frost: a white skin just under the surface, thicker toward the edges and in patches (hashed transparency)
+			// frost: a white skin just under the surface, thicker toward the edges and in patches (hashed transparency). Shaded by the room's light (a
+			// faint glow only), so a freezer-cold cube reads as a frosty block, blue-white, even on a white plate; it melts off as the cube warms
+			// (frame hook ice:frost: the heat module's temp reading, full below -8 °C, gone above -1 °C, as frost on a cube from the freezer does)
 			const frostGeo = softBox(W + 0.0002, H + 0.0002, d + 0.0002, r + 0.0001, { seg: [1, 1, 1], k: 4 })
-			const frost = M("ice-frost", { color: new THREE.Color("#f4faff"), emissive: new THREE.Color("#d9ecf8"), emissiveIntensity: 0.3, roughness: 0.9, metalness: 0, alphaMap: F.roughMap, transparent: true, opacity: 0.6, depthWrite: false })
+			const frost = M("ice-frost2", { color: new THREE.Color("#eef6fc"), emissive: new THREE.Color("#d9ecf8"), emissiveIntensity: 0.08, roughness: 0.9, metalness: 0, alphaMap: F.roughMap, transparent: true, opacity: 0.92, depthWrite: false })
 			const frostMesh = kit.mesh(frostGeo, frost, { cast: false })
 			frostMesh.renderOrder = 4
+			frostMesh.userData.frame = { hook: "ice:frost", opacity: 0.92, scaled: false }
 			parts.push(frostMesh)
-			// the body is a little milky all through
-			const milk = M("ice-milk", { color: new THREE.Color("#e6f3fc"), emissive: new THREE.Color("#cfe6fa"), emissiveIntensity: 0.3, roughness: 1, metalness: 0, transparent: true, opacity: 0.07, depthWrite: false })
+			// the body is milky all through, faintly blue (the cloud of air a freezer traps in it), so it shows against white
+			const milk = M("ice-milk2", { color: new THREE.Color("#cde4f5"), emissive: new THREE.Color("#c3ddf1"), emissiveIntensity: 0.1, roughness: 1, metalness: 0, transparent: true, opacity: 0.3, depthWrite: false })
 			const milkMesh = kit.mesh(softBox(W - 0.0016, H - 0.0016, d - 0.0016, Math.max(0.0004, r - 0.0008), { seg: [1, 1, 1], k: 3 }), milk, { cast: false })
 			milkMesh.renderOrder = 0
 			parts.push(milkMesh)

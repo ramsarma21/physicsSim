@@ -3789,3 +3789,94 @@ above (and a starting gate: the hand wins when an item sets both).
   same with the hands on and off; the live canvas, the library card's photo and an MP4 from the export's encoder show the hand; every dynamic type
   held (`auto`) and fixed (`grip`), every pusher skin and every pitcher: hands made and finite through the release, 416 of 426 scenes with a hand,
   under 10 ms a scene).
+
+## Readable subjects (2026-10-20): thin steel face-on, cork sizes, a slow-foam ball, a ride-on car, sails and fans that read; clear water with rings and splashes; frosty ice, satin bowls, a lamp's gold light, clay lumps, gates without ghosts
+What a lesson picture needs to read at lesson size, found by the five-lesson benchmark (lesson-regen/bench: MA-25, FO-13, MO-19, FO-36, MA-50) and
+the fair-test and MO-37 lessons. Every option defaults to what was built before: the 12 scenarios and 10 gallery scenes build, run and summarize
+byte for byte as before in Python and in web/sim (only the catalog lists the new props); nothing here touches tooling/src/sim (no engine change,
+the bundle as it was). Physics options keep real numbers; the render-only ones say so in their help.
+- **Thin steel faces the camera** (machines/mod_magnetism.py = web/sim/modules/magnetism.js): `facing` "edge-on" (default: as it lies, a side view
+  sees its thin edge) | "face-on" on `paper-clip`, `plastic-clip`, `clip-on-thread` and `steel-washer`. Face-on turns the thing a quarter turn about
+  its length: the same steel and weight, its side outline is then its face, so what is seen is what touches. A clip is a polygon 33 × 8 mm with
+  pointed ends (`clip_face`: a Gem clip's loops end in half circles, within 1 mm; it never balances on an end), 1 mm front to back, its density for
+  0.45 g; a washer a regular octagon through its rim (exact √ corners, the same bits in both languages; it rests on a flat), its thickness front to
+  back. The magnetic block turns with it: a clip's `_soft` record w × h × d = 33 × 1.9 × 0.9 mm (two wires one above the other; the pull along its
+  length is unchanged: Aharoni's factor along a prism is symmetric in the other two sides), a washer's the square between its flats × its
+  thickness (magnetized along its face, as a real one on its edge is; its corners reach 2.4 mm past the rim of a 16 mm washer turned 45°). Measured
+  (ceramic 15 cm bar, its S end, the gap from the steel's top): an upright clip jumps from 15 mm and falls from 20 mm in both facings; an M8 washer
+  under the pole's end jumps from 7 mm face-on as flat, 8 mm in from the end 5 mm (flat 10 mm). The coin's face-on twin already exists
+  (`coin-edge`); a nail is round, its side view already its outline. Models (web/models/mod-magnetism.js): the clip's wire is a real Gem clip,
+  two and a half loops that never cross (the old path fed duplicate points to its curve: overshoots and crossing legs, unseen edge-on); face-on it
+  is drawn in the picture plane, a face-on washer as its ring about the camera's axis. Known limits: a face-on clip is a clip on its edge (the side
+  view's convention, as `coin-edge`): dropped end-first from 13 cm it cartwheels a few centimetres; the fluids module's surface tension still floats
+  a face-on clip by its wire's contact line (lay it edge-on to float it).
+- **Cork** (machines/mod_fluids.py = web/sim/modules/fluids.js): `diameter` 0.015-0.06 m (0.024), `length` 0.02-0.10 m (0.044), `lying` "front to
+  back" (default, as before: a cylinder through the depth, the camera sees its round end, it rolls) | "across" (a slab L × D whose depth π/4·D makes
+  outline × depth its true volume, at cork's 200 kg/m³: it weighs and displaces what the round cork does; drawn as the cylinder along x it is).
+  Every size floats a fifth under (19.94 %: 6.1 mm of 24 mm end-on, 11.4 mm of 45 mm; across, a rectangle's 4.8 mm of 24 mm).
+- **Sails** (render only; `sailboat`): `sail_shape` "square" (default) | "triangle": the square's area, its luff 1.5 h up the mast from the boom and
+  its foot 4/3 w along it, so its centroid (where the push acts, `sail_middle`, where the fan is aimed) is the square's middle; the mast is drawn up
+  past its head (web/models/mod-fluids.js `sailLook`, `sailTriangle`). `sail_face_on` (bool, false): the sheet and boom are drawn square to the
+  camera instead of let out 45°. The push is the 45° plate's 0.8·½ρv²·A either way (a sail square to the fan's wind would be edge-on to a side
+  camera: the help says so).
+- **A softer ball** (machines/mod_softbody.py = web/sim/modules/softbody.js, `foam-ball`): `foam` "stress ball" (default: e 0.55, as before) | "slow
+  foam" (viscoelastic memory foam, e 0.2: ASTM D3574's ball rebound puts such foam under 10 %, about 4 % taken, approximate [D3574]). Only the
+  softbody record's `e` changes. A 16 cm, 120 g ball let go 42 cm up hops 13.6 cm (stress ball) or 2.9 cm (slow foam); the hollow plastic toy
+  ball 4.3 cm on grass. Known limit: the softbody contact takes the ball's own restitution on every rigid surface (a lawn's loss is not added).
+- **A ride-on car** (machines/catalog_mechanisms.py = web/sim/catalog-mechanisms.js `_vehicle(..., big=BIG_CAR)`, `motor-car` only): a typed length
+  to 1.2 m (it was clamped at 0.5 m without a word), wheels to 0.2 m, body to 30 kg, push to 150 N: a 12 V ride-on toy car is about 1.1 m, 15-25 kg,
+  20-25 cm wheels, 1-2.5 m/s (approximate). The sliders still stop at the toy's own most (`slider_max` 0.5 m, 6.4 cm, 1.8 kg, 50 N); each prop's
+  help says what may be typed. On MO-37's 10 m track a 1.1 m, 20 kg ride-on (0.2 m wheels, 100 N) reaches its 2.74 m/s as the toy does.
+- **Fans** (render only): `turn_to_camera` (machines/mod_staging.py = web/sim/modules/staging.js, a common prop of `fan`, 0-60°, default 0, nothing
+  built for it): the fan is drawn turned about its upright toward the camera (web/models/rods.js `fanTurned`: the cage and the motor about the
+  neck, 10 cm behind the cage's middle), its air still blowing the way it points; the liquids module's stand behind a raised fan still meets the
+  motor. The fan's paint (the mechanics module's `color`, already on its solids) is drawn on its plastic. Its blades turn at most 1.8 times a
+  second (22° a frame at 30 fps, under a third of the 72° between blades: never seen strobing back; 4 a second did at 30 fps) and a faint disc
+  where they sweep shows from its switch-on (frame hook `fan:running`).
+- **Clear water** (render only; web/models/mod-fluids.js): water, salt water and sea water (`CLEAR_LIQUIDS`) in a tank (aquarium, tub, trough) or a
+  boat are drawn as clear water (a graduated cylinder's, a beaker's or a jug's column keeps its tinted body: its level is the reading): the body
+  only tints (`clearWaterMat`: an unlit MultiplyBlending over what is behind it, mix(white, its colour, 1 − e^(−depth/dist)), at most 0.32 of its
+  colour) with a faint haze of its colour (`waterHaze`, at most 8 %, so a tank seen from the side still reads as holding water), under a separate
+  rippled top (`waterSurface`, a child of the body so the level hook carries it, opacity 0.5) that mirrors the room through its own blue. The old
+  alpha-blended, lit body laid half a pale haze over everything in and behind it (a cork under water came out nearly white, the table grey). An
+  aquarium's front and back panes are clear float glass (`clearPane`, 5 % and their reflections). Measuring vessels, a density column's layers
+  and the other liquids are as before.
+- **Ring waves and entry splashes** (render only; web/models/fluids-rings.js, view plug-in `fluids:rings`, registered by mod-fluids.js): a thing
+  that pierces a single-layer liquid's top and moves up or down there sends out a ring every 1/12 s, sourced by the rate it pushes water aside,
+  A·v (its waterline's area, its vertical speed): 4 cm ripples at their deep-water speed √(gλ/2π + 2πσ/(ρλ)) = 0.27 m/s, a packet 1.5 wavelengths
+  long, 0.35 × A·v / (2π·r0·c) high at its edge r0 (at most 1.5 mm), falling as √(r0/r) and dying out over 1.5 s, mirrored once by the walls; drawn
+  as a sheet over the top (a shader) that lightens slopes facing the camera, darkens the others and is clear where the water is flat. An entry
+  faster than 0.5 m/s throws a crown of 16 drops (1.5-3 mm) up at 0.55-0.9 and out at 0.3-0.55 of its speed, falling back. Worked out from the
+  track when the run loads (the same picture at the same t, the export's too); nothing is made for a run in which nothing crosses a liquid's top.
+- **Ice** (render only; web/models/blocks.js, the ice look): a freezer-cold cube is a blue-white frosty block, even on a white plate: its body faintly
+  blue (attenuation #8fc5e8 over 9 cm) and milky (30 %), its frost skin 92 % and shaded by the room's light. The frost melts off as the cube warms
+  (frame hook `ice:frost` on its `temp` reading: full below −8 °C, gone above −1 °C); a run without the reading keeps it as built.
+- **Bowls** (render only; web/models/mod-heat.js): a satin glaze (roughness 0.38, clear coat 0.45 at 0.42): the mirror glaze drew the room's light as
+  one sharp upright streak on the far wall above what sat in the bowl, which read as steam. Plates keep theirs.
+- **A desk lamp's light** (render only): a hot filament's beam (incandescent, halogen) is drawn as the eye sees it (web/models/mod-optics.js
+  `seenColour`: its bands through the CIE 1931 colour matching functions, Wyman, Sloan & Shirley's fit, to linear sRGB against an equal-energy
+  white): warm gold (sRGB 255, 194, 108), where summing band powers drew salmon (1, 0.28, 0.26) from its 625-750 nm band. Other light kinds keep
+  their colours. A lamp the heat module lights is lit once: the optics module's spot for it is kept dark (still marked as lit, so no extra pool),
+  and the heat module's spot has a firmer edge (penumbra 0.2) at 0.6 of its brightness, so a white plate under it is not blown out (clipped
+  pixels 15 % → 9 %); its cone (the lamp's `beam_angle`) still lights the table past a plate narrower than the cone, as a real lamp's does.
+- **A lump of clay** (render only; web/models/clay-lump.js, registered by mod-mechanics.js): a hand-pressed lump, a solid of revolution about its
+  upright through its side outline (round seen from above; what touches is unchanged), its foot rounded under, its top a low dome with two thumb
+  hollows, uneven all round (only in and down, never out of the outline), in a matte kneaded-clay material; the generic drawing extruded the
+  outline into a flat-topped prism that read as a roof box on a car.
+- **Starting gate** (render only; web/start-gate.js, one line in web/view3d.js): the arm, stop and bolt cast shadows only while the gate is shut, and
+  the gate's post casts none: lifted high over the track (and the post behind it) they threw a detached grey shape on the room's back wall. (A
+  ball's own shadow on the back wall is not the gate's.)
+- Checked (this branch against its base, origin/integrate/engine-waves 2cbfe0e, in separate copies with their own servers under Python 3.13; the
+  live :8790 never touched): the 12 scenarios and 10 gallery scenes in web/sim with the bundle (documents, resolved, warnings, summaries, tracks,
+  layouts) and in Python (documents, resolved, warnings, summaries on those tracks), 22 of 22 byte-identical; the catalog differs only in the 9
+  types above (their new props, descriptions, sources; every preview and every other entry identical), and all 326 entries Python == web/sim; the
+  new options' documents Python == web/sim (51 scenes: thin steel both ways and at the props' limits, corks and sails, the foams on three floors,
+  ride-on cars, turned fans); tools/parity/run.sh's 33 steps all pass under Python 3.13 (core 21995 cases, server, browser, everyday, the catalogs,
+  mechanisms, heat, softbody 969 checks, matter, flow, circuits, magnetism --n 150 with engine runs, fluids 1213 checks, waves, granular, fracture,
+  mechanics 300 scenes, air, space, staging, the module checks, fuzz-live --n 300: 967 cases, 0 mismatches; under 3.14 its prims step differs
+  on Unicode 16, not on anything here); research/rw-validate-fluids, -magnetism, -softbody and -mechanics pointed at this tree: 71/71, 79/79,
+  109/109, 104/104; the 761 node:test cases (760 in a 4-way run at load 110, the one timing case, ai/test/server.test.mjs's per-step slots,
+  11 of 11 alone); machines/test_*.py (test_catalog 350/350, test_everyday 38/38, test_measure 382/382, test_mechanisms, test_rg, test_space
+  220/220); CI's syntax check (388 JavaScript, 100 TypeScript files) and py_compile; build:static:nogen (the engine bundle byte-identical to a
+  fresh build, every import resolved) but for vendor:media:check, which fails the same way on the base in this checkout's node_modules.
+  Pictures: before and after of every item at the lessons' own cameras.

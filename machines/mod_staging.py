@@ -18,6 +18,8 @@
   settings.release_stand  "post" | "hidden" | "hanger" | "auto": what holds a held item until the release (web/release-stand.js): the
                    pull pin on its post (the real look's default), the pin and post going away once it is let go, a holder from above
                    that lifts away, or the lesson look's choice (auto: from above in or over a liquid, else hidden). doc.view.release_stand.
+  turn_to_camera   (a common prop of the fan) degrees the fan is DRAWN turned about its upright toward the camera (web/models/rods.js), so its
+                   face and blades show in a side view; its air still blows the way it points (render only: nothing is built for it).
 
 The build hook writes doc.view (machines/items.py build: a module's build hook may set sb.view) only for a scene that sets one of these, so
 every other scene builds the very document it did before. web/sim/modules/staging.js is its port, line for line.
@@ -38,6 +40,7 @@ GATE_CATEGORIES = ("Balls", "Wheels & vehicles", "Blocks & shapes")
 STYLES = ("lesson", "real")
 RELEASE_STANDS = ("post", "hidden", "hanger", "auto")
 HEX = re.compile(r"#[0-9a-fA-F]{6}")
+TURN_TYPES = ("fan",)        # drawn turned toward the camera by turn_to_camera (render only)
 
 
 def register_all(g):
@@ -45,6 +48,10 @@ def register_all(g):
     register_common_prop(Prop("start_gate", "Starting gate", False, kind="bool",
                               help="While it is held: a starting gate holds it (a bar that lifts away at the release) instead of the pull pin"),
                          lambda t: bool(t.dynamic) and t.category in GATE_CATEGORIES)
+    register_common_prop(Prop("turn_to_camera", "Turned toward you", 0.0, 0.0, 60.0, 5.0, "°",
+                              "Drawing only: the fan is drawn turned this far toward the camera, so its face and its turning blades show; its air "
+                              "still blows the way it points"),
+                         lambda t: t.key in TURN_TYPES)
     register_build_hook(_staging)
 
 

@@ -362,17 +362,42 @@ const CLIP_WIRE = 0.0009
 const CLIP_BUNDLE = 0.0019
 const COLOURS = { silver: null, red: "#c0392b", blue: "#2e6fc4", green: "#2f9a4c", yellow: "#e2b52a", black: "#2a2a2a" }
 
+// `facing` (mod_magnetism.py FACINGS): "edge-on" as it lies, "face-on" stood on its edge, its face toward the camera (its side outline is its face)
+const FACINGS = ["edge-on", "face-on"]
+const FACING_HELP = "edge-on: as it lies (flat, its face up), a side view sees its thin edge; face-on: standing on its edge with its face toward you " +
+	"(the same steel and weight turned a quarter turn: what you see is what touches)"
+// a regular octagon's corner at 22.5° (exact square roots: the same bits as Python's)
+const OCT_C = Math.sqrt(2.0 + Math.sqrt(2.0)) / 2.0
+const OCT_S = Math.sqrt(2.0 - Math.sqrt(2.0)) / 2.0
+const facing_camera = (P) => P.facing === "face-on"
+/** A clip standing on its edge, its loops toward the camera (mod_magnetism.py clip_face): its side outline L × Wd with pointed ends, T front to back. */
+function clip_face(c, part, L, Wd, T, m, lx = 0.0, ly = 0.0, langle = 0.0, base = "low-carbon steel", kw = {}) {
+	const e = Math.min(0.003, L / 4)
+	const pts = [[L / 2, 0.0], [L / 2 - e, Wd / 2], [-L / 2 + e, Wd / 2], [-L / 2, 0.0], [-L / 2 + e, -Wd / 2], [L / 2 - e, -Wd / 2]].map(([x, y]) => [pyRound(x, 5), pyRound(y, 5)])
+	const terms = []
+	for (let k = 0; k < 6; k++) terms.push(pts[k][0] * pts[(k + 1) % 6][1] - pts[(k + 1) % 6][0] * pts[k][1])
+	const area = pySum(terms) / 2
+	const mat = c.mat({ base, overrides: {}, density: pyRound(m / (area * T), 3) })
+	return c.poly(part, pts, T, lx, ly, { langle, material: mat, ...kw })
+}
+
 function build_clips(c, P) {
 	const n = Math.trunc(P.count)
 	const sp = P.spacing
 	const colour = has(COLOURS, P.color) ? COLOURS[P.color] : null
 	const [L, T, Wd, m] = [0.033, 0.001, 0.008, 0.00045]
+	const face = facing_camera(P)
 	const mat = c.mat({ base: "low-carbon steel", overrides: {}, density: pyRound(m / (L * T * Wd), 3) })
 	const x0 = (-(n - 1) * sp) / 2
 	const extra = colour === null ? {} : { color: colour }
 	for (let i = 0; i < n; i++) {
-		const sid = c.slab(`clip${i + 1}`, L, T, Wd, x0 + i * sp, 0.0, { material: mat, look: "zinc plate", words: "a steel paper clip", ...extra })
-		_soft(c, `iron${i + 1}`, sid, L, CLIP_WIRE, CLIP_BUNDLE, m / STEEL)
+		if (face) {
+			const sid = clip_face(c, `clip${i + 1}`, L, Wd, T, m, x0 + i * sp, 0.0, 0.0, "low-carbon steel", { look: "zinc plate", words: "a steel paper clip", ...extra })
+			_soft(c, `iron${i + 1}`, sid, L, CLIP_BUNDLE, CLIP_WIRE, m / STEEL)
+		} else {
+			const sid = c.slab(`clip${i + 1}`, L, T, Wd, x0 + i * sp, 0.0, { material: mat, look: "zinc plate", words: "a steel paper clip", ...extra })
+			_soft(c, `iron${i + 1}`, sid, L, CLIP_WIRE, CLIP_BUNDLE, m / STEEL)
+		}
 	}
 }
 
@@ -396,6 +421,18 @@ function build_washer(c, P) {
 	const [od, t] = [P.diameter, P.thickness]
 	const hole = od * 0.525
 	const vol = ((Math.PI / 4) * (od * od - hole * hole)) * t
+	if (facing_camera(P)) {
+		// on its edge, its face toward the camera: a regular octagon through the rim, t front to back; magnetized as the square block between its flats
+		const R = od / 2
+		const pts = [[OCT_C, OCT_S], [OCT_S, OCT_C], [-OCT_S, OCT_C], [-OCT_C, OCT_S], [-OCT_C, -OCT_S], [-OCT_S, -OCT_C], [OCT_S, -OCT_C], [OCT_C, -OCT_S]].map(([a, b]) => [pyRound(R * a, 5), pyRound(R * b, 5)])
+		const terms = []
+		for (let k = 0; k < 8; k++) terms.push(pts[k][0] * pts[(k + 1) % 8][1] - pts[(k + 1) % 8][0] * pts[k][1])
+		const area = pySum(terms) / 2
+		const pmat = c.mat({ base: "low-carbon steel", overrides: {}, density: pyRound((STEEL * vol) / (area * t), 3) })
+		const psid = c.poly("washer", pts, t, 0.0, 0.0, { material: pmat, look: "zinc plate", words: "a steel washer" })
+		_soft(c, "iron", psid, 2 * R * OCT_C, 2 * R * OCT_C, t, vol)
+		return
+	}
 	const mat = c.mat({ base: "low-carbon steel", overrides: {}, density: pyRound((STEEL * vol) / (od * t * od), 3) })
 	const sid = c.slab("washer", od, t, od, 0.0, 0.0, { material: mat, look: "zinc plate", words: "a steel washer" })
 	_soft(c, "iron", sid, od, t, od, vol)
@@ -464,11 +501,12 @@ function _iron() {
 	register(new ItemType("paper-clip", "Paper clips", CATEGORY, build_clips, {
 		module: "magnetism",
 		props: [new Prop("count", "Clips", 1, 1, 30, 1, "", { kind: "int" }), new Prop("spacing", "Spacing", 0.04, 0.034, 0.3, 0.001, "m", "Between the clips' middles, in a row"),
-			new Prop("color", "Colour", "silver", { kind: "choice", choices: Object.keys(COLOURS), help: "A coated clip is still steel inside" })],
+			new Prop("color", "Colour", "silver", { kind: "choice", choices: Object.keys(COLOURS), help: "A coated clip is still steel inside" }),
+			new Prop("facing", "To the camera", "edge-on", { kind: "choice", choices: FACINGS, help: FACING_HELP })],
 		readouts: soft_read(),
 		tags: ["paper clip", "paperclip", "clip", "steel", "iron", "magnetic", "attracted", "pick up", "chain"],
 		description: "Steel paper clips (33 mm, 0.45 g) lying flat in a row. A magnet pulls them whichever pole is near; a clip on a magnet " +
-			"becomes a magnet itself and holds the next one (a chain).",
+			"becomes a magnet itself and holds the next one (a chain). Face-on stands them on their edges, their loops toward you.",
 		source: "Gem no. 1 clip: 0.9 mm low-carbon steel wire, 0.45 g; soft iron, magnetized by the field [FUR] [AHARONI].",
 		anchor: "the middle of the row, at the clips' middle", facts: "steel · 33 mm · 0.45 g each"
 	}))
@@ -483,10 +521,12 @@ function _iron() {
 	}))
 	register(new ItemType("steel-washer", "Steel washer", CATEGORY, build_washer, {
 		module: "magnetism",
-		props: [new Prop("diameter", "Diameter", 0.016, 0.008, 0.05, 0.0005, "m"), new Prop("thickness", "Thickness", 0.0016, 0.0008, 0.005, 0.0001, "m")],
+		props: [new Prop("diameter", "Diameter", 0.016, 0.008, 0.05, 0.0005, "m"), new Prop("thickness", "Thickness", 0.0016, 0.0008, 0.005, 0.0001, "m"),
+			new Prop("facing", "To the camera", "edge-on", { kind: "choice", choices: FACINGS, help: FACING_HELP })],
 		readouts: soft_read(),
 		tags: ["washer", "steel", "metal", "magnetic", "ring"],
-		description: "A flat zinc-plated steel washer (M8: 16 mm, 1.8 g) lying flat. Magnetic.",
+		description: "A flat zinc-plated steel washer (M8: 16 mm, 1.8 g) lying flat. Magnetic. Face-on stands it on its edge, its ring " +
+			"toward you (magnetized along its face, it is pulled from farther than one lying flat).",
 		source: "DIN 125 M8 washer: 16 mm, 8.4 mm hole, 1.6 mm thick, 1.8 g.", anchor: "its centre", facts: "steel · 16 mm · 1.8 g"
 	}))
 	register(new ItemType("steel-can", "Steel can", CATEGORY, build_can, {
@@ -533,8 +573,13 @@ function _iron() {
 // ---------------------------------------------------------------- things a magnet does not pull
 function build_plastic_clip(c, P) {
 	const [L, T, Wd, m] = [0.033, 0.0012, 0.008, 0.0003]
+	const colour = (has(COLOURS, P.color) ? COLOURS[P.color] : null) || "#2e6fc4"
+	if (facing_camera(P)) {
+		clip_face(c, "clip", L, Wd, T, m, 0.0, 0.0, 0.0, "polypropylene", { look: "plastic", words: "a plastic paper clip", color: colour })
+		return
+	}
 	const mat = c.mat({ base: "polypropylene", overrides: {}, density: pyRound(m / (L * T * Wd), 3) })
-	c.slab("clip", L, T, Wd, 0.0, 0.0, { material: mat, look: "plastic", words: "a plastic paper clip", color: (has(COLOURS, P.color) ? COLOURS[P.color] : null) || "#2e6fc4" })
+	c.slab("clip", L, T, Wd, 0.0, 0.0, { material: mat, look: "plastic", words: "a plastic paper clip", color: colour })
 }
 
 function build_foil(c, P) {
@@ -580,15 +625,21 @@ function build_clip_thread(c, P) {
 	const th = P.thread
 	const [L, T, Wd, m] = [0.033, 0.001, 0.008, 0.00045]
 	c.slab("anchor", 0.02, 0.006, 0.02, 0.0, 0.003, { kind: "static", material: c.mat({ base: "modeling clay", overrides: {} }), look: "clay", words: "a lump of putty" })
-	const mat = c.mat({ base: "low-carbon steel", overrides: {}, density: pyRound(m / (L * T * Wd), 3) })
-	const sid = c.slab("clip", L, T, Wd, 0.0, 0.006 + th + L / 2, { langle: 90.0, material: mat, look: "zinc plate", words: "a steel paper clip on a thread" })
+	const face = facing_camera(P)
+	let sid
+	if (face) sid = clip_face(c, "clip", L, Wd, T, m, 0.0, 0.006 + th + L / 2, 90.0, "low-carbon steel", { look: "zinc plate", words: "a steel paper clip on a thread" })
+	else {
+		const mat = c.mat({ base: "low-carbon steel", overrides: {}, density: pyRound(m / (L * T * Wd), 3) })
+		sid = c.slab("clip", L, T, Wd, 0.0, 0.006 + th + L / 2, { langle: 90.0, material: mat, look: "zinc plate", words: "a steel paper clip on a thread" })
+	}
 	c.joint("rope", "thread", { a: null, b: "clip", anchorA: [0.0, 0.006], anchorB: [-L / 2, 0.0], length: _r(th), thickness: 0.0005 })
-	_soft(c, "iron", sid, L, CLIP_WIRE, CLIP_BUNDLE, m / STEEL)
+	_soft(c, "iron", sid, L, face ? CLIP_BUNDLE : CLIP_WIRE, face ? CLIP_WIRE : CLIP_BUNDLE, m / STEEL)
 }
 
 function _others() {
 	register(new ItemType("plastic-clip", "Plastic clip", CATEGORY, build_plastic_clip, {
-		module: "magnetism", props: [new Prop("color", "Colour", "blue", { kind: "choice", choices: Object.keys(COLOURS).filter((k) => k !== "silver") })],
+		module: "magnetism", props: [new Prop("color", "Colour", "blue", { kind: "choice", choices: Object.keys(COLOURS).filter((k) => k !== "silver") }),
+			new Prop("facing", "To the camera", "edge-on", { kind: "choice", choices: FACINGS, help: FACING_HELP })],
 		tags: ["plastic clip", "plastic", "not magnetic", "non-magnetic", "test object"],
 		description: "An all-plastic paper clip (0.3 g). Not magnetic: a magnet does not pull it at all.",
 		source: "Polypropylene clip, 33 mm, about 0.3 g.", anchor: "its centre", facts: "plastic · 0.3 g · not magnetic"
@@ -628,7 +679,8 @@ function _others() {
 		anchor: "the middle of its bottom edge (on the table)", facts: "10 × 10 cm · cardboard", edit: [{ kind: "rotate" }]
 	}))
 	register(new ItemType("clip-on-thread", "Clip on a thread", CATEGORY, build_clip_thread, {
-		module: "magnetism", props: [new Prop("thread", "Thread length", 0.1, 0.02, 0.4, 0.005, "m")],
+		module: "magnetism", props: [new Prop("thread", "Thread length", 0.1, 0.02, 0.4, 0.005, "m"),
+			new Prop("facing", "To the camera", "edge-on", { kind: "choice", choices: FACINGS, help: FACING_HELP })],
 		readouts: [new Readout("pull_mN", "Magnetic pull", { unit: "mN", digits: 2 })],
 		tags: ["thread", "string", "floating clip", "paper clip", "hover", "tethered", "without touching"],
 		description: "A steel paper clip tied by a thread to a lump of putty on the table, standing up at the thread's end. Hold a magnet " +
@@ -1218,7 +1270,8 @@ export const plugin = {
 		"compass: stands face-on, its needle's red end points north (right, unless `north` left: it starts that way) by the Earth's field (`earth`), and near a magnet lines up with its field: red end toward the magnet's south pole and away from its north; a magnet flipped right in line with it swings it round. Its needle always turns on its pivot, a fixed (held) compass's too. Its reading heading_deg is the red end's direction, counter-clockwise from the right (0 right, 90 up, 180 left).",
 		"battery-electromagnet: a nail wrapped with `turns` of wire on `cells` AA batteries, held point down (fixed); switched `on` (at `on_at` s) it is a magnet: it picks up a clip lying 0.5-1 cm under its point, and holds a chain of clips hung from its point (paper-clip count 6, spacing 0.0345, angle -90, held: the ones it cannot hold fall at the release; on 2 AA, 10 turns hold one, 50 two, 200 three: a chain end to end holds few, as a real one does). More turns make it stronger until the nail's iron is full (about 300 turns); more batteries add little current with few turns (the batteries' own resistance limits it to about 6 A). It has its own batteries: the circuits module has no coil to wire it into a circuit, so switch it with `on` and `on_at`.",
 		"Static electricity: a balloon `rubbed` N strokes (on hair or wool) carries −10 nC a stroke up to −100 nC on its `rubbed_side` (bottom, top, left, right, lower right, lower left); hung `on_thread` from a hook (its `thread` length) it swings. It pulls paper-bits (light, polarized: they stand up and jump to it from about 1 cm below its rubbed side) and an aluminium can-on-side (rolls toward it from a few cm). Two rubbed balloons hung 30 cm apart with rubbed sides facing push apart (they swing apart about 5-10°). Any light thing that is not metal is polarized as a dielectric (its ε_r: paper 2-3, plastic 2-3.5, wood 1.4-2.7, water 80): a ping-pong ball rolls to a rubbed balloon only from about 5 mm (a plastic shell is weakly polarized), where an aluminium can goes from several cm; other modules' metals (a penny, a spoon) are conductors. charged-rod (fixed: plastic rubbed with wool negative, glass with silk positive) and pith-ball (a light conductor on a thread: pulled, touches, takes some charge and is pushed away).",
-		"Readings each run: pull_mN (the magnetic or electric force on the item now), magnetized (%, soft iron), amps (an electromagnet's current), heading_deg (a magnet's or compass needle's north end), charge_uC (a charged item's charge). Field lines are a drawing option (`show_field` on a magnet)."
+		"Readings each run: pull_mN (the magnetic or electric force on the item now), magnetized (%, soft iron), amps (an electromagnet's current), heading_deg (a magnet's or compass needle's north end), charge_uC (a charged item's charge). Field lines are a drawing option (`show_field` on a magnet).",
+		"For a picture of a paper-clip, plastic-clip, clip-on-thread or steel-washer (a thin sliver from the side): `facing` face-on stands it on its edge, its face toward the camera (the same steel and weight; its side outline is then its face: a clip 33 × 8 mm, a washer its ring)."
 	].join(" "),
 	prompt: {
 		plan: [

@@ -380,6 +380,7 @@ SAIL_TRIM = 45.0          # degrees between the sail and the boat's line (let ou
 SAIL_PUSH = 0.8           # push along the wind / (½ρv²·A) for a square plate at 45° [ORTIZ] (a plate square to the wind: 1.17 [HOE])
 AIR_SIDE_DRAG = 1.05      # the engine's flat-side drag coefficient (tooling/src/sim/physics.ts BOX_DRAG)
 SAIL_THICK = 0.001        # the sail's slab in the side view (m)
+SAIL_SHAPES = ["square", "triangle"]   # how the sail is drawn (render only: web/models/mod-fluids.js; its push is its area's either way)
 
 
 def _boat_readouts(hull=True):
@@ -452,7 +453,13 @@ def _floaters():
                              Prop("sail_area_cm2", "Sail area", 120.0, 20.0, 600.0, 5.0, "cm²", "Follows the sail's size until you set it (height 1.25 × width)", auto=("sail",)),
                              Prop("sail_material", "Sail made of", "paper", kind="choice", choices=list(SAIL_STUFF)),
                              Prop("color", "Hull colour", "red", kind="choice", choices=COLOR_NAMES[:-1]),
-                             Prop("sail_color", "Sail colour", "white", kind="choice", choices=COLOR_NAMES[:-1])],
+                             Prop("sail_color", "Sail colour", "white", kind="choice", choices=COLOR_NAMES[:-1]),
+                             Prop("sail_shape", "Sail shape", "square", kind="choice", choices=SAIL_SHAPES,
+                                  help="Drawing only: triangle draws a triangular sail of the same area (its luff up the mast 1.5 × the square's height, its foot "
+                                       "on the boom, its middle where the square's is): the same area, the same push"),
+                             Prop("sail_face_on", "Sail drawn facing you", False, kind="bool",
+                                  help="Drawing only: the sail is drawn square to the camera instead of let out 45° (a sail square to the fan's wind would be "
+                                       "edge-on to a side camera); its push is the 45° sail's all the same")],
                       tags=["boat", "sailboat", "sail", "toy boat", "regatta", "ship", "yacht", "float", "wind", "fan", "raft"],
                       description="A toy sailboat: a pine hull with a keel fin, a dowel mast and a square sail let out at 45°. Put it in water (a trough or tub) and "
                                   "a fan behind it, at the sail's height: the wind on the sail pushes it along; a bigger sail or a nearer, faster fan pushes harder.",
@@ -548,14 +555,24 @@ def _things():
                       edit=[{"kind": "radius", "prop": "diameter"}], module=MODULE))
 
     def build_cork(c, P):
-        r = 0.012
-        L = 0.044
+        r = P["diameter"] / 2
+        L = P["length"]
         rho = MATERIALS["cork"]["density"]
+        if P["lying"] == "across":
+            # its length across the picture: the side view sees its side, a rectangle L × D; its depth π/4 × D makes outline × depth its true
+            # volume (what it weighs and the water it displaces); drawn as the round cylinder it is
+            c.slab("cork", L, 2 * r, round(math.pi / 4 * 2 * r, 5), material=c.mat(), look="cork", words="a cork")
+            return
         c.ball("cork", r, material=c.mat(density=round(rho * 3 * L / (4 * r), 4)), inertia=0.5, shape="cylinder", length=L, look="cork", words="a wine cork")
 
     register(ItemType("cork", "Cork", "Liquids", build_cork, material="cork", materials=["cork"],
-                      props=[], tags=["cork", "stopper", "wine cork", "float", "light", "bobber"],
-                      description="A wine cork lying on its side: very light, it floats high on any liquid.",
+                      props=[Prop("diameter", "Diameter", 0.024, 0.015, 0.06, 0.001, "m", "A wine cork is 24 mm; a big jar's or a bobber's up to 6 cm"),
+                             Prop("length", "Length", 0.044, 0.02, 0.1, 0.001, "m", "A wine cork is 44 mm"),
+                             Prop("lying", "Its length runs", "front to back", kind="choice", choices=["front to back", "across"],
+                                  help="front to back: the side camera sees its round end (it rolls); across: left to right, the camera sees its side")],
+                      tags=["cork", "stopper", "wine cork", "float", "light", "bobber"],
+                      description="A wine cork lying on its side: very light, it floats high on any liquid (a fifth of it under water). Set its size; "
+                                  "lying across, the side camera sees its side instead of its round end.",
                       source="A wine cork is 24 mm across and 44 mm long; cork is about 200 kg/m³.", anchor="its centre", facts="24 × 44 mm · 4 g",
                       module=MODULE))
 

@@ -13,6 +13,8 @@
 // act; a scene's arrows share one scale), "mechanics:energy" (an energy-bars board's bars, and small bars over an item set to show_energy: kinetic,
 // potential, spring, heat and sound, as the run plays).
 // Nothing here draws for a run without these items (each plug-in returns null).
+import { registerClayLump } from "./clay-lump.js"
+
 const ROPE = "#6b5a45"
 /** Force arrows' colours and words, the same everywhere in the app (FORCE_KINDS of tooling/src/sim/mechanics.ts; tension1.. use tension's). */
 export const ARROW_COLOR = { gravity: "#2563eb", support: "#16a34a", push: "#f59e0b", friction: "#dc2626", tension: "#7c3aed", spring: "#db2777", air: "#0ea5e9", buoyancy: "#0d9488", magnetic: "#c026d3", applied: "#ea580c", net: "#111827" }
@@ -25,6 +27,8 @@ const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif"
 const newtons = (v) => (v >= 1 ? v.toFixed(1) : v >= 0.1 ? v.toFixed(2) : v.toPrecision(2))
 
 export default function register({ addModel, addViewPlugin, addFrameHook, kit, THREE }) {
+	// (the lump of clay: a hand-pressed lump, web/models/clay-lump.js)
+	registerClayLump({ addModel, kit, THREE })
 	const steel = kit.steel()
 	const plasticOf = (color) => kit.plastic(color, { gloss: 0.45, key: "mechanics" })
 	const rope = kit.mat("mechanics|rope", { color: ROPE, roughness: 0.9, metalness: 0 })

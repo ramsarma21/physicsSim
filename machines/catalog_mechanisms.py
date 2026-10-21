@@ -884,10 +884,18 @@ def _pulleys():
 #   {"part", "pts": [(x, y), ...] in the chassis frame (origin = the body's middle) or None for the plain slab Lc x hh, "depth", "share", "base", "words"}
 # the first is the chassis; "share" (a fraction of the body weight) and "base" (a material) give a part its own material (a skateboard's aluminium trucks),
 # every other part shares one density, chosen so the whole body weighs exactly `body_mass` (the volume is split by area x depth).
+# A motor car typed past its toy sizes grows to a ride-on toy car (12 V, about 1.1 m, 15-25 kg, 20-25 cm wheels, 1-2.5 m/s, two motors: approximate):
+# its length to 1.2 m, wheels to 0.2 m, body to 30 kg and push to 150 N, the sliders still stopping at the toy's own most (0.5 m, 6.4 cm, 1.8 kg, 50 N)
+BIG_CAR = {"length": 1.2, "wheel_diameter": 0.2, "body_mass": 30.0, "push": 150.0,
+           "_help": {"length": "type up to 1.2 m: a ride-on toy car", "wheel_diameter": "type up to 0.2 m (a ride-on toy's)",
+                     "body_mass": "type up to 30 kg (a ride-on toy car is 15-25 kg)", "push": "type up to 150 N (a ride-on toy's two motors)"}}
+
+
 def _vehicle(key, name, *, L, h, d, mass, r, wheel_mass, axle, clear, hz, wheel_mat, wheel_mats, body_mat, body_look, hull, wheel_w, tuck, drive=None,
-             tags, description, source, facts):
+             tags, description, source, facts, big=None):
     """A body on two sprung (or rigid, hz = 0) wheels. Its anchor is the ground under the middle, where the wheels touch.
-    The wheels' 3D track is the body's depth less `tuck` each side plus `wheel_w` (x the wheel radius) each side (web/models/vehicles.js reads the same numbers)."""
+    The wheels' 3D track is the body's depth less `tuck` each side plus `wheel_w` (x the wheel radius) each side (web/models/vehicles.js reads the same numbers).
+    `big` {prop key: most}: a typed value may go up to that (a ride-on toy's size, weight and push), the slider still stops at the toy's own most."""
     def build(c, P):
         Lc, r_, m, hz_ = P["length"], P["wheel_diameter"] / 2, P["body_mass"], P["suspension"]
         hz_ = 0.0 if hz_ <= 0 else max(hz_, 2.0)
@@ -938,10 +946,21 @@ def _vehicle(key, name, *, L, h, d, mass, r, wheel_mass, axle, clear, hz, wheel_
             if motor:
                 f["motor"] = motor
             _joint(c, "wheel", f"axle-{part}", **f)
-    props = [Prop("length", "Body length", L, round(L / 2, 3), round(L * 2.5, 3), 0.005, "m"), Prop("wheel_diameter", "Wheel diameter", 2 * r, round(r, 3), round(4 * r, 3), 0.002, "m"),
-             Prop("body_mass", "Body weight", mass, round(mass / 5, 4), round(mass * 6, 3), 0.005, "kg", "The body with its cabin, without the wheels"), Prop("suspension", "Suspension", hz, 0.0, 20.0, 0.5, "Hz", "How fast the body bounces on its springs (2 or more); 0 is rigid axles")]
+    big = big or {}
+
+    def most(k, toy, help_=""):
+        """(max, slider_max, help): the toy's own most, or the big one for a typed value with the slider still at the toy's."""
+        if k not in big:
+            return toy, None, help_
+        return big[k], toy, (help_ + "; " if help_ else "") + big["_help"][k]
+    lm, ls, lh = most("length", round(L * 2.5, 3))
+    wm, ws, wh = most("wheel_diameter", round(4 * r, 3))
+    mm, ms, mh = most("body_mass", round(mass * 6, 3), "The body with its cabin, without the wheels")
+    props = [Prop("length", "Body length", L, round(L / 2, 3), lm, 0.005, "m", lh, slider_max=ls), Prop("wheel_diameter", "Wheel diameter", 2 * r, round(r, 3), wm, 0.002, "m", wh, slider_max=ws),
+             Prop("body_mass", "Body weight", mass, round(mass / 5, 4), mm, 0.005, "kg", mh, slider_max=ms), Prop("suspension", "Suspension", hz, 0.0, 20.0, 0.5, "Hz", "How fast the body bounces on its springs (2 or more); 0 is rigid axles")]
     if drive:
-        props += [Prop("speed", "Top speed", drive[0], 0.1, 10.0, 0.1, "m/s", "The speed the wheels drive up to"), Prop("push", "Push", drive[1], 0.1, 50.0, 0.1, "N", "The most force the wheels give; it spins its wheels if the ground can't hold it")]
+        pm, ps, ph = most("push", 50.0, "The most force the wheels give; it spins its wheels if the ground can't hold it")
+        props += [Prop("speed", "Top speed", drive[0], 0.1, 10.0, 0.1, "m/s", "The speed the wheels drive up to"), Prop("push", "Push", drive[1], 0.1, pm, 0.1, "N", ph, slider_max=ps)]
     register(ItemType(key, name, "Wheels & vehicles", build, material=wheel_mat, materials=wheel_mats, props=props, tags=tags, description=description, source=source,
                       anchor="the ground under its middle, where the wheels touch", facts=facts, edit=[{"kind": "length", "prop": "length"}, {"kind": "rotate"}]))
 
@@ -1042,8 +1061,9 @@ def _vehicles():
              body_mat="hollow plastic", body_look="plastic", hull=coupe, wheel_w=0.53, tuck=None, drive=(1.5, 2.0),
              tags=["car", "motor", "electric", "drive", "powered", "rc", "engine", "robot", "vehicle", "self propelled", "wheel motor"],
              description="A toy sports car with motors on both axles. It speeds up to its top speed (to the right when level) and pushes with up to its set force.",
-             source="Motors drive each wheel toward a set turning speed within a torque limit (wheel torque = push × radius / 2); the car's size and weight are provisional (a 20 cm, 6 cm tall coupe on 32 mm wheels). It can't push harder than the ground's grip, friction × its weight.",
-             facts="1.5 m/s top speed · pushes 2 N · 3.2 cm wheels")
+             source="Motors drive each wheel toward a set turning speed within a torque limit (wheel torque = push × radius / 2); the car's size and weight are provisional (a 20 cm, 6 cm tall coupe on 32 mm wheels). It can't push harder than the ground's grip, friction × its weight. "
+                    "Typed, it grows to a ride-on toy car (a 12 V one: about 1.1 m, 15-25 kg, 20-25 cm wheels, 1-2.5 m/s; approximate).",
+             facts="1.5 m/s top speed · pushes 2 N · 3.2 cm wheels", big=BIG_CAR)
     # a wooden wagon: a thin plank bed (12 mm) 2 mm over the wheels' tops, on axle-trees; the wheels stand outside the bed (8 mm clear of its sides, a hub's length)
     _vehicle("cart", "Cart", L=0.22, h=0.012, d=0.08, mass=0.2, r=0.025, wheel_mass=0.03, axle=0.075, clear=0.5, hz=0.0, wheel_mat=dark, wheel_mats=_has("dark wood", "varnished hardwood", "steel", "tyre rubber"),
              body_mat="varnished hardwood", body_look="wood", hull=_hull_deck(0.012, 0.002), wheel_w=0.3, tuck=-0.008,

@@ -379,6 +379,7 @@ export const SAIL_TRIM = 45.0 // degrees between the sail and the boat's line (l
 export const SAIL_PUSH = 0.8 // push along the wind / (½ρv²·A) for a square plate at 45° [ORTIZ] (a plate square to the wind: 1.17 [HOE])
 const AIR_SIDE_DRAG = 1.05 // the engine's flat-side drag coefficient (tooling/src/sim/physics.ts BOX_DRAG)
 const SAIL_THICK = 0.001 // the sail's slab in the side view (m)
+export const SAIL_SHAPES = ["square", "triangle"] // how the sail is drawn (render only: web/models/mod-fluids.js; its push is its area's either way)
 
 function _boat_readouts(hull = true) {
 	const out = [
@@ -457,7 +458,13 @@ function _floaters() {
 			new Prop("sail_area_cm2", "Sail area", 120.0, 20.0, 600.0, 5.0, "cm²", "Follows the sail's size until you set it (height 1.25 × width)", { auto: ["sail"] }),
 			new Prop("sail_material", "Sail made of", "paper", { kind: "choice", choices: Object.keys(SAIL_STUFF) }),
 			new Prop("color", "Hull colour", "red", { kind: "choice", choices: COLOR_NAMES.slice(0, -1) }),
-			new Prop("sail_color", "Sail colour", "white", { kind: "choice", choices: COLOR_NAMES.slice(0, -1) })
+			new Prop("sail_color", "Sail colour", "white", { kind: "choice", choices: COLOR_NAMES.slice(0, -1) }),
+			new Prop("sail_shape", "Sail shape", "square", { kind: "choice", choices: SAIL_SHAPES,
+				help: "Drawing only: triangle draws a triangular sail of the same area (its luff up the mast 1.5 × the square's height, its foot " +
+					"on the boom, its middle where the square's is): the same area, the same push" }),
+			new Prop("sail_face_on", "Sail drawn facing you", false, { kind: "bool",
+				help: "Drawing only: the sail is drawn square to the camera instead of let out 45° (a sail square to the fan's wind would be " +
+					"edge-on to a side camera); its push is the 45° sail's all the same" })
 		],
 		tags: ["boat", "sailboat", "sail", "toy boat", "regatta", "ship", "yacht", "float", "wind", "fan", "raft"],
 		description: "A toy sailboat: a pine hull with a keel fin, a dowel mast and a square sail let out at 45°. Put it in water (a trough or tub) and " +
@@ -573,16 +580,26 @@ function _things() {
 	}))
 
 	function build_cork(c, P) {
-		const r = 0.012
-		const L = 0.044
+		const r = P.diameter / 2
+		const L = P.length
 		const rho = MATERIALS.cork.density
+		if (P.lying === "across") {
+			// its length across the picture (mod_fluids.py): a slab L × D, π/4 × D deep (outline × depth = its true volume), drawn round
+			c.slab("cork", L, 2 * r, pyRound((Math.PI / 4) * 2 * r, 5), 0.0, 0.0, { material: c.mat(), look: "cork", words: "a cork" })
+			return
+		}
 		c.ball("cork", r, 0.0, 0.0, { material: c.mat({ density: pyRound((rho * 3 * L) / (4 * r), 4) }), inertia: 0.5, shape: "cylinder", length: L, look: "cork", words: "a wine cork" })
 	}
 
 	register(new ItemType("cork", "Cork", "Liquids", build_cork, {
 		material: "cork", materials: ["cork"],
-		props: [], tags: ["cork", "stopper", "wine cork", "float", "light", "bobber"],
-		description: "A wine cork lying on its side: very light, it floats high on any liquid.",
+		props: [new Prop("diameter", "Diameter", 0.024, 0.015, 0.06, 0.001, "m", "A wine cork is 24 mm; a big jar's or a bobber's up to 6 cm"),
+			new Prop("length", "Length", 0.044, 0.02, 0.1, 0.001, "m", "A wine cork is 44 mm"),
+			new Prop("lying", "Its length runs", "front to back", { kind: "choice", choices: ["front to back", "across"],
+				help: "front to back: the side camera sees its round end (it rolls); across: left to right, the camera sees its side" })],
+		tags: ["cork", "stopper", "wine cork", "float", "light", "bobber"],
+		description: "A wine cork lying on its side: very light, it floats high on any liquid (a fifth of it under water). Set its size; " +
+			"lying across, the side camera sees its side instead of its round end.",
 		source: "A wine cork is 24 mm across and 44 mm long; cork is about 200 kg/m³.", anchor: "its centre", facts: "24 × 44 mm · 4 g",
 		module: MODULE
 	}))
@@ -907,7 +924,8 @@ export const plugin = {
 		"Open vessels (coffee-mug, bowl) put in a liquid float as hollow hulls on their outer volume up to the rim: a bowl (wide and shallow) floats upright; a mug floats tipped toward its handle (a light one on its side, as a real light cup does). What fills them adds to their weight: a hose (flow module) run from a raised beaker into a floating bowl fills it until its rim reaches the water, then it floods and sinks (melamine, ceramic, glass, aluminium, paperboard sink; foam stays up): goal floats_then_sinks {item}. A tap's or a pitcher's stream does NOT yet fill a vessel that floats in a tank (the flow module gives it to the tank's water once it is below the tank's surface): use the hose. The catalog's cup, plastic-cup, glass-jar, bucket and box are FIXED in place: they never float.",
 		"Boats and sails: a sailboat floats in a tank (trough or tub) and is pushed by a fan BEHIND it (the fan faces +x, angle 0, its front face 5-90 cm behind the stern; nothing in between) or by a breeze (a steady wind over the whole scene from its wind sock: put it at the upwind edge). The fan's anchor is the middle of its FRONT face; put that at the height of the sail's middle (a default boat in a default trough standing on the table: y ≈ 0.18 for a small sail, 0.16 tiny, 0.22 big; add the trough's own y if it is raised; a sailboat's resolved sail_middle is that height over its anchor): a fan lower or higher than the sail misses it. Sails: tiny 48 cm², small 120, big 320 (or set sail_area_cm2, 20-600 cm²); push = 0.8 × ½·1.2·A·(air speed − boat speed)²: bigger sail, faster or nearer fan → more push. A fan's jet keeps its full speed for 5.6 fan diameters (6.2 diameters of its 0.9-wide stream), then weakens as 1/distance: with the default 0.30 m fan any distance under 1.67 m gives the SAME push, so to compare a near and a far fan use small fans (diameter 0.12 m: full speed to 0.67 m) and put the far one 0.9 m or more behind its sail. To compare two boats side by side, give each its own lane: two troughs (each with its boat and fan), one on the table (y 0) and one fixed above it (y 0.35), identical but for the one thing compared.",
 		"Surface tension (water 72.8 mN/m; soapy water about 30): a paper-clip (the magnetism module's, 0.45 g of steel) put INSIDE a water container with place {inside: <container>} is laid gently on the surface and floats, held in a little dent (the surface pulls up to γ·sinθ per metre of its wire's contact line: 13.9 mN for water, its weight is 4.4 mN); dropped from above (on: air) it breaks through and sinks. A soap-drop (a dropper held over the water, its anchor the dropper's tip: place on: air 5-10 cm over the surface; at_s: when the drop falls; a stand behind the container holds it) lowers the surface tension where it lands, and the soap film spreads out (about 12 cm in the first second, 0.12·t^0.75 m): a clip the surface held sinks once the soap reaches it; a light boat (foil-boat) with the drop 2-4 cm behind its stern is pulled forward by the clean surface ahead (a soap-powered boat: about 8 cm/s, 30-40 cm in 5 s); goals sinks/floats {clip}, moves {boat, min_m}. Capillary action: a capillary-tube (bore_mm 0.3-4) or a paper-strip (paper towel, filter paper, printer paper), each a FIXED item held by a stand the view draws: place it on: air with its anchor (its BOTTOM end) 1-3 cm under the liquid's surface (y_m = the surface's y − 0.02); the liquid climbs a 1 mm tube 29.7 mm above the outside surface in about half a second, a 4 mm tube 7.4 mm (Jurin: h = 2γ/(ρgr), thinner climbs higher; soapy water half as high); paper towel wicks about 1 cm in 3 s and 1.5 cm in 6 s (h² = D·t, D 4e-5 m²/s; filter paper 1.1e-5, printer paper hardly at all). Goals climbs {item, at_least_mm?} (rise_mm or wet_mm at the end) and climbs_higher {a, b}.",
-		"Readings each run: a container's level_mm, volume_ml (its scale's reading) and spilled_ml; an item in a liquid: submerged (0-1), afloat (1/0), sunk (1/0), draft_mm, buoyancy_n; a boat's freeboard_mm and flooded; a sailboat's air_ms (wind at its sail) and push_n."
+		"Readings each run: a container's level_mm, volume_ml (its scale's reading) and spilled_ml; an item in a liquid: submerged (0-1), afloat (1/0), sunk (1/0), draft_mm, buoyancy_n; a boat's freeboard_mm and flooded; a sailboat's air_ms (wind at its sail) and push_n.",
+		"For a lesson picture: a sailboat's sail_shape triangle (a triangular sail of the same area) and sail_face_on (the sail drawn square to the camera) are drawing only, the push the same; a cork's diameter and length are its size (a wine cork 24 × 44 mm; a bigger one floats as deep, a fifth under) and lying across shows the camera its side instead of its round end."
 	].join(" "),
 	prompt: {
 		plan: [

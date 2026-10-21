@@ -26,13 +26,53 @@ function nmRGB(nm) {
 	if (nm <= 780) return [1, 0, 0]
 	return [1, 0.5, 0.35]
 }
-/** A beam's display colour (max channel 1) from its band powers, or from its one wavelength. */
-function colourOf(p, nm) {
+// A hot filament's light (incandescent and halogen bulbs) drawn as the eye sees it: its band powers through the CIE 1931 colour matching
+// functions (the multi-lobe fit of Wyman, Sloan & Shirley, JCGT 2(2), 2013) to linear sRGB, against an equal-energy white (a flat spectrum
+// draws white): a 2850 K bulb draws warm gold (sRGB 255, 194, 108), as the heat module's lamp light is. Summing the bands' powers as BAND_RGB
+// does weights its 625-750 nm band, which carries most of a filament's light but which the eye barely sees, as if it were the whole red:
+// the haze came out salmon pink (1, 0.28, 0.26). (The other light kinds keep their colours.)
+const cieG = (x, mu, s1, s2) => {
+	const t = (x - mu) / (x < mu ? s1 : s2)
+	return Math.exp(-0.5 * t * t)
+}
+const cmf = (nm) => [
+	1.056 * cieG(nm, 599.8, 37.9, 31.0) + 0.362 * cieG(nm, 442.0, 16.0, 26.7) - 0.065 * cieG(nm, 501.1, 20.4, 26.2),
+	0.821 * cieG(nm, 568.8, 46.9, 40.5) + 0.286 * cieG(nm, 530.9, 16.3, 31.1),
+	1.217 * cieG(nm, 437.0, 11.8, 36.0) + 0.681 * cieG(nm, 459.0, 26.0, 13.8)
+]
+// the tracer's 7 visible bands (tooling/src/sim/optics.ts BANDS), nm
+const BAND_NM = [[380, 450], [450, 495], [495, 520], [520, 565], [565, 590], [590, 625], [625, 750]]
+// each band's mean CIE x̄ ȳ z̄ (a band's power taken as spread evenly over it)
+const BAND_XYZ = BAND_NM.map(([lo, hi]) => {
+	const m = [0, 0, 0]
+	for (let nm = lo; nm <= hi; nm++) cmf(nm).forEach((v, i) => (m[i] += v / (hi - lo + 1)))
+	return m
+})
+const XYZ_SRGB = [[3.2406, -1.5372, -0.4986], [-0.9689, 1.8758, 0.0415], [0.0557, -0.204, 1.057]]
+const toLinearSRGB = (xyz) => XYZ_SRGB.map(([a, b, c]) => a * xyz[0] + b * xyz[1] + c * xyz[2])
+const EQUAL_WHITE = toLinearSRGB(BAND_XYZ.reduce((acc, xyz, b) => acc.map((v, i) => v + xyz[i] * (BAND_NM[b][1] - BAND_NM[b][0])), [0, 0, 0]))
+/** A broad-spectrum beam's colour as the eye sees it (linear sRGB, max channel 1): its band powers through the colour matching functions. */
+function seenColour(p) {
+	const xyz = [0, 0, 0]
+	for (let k = 0; k < 7; k++) for (let i = 0; i < 3; i++) xyz[i] += p[k] * BAND_XYZ[k][i]
+	const c = toLinearSRGB(xyz).map((v, i) => Math.max(0, v / EQUAL_WHITE[i]))
+	const m = Math.max(c[0], c[1], c[2], 1e-9)
+	return c.map((v) => v / m)
+}
+const THERMAL = new Set(["incandescent", "halogen"])
+
+/** A beam's display colour (max channel 1) from its band powers, or from its one wavelength (`thermal`: a hot filament's light, seenColour). */
+function colourOf(p, nm, thermal = false) {
 	let r = 0
 	let g = 0
 	let b = 0
 	if (nm > 0) {
 		;[r, g, b] = nmRGB(nm)
+	} else if (thermal) {
+		let vis = 0
+		for (let k = 0; k < 7; k++) vis += p[k]
+		if (!(vis > 0)) return [1, 0.85, 0.7]
+		return seenColour(p)
 	} else {
 		let vis = 0
 		for (let k = 0; k < 7; k++) vis += p[k]
@@ -480,9 +520,13 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				m.renderOrder = 10
 				g.add(m)
 			}
-			// three.js lights for the look of the room (spots for the cones, a directional for the sun)
+			// three.js lights for the look of the room (spots for the cones, a directional for the sun). A heat module's desk lamp already has its warm
+			// spot light (web/models/mod-heat.js heat-lamps): its optics light is kept dark (it still marks the source as lit, so no pool is added for
+			// its direct light), or the lamp's pool was lit twice and the plate under it washed out to white
 			const lights = []
 			let shadows = 0
+			const heatLit = new Set((ctx.doc.processes ?? []).filter((p) => p && p.kind === "heat" && p.role === "lamp").map((p) => p.item))
+			const thermal = rec.sources.map((r) => THERMAL.has(r.light))
 			sc.sources.forEach((s, i) => {
 				let L = null
 				const src = rec.sources[i]
@@ -509,7 +553,11 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 					// (its colour: a white torch's warm white, a red, green or blue torch's or LED's own)
 					const [cr, cg, cb] = colourOf(P, s.nm)
 					L = new T.SpotLight(src.light === "led" || src.light === "incandescent" || src.light === "halogen" || src.light === undefined ? 0xfff5e8 : new T.Color(cr, cg, cb), Math.min(40, 0.008 * I), 0, cone, 0.5, 2)
-					L.castShadow = shadows < 2
+					if (heatLit.has(src.item)) {
+						L.intensity = 0
+						L.userData.dark = true
+					}
+					L.castShadow = shadows < 2 && !L.userData.dark
 					if (L.castShadow) {
 						shadows++
 						L.shadow.mapSize.set(1024, 1024)
@@ -717,7 +765,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 								const e0 = (pa + pb) / 2 / Math.max(w0, 0.002) / (sun ? 1 : 2 * hh0)
 								const e1 = (pa + pb) / 2 / Math.max(w1, 0.002) / (sun ? 1 : 2 * hh1)
 								const al = (e) => (src.kind === "object" ? 0.012 : 0.12) * Math.min(1, Math.pow(e / refE[si], 0.7))
-								const [r, gg, bb] = colourOf(a.p, a.nm)
+								const [r, gg, bb] = colourOf(a.p, a.nm, thermal[si])
 								const A0 = al(e0)
 								let A1 = al(e1)
 								let [bx1, by1] = endOf(b)
