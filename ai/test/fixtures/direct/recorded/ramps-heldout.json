@@ -1,0 +1,493 @@
+{
+	"about": "The direct step's live run of the design example '02-fairtest-ramps' with that example held out of the prompt (20 Oct 2026): Opus 5.5 (claude-opus-5-5) through the gateway, measured by the engine's executor (web/export/shots.js checkPlan). Each round: the plan the model answered, and what the executor's checks said of it.",
+	"case": "ramps-heldout",
+	"payload": {
+		"kind": "lesson",
+		"lesson": {
+			"question": "Is this a valid experiment to test ramp height?",
+			"answer": "Yes. The height is different, and everything else is the same.",
+			"words": [
+				"Our question: does a higher ramp make a toy roll farther? We are testing ramp height.",
+				"Now both cars carry the same gray ball of clay."
+			],
+			"pauses": [
+				{
+					"where": "result"
+				}
+			],
+			"grade": 3
+		},
+		"concept": "a fair test changes only one thing",
+		"runs": {
+			"top": "web/export/test/scenes/ft_1b_car_red_clay.json",
+			"bottom": "web/export/test/scenes/ft_3b_car_red_clay.json"
+		}
+	},
+	"model": "claude-group/claude-opus-5-5",
+	"usd": 0.15979339999999997,
+	"ms": 69449,
+	"rounds": [
+		{
+			"round": 0,
+			"ok": true,
+			"failed": [],
+			"usd": 0.15979339999999997,
+			"ms": 69421,
+			"plan": {
+				"version": 1,
+				"title": "Is this a fair test of ramp height?",
+				"about": "A fair test changes only one thing: here only the ramp's height (1 block or 3 blocks) differs, while the car and its clay stay the same.",
+				"grade": 3,
+				"source": {
+					"kind": "lesson",
+					"question": "Is this a valid experiment to test ramp height?",
+					"answer": "Yes. The height is different, and everything else is the same.",
+					"words": [
+						"Our question: does a higher ramp make a toy roll farther? We are testing ramp height.",
+						"Now both cars carry the same gray ball of clay."
+					],
+					"scene": "ft_1b_car_red_clay",
+					"runs": {
+						"top": "ft_1b_car_red_clay",
+						"bottom": "ft_3b_car_red_clay"
+					}
+				},
+				"story": [
+					{
+						"id": "setup",
+						"kind": "setup",
+						"says": "Two ramps, each with a red toy car at the top, side by side.",
+						"evidence": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "car"
+							},
+							{
+								"role": "blocks"
+							}
+						]
+					},
+					{
+						"id": "height",
+						"kind": "variable",
+						"says": "One ramp sits on 1 block, the other on 3 blocks: only the height is different.",
+						"evidence": [
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "ramp"
+							}
+						]
+					},
+					{
+						"id": "same",
+						"kind": "compare",
+						"says": "Both cars are the same red car, and both carry the same gray ball of clay.",
+						"evidence": [
+							{
+								"role": "car"
+							},
+							{
+								"role": "clay"
+							}
+						]
+					},
+					{
+						"id": "roll",
+						"kind": "action",
+						"says": "Both cars roll down and stop on the carpet.",
+						"evidence": [
+							{
+								"role": "car"
+							},
+							{
+								"role": "ramp"
+							}
+						]
+					},
+					{
+						"id": "pause",
+						"kind": "pause",
+						"says": "Only the ramp height changed; the car and the clay are the same.",
+						"evidence": [
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "car"
+							},
+							{
+								"role": "clay"
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 30
+				},
+				"lanes": {
+					"arrange": "rows",
+					"list": [
+						{
+							"id": "top",
+							"label": "1 block",
+							"run": "ft_1b_car_red_clay",
+							"cast": {
+								"ramp": "ramp",
+								"blocks": [
+									"block1"
+								],
+								"car": "toy",
+								"clay": "clay"
+							}
+						},
+						{
+							"id": "bottom",
+							"label": "3 blocks",
+							"run": "ft_3b_car_red_clay",
+							"cast": {
+								"ramp": "ramp",
+								"blocks": [
+									"block1",
+									"block2",
+									"block3"
+								],
+								"car": "toy",
+								"clay": "clay"
+							}
+						}
+					]
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject"
+				},
+				"shots": [
+					{
+						"id": "setup",
+						"beat": "setup",
+						"layout": "split",
+						"arrange": "rows",
+						"intent": "Both ramps ready, one above the other at one scale and square on, so the child first sees the two set-ups as a pair: ramp, blocks, car with clay.",
+						"run": {
+							"freeze": "start",
+							"seconds": 2.5
+						},
+						"move": "hold",
+						"subject": {
+							"region": [
+								-0.45,
+								0.35,
+								0,
+								0.25
+							]
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "car"
+							},
+							{
+								"role": "clay"
+							}
+						],
+						"frame": {
+							"width": 1
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "ramp"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a child see two ramps, each with a red toy car waiting at the top?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "car"
+								},
+								{
+									"role": "ramp"
+								}
+							],
+							"details": [
+								{
+									"role": "blocks"
+								}
+							]
+						}
+					},
+					{
+						"id": "blocks",
+						"beat": "height",
+						"layout": "split",
+						"arrange": "columns",
+						"in": "cut",
+						"intent": "Cut closer to the high ends, side by side at one scale and square on, so the child can count the blocks: 1 under one ramp, 3 under the other. This is the one thing that changes.",
+						"run": {
+							"freeze": "start",
+							"seconds": 2.6
+						},
+						"move": "hold",
+						"subject": {
+							"region": [
+								-0.45,
+								0,
+								0,
+								0.25
+							]
+						},
+						"keep": [
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "car"
+							}
+						],
+						"frame": {
+							"width": 0.55
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "blocks"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a Grade 3 child count 1 block under one ramp and 3 blocks under the other?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "blocks"
+								}
+							]
+						}
+					},
+					{
+						"id": "clay",
+						"beat": "same",
+						"layout": "split",
+						"arrange": "columns",
+						"in": "cut",
+						"intent": "Look down a little onto the two cars so their tops show: the same red car carrying the same gray lump of clay in both lanes.",
+						"run": {
+							"freeze": "start",
+							"seconds": 2.4
+						},
+						"move": "hold",
+						"subject": {
+							"role": "car"
+						},
+						"keep": [
+							{
+								"role": "car"
+							},
+							{
+								"role": "clay"
+							}
+						],
+						"frame": {
+							"width": 0.4
+						},
+						"view": "high",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "clay"
+								},
+								"text": "same gray clay",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Do both red cars carry the same gray lump of clay on top?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "car"
+								}
+							],
+							"details": [
+								{
+									"role": "clay"
+								}
+							]
+						}
+					},
+					{
+						"id": "roll",
+						"beat": "roll",
+						"layout": "split",
+						"arrange": "rows",
+						"in": "cut",
+						"intent": "One still camera for both lanes at one scale, wide enough to hold the ramps and where the cars stop: the test runs, the cars roll down and come to rest on the carpet.",
+						"run": {
+							"from": {
+								"at": "release",
+								"plus": -0.2
+							},
+							"to": {
+								"at": "stop:car",
+								"plus": 0.4
+							},
+							"hold_after": 0.8
+						},
+						"move": "hold",
+						"subject": {
+							"region": [
+								-0.45,
+								1.55,
+								0,
+								0.25
+							]
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "car"
+							}
+						],
+						"frame": {
+							"width": 2
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "ramp"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a child see both cars roll down their ramps and stop on the carpet?",
+							"key": "end",
+							"must_see": [
+								{
+									"role": "car"
+								}
+							]
+						}
+					},
+					{
+						"id": "pause",
+						"beat": "pause",
+						"layout": "split",
+						"arrange": "rows",
+						"in": "cut",
+						"intent": "For the question, cut back to the set-up, still and square on, one scale: the 1 block and 3 blocks labelled, and the same car with the same clay on each. A fair test is judged by its set-up.",
+						"run": {
+							"freeze": "start",
+							"seconds": 3.8
+						},
+						"move": "hold",
+						"subject": {
+							"region": [
+								-0.45,
+								0.35,
+								0,
+								0.25
+							]
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "car"
+							},
+							{
+								"role": "clay"
+							}
+						],
+						"frame": {
+							"width": 1
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "blocks"
+								},
+								"text": "{label}",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"role": "clay"
+								},
+								"text": "same car, same clay",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a Grade 3 child see that only the number of blocks is different, while the car and the clay are the same in both?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "blocks"
+								},
+								{
+									"role": "car"
+								},
+								{
+									"role": "ramp"
+								}
+							],
+							"details": [
+								{
+									"role": "clay"
+								}
+							]
+						}
+					}
+				],
+				"notes": "The question is about the set-up (is the test fair?), so the paused frame cuts back to the start: by pause:result the cars are far down the carpet (0.8 m and 1.4 m) and the blocks alone would not show that the car and clay are the same. The split rows are 32:9 bands, so set-up shots use a 1.0 m window to fit the 0.25 m tall high ramp. The close-ups use columns, so the blocks and clay are big. The recognizer lists clay as a variable in the bottom run only because its position and box change with the steeper tilt (7.9 x 2 cm vs 7.7 x 2.9 cm). It is the same gray clay in both, and the plan labels it as the same."
+			}
+		}
+	]
+}

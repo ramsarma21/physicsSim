@@ -1,0 +1,264 @@
+{
+	"$schema": "../../shot-plan.schema.json",
+	"version": 1,
+	"title": "Egg onto the table, egg onto foam",
+	"about": "Two eggs fall the same height; the one onto the bare table breaks, the one onto foam does not.",
+	"grade": 3,
+	"source": {
+		"kind": "demo",
+		"scene": "egg-drop",
+		"question": "Which egg breaks?",
+		"answer": "The one that lands on the bare table."
+	},
+	"story": [
+		{
+			"id": "ground",
+			"kind": "variable",
+			"says": "Below one egg is the bare table; below the other, foam.",
+			"evidence": [
+				{
+					"role": "pad"
+				}
+			]
+		},
+		{
+			"id": "same",
+			"kind": "setup",
+			"says": "The two eggs start at the same height.",
+			"evidence": [
+				{
+					"role": "egg"
+				}
+			]
+		},
+		{
+			"id": "land",
+			"kind": "key",
+			"says": "The egg on the table breaks; the egg on the foam does not.",
+			"evidence": [
+				{
+					"role": "egg"
+				},
+				{
+					"role": "pad"
+				}
+			]
+		},
+		{
+			"id": "after",
+			"kind": "result",
+			"says": "One broken egg, one whole egg.",
+			"evidence": [
+				{
+					"role": "egg"
+				}
+			]
+		}
+	],
+	"lanes": {
+		"arrange": "columns",
+		"list": [
+			{
+				"id": "table",
+				"label": "table",
+				"cast": {
+					"egg": "bare"
+				}
+			},
+			{
+				"id": "foam",
+				"label": "foam",
+				"cast": {
+					"egg": "padded",
+					"pad": "foam"
+				}
+			}
+		]
+	},
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "table",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "ground",
+			"beat": "ground",
+			"layout": "split",
+			"intent": "First, what each egg will land on, side by side at one scale and labelled below: the bare table in one half, foam in the other.",
+			"run": {
+				"freeze": "start",
+				"seconds": 1.6
+			},
+			"move": "hold",
+			"subject": {
+				"region": [
+					0.6,
+					1.0,
+					-0.03,
+					0.2
+				]
+			},
+			"keep": [
+				{
+					"role": "pad"
+				}
+			],
+			"frame": {
+				"fit": "tight"
+			},
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"region": [
+							0.6,
+							1.0,
+							-0.03,
+							0.0
+						]
+					},
+					"text": "{label}",
+					"at": "below"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the bare table in one picture and the foam in the other?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "pad"
+					}
+				]
+			}
+		},
+		{
+			"id": "same",
+			"beat": "same",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Cut up to the two eggs, close, at one scale: a level line across both says they start at the same height, which makes the test fair.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.0
+			},
+			"move": "hold",
+			"subject": {
+				"role": "egg"
+			},
+			"frame": {
+				"width": 0.1
+			},
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "level",
+					"on": {
+						"role": "egg"
+					},
+					"text": "same height"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the two eggs held at the same height?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "egg"
+					}
+				]
+			}
+		},
+		{
+			"id": "fall",
+			"beat": "land",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Let go and ride down with both eggs, eight times slower, one camera for both halves, and come to rest at the ground as they land: one cracks on the table, one sinks into the foam.",
+			"run": {
+				"from": {
+					"at": "release",
+					"plus": -0.05
+				},
+				"to": {
+					"at": "contact:table+bare",
+					"plus": 0.15
+				},
+				"rate": 0.125
+			},
+			"label": "Slow motion: 8 times slower",
+			"move": "follow",
+			"subject": {
+				"role": "egg"
+			},
+			"frame": {
+				"width": 0.34
+			},
+			"view": "eye",
+			"lens": 50,
+			"follow": {
+				"axis": "y",
+				"lead": 0.1,
+				"stop_at": {
+					"region": [
+						0.6,
+						1.0,
+						0.0,
+						0.16
+					]
+				}
+			},
+			"audit": {
+				"question": "Can a child see both eggs fall and land, the one on the table breaking and the one on the foam staying whole?",
+				"key": "end",
+				"must_see": [
+					{
+						"role": "egg"
+					}
+				]
+			}
+		},
+		{
+			"id": "after",
+			"beat": "after",
+			"layout": "split",
+			"in": "continue",
+			"intent": "Back to real speed, still where the camera landed, on the two results, labelled below: one broken, one whole.",
+			"run": {
+				"from": {
+					"at": "contact:table+bare",
+					"plus": 0.15
+				},
+				"to": "result",
+				"hold_after": 2.6
+			},
+			"move": "hold",
+			"subject": {
+				"role": "egg"
+			},
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "egg"
+					},
+					"text": "{label}",
+					"at": "below"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the broken egg on the table and the whole egg on the foam?",
+				"key": "end",
+				"must_see": [
+					{
+						"role": "egg"
+					}
+				]
+			}
+		}
+	]
+}

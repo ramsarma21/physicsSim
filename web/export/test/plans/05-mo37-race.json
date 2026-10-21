@@ -1,0 +1,288 @@
+{
+	"$schema": "../../shot-plan.schema.json",
+	"version": 1,
+	"title": "Same 10 m, fewer seconds",
+	"about": "Two toy cars race 10 m; the red car's stopwatch stops at fewer seconds, so the red car is faster.",
+	"grade": 3,
+	"source": {
+		"kind": "lesson",
+		"scene": "mo37-lanes",
+		"question": "Is the red car faster?",
+		"answer": "Yes. Same 10 meters, and red took fewer seconds.",
+		"words": [
+			"Red: 10 meters in 3 seconds. Blue: 10 meters in 4 seconds."
+		]
+	},
+	"story": [
+		{
+			"id": "start",
+			"kind": "setup",
+			"says": "Two cars wait at the start of two 10 m lanes.",
+			"evidence": [
+				{
+					"role": "car"
+				},
+				{
+					"mark": "lane",
+					"m": 0
+				}
+			]
+		},
+		{
+			"id": "race",
+			"kind": "action",
+			"says": "They race: red pulls ahead, blue falls behind.",
+			"evidence": [
+				{
+					"role": "car",
+					"lane": "red"
+				}
+			]
+		},
+		{
+			"id": "finish",
+			"kind": "key",
+			"says": "Red reaches 10 m first; then blue.",
+			"evidence": [
+				{
+					"role": "car"
+				},
+				{
+					"mark": "lane",
+					"m": 10
+				}
+			]
+		},
+		{
+			"id": "watches",
+			"kind": "pause",
+			"says": "Red's stopwatch shows fewer seconds than blue's.",
+			"evidence": [
+				{
+					"role": "watch"
+				}
+			]
+		}
+	],
+	"lanes": {
+		"arrange": "rows",
+		"list": [
+			{
+				"id": "red",
+				"label": "Red car",
+				"cast": {
+					"car": "red",
+					"lane": "lane-top",
+					"watch": "sw-red"
+				}
+			},
+			{
+				"id": "blue",
+				"label": "Blue car",
+				"cast": {
+					"car": "blue",
+					"lane": "lane-bottom",
+					"watch": "sw-blue"
+				}
+			}
+		]
+	},
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "start",
+			"beat": "start",
+			"layout": "split",
+			"intent": "Each lane in its own band at one scale, the cars big at the 0 m line, room ahead of them for where they will go; each band says whose lane it is.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.0
+			},
+			"move": "hold",
+			"subject": {
+				"role": "car"
+			},
+			"keep": [
+				{
+					"mark": "lane",
+					"m": 0
+				}
+			],
+			"frame": {
+				"width": 1.0
+			},
+			"place": "left-third",
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "car"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "Can a child see both cars at the 0 m line, one in each lane?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "car"
+					}
+				]
+			}
+		},
+		{
+			"id": "race",
+			"beat": "race",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Cut ahead to the 5 m card and wait, still, both bands at one scale: the red car comes through first and the blue one after it, each big as it passes. Chasing them would lose one of the two.",
+			"run": {
+				"from": "t=1.75",
+				"to": "t=3.0"
+			},
+			"move": "hold",
+			"subject": {
+				"mark": "lane",
+				"m": 5,
+				"pad": 0.5
+			},
+			"frame": {
+				"width": 1.6
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 8
+			},
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "car"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the red car pass the 5 m card before the blue car does?",
+				"key": "t=2.4",
+				"must_see": [
+					{
+						"role": "car",
+						"lane": "red"
+					}
+				]
+			}
+		},
+		{
+			"id": "finish",
+			"beat": "finish",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Cut ahead again, to the finish, still: red comes in and stops at 10 m; blue arrives in its band a second later.",
+			"run": {
+				"from": "t=3.6",
+				"to": {
+					"at": "reading:sw-blue.running:settles",
+					"plus": 0.6
+				}
+			},
+			"move": "hold",
+			"subject": {
+				"mark": "lane",
+				"m": 10,
+				"pad": 0.3
+			},
+			"keep": [
+				{
+					"role": "car",
+					"when": {
+						"at": "reading:sw-blue.running:settles",
+						"plus": 0.6
+					}
+				}
+			],
+			"frame": {
+				"width": 1.4
+			},
+			"place": "left-third",
+			"view": {
+				"yaw": 0,
+				"pitch": 10
+			},
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "car"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the red car already stopped at the finish while the blue car is still on its way, and then the blue car arrive?",
+				"key": "end",
+				"must_see": [
+					{
+						"role": "car"
+					}
+				]
+			}
+		},
+		{
+			"id": "watches",
+			"beat": "watches",
+			"layout": "split",
+			"arrange": "columns",
+			"align": "watch",
+			"in": "cut",
+			"intent": "Cut to the two stopwatch faces side by side, each filling its half, labelled below: the readings are the answer, so they are big and still.",
+			"run": {
+				"freeze": {
+					"at": "reading:sw-blue.running:settles",
+					"plus": 0.6
+				},
+				"seconds": 3.8
+			},
+			"move": "hold",
+			"subject": {
+				"role": "watch"
+			},
+			"frame": {
+				"fit": "snug"
+			},
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "watch"
+					},
+					"text": "{label}",
+					"at": "below"
+				}
+			],
+			"audit": {
+				"question": "Can a Grade 3 child read both stopwatches, and see that red's shows fewer seconds?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "watch"
+					}
+				],
+				"min_size": 0.15
+			}
+		}
+	],
+	"notes": "The cars are 0.2 m long on a 10 m track and red runs 3.3 m/s: a ride beside one car loses the other (its band goes empty), and a ride wide enough for both makes them specks. So the camera cuts ahead and waits: at the 5 m card, then at the finish, each car arriving big in its own band at one scale. In this demo scene both cars draw blue (the 'red' car has no colour prop): the lane labels name them, and the colour goes back to the scene's author."
+}

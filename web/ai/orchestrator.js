@@ -103,7 +103,7 @@ export const STAGE_RUNS_PER = 30
 export const STAGE_MS = 30000
 const TUNE_PARALLEL = 3
 /** Client-side ceiling per model step: above the server's own budgets (ai/models.json budgetMs + its 15 s margin), so this only stops a hung request. */
-const STEP_TIMEOUT = { observe: 340000, plan: 460000, edit: 280000, refine: 340000, imagine: 170000 }
+const STEP_TIMEOUT = { observe: 340000, plan: 460000, edit: 280000, refine: 340000, imagine: 170000, direct: 640000 } // (direct: its budget, 600 s, with the margin)
 const RETRY_DELAY = 1500
 
 export const STEP_LABELS = {
@@ -7207,7 +7207,7 @@ export function createOrchestrator(deps) {
 		return { ok: true, targets: tg.map((t, i) => ({ label: t.label, ok: rs[i].ok, implicit: !!t.implicit, ...runDetail(rs[i]) })) }
 	}
 
-	return { build, call: (step, payload, signal) => call(step, payload, signal, { calls: [] }), findFix, restage, fixInfo, makeItWork, diagnose, outOfReach, reachOf, reworkRequest, judgeRework }
+	return { build, call: (step, payload, signal, onEvent = null) => call(step, payload, signal, { calls: [] }, onEvent), findFix, restage, fixInfo, makeItWork, diagnose, outOfReach, reachOf, reworkRequest, judgeRework }
 }
 /** One of several things of a kind by its place among them, when its name is only its kind's with a number ("the 5th soda can", "the last
  *  soda can", never "Soda can 5"); else its name. */

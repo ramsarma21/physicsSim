@@ -1537,7 +1537,9 @@ export default function register({ addModel, addFrameHook, ownMaterial, kit, THR
 			g.putImageData(img, 0, 0)
 		}, { data: true, wrap: false }))
 	}
-	/** The shell of an ice (or glass) piece: the transmissive shell that casts a light shadow. A catalog photo is taken over an opaque card colour, so the real shell has something to refract there too. */
+	/** The shell of an ice (or glass) piece: the transmissive shell that casts a light shadow. A catalog photo is taken over an opaque card colour, so the real shell has something to refract there too.
+	 *  Ice's shell is faintly blue (tinted over 9 cm); with the frost skin and the milky body (blockIce, below) it reads as ice on a white plate, not as a
+	 *  glass block. */
 	function iceShell(glass, geo, F = frostTex()) {
 		const shell = M(`ice-shell3|${glass}`, glass
 			? { color: new THREE.Color("#ffffff"), roughness: 0.02, metalness: 0, transmission: 1, thickness: 0.02, ior: 1.5, attenuationColor: new THREE.Color("#cfeee6"), attenuationDistance: 0.12, envMapIntensity: 0.9 }

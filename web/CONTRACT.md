@@ -529,6 +529,7 @@ view.endExport()                            // optional: end the export session 
     Newton's cradle, pendulum dominoes do). Never loses the action: everything moving faster than 20 cm/s (that the wide shot holds) and every impact within 0.1 s
     stays inside the picture; where the close shot would leave some out it eases back toward wide (a limit held 0.75 s either side and eased).
   - `"live"`: the canvas's camera as it is now, held for the whole export (for comparing a frame with the canvas).
+  - `"focus"` and `"director-plan"` (2026-10-20): directed cameras, a shot plan filmed exactly (t is video time): "Filming module: directed cameras".
 - Measured (Apple M5 Pro, ANGLE Metal, headless Chromium; Rube Goldberg 4.5 s = 271 frames at 60 fps, `VideoFrame` made from each): 1080p wide 5–8 ms a frame
   (2.1 s for the run), 1080p director with `motionBlur: 6` 11.5 ms (6.4 sub-frames on average; 3.1 s), follow + blur 14 ms (10 sub-frames), 1440p director + blur
   18 ms, 4K wide 15.5 ms, 4K director + blur 35 ms (9.4 s); the first frame of a session 30–60 ms more. Readback is a pixel-pack buffer kept for the session (8 MB at
@@ -1764,6 +1765,164 @@ and the server: the same bytes). Files: `machines/mod_staging.py` and its port `
   scene sets one (`exportInfo().fixed`, read again as the dialog draws), with its span in the hint; a remembered Fixed falls back to Wide otherwise.
 - **Tests**: `node tools/staging/test.mjs [--server <port>]` (catalog entries Python == JS, documents and errors alike, tracks unchanged with and without
   doc.view on the bundle and the server, the AI registry, digest and schema).
+
+### Filming module: directed cameras (2026-10-20): shot plans filmed exactly (web/export/shots.js, web/export/subjects.js, web/view3d.js)
+
+Every video gets a camera directed for what it teaches: a **shot plan** (`web/export/shot-plan.schema.json`, JSON Schema 2020-12; the language is
+DIRECTOR.md section 3: shots with a story beat and an intent, a run window at a speed, a move, a subject, a framing, a join, a look, marks) is
+written by a director (the AI step `direct`, a person, or `autoPlan` when there is none) and the engine films it exactly: every target is resolved
+from the scene and its finished run before a frame is drawn, the camera of every frame of every band is planned once (non-causally, like follow and
+director), and a safety net measures it. View only: no body, contact or track changes (`web/export/test/identity.test.mjs`: the 12 scenarios and 10
+gallery scenes run byte for byte as before; filming a run never changes it).
+
+**The pure module** (`web/export/shots.js`; node and page alike; imports only `web/track.js`, the optics tracer `web/sim/optics.js` and the
+recognizer `web/export/subjects.js`):
+```js
+import * as Shots from "web/export/shots.js"
+const world = Shots.makeWorld({run, scene, catalog, registry, hints, boxes, environment})   // or {runs: {lane: {sim, scene, boxes}}, ...}
+Shots.resolvePlan(plan, world)  -> {ok, errors: [{at, message, nearest}], warnings}          // every id and target exists (DIRECTOR.md 7.1)
+Shots.compile(plan, world, {width, height, fps, kind}) -> film                              // throws PlanError {message, shot, nearest}
+Shots.measure(film)             -> report {ok, shots: [measured facts], checks: [{shot, check, ok, why}], failed: [sentences]}
+Shots.checkPlan(plan, world, {width, height, fps}) -> {ok, errors, report, film, messages}  // resolve + compile + measure, for the director's repair
+Shots.autoPlan(world, {width, height, fps, moves, environment}) -> plan                     // the plan with no director (camera "focus")
+Shots.frameAt(film, tau) -> {frame, shot, u, t, bands: [{lane, rect, inset, pose}], look, label}
+Shots.runTimeAt(film, tau), Shots.videoTimesOf(film, t), Shots.retime(film, impacts), Shots.cameraOf(pose), Shots.specOf(pose), Shots.filmFromJSON(json)
+Shots.NET, Shots.VIEWS, Shots.TONES, Shots.FLOORS, Shots.DEFAULT_LOOK, Shots.VERSION (1), Shots.PlanError
+import { buildDigest, digestText } from "web/export/digest.js"   // the director's timeline digest (DIRECTOR.md section 2): the one the AI step
+                                                                  // `direct` writes plans from; buildDigest({runs: [{lane, scene, run, recog,
+                                                                  // moments: {index, what} (the world's R.M, R.WHAT)}]})
+import { validateShotPlan } from "ai/shot-plan.mjs"             // the language checked (no library) and every name resolved against a digest
+```
+- **The world**: `run` is an `/api/simulate` answer `{doc, track, summary}` (or the view's `run.sim`); `scene` the scene JSON (better words and goals
+  for the recognizer; `sceneFromSim(run)` without it); `boxes(solidId)` (or an object of them) the drawn models' boxes: `{x0, x1, y0, y1, z0, z1}` in a
+  mover's own frame, `{round: R, z0, z1}`, or `{world: [x0, x1, y0, y1, z0, z1]}` for a still thing (the view's `exportBoxes()`); without them a solid's
+  physics outline (a polygon's corners, a ball's circle, a slab's rectangle) times its depth stands in. `runs` instead of `run`: one run per lane
+  (the lesson compositor's lanes), each lane's id the plan's lane id. `environment`: a module's world (space: `{room: false, table: false}`).
+- **Moments** (section 3.4) come from the run: `start release result end pause:setup pause:result t=<s>`, `start: stop: exit: landing:<item>`,
+  `apex: turn:<item>[#n]` (a swing's turn back: odd n on the far side), `contact:<a>+<b>[#n]` (both orders), `event:<kind>:<item>[#n]`,
+  `reading:<item>.<key>:<starts|settles|peak|max|min|crosses=v>`, `beam:<source>:on`, `cue:<n>` and `step:<n>` (the skill's cues); `{at, plus}`;
+  `@lane` for one lane's run; a lane role's name in `start:`/`stop:`/`contact:` ids means each lane's own item (the latest of them).
+- **Targets** (3.5) resolve to box corners at a run time: `{item[, part]}` (the drawn model's box), `{items}`, `{role[, lane]}`, `{point}`,
+  `{region}`, `{contact: [a, b], nth}` (where they touch at that impact), `{item, event}`, `{item, reading}` (its `face` part), `{beam}` /
+  `{beam, segment}` / `{beam, bounce}` (the turn and both rays 12 cm either way, and the face normal) / `{beam, from, to}` (`source`, `bounce:<n>`,
+  `hit:<item>`, `end`) from the optics tracer's own trace at that moment (the levels, drives and liquid levels the view draws with), `{trail, from,
+  to}`, `{through}`, `{gap}`, `{mark, m}` (a lane's metre mark, on its floor: `measure-mark` zero + m). `pad` grows a box by that much each way (a
+  mark: along its lane). `{path}` (a module's drawn route) is refused: no module publishes one yet.
+- **A film** is plain data (JSON.stringify keeps all of it): `{version, kind, W, H, fps, duration, frameCount, runSeconds, lanes, perLaneRuns,
+  shots: [{id, beat, move, layout, arrange, i0, n, tau0, T, t0, t1, rate, holdAfter, playT, label, look, bands: [{lane, rect: [x, y, w, h] px from
+  the top left, inset?}], hide: [[item ids each band leaves out]], in, notes}], frames: [{s (shot), t (run time), b: [[Lx, Ly, Lz, d, yaw, pitch,
+  hfov] per band]}], marks: {frame index: [[primitives] per band]}, notes}`. A pose: the camera at L + d (sin yaw cos pitch, sin pitch, cos yaw cos
+  pitch) looking at L, +y up, no roll, hfov radians. Shots are whole frames at the film's fps; tau (video time) i / fps is frame i; `frameAt`
+  interpolates between two frames of one shot only (never across a cut). Run time per shot: `clamp(rate ? min(t1, t0 + rate u) : t0, 0, run's end)`
+  (a window reaching past the run's end plays its whole length, the run held at its end).
+- **Execution** (DIRECTOR.md 4): `fit` (tight 6 %, snug 10 %, loose 18 % margins, centred on subject + keep by iterating the projected box), `size`
+  (the subject's larger side that share of the picture; backs off for keep), `width` (metres across at the look point); `place`; `view` (side, eye,
+  low, high, top-down, three-quarter-left/right, macro, or `{yaw, pitch}`) and `lens` (mm). hold: the union over its run window, still (a `continue`
+  hold that names no new framing keeps exactly the last pose); push/pull: the director's straight dolly line from the start framing (or the last
+  pose) to `end`, eased (smooth, gentle, linear) over `move_seconds`; arc: yaw, pitch, look point and log-distance together; follow: the subject's
+  centre at 60 Hz over the shot and a second beyond each end, clamped at `stop_at`, zero-phase critically damped (omega 3), steady horizon for axis
+  x, room ahead along the motion faded in with the speed, distance backed off for `keep` (an envelope 0.6 s wide), `per_lane` each band its own;
+  travel: the look point along the path at a trapezoid pace (or leg by leg with `dwell` rests). Joins: cut; continue (from the last pose; a 0.5 s
+  glide when the shot's own start differs); `{ease: s}`. A join across a change of layout or arrangement is filmed as a cut (a note). Lanes:
+  split (rows or columns, one camera shifted by each lane's offset, the median shift of paired start boxes or `align` on one role), together, single;
+  one run per lane: the same pose in every band. A thing no lane's cast names that stands on or in one lane's things, far from the others'
+  (the salt on the salted cube), is that lane's too: drawn, framed, marked and measured in its own band only. Insets: a corner band with its
+  own still camera.
+- **The safety net** (`Shots.NET`, DIRECTOR.md 7.2): keep-in (2 % inside, every frame, every band), subject-size (each hero 0.09 and 0.10 high unless
+  flat or thin; 0.045 in a setup or reveal shot), must-see and details (their floors; `min_size` raises a must-see thing's; with `small_because`
+  it sets must-see and detail floors alike, never under 0.03), fill (a held moment's picture, `freeze`, not a follow, travel, reveal, light or
+  space: at most 0.82 backdrop, the scene's drawn things counted, unless what the shot names spans half the picture's longer side and covers 0.6
+  of the box round it: FRAMING_RULE gate 4), present (a playing shot's subject out of the picture at most 0.5 s after it leaves, 1.5 s before it
+  first comes in), repeat (never the very same still twice in a row: the same camera, moment, marks and badge), speed (0.5 widths/s;
+  a travel 1.25; a follow 1.5 while its subject is steady in the picture, 1.25 while not), zoom 0.7/s, turn 15 deg/s, no jump (3 widths/s), no jump
+  cut, holds still and at least 0.8 s, the last shot (and a pause beat's last) still for its last 0.5 s, shots at least 0.8 s, a rate other than 1
+  labelled, the beam's core 1.5 px and glow 6 px, an instrument face 18 % of the height, lane parity (one scale: picture widths per metre at each
+  lane's own subject within 10 %). The report's facts per shot: sizes per band, heroes, must-see, faces, closest keep margin and when, peak picture,
+  subject, zoom and turn speeds, the beam's widths, parity, travel length, notes.
+- **autoPlan** (the "focus" camera): the recognizer's primaries (local supports and scenery never framed), its lanes as a split at one scale (rows
+  for horizontal action, columns otherwise), a setup hold until 0.35 s before the first start, the action held still and snug (tight when that
+  reaches the floors) or, when it does not, cut link by link at each next start (a chain) or a lone traveller followed at the closest width a calm
+  follow allows, the result held to the end, a follow that runs to the end handed to a still; jump cuts become glides; the run plays at its own pace
+  from 0 to its end (video time = run time, so every caller that films t = i / fps films it). A hero no framing gets to its floor is named in the
+  plan's notes (framing-infeasible: the scene's to change). The studio look unless a module's world says otherwise. `moves: false`: the safe plan
+  (holds and cuts only).
+
+**The view** (`web/view3d.js`): two more export cameras, `"director-plan"` (alias `"plan"`) and `"focus"`; the others unchanged.
+```js
+view.renderFrame(tau, {camera: "director-plan", plan | film, width, height, fps, motionBlur, runId, output, runs?, lane?, focus?})
+view.renderFrame(t,   {camera: "focus", focus: {scene, hints, catalog}, width, height, fps, motionBlur, runId, output})
+view.exportProject(tau, x, y, {camera, plan | film | focus, width, height, fps, lane?, xy, z}) -> across the whole picture, through the point's band
+view.exportInfo({camera, plan | film | focus, width, height, fps, runs?, lane?}) -> {..., duration (the film's), plan: {kind, duration, frameCount,
+     fps, width, height, lanes, perLaneRuns, shots: [{id, beat, move, layout, arrange, video: [tau0, tau1], frames: [i0, i1], run: [t0, t1], rate, label,
+     in, look, bands}], notes, report, plan}} (plan: null and planPending while the models load; planError when the plan cannot be filmed)
+view.exportCamera(tau, o) -> {tau, t, frame, shot, layout, arrange, bands: [{lane, rect, inset, position, target, up, hfov, vfov, near, far, spec}]}
+view.exportPlan(o) -> {film, plan, report, summary}      view.exportDigest(o) -> {digest, text}      view.exportBoxes() -> {solid id: box}
+view.setOptions({catalog})   // the app hands its catalog over: the recognizer reads its categories, tags and readouts
+```
+- For both cameras t is **video time** (a plan may slow the run, hold a moment, cut back); each frame's run time comes from the film. The focus film
+  plays the run at its own pace, so its video time is the run time. `exportInfo().directed` = `{goals, comparison, lanes}` for the run shown.
+- Films are made once per run, picture size, fps and plan (cache keys hash the plan, film and focus options by content), from the run's track and
+  the drawn models' boxes, measured once the models are in (the mounts and stands the view adds to hold parts up are not part of a part's box).
+  A plan naming what the run does not have is a RangeError with the resolver's messages and the nearest ids.
+- Each frame draws its bands (viewport and scissor on the export's MSAA target), each with its own camera; in a split band of one run the other
+  lanes' things (their roots, contact shades, mounts and stands, and what a module's view plug-in draws for them: a plug-in names an object's item
+  as `obj.userData.item`, as the measure module's lane legs, display poles, retort stands and trails do) are left out and the key light's shadow map is drawn again for that band; motion
+  blur sub-frames stay inside the frame's own shot (half a frame past its last frame at most, never across a cut), their count measured over every
+  band (camera and bodies). The look per shot: backdrop `studio` (the room hidden, a plain backdrop in `tone`: dark #1b1e23, mid #3b4048, light
+  #8d929b) / `room` / `scene` (a module's world, space's stars); ground `sweep` (the table top not drawn; an 80 m matte studio floor at its height in
+  the tone, #15171b / #2c3036 / #6f747c, receiving shadows, fogged into the backdrop from d + 0.6 to d + 4.5 m: no wood, no edge, no wall), `table`,
+  `hidden`; light `subject` (the key light's shadow frustum fitted to what the bands see) or `room`; labels `hidden` (the modules' sprites and boards);
+  vignette. Not drawn yet: depth `soft` (no depth of field), a beam drawn only as far as a travel has gone (`travel.reveal`; noted in the film).
+- Over each frame (2D, after the picture is read back; `output: "imagedata"` included): the plan's marks through each band's own camera (lines,
+  dashed normals, angle arcs with the tracer's measured angles, distance bars, labels with `{label}` `{value}` `{m}` `{dt}` `{s}`; key readings 4 %
+  of the frame's height, other words 3 %, white with a dark edge), a line between split bands, an inset's frame, and the shot's badge (`label`,
+  top right). The overlay is deterministic in one browser build.
+- One run per lane (the compositor): load each other lane, keep its `sim` and `exportBoxes()`; load the first lane, `film = exportPlan({camera:
+  "director-plan", plan, runs: {other: {sim, boxes, scene}}, lane: first, width, height, fps}).film`; film every lane's run with `{film, lane}` (a
+  band of another lane stays plain backdrop; a single or together shot comes from the first lane's run) and put the bands together by
+  `film.shots[s].bands[].rect` (`web/export/test/film-plans.mjs` does exactly this). `exportCamera(tau, o).bands[].spec` is the fixed-camera spec
+  `camera.py` projects (square-on poses: yaw 0), for its own overlays.
+- `updateParts` fix (CAMERA_INTERNALS 9.4): a frame with no `scale` for a part a module has resized shows it at its own size, so a frame is a pure
+  function of t on melting, dissolving or swelling runs too (a moment drawn after a later one used to keep the later size).
+- `_debug.export`: `plan(kind, W, H, fps, o)` (the shot: film, plan, world, report), `world(o)`, `boxes()`, `Shots`.
+
+**The export dialog** (`web/export/export-ui.js`): a **Directed** camera, the default for a scene with goals or a comparison
+(`exportInfo().directed`) unless the person picked a camera (`cameraChosen` is remembered, the camera with it). Choosing it (or opening the
+dialog on it) asks the AI director once per run (`o.direct`: app.js's AI client, `POST /api/ai/direct` with the scene, the person's optional
+words "What should the video show?" or else the scene's name as the concept, and the page's `exportBoxes()`), where the AI can be used
+(`o.aiState()`, web/ai/access.js); until the plan lands, and where there is no AI or the director fails, the view's automatic camera films it
+(`camera: "focus", focus: {scene}`). The director's plan films with `camera: "director-plan", plan` everywhere (preview, frames, `exportInfo`,
+the sound's `exportProject`); its cut is filmed whole (video time, no trim: it may slow, hold or replay a moment), the sound's hits at the
+video times `retime(film, impacts)` gives (`audio.js` places a hit by its `runT`), and an export started while the director works waits for
+it ("Directing the camera…"). `app.js` hands the view its catalog.
+
+**For the AI step and the pipelines**: `direct` (ai/director.mjs, ai/DESIGN.md §21) runs the scene(s) (`runScene`), builds `makeWorld` once
+(on the caller's `boxes` when sent: the page's `exportBoxes()`, else physics outlines), shows the director `digestText(buildDigest(...))` with
+the world's moments, validates the answer (`validateShotPlan`), then `checkPlan(plan, world)`; failed checks go back to the director (up to 3
+repair turns); its best try is filmed unless it still breaks a hard check (then an automatic plan). A caller (the skill, the compositor):
+1. load each run in the page and keep its `exportBoxes()` (and, one run per lane, its `sim`);
+2. `POST /api/ai/direct {payload: {scene | runs: {lane: scene}, lesson: {question, answer, words, pauses, grade} | text, concept, kind,
+   hints: {roles, brief, cues}, boxes: boxes | {lane: boxes}, aspect}}` (the local server or the hosted function: the same answer) ->
+   `result.plan` (`result.source`, `result.report`, `result.soft`, `result.warnings` say how it was measured);
+3. one run: `renderFrame(i / fps, {camera: "director-plan", plan, width, height, fps, ...})` for i < `exportInfo({camera:
+   "director-plan", plan, width, height, fps}).plan.frameCount`; one run per lane: `film = exportPlan({camera: "director-plan", plan, runs:
+   {other: {sim, boxes, scene}}, lane: first, width, height, fps}).film`, each lane's run filmed with `{film, lane}`, the bands put together by
+   `film.shots[s].bands[].rect` (web/export/test/direct-e2e.mjs and film-plans.mjs do exactly this);
+4. sound: `retime(film, sim.track.impacts)` into `synthesizeImpacts(..., {duration: film.duration, panAt: (t, x, y) => view.exportProject(t, x,
+   y, {camera: "director-plan", plan, width, height, fps})})`; lane labels and 2D overlays through `exportProject` / `exportCamera(tau).bands[].spec`
+   (square-on poses: camera.py's fixed-camera spec); the video's length is `exportInfo(...).plan.duration`.
+`audit` (not built yet) would read the frames with the plan's audits.
+
+**Tests**: `node --test web/export/test/shots.test.mjs` (executor on synthetic runs; the safety net's checks; the twelve plans of
+`web/export/test/plans` on this repository's scenes and the lesson compositor's lane scenes copied into `web/export/test/scenes`, every check
+passing; the automatic plan on the 22 scenes, every motion and comfort check passing, video time = run time), `node --test
+web/export/test/subjects.test.mjs` (recognition: precision and recall on hand labels; `FOCUS_TESTSET=` the scout's 180-scene set), `node --test
+web/export/test/identity.test.mjs` (view only), the headless filming of the twelve plans through this export: `node
+web/export/test/film-plans.mjs --server http://127.0.0.1:<port> --out <dir>` (stills per shot, today's Wide beside them, contact sheets; every
+check passing in the page on the drawn models' boxes; frames byte-identical when drawn again after a later one; `exportProject` exact to 1e-15 in
+every band), and the end-to-end run with the live director: `node web/export/test/direct-e2e.mjs ask|film --server http://127.0.0.1:<port>
+--out <dir>` (plans/lessons.json: the twelve examples' lessons; each plan asked with the page's boxes, its MP4 made by the page's encoder with
+its sound retimed, a contact sheet from the MP4's frames).
 
 ## The lesson look, release stands and painted lines (engine6 "look", 2026-10-20): web/lesson-look.js, web/release-stand.js, web/lesson-outline.js
 

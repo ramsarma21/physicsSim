@@ -49,6 +49,15 @@ dialog.xv.xv-in .xv-sheet { animation: xv-pop 0.2s cubic-bezier(0.2, 0.9, 0.3, 1
 .xv-lbl { font-size: 11.5px; font-weight: 700; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.05em; }
 .xv-cap { font-size: 12px; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .xv-hint { margin: 7px 0 0; font-size: 12.5px; color: var(--ink-3); min-height: 1.4em; }
+/* the Directed camera: what the video should show (optional words for the AI director), and where the plan is */
+.xv-dir { margin: 8px 0 0; }
+.xv-dir-row { display: flex; gap: 8px; align-items: center; }
+.xv-dir-row input { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: inherit; }
+.xv-dir-row input:focus-visible { outline: 2px solid var(--accent, #3b82f6); outline-offset: 1px; }
+.xv-dir-state { margin: 6px 0 0; font-size: 12.5px; color: var(--ink-3); line-height: 1.4; min-height: 1.4em; }
+.xv-dir-state[data-state="asking"] { color: var(--ink-2); }
+/* the director's cut is filmed whole: no trim */
+.xv-directed .xv-trim, .xv-directed .xv-trim-ends { display: none; }
 
 /* settings: preview + length on the left, the choices on the right */
 .xv-settings { display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(0, 1fr); gap: 22px; align-items: start; }

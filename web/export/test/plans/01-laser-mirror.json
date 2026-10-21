@@ -1,0 +1,349 @@
+{
+	"$schema": "../../shot-plan.schema.json",
+	"version": 1,
+	"title": "Angle in equals angle out",
+	"about": "Light from a laser goes straight to a mirror and bounces off it at the same angle it came in.",
+	"grade": 4,
+	"source": {
+		"kind": "demo",
+		"scene": "demo-mirror",
+		"question": "What happens to the light when it hits the mirror?",
+		"answer": "It bounces off. The angle going out is the same as the angle coming in."
+	},
+	"story": [
+		{
+			"id": "laser",
+			"kind": "setup",
+			"says": "Light comes out of the laser.",
+			"evidence": [
+				{
+					"item": "laser"
+				},
+				{
+					"beam": "laser",
+					"segment": 1
+				}
+			]
+		},
+		{
+			"id": "straight",
+			"kind": "action",
+			"says": "It goes straight to the mirror.",
+			"evidence": [
+				{
+					"beam": "laser",
+					"segment": 1
+				}
+			]
+		},
+		{
+			"id": "bounce",
+			"kind": "key",
+			"says": "It bounces off the mirror.",
+			"evidence": [
+				{
+					"beam": "laser",
+					"bounce": 1
+				},
+				{
+					"item": "mirror"
+				}
+			]
+		},
+		{
+			"id": "onward",
+			"kind": "action",
+			"says": "It goes straight on to the target.",
+			"evidence": [
+				{
+					"beam": "laser",
+					"segment": 2
+				},
+				{
+					"item": "target"
+				}
+			]
+		},
+		{
+			"id": "path",
+			"kind": "reveal",
+			"says": "The whole path: laser, mirror, target.",
+			"evidence": [
+				{
+					"beam": "laser"
+				}
+			]
+		},
+		{
+			"id": "angles",
+			"kind": "pause",
+			"says": "The angle in is the same as the angle out.",
+			"evidence": [
+				{
+					"beam": "laser",
+					"bounce": 1
+				}
+			]
+		}
+	],
+	"output": {
+		"aspect": "16:9",
+		"fps": 60
+	},
+	"look": {
+		"backdrop": "studio",
+		"tone": "dark",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "tip",
+			"beat": "laser",
+			"intent": "Start on the cause, close: the laser and the thin line of light leaving its tip, placed left so the light has room to go right, where the story goes.",
+			"run": {
+				"freeze": "release",
+				"seconds": 1.4
+			},
+			"move": "hold",
+			"subject": {
+				"item": "laser"
+			},
+			"frame": {
+				"width": 0.28
+			},
+			"place": "left-third",
+			"view": "eye",
+			"lens": 50,
+			"audit": {
+				"question": "Can a child see a thin bright line of light coming out of the laser?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "laser"
+					}
+				]
+			}
+		},
+		{
+			"id": "to-mirror",
+			"beat": "straight",
+			"in": {
+				"ease": 1.2
+			},
+			"intent": "Ride along the beam at a walking pace: the straight line is the path the light takes, and the camera takes it too. Light is really instant; the ride is a way of looking, over a held moment.",
+			"run": {
+				"freeze": "release"
+			},
+			"move": "travel",
+			"subject": {
+				"beam": "laser",
+				"segment": 1
+			},
+			"travel": {
+				"path": {
+					"beam": "laser",
+					"from": "source",
+					"to": "bounce:1"
+				},
+				"pace": {
+					"speed": 0.22
+				}
+			},
+			"frame": {
+				"width": 0.42
+			},
+			"view": "eye",
+			"lens": 50,
+			"audit": {
+				"question": "Does the camera move along one straight line of light from the laser to the mirror?",
+				"key": "middle"
+			}
+		},
+		{
+			"id": "bounce",
+			"beat": "bounce",
+			"in": "continue",
+			"intent": "Stop where the light turns: the bright spot on the mirror, the light coming in and going out of it. Watch it bounce.",
+			"run": {
+				"freeze": "release",
+				"seconds": 1.6
+			},
+			"move": "hold",
+			"subject": {
+				"beam": "laser",
+				"bounce": 1
+			},
+			"keep": [
+				{
+					"item": "mirror"
+				}
+			],
+			"view": "eye",
+			"lens": 50,
+			"audit": {
+				"question": "Can a child see the light hit the mirror and leave it going a new way?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "mirror"
+					}
+				]
+			}
+		},
+		{
+			"id": "to-target",
+			"beat": "onward",
+			"in": "continue",
+			"intent": "Ride the bounced light on to the target at the same pace and scale: after the bounce it is still a straight line, and it ends on the target.",
+			"run": {
+				"freeze": "release"
+			},
+			"move": "travel",
+			"subject": {
+				"beam": "laser",
+				"segment": 2
+			},
+			"travel": {
+				"path": {
+					"beam": "laser",
+					"from": "bounce:1",
+					"to": "hit:target"
+				},
+				"pace": {
+					"speed": 0.22
+				}
+			},
+			"frame": {
+				"width": 0.42
+			},
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"item": "target"
+					},
+					"text": "target",
+					"at": "beside"
+				}
+			],
+			"audit": {
+				"question": "Does the camera follow the bounced light in a straight line up to the target?",
+				"key": "middle"
+			}
+		},
+		{
+			"id": "back-up",
+			"beat": "path",
+			"in": "continue",
+			"intent": "Back up from the target until the whole path of the light fills the picture, square on: laser, mirror, target, and the V the light makes.",
+			"run": {
+				"freeze": "release",
+				"seconds": 2.8,
+				"hold_after": 0.8
+			},
+			"move": "pull",
+			"subject": {
+				"item": "target"
+			},
+			"end": {
+				"subject": {
+					"beam": "laser"
+				},
+				"keep": [
+					{
+						"item": "mirror"
+					}
+				],
+				"frame": {
+					"fit": "snug"
+				},
+				"view": {
+					"yaw": 0,
+					"pitch": 1
+				},
+				"lens": 50
+			},
+			"audit": {
+				"question": "When the camera stops, is the whole path of the light, from the laser to the mirror to the target, in the picture?",
+				"key": "end",
+				"details": [
+					{
+						"beam": "laser",
+						"bounce": 1
+					}
+				]
+			}
+		},
+		{
+			"id": "angles",
+			"beat": "angles",
+			"in": "continue",
+			"intent": "Ease in on the corner of the V, square on, until the two rays and the mirror fill the picture; then the dashed normal and two equal arcs with their measured angles appear, and hold for the question.",
+			"run": {
+				"freeze": "release",
+				"seconds": 2.2,
+				"hold_after": 3.4
+			},
+			"move": "push",
+			"ease": "gentle",
+			"subject": {
+				"beam": "laser"
+			},
+			"end": {
+				"subject": {
+					"beam": "laser",
+					"bounce": 1,
+					"pad": 0.16
+				},
+				"keep": [
+					{
+						"item": "mirror"
+					}
+				],
+				"frame": {
+					"fit": "snug"
+				},
+				"view": {
+					"yaw": 0,
+					"pitch": 1
+				},
+				"lens": 50
+			},
+			"annotate": [
+				{
+					"kind": "normal",
+					"on": {
+						"beam": "laser",
+						"bounce": 1,
+						"pad": 0.16
+					},
+					"appear": "settled"
+				},
+				{
+					"kind": "angle",
+					"on": {
+						"beam": "laser",
+						"bounce": 1,
+						"pad": 0.16
+					},
+					"text": "{in}° in, {out}° out",
+					"appear": "settled"
+				}
+			],
+			"audit": {
+				"question": "Can a Grade 3 child see that the angle going in and the angle going out are the same?",
+				"key": "end",
+				"details": [
+					{
+						"beam": "laser",
+						"bounce": 1
+					}
+				]
+			}
+		}
+	],
+	"notes": "The run is still (the laser is on from the start and nothing moves), so the whole video films one held moment and the camera tells the story: follow the light, watch it bounce, follow it on, back up, compare. The last two shots are square on (yaw 0, pitch 1): an angle in the machine plane only reads true when the plane faces the camera."
+}

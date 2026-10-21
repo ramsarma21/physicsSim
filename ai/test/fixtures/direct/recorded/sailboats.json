@@ -1,0 +1,414 @@
+{
+	"about": "The direct step's live run of the design example '04-fan-boats' (20 Oct 2026): Opus 5.5 (claude-opus-5-5) through the gateway, measured by the engine's executor (web/export/shots.js checkPlan). Each round: the plan the model answered, and what the executor's checks said of it.",
+	"case": "sailboats",
+	"payload": {
+		"kind": "lesson",
+		"lesson": {
+			"question": "Does it test sail size? Does it test fan distance?",
+			"answer": "Not sail size: the sails are the same. It tests fan distance: that is the only thing that differs.",
+			"words": [
+				"Does it test sail size?",
+				"The bottom fan is farther from its boat.",
+				"Does it test fan distance?"
+			],
+			"pauses": [
+				{
+					"where": "setup"
+				},
+				{
+					"where": "result"
+				}
+			],
+			"grade": 3
+		},
+		"concept": "a fair test changes only one thing",
+		"runs": {
+			"top": "web/export/test/scenes/ft_boat_10cm_small.json",
+			"bottom": "web/export/test/scenes/ft_boat_80cm_small.json"
+		}
+	},
+	"model": "claude-group/claude-opus-5-5",
+	"usd": 0.13241139999999998,
+	"ms": 56889,
+	"rounds": [
+		{
+			"round": 0,
+			"ok": true,
+			"failed": [],
+			"usd": 0.13241139999999998,
+			"ms": 56851,
+			"plan": {
+				"version": 1,
+				"title": "Fair test? Same sails, different fan distance",
+				"about": "Two boats with the same small sail are pushed by fans set 10 cm and 80 cm away, so the test changes only one thing: the fan's distance.",
+				"grade": 3,
+				"source": {
+					"kind": "lesson",
+					"question": "Does it test sail size? Does it test fan distance?",
+					"answer": "Not sail size: the sails are the same. It tests fan distance: that is the only thing that differs.",
+					"words": [
+						"Does it test sail size?",
+						"The bottom fan is farther from its boat.",
+						"Does it test fan distance?"
+					],
+					"scene": "ft_boat_10cm_small",
+					"runs": {
+						"top": "ft_boat_10cm_small",
+						"bottom": "ft_boat_80cm_small"
+					}
+				},
+				"story": [
+					{
+						"id": "sails",
+						"kind": "setup",
+						"says": "Both boats have the same small sail.",
+						"evidence": [
+							{
+								"role": "boat"
+							}
+						]
+					},
+					{
+						"id": "distance",
+						"kind": "variable",
+						"says": "The top fan is close to its boat; the bottom fan is far from its boat. That is the one thing that differs.",
+						"evidence": [
+							{
+								"role": "fan"
+							},
+							{
+								"gap": [
+									"fan",
+									"boat"
+								]
+							}
+						]
+					},
+					{
+						"id": "go",
+						"kind": "action",
+						"says": "The fans blow, and both boats sail across the water and stop.",
+						"evidence": [
+							{
+								"role": "boat"
+							},
+							{
+								"role": "fan"
+							}
+						]
+					},
+					{
+						"id": "pause",
+						"kind": "pause",
+						"says": "The sails are the same; only the fan distance is different.",
+						"evidence": [
+							{
+								"role": "boat"
+							},
+							{
+								"role": "fan"
+							},
+							{
+								"gap": [
+									"fan",
+									"boat"
+								]
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"lanes": {
+					"arrange": "rows",
+					"list": [
+						{
+							"id": "top",
+							"label": "near fan",
+							"run": "ft_boat_10cm_small",
+							"cast": {
+								"boat": "boat",
+								"fan": "fan",
+								"tank": "tank"
+							}
+						},
+						{
+							"id": "bottom",
+							"label": "far fan",
+							"run": "ft_boat_80cm_small",
+							"cast": {
+								"boat": "boat",
+								"fan": "fan",
+								"tank": "tank"
+							}
+						}
+					]
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "sails",
+						"beat": "sails",
+						"layout": "split",
+						"intent": "Open close on the two boats, one band each at one scale, square on, so the child can see the two sails are the same size and shape before anything else.",
+						"run": {
+							"freeze": "start",
+							"seconds": 3
+						},
+						"move": "hold",
+						"subject": {
+							"role": "boat"
+						},
+						"keep": [
+							{
+								"role": "boat"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "boat"
+								},
+								"text": "same small sail",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a Grade 3 child see that the top boat and the bottom boat have the same small sail?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "boat"
+								}
+							]
+						}
+					},
+					{
+						"id": "fans",
+						"beat": "distance",
+						"layout": "split",
+						"in": "cut",
+						"intent": "Cut wider, same scale in both bands, to show each fan and its boat: the top fan sits right behind its boat, the bottom fan far back, with the measured gap marked. Hold still for the setup question.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 3.6
+						},
+						"move": "hold",
+						"subject": {
+							"role": "fan"
+						},
+						"keep": [
+							{
+								"role": "fan"
+							},
+							{
+								"role": "boat"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "distance",
+								"on": {
+									"gap": [
+										"fan",
+										"boat"
+									]
+								},
+								"text": "{value} cm",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"role": "fan"
+								},
+								"text": "{label}",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that the top fan is close to its boat and the bottom fan is much farther from its boat?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "fan"
+								},
+								{
+									"role": "boat"
+								}
+							],
+							"details": [
+								{
+									"gap": [
+										"fan",
+										"boat"
+									]
+								}
+							]
+						}
+					},
+					{
+						"id": "sail-off",
+						"beat": "go",
+						"layout": "split",
+						"in": "cut",
+						"intent": "Widen to hold both fans and both boats' whole trips at one scale, camera still, so the child sees the fans blow and the boats sail and where each one stops.",
+						"run": {
+							"from": "start",
+							"to": "result",
+							"hold_after": 1.2
+						},
+						"move": "hold",
+						"subject": {
+							"role": "boat"
+						},
+						"keep": [
+							{
+								"role": "fan"
+							},
+							{
+								"role": "boat"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "start-mark",
+								"on": {
+									"role": "boat",
+									"when": "start"
+								}
+							},
+							{
+								"kind": "label",
+								"on": {
+									"role": "fan"
+								},
+								"text": "{label}",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Do both boats sail away from their fans, with the top boat ending up farther along than the bottom boat?",
+							"key": "end",
+							"must_see": [
+								{
+									"role": "boat"
+								},
+								{
+									"role": "fan"
+								}
+							]
+						}
+					},
+					{
+						"id": "back-to-setup",
+						"beat": "pause",
+						"layout": "split",
+						"in": "cut",
+						"intent": "Cut back to the setup for the question: the question is about the test itself, so the pause shows the same sails and the two fan gaps, big and labelled, held still.",
+						"run": {
+							"freeze": "pause:setup",
+							"seconds": 3.6
+						},
+						"move": "hold",
+						"subject": {
+							"role": "fan"
+						},
+						"keep": [
+							{
+								"role": "fan"
+							},
+							{
+								"role": "boat"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"label": "Back at the start",
+						"annotate": [
+							{
+								"kind": "distance",
+								"on": {
+									"gap": [
+										"fan",
+										"boat"
+									]
+								},
+								"text": "{value} cm",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"role": "boat"
+								},
+								"text": "same sail",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that both boats have the same sail and that only the distance from each fan to its boat is different?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "fan"
+								},
+								{
+									"role": "boat"
+								}
+							],
+							"details": [
+								{
+									"gap": [
+										"fan",
+										"boat"
+									]
+								}
+							]
+						}
+					}
+				],
+				"notes": "Two runs (one per lane) share one camera at one scale, square on, so the fan gaps (10 cm top, 80 cm bottom, from the DIFFERS list) read true. The only difference between runs is fan x; the boats and sails are identical, which answers the sail-size question. The question is about the setup, so the last shot returns to the start moment (labelled 'Back at the start') rather than pausing on boats that have moved away from their fans. In the run the near-fan boat travels farther (to x 2.37 vs 1.97)."
+			}
+		}
+	]
+}

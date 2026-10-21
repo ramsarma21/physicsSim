@@ -792,6 +792,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 					arm.position.set(x, bottom - 0.01, 0)
 					const foot = kit.mesh(kit.box(0.08, 0.008, 0.08, 0.002), legMat)
 					foot.position.set(x, g + 0.004, zb)
+					for (const o of [leg, arm, foot]) o.userData.item = f.item // (whose they are: a directed camera's band leaves another lane's out)
 					ctx.group.add(leg, arm, foot)
 				}
 			}
@@ -810,6 +811,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 				arm.position.set(s.at.x, s.at.y, zb / 2 - 0.01)
 				const foot = kit.mesh(kit.cylinderY(0.09, 0.012, 32), black)
 				foot.position.set(s.at.x, g + 0.006, zb)
+				for (const o of [pole, arm, foot]) o.userData.item = id
 				ctx.group.add(pole, arm, foot)
 			}
 			// a plumb line hangs from a retort stand's arm: a steel rod behind it (out of the motion plane) on a heavy cast foot on what is under
@@ -817,7 +819,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 			const darkMetal = kit.metal("#2b2f34", { roughness: 0.55, key: "standfoot" })
 			/** A retort stand behind (x, top): a steel rod out of the motion plane on a heavy cast foot on what is under it, a boss head at `top`,
 			 *  and an arm forward to what it holds (a plumb line's clamp, a spring scale's ring). */
-			const retortStand = (x, top) => {
+			const retortStand = (x, top, item) => {
 				const zb = -0.12
 				const g = groundAt(x, top, zb, null)
 				const len = top + 0.05 - g
@@ -836,16 +838,17 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 				const arm = kit.mesh(kit.cylinderY(0.005, Math.abs(zb) - 0.01, 16), steel)
 				arm.rotation.x = Math.PI / 2
 				arm.position.set(x, top + 0.004, zb / 2 - 0.005)
+				for (const o of [rod, cap, foot, boss, knob, arm]) o.userData.item = item
 				ctx.group.add(rod, cap, foot, boss, knob, arm)
 			}
 			for (const id of plumbs) {
 				const s = ctx.solidsOf(id).find((q) => q.ghost)
-				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.5) / 2)
+				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.5) / 2, id)
 			}
 			// a spring scale hangs by its ring from a stand's arm (its ring is 1.4 cm over its tube's top: the model's)
 			for (const id of nms) {
 				const s = ctx.solidsOf(id).find((q) => q.part === "case")
-				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.25) / 2 + 0.026)
+				if (s) retortStand(s.at.x, s.at.y + (s.body.height ?? 0.25) / 2 + 0.026, id)
 			}
 			ctx.group.traverse((o) => {
 				if (o.isMesh) {
@@ -898,6 +901,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 					geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(Math.max(2, pts.length) * 3 * 2), 3))
 					const tube = new THREE.Mesh(geo, mat)
 					tube.frustumCulled = false
+					tube.userData.item = tr.watch
 					rec.line = tube
 					ctx.group.add(tube)
 				} else {
@@ -910,6 +914,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 							dot.position.set(p.x, p.y, rec.z)
 							dot.visible = false
 							dot.userData.t = t
+							dot.userData.item = tr.watch
 							rec.dots.push(dot)
 							ctx.group.add(dot)
 						} else {
@@ -929,6 +934,7 @@ export default function register({ addModel, addThumb, addViewPlugin, addFrameHo
 							}
 							ghost.visible = false
 							ghost.userData.t = t
+							ghost.userData.item = tr.watch
 							rec.ghosts.push(ghost)
 							ctx.group.add(ghost)
 						}
