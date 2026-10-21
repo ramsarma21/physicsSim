@@ -4359,6 +4359,8 @@ ${GRADE}
 					pickables.push(m)
 				}
 				const postBlob = addBlob(blobs, 0, -0.09, 0.07, 0.07, AO_OPACITY)
+				gate.post = post
+				gate.postBlob = postBlob
 				postFits.push((pf) => {
 					// the post stands just behind the item's path, on what is under it there (the ramp, a carpet, the table): start-gate.js layout
 					const L = gate.layout(pf, postTrack, doc.release?.at ?? 0.5, gateStatics)
@@ -8294,6 +8296,15 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			const N = o.blur > 1 ? blurCountPlan(g, tau, o, shot, drawn, lo, hi) : 1
 			xstats.blurN = N
 			undo.push(applyPlanLook(look, fr.bands[0].pose.d))
+			// (a starting gate shows what holds a toy until its release; a held picture of the setup, nothing moving, shows the toy as the lesson draws
+			// it, no bar across it: the gate and its post are drawn only in shots that play, where it lifts)
+			if (sh.rate === 0 && fr.t <= (run.tRelease ?? 0) + 1e-6 && run.gates?.length) {
+				const off = []
+				for (const gt of run.gates) for (const o of [gt.root, gt.post, gt.postBlob]) if (o?.visible) (o.visible = false), off.push(o)
+				undo.push(() => {
+					for (const o of off) o.visible = true
+				})
+			}
 			if (look.light === "subject") undo.push(fitShadowToShot(drawn.map((i) => fr.bands[i])))
 			// the coils' and chains' detail for the frame's first band, then the chrome balls' maps once, at the frame's moment
 			updateParts(fr.t)
