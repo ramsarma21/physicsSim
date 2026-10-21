@@ -704,8 +704,9 @@ stepping at 4800 Hz), and in p3's launcher, pad and trampoline rows.
     at least half their smaller side and 2 cm (not a body on wheels). Label "<name> falls over", or "all N of a, b, c… fall over".
   - `{kind: "hits", item, target, before_s?}` → `{label, ok, kind: "hits", item, target, t}`: ok when one of the item's solids strikes one of the
     target's (track.impacts), by before_s if given; t the first strike (s, 3 decimals) or null. Label "<name> hits <target>[ by <s> s]".
-  - `{kind: "moves", item, min_m?}` → `{label, ok, kind: "moves", item, moved_m}`: ok when the mean of its moving parts ends at least min_m (default
-    0.05 m) from where it started; moved_m to 4 decimals. Label "<name> moves at least 5 cm" (ai/goals.mjs's lengths: 1.25 m, 12.3 cm).
+  - `{kind: "moves", item, min_m?}` → `{label, ok, kind: "moves", item, moved_m}`: ok when its rigid body that moved most (each weld group's moving
+    parts averaged, the most of those: engine6, "Mechanics fixes" at the end) ends at least min_m (default 0.05 m) from where it started; moved_m
+    to 4 decimals. Label "<name> moves at least 5 cm" (ai/goals.mjs's lengths: 1.25 m, 12.3 cm).
   A goal's own `label` wins; a goal naming an item the scene does not have, or of no known kind, is left out (as before). The domino row's story
   ("N of M fall") counts by the same rule (it turned past 57° before; the 12 scenarios and the starter tell the same stories: rube-goldberg "7 of 7 fall").
 - machines/check.py runs the engine through research/poc/worker.ts (the server's own worker; tooling/sim.ts left with the edullm link): `python3
