@@ -85,14 +85,24 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		if (!m) clearMats.set(key, (m = make()))
 		return m
 	}
+	/** A clear liquid's faint haze: the same body, a little of its colour laid over what is behind it (8 % at most, where the alpha-blended body
+	 *  laid half), so a tank seen from the side still reads as holding water while what is in it stays clear. A child of the body. */
+	function waterHaze(name, geo, thickness, tint = 1) {
+		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
+		const a = clamp(0.25 * (1 - Math.exp(-thickness / (lk.dist * tint))), 0.02, 0.08)
+		const haze = mesh(geo, clearCache(`haze|${name}|${a.toFixed(3)}`, () => new T.MeshBasicMaterial({ color: lk.color, transparent: true, opacity: a, depthWrite: false, toneMapped: false })), { cast: false })
+		haze.renderOrder = 1
+		return haze
+	}
 	/** A clear liquid's top: a rippled, clear-coated sheet a hair over the body's top face that mirrors the room, faintly tinted; seen from a
 	 *  camera a little above it, it is the band that says "water". A child of the body (local y 0.5 = the body's top at any level). */
 	function waterSurface(name, w, depth, round) {
 		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
 		const g = round ? kit.geo(`fl-watertop-c|${f5(w)}`, () => new T.CircleGeometry(w / 2, 64).rotateX(-Math.PI / 2)) : kit.geo(`fl-watertop|${f5(w)}|${f5(depth)}`, () => new T.PlaneGeometry(w, depth, 1, 1).rotateX(-Math.PI / 2))
-		const mat = M(`fl-watertop|${name}`, {
-			color: lk.color, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.42, depthWrite: false, clearcoat: 1, clearcoatRoughness: 0.03,
-			specularIntensity: 1, envMapIntensity: 1.25, normalMap: ripples(), normalScale: V2(0.06), side: T.DoubleSide
+		// (its own blue shows through its reflections: seen from a low camera a sheet that only mirrored the room read as grey, not as water)
+		const mat = M(`fl-watertop2|${name}`, {
+			color: lk.color, roughness: 0.05, metalness: 0, transparent: true, opacity: 0.5, depthWrite: false, clearcoat: 0.6, clearcoatRoughness: 0.04,
+			specularIntensity: 0.6, envMapIntensity: 0.7, normalMap: ripples(), normalScale: V2(0.06), side: T.DoubleSide
 		})
 		const top = mesh(g, mat, { cast: false })
 		top.position.y = 0.5
@@ -148,7 +158,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const g = round ? kit.geo(`fl-liqcyl|${f5(w)}`, () => new T.CylinderGeometry(w / 2, w / 2, 1, 64, 1)) : kit.geo(`fl-liqbox|${f5(w)}|${f5(depth)}`, () => new T.BoxGeometry(w, 1, depth))
 		const m = mesh(g, liquidMat(name, Math.min(depth, w), tint, layered), { cast: false })
 		// (a density column's layers keep their tinted bodies: each layer shows where it lies, its water dyed as a column's is)
-		if (CLEAR_LIQUIDS.has(name) && !layered) m.add(waterSurface(name, w, depth, round))
+		if (CLEAR_LIQUIDS.has(name) && !layered) m.add(waterSurface(name, w, depth, round), waterHaze(name, g, Math.min(depth, w), tint))
 		m.position.set((x0 + x1) / 2, y0 + h0 / 2, 0)
 		m.scale.y = Math.max(1e-5, h0 - h1)
 		if (below) m.position.y = y0 + h1 + (h0 - h1) / 2
