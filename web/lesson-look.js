@@ -202,8 +202,9 @@ export function lessonLiquid(m, grade = null) {
 
 /** Put the lesson look on what is drawn under `root`: liquids, streams and glass panes get their lesson copies, machinery is hidden. Cheap (a traversal and a WeakMap
  *  look-up a mesh), so the view runs it on a run's group whenever models have come in and on its plug-ins' groups at every draw (a module makes
- *  its liquid's meshes as it pours). grade: web/models3d.js gradeShader (the paints' tone mapping). Returns how many materials it swapped. */
-export function lessonPass(root, grade = null) {
+ *  its liquid's meshes as it pours). grade: web/models3d.js gradeShader (the paints' tone mapping); noShadow: the solid ids whose meshes cast no
+ *  shadow (the static parts held up in mid-air). Returns how many materials it swapped. */
+export function lessonPass(root, grade = null, noShadow = null) {
 	let n = 0
 	root.traverse((o) => {
 		if (o.userData?.machinery === true) {
@@ -211,6 +212,7 @@ export function lessonPass(root, grade = null) {
 			return
 		}
 		if (!o.isMesh) return
+		if (noShadow && o.castShadow && noShadow.has(o.userData?.solidId)) o.castShadow = false
 		const c = isLiquid(o) ? lessonLiquid(o.material, grade) : isPane(o) ? lessonPane(o.material) : isStream(o) ? lessonStream(o.material, grade) : null
 		if (c && c !== o.material) {
 			o.material = c

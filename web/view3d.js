@@ -4700,6 +4700,8 @@ ${GRADE}
 			lesson: look.lesson ? look : null,
 			lessonLeft: -1, // (the stand-ins left when the lesson look was last put on the whole group: lessonDraw)
 			groundIds: new Set(solids.filter(isTableSolid).map((o) => o.id)), // (the tabletop or floor: the lesson outlines' background)
+			// (the lesson look: static parts held more than 5 cm up, a funnel, a tap, a fixed magnet, cast no shadow: one out of the picture would cross it)
+			lessonNoShadow: look.lesson ? new Set(solids.filter((o) => o.kind === "static" && !isTableSolid(o) && extentOf(o.body, poseOf(o)).y0 > 0.05).map((o) => o.id)) : null,
 			table,
 			tableMesh,
 			lens, // how many lens parts it has (markLens): the table's mirror draws them in a pass of their own
@@ -5853,8 +5855,9 @@ ${GRADE}
 	function lessonDraw(r) {
 		if (!r?.lesson) return
 		if (r.lessonLeft !== r.left) {
-			lessonPass(r.group, gradeShader)
+			lessonPass(r.group, gradeShader, r.lessonNoShadow)
 			r.lessonLeft = r.left
+			shadowKey = "" // (the shadow map is drawn again: what casts one may have changed)
 		} else for (const p of r.plugins) lessonPass(p.group, gradeShader)
 	}
 
