@@ -45,9 +45,10 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	const edge = () => M("fl-glass-edge", { color: "#bfe0d2", roughness: 0.05, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false, clearcoat: 1 })
 	/** A liquid: an alpha-blended, clear-coated body tinted by how deep it is (1 − e^(−depth/dist), at least 0.16 so a thin column still shows),
 	 *  drawn after everything solid and see-through in it (no depth write). `tint` < 1 deepens it (a narrow vessel). Clear liquids (water and
-	 *  salt or sea water: CLEAR_LIQUIDS) are drawn as clear water instead (clearWaterMat): what is in and behind them is tinted, not veiled. */
-	function liquidMat(name, thickness, tint = 1, layered = false) {
-		if (CLEAR_LIQUIDS.has(name) && !layered) return clearWaterMat(name, thickness, tint)
+	 *  salt or sea water: CLEAR_LIQUIDS) in a tank or a boat (`clear`) are drawn as clear water instead (clearWaterMat): what is in and behind
+	 *  them is tinted, not veiled. (A measuring vessel's column and a density column's layers keep this tinted body: their level is the reading.) */
+	function liquidMat(name, thickness, tint = 1, clear = true) {
+		if (CLEAR_LIQUIDS.has(name) && clear) return clearWaterMat(name, thickness, tint)
 		const lk = LIQUID_LOOK[name] ?? LIQUID_LOOK.water
 		const opacity = clamp(1 - Math.exp(-thickness / (lk.dist * tint)), 0.16, 0.9)
 		return M(`fl-liquid2|${name}|${f5(thickness)}|${tint}`, {
@@ -156,9 +157,11 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	function liquidBody(name, x0, x1, depth, y0, key, h0, { below = null, h1 = 0, round = false, tint = 1, layered = false } = {}) {
 		const w = x1 - x0
 		const g = round ? kit.geo(`fl-liqcyl|${f5(w)}`, () => new T.CylinderGeometry(w / 2, w / 2, 1, 64, 1)) : kit.geo(`fl-liqbox|${f5(w)}|${f5(depth)}`, () => new T.BoxGeometry(w, 1, depth))
-		const m = mesh(g, liquidMat(name, Math.min(depth, w), tint, layered), { cast: false })
-		// (a density column's layers keep their tinted bodies: each layer shows where it lies, its water dyed as a column's is)
-		if (CLEAR_LIQUIDS.has(name) && !layered) m.add(waterSurface(name, w, depth, round), waterHaze(name, g, Math.min(depth, w), tint))
+		// (clear water in a tank; a round measuring vessel's column and a density column's layers keep their tinted bodies: the level is the
+		// reading, and each layer shows where it lies)
+		const clear = !layered && !round
+		const m = mesh(g, liquidMat(name, Math.min(depth, w), tint, clear), { cast: false })
+		if (CLEAR_LIQUIDS.has(name) && clear) m.add(waterSurface(name, w, depth, round), waterHaze(name, g, Math.min(depth, w), tint))
 		m.position.set((x0 + x1) / 2, y0 + h0 / 2, 0)
 		m.scale.y = Math.max(1e-5, h0 - h1)
 		if (below) m.position.y = y0 + h1 + (h0 - h1) / 2

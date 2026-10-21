@@ -3656,13 +3656,14 @@ the bundle as it was). Physics options keep real numbers; the render-only ones s
   motor. The fan's paint (the mechanics module's `color`, already on its solids) is drawn on its plastic. Its blades turn at most 1.8 times a
   second (22° a frame at 30 fps, under a third of the 72° between blades: never seen strobing back; 4 a second did at 30 fps) and a faint disc
   where they sweep shows from its switch-on (frame hook `fan:running`).
-- **Clear water** (render only; web/models/mod-fluids.js): water, salt water and sea water (`CLEAR_LIQUIDS`) are drawn as clear water: the body
+- **Clear water** (render only; web/models/mod-fluids.js): water, salt water and sea water (`CLEAR_LIQUIDS`) in a tank (aquarium, tub, trough) or a
+  boat are drawn as clear water (a graduated cylinder's, a beaker's or a jug's column keeps its tinted body: its level is the reading): the body
   only tints (`clearWaterMat`: an unlit MultiplyBlending over what is behind it, mix(white, its colour, 1 − e^(−depth/dist)), at most 0.32 of its
   colour) with a faint haze of its colour (`waterHaze`, at most 8 %, so a tank seen from the side still reads as holding water), under a separate
   rippled top (`waterSurface`, a child of the body so the level hook carries it, opacity 0.5) that mirrors the room through its own blue. The old
   alpha-blended, lit body laid half a pale haze over everything in and behind it (a cork under water came out nearly white, the table grey). An
-  aquarium's front and back panes are clear float glass (`clearPane`, 5 % and their reflections). A density column's layers, and the other
-  liquids, are as before.
+  aquarium's front and back panes are clear float glass (`clearPane`, 5 % and their reflections). Measuring vessels, a density column's layers
+  and the other liquids are as before.
 - **Ring waves and entry splashes** (render only; web/models/fluids-rings.js, view plug-in `fluids:rings`, registered by mod-fluids.js): a thing
   that pierces a single-layer liquid's top and moves up or down there sends out a ring every 1/12 s, sourced by the rate it pushes water aside,
   A·v (its waterline's area, its vertical speed): 4 cm ripples at their deep-water speed √(gλ/2π + 2πσ/(ρλ)) = 0.27 m/s, a packet 1.5 wavelengths
