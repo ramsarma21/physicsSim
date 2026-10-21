@@ -37,8 +37,10 @@ export function aiLimits(env = process.env) {
 /** What each step reserves of the dollar caps before it runs (about the 99th percentile of its measured cost, ai/bench/results: plan p99
  *  $0.34, observe $0.19, refine $0.13, edit $0.24 with a long tail but p90 $0.04; imagine about $0.06 for the picture (an estimate from its
  *  tokens, in its usage.costInUSD) + $0.03-0.06 for the pre-pass, $0.08-0.11 in all on the first route, and $0.19-0.22 measured when the
- *  picture falls back to Gemini, whose tokens cost 3x: so $0.25). The real cost replaces it once the step is done. */
-export const STEP_USD = { observe: 0.2, plan: 0.35, refine: 0.15, edit: 0.1, imagine: 0.25 }
+ *  picture falls back to Gemini, whose tokens cost 3x: so $0.25); direct, a shot plan with up to 2 repair turns at high effort, $0.06-0.47 over
+ *  24 live runs on 20 Oct (the prompt cache read makes the warm ones cheap; three turns cold is about $0.5): $0.75. The real cost replaces it
+ *  once the step is done. */
+export const STEP_USD = { observe: 0.2, plan: 0.35, refine: 0.15, edit: 0.1, imagine: 0.25, direct: 0.75 }
 const DEFAULT_STEP_USD = 0.35
 /** Accounts are on for the AI gate: a publishable key and a database (the same rule as the scenes function's accountsOn), not switched off. */
 const accountsOn = (env) => !!clerkSettings(env) && dbConfigured(env) && (env.ACCOUNTS ?? "").toLowerCase() !== "off"

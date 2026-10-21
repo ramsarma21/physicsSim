@@ -1,0 +1,850 @@
+{
+	"about": "The direct step's live run of the design example '02-fairtest-ramps' (20 Oct 2026): Opus 5.5 (claude-opus-5-5) through the gateway, measured by the engine's executor (web/export/shots.js checkPlan). Each round: the plan the model answered, and what the executor's checks said of it.",
+	"case": "ramps",
+	"payload": {
+		"kind": "lesson",
+		"lesson": {
+			"question": "Is this a valid experiment to test ramp height?",
+			"answer": "Yes. The height is different, and everything else is the same.",
+			"words": [
+				"Our question: does a higher ramp make a toy roll farther? We are testing ramp height.",
+				"Now both cars carry the same gray ball of clay."
+			],
+			"pauses": [
+				{
+					"where": "result"
+				}
+			],
+			"grade": 3
+		},
+		"concept": "a fair test changes only one thing",
+		"runs": {
+			"top": "ai/test/fixtures/direct/scenes/ft_1b_car_red_clay.json",
+			"bottom": "ai/test/fixtures/direct/scenes/ft_3b_car_red_clay.json"
+		}
+	},
+	"model": "claude-group/claude-opus-5-5",
+	"usd": 0.2113708,
+	"ms": 75718,
+	"rounds": [
+		{
+			"round": 0,
+			"ok": false,
+			"failed": [
+				"same-load keep-in: every kept thing at least 0.02 inside the edges at every frame (closest -0.159 at 4.8 s)",
+				"same-load parity: the lanes' scale (each copy's size in the picture per metre of it) differs x1.123 (at most x1.1)"
+			],
+			"usd": 0.1182434,
+			"ms": 49314,
+			"plan": {
+				"version": 1,
+				"title": "Is it a fair test? 1 block vs 3 blocks",
+				"about": "Two identical red cars carrying the same gray clay roll down ramps that differ only in height, so this is a fair test of ramp height.",
+				"grade": 3,
+				"source": {
+					"kind": "lesson",
+					"question": "Is this a valid experiment to test ramp height?",
+					"answer": "Yes. The height is different, and everything else is the same.",
+					"words": [
+						"Our question: does a higher ramp make a toy roll farther? We are testing ramp height.",
+						"Now both cars carry the same gray ball of clay."
+					],
+					"scene": "ft_1b_car_red_clay, ft_3b_car_red_clay",
+					"runs": {
+						"top": "ft_1b_car_red_clay",
+						"bottom": "ft_3b_car_red_clay"
+					}
+				},
+				"story": [
+					{
+						"id": "height",
+						"kind": "variable",
+						"says": "The top ramp sits on 1 block. The bottom ramp sits on 3 blocks. That is the one thing we change.",
+						"evidence": [
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "ramp"
+							}
+						]
+					},
+					{
+						"id": "same",
+						"kind": "setup",
+						"says": "Both ramps hold the same red car with the same gray ball of clay on top.",
+						"evidence": [
+							{
+								"role": "toy"
+							},
+							{
+								"role": "clay"
+							}
+						]
+					},
+					{
+						"id": "roll",
+						"kind": "action",
+						"says": "Both cars roll down their ramps, across the carpet, and stop.",
+						"evidence": [
+							{
+								"role": "toy"
+							}
+						]
+					},
+					{
+						"id": "pause",
+						"kind": "pause",
+						"says": "Only the blocks are different: 1 under one ramp, 3 under the other.",
+						"evidence": [
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "ramp"
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"lanes": {
+					"arrange": "rows",
+					"list": [
+						{
+							"id": "top",
+							"label": "1 block",
+							"run": "ft_1b_car_red_clay",
+							"cast": {
+								"toy": "toy",
+								"clay": "clay",
+								"ramp": "ramp",
+								"blocks": [
+									"block1"
+								]
+							}
+						},
+						{
+							"id": "bottom",
+							"label": "3 blocks",
+							"run": "ft_3b_car_red_clay",
+							"cast": {
+								"toy": "toy",
+								"clay": "clay",
+								"ramp": "ramp",
+								"blocks": [
+									"block1",
+									"block2",
+									"block3"
+								]
+							}
+						}
+					]
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "ramps",
+						"beat": "height",
+						"layout": "split",
+						"intent": "Open square on and close on the two ramps, one band each at one scale. The child can count the blocks under each ramp, the one thing that differs, with each car waiting on top.",
+						"run": {
+							"freeze": "start",
+							"seconds": 3
+						},
+						"move": "hold",
+						"subject": {
+							"role": "blocks"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "toy"
+							},
+							{
+								"role": "clay"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "blocks"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a Grade 3 child count 1 block under the top ramp and 3 blocks under the bottom ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "ramp"
+								},
+								{
+									"role": "toy"
+								}
+							],
+							"details": [
+								{
+									"role": "blocks"
+								}
+							]
+						}
+					},
+					{
+						"id": "same-load",
+						"beat": "same",
+						"layout": "split",
+						"in": "continue",
+						"intent": "Rise and push in on the two cars so the tops show. The same red car carries the same gray clay in both bands, so the child sees that the load is kept the same.",
+						"run": {
+							"freeze": "start",
+							"seconds": 2.6
+						},
+						"move": "push",
+						"subject": {
+							"role": "blocks"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "toy"
+							},
+							{
+								"role": "clay"
+							}
+						],
+						"end": {
+							"subject": {
+								"role": "clay"
+							},
+							"keep": [
+								{
+									"role": "toy"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": {
+								"yaw": 0,
+								"pitch": 28
+							},
+							"lens": 50
+						},
+						"move_seconds": 1.8,
+						"ease": "gentle",
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "clay"
+								},
+								"text": "gray clay",
+								"at": "above",
+								"appear": "settled"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that both cars are the same red car with the same gray lump of clay on top?",
+							"key": "end",
+							"must_see": [
+								{
+									"role": "toy"
+								}
+							],
+							"details": [
+								{
+									"role": "clay"
+								}
+							]
+						}
+					},
+					{
+						"id": "roll",
+						"beat": "roll",
+						"layout": "split",
+						"in": "cut",
+						"intent": "Cut back to square on as the cars are let go, and widen with them while they roll. Both bands stay at one scale, so neither car ever leaves the picture and both runs can be compared.",
+						"run": {
+							"from": {
+								"at": "release",
+								"plus": -0.2
+							},
+							"to": "result"
+						},
+						"move": "pull",
+						"subject": {
+							"role": "toy"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "toy"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"ease": "gentle",
+						"end": {
+							"subject": {
+								"role": "toy"
+							},
+							"keep": [
+								{
+									"role": "ramp"
+								},
+								{
+									"role": "blocks"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": {
+								"yaw": 0,
+								"pitch": 6
+							},
+							"lens": 50
+						},
+						"audit": {
+							"question": "Do both cars stay in the picture the whole time they roll down and across the carpet?",
+							"key": "end",
+							"must_see": [
+								{
+									"role": "toy"
+								}
+							]
+						}
+					},
+					{
+						"id": "stops",
+						"beat": "roll",
+						"layout": "split",
+						"in": "continue",
+						"intent": "Hold still as the cars come to rest, so the child sees each car where it stopped beside its own ramp, at one scale.",
+						"run": {
+							"freeze": "result",
+							"seconds": 1.6
+						},
+						"move": "hold",
+						"subject": {
+							"role": "toy"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "blocks"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see where each car stopped on the carpet?",
+							"key": "end",
+							"must_see": [
+								{
+									"role": "toy"
+								}
+							]
+						}
+					},
+					{
+						"id": "ramps-again",
+						"beat": "pause",
+						"layout": "split",
+						"in": "cut",
+						"intent": "The question is about the setup, so the pause cuts back to its evidence: the two ramps and their blocks, square on, labelled and big, held still while the child decides.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.4
+						},
+						"move": "hold",
+						"subject": {
+							"role": "blocks"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "blocks"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that the only difference between the two ramps is 1 block against 3 blocks?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "ramp"
+								}
+							],
+							"details": [
+								{
+									"role": "blocks"
+								}
+							]
+						}
+					}
+				],
+				"notes": "Two runs (one per lane) share one camera in split rows. Every band keeps the same world window, because where the cars stop is compared. The recognizer lists the bottom lane's clay as a variable, but DIFFERS shows only its position and tilt, which come from sitting on the steeper ramp. The clay is the same, so the plan labels it the same in both lanes and never marks it as a difference. The pause freezes the result, as the lesson asks, but frames the ramps and blocks because the question is about the setup. The same car and the same clay were shown big earlier, in the push."
+			}
+		},
+		{
+			"round": 1,
+			"ok": true,
+			"failed": [],
+			"usd": 0.0931274,
+			"ms": 26364,
+			"plan": {
+				"version": 1,
+				"title": "Is it a fair test? 1 block vs 3 blocks",
+				"about": "Two identical red cars carrying the same gray clay roll down ramps that differ only in height, so this is a fair test of ramp height.",
+				"grade": 3,
+				"source": {
+					"kind": "lesson",
+					"question": "Is this a valid experiment to test ramp height?",
+					"answer": "Yes. The height is different, and everything else is the same.",
+					"words": [
+						"Our question: does a higher ramp make a toy roll farther? We are testing ramp height.",
+						"Now both cars carry the same gray ball of clay."
+					],
+					"scene": "ft_1b_car_red_clay, ft_3b_car_red_clay",
+					"runs": {
+						"top": "ft_1b_car_red_clay",
+						"bottom": "ft_3b_car_red_clay"
+					}
+				},
+				"story": [
+					{
+						"id": "height",
+						"kind": "variable",
+						"says": "The top ramp sits on 1 block. The bottom ramp sits on 3 blocks. That is the one thing we change.",
+						"evidence": [
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "ramp"
+							}
+						]
+					},
+					{
+						"id": "same",
+						"kind": "setup",
+						"says": "Both ramps hold the same red car with the same gray ball of clay on top.",
+						"evidence": [
+							{
+								"role": "toy"
+							},
+							{
+								"role": "clay"
+							}
+						]
+					},
+					{
+						"id": "roll",
+						"kind": "action",
+						"says": "Both cars roll down their ramps, across the carpet, and stop.",
+						"evidence": [
+							{
+								"role": "toy"
+							}
+						]
+					},
+					{
+						"id": "pause",
+						"kind": "pause",
+						"says": "Only the blocks are different: 1 under one ramp, 3 under the other.",
+						"evidence": [
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "ramp"
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"lanes": {
+					"arrange": "rows",
+					"list": [
+						{
+							"id": "top",
+							"label": "1 block",
+							"run": "ft_1b_car_red_clay",
+							"cast": {
+								"toy": "toy",
+								"clay": "clay",
+								"ramp": "ramp",
+								"blocks": [
+									"block1"
+								]
+							}
+						},
+						{
+							"id": "bottom",
+							"label": "3 blocks",
+							"run": "ft_3b_car_red_clay",
+							"cast": {
+								"toy": "toy",
+								"clay": "clay",
+								"ramp": "ramp",
+								"blocks": [
+									"block1",
+									"block2",
+									"block3"
+								]
+							}
+						}
+					]
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "ramps",
+						"beat": "height",
+						"layout": "split",
+						"intent": "Open square on and close on the two ramps, one band each at one scale. The child can count the blocks under each ramp, the one thing that differs, with each car waiting on top.",
+						"run": {
+							"freeze": "start",
+							"seconds": 3
+						},
+						"move": "hold",
+						"subject": {
+							"role": "blocks"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "toy"
+							},
+							{
+								"role": "clay"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "blocks"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a Grade 3 child count 1 block under the top ramp and 3 blocks under the bottom ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "ramp"
+								},
+								{
+									"role": "toy"
+								}
+							],
+							"details": [
+								{
+									"role": "blocks"
+								}
+							]
+						}
+					},
+					{
+						"id": "same-load",
+						"beat": "same",
+						"layout": "split",
+						"in": "cut",
+						"intent": "Cut to a higher look at the two cars so their tops show, both bands at the same width. The same red car carries the same gray clay in each band, so the child sees that the load is kept the same.",
+						"run": {
+							"freeze": "start",
+							"seconds": 2.6
+						},
+						"move": "hold",
+						"subject": {
+							"role": "toy"
+						},
+						"keep": [
+							{
+								"role": "toy"
+							},
+							{
+								"role": "clay"
+							}
+						],
+						"frame": {
+							"width": 0.7
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 28
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "clay"
+								},
+								"text": "gray clay",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that both cars are the same red car with the same gray lump of clay on top?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "toy"
+								}
+							],
+							"details": [
+								{
+									"role": "clay"
+								}
+							]
+						}
+					},
+					{
+						"id": "roll",
+						"beat": "roll",
+						"layout": "split",
+						"in": "cut",
+						"intent": "Cut back to square on as the cars are let go, and widen with them while they roll. Both bands stay at one scale, so neither car ever leaves the picture and both runs can be compared.",
+						"run": {
+							"from": {
+								"at": "release",
+								"plus": -0.2
+							},
+							"to": "result"
+						},
+						"move": "pull",
+						"subject": {
+							"role": "toy"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "blocks"
+							},
+							{
+								"role": "toy"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"ease": "gentle",
+						"end": {
+							"subject": {
+								"role": "toy"
+							},
+							"keep": [
+								{
+									"role": "ramp"
+								},
+								{
+									"role": "blocks"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": {
+								"yaw": 0,
+								"pitch": 6
+							},
+							"lens": 50
+						},
+						"audit": {
+							"question": "Do both cars stay in the picture the whole time they roll down and across the carpet?",
+							"key": "end",
+							"must_see": [
+								{
+									"role": "toy"
+								}
+							]
+						}
+					},
+					{
+						"id": "stops",
+						"beat": "roll",
+						"layout": "split",
+						"in": "continue",
+						"intent": "Hold still as the cars come to rest, so the child sees each car where it stopped beside its own ramp, at one scale.",
+						"run": {
+							"freeze": "result",
+							"seconds": 1.6
+						},
+						"move": "hold",
+						"subject": {
+							"role": "toy"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							},
+							{
+								"role": "blocks"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see where each car stopped on the carpet?",
+							"key": "end",
+							"must_see": [
+								{
+									"role": "toy"
+								}
+							]
+						}
+					},
+					{
+						"id": "ramps-again",
+						"beat": "pause",
+						"layout": "split",
+						"in": "cut",
+						"intent": "The question is about the setup, so the pause cuts back to its evidence: the two ramps and their blocks, square on, labelled and big, held still while the child decides.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.4
+						},
+						"move": "hold",
+						"subject": {
+							"role": "blocks"
+						},
+						"keep": [
+							{
+								"role": "ramp"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": {
+							"yaw": 0,
+							"pitch": 6
+						},
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"role": "blocks"
+								},
+								"text": "{label}",
+								"at": "below"
+							}
+						],
+						"audit": {
+							"question": "Can a child see that the only difference between the two ramps is 1 block against 3 blocks?",
+							"key": "middle",
+							"must_see": [
+								{
+									"role": "ramp"
+								}
+							],
+							"details": [
+								{
+									"role": "blocks"
+								}
+							]
+						}
+					}
+				],
+				"notes": "Two runs (one per lane) share one camera in split rows. Every band keeps the same world window, because where the cars stop is compared. The same-load shot is now a still high look with a fixed 0.7 m width in both bands. That keeps the two lanes at one scale and leaves room around each tilted car and its clay. The recognizer lists the bottom lane's clay as a variable, but DIFFERS shows only its position and tilt, which come from sitting on the steeper ramp. The clay is the same, so it is never marked as a difference. The pause freezes the result, as the lesson asks, but frames the ramps and blocks because the question is about the setup."
+			}
+		}
+	]
+}

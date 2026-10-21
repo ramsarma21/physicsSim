@@ -1,0 +1,256 @@
+{
+	"version": 1,
+	"title": "A 1 m pendulum keeps time",
+	"about": "A 1 m pendulum swings there and back, and every swing takes the same 2 seconds.",
+	"grade": 5,
+	"source": {
+		"kind": "demo",
+		"scene": "x05-pendulum-period",
+		"question": "How long does one swing take?",
+		"answer": "About 2 seconds, every time."
+	},
+	"story": [
+		{
+			"id": "hang",
+			"kind": "setup",
+			"says": "A pendulum hangs from a hook on a 1 m rod.",
+			"evidence": [
+				{
+					"item": "p",
+					"part": "hanger"
+				},
+				{
+					"item": "p",
+					"part": "rod"
+				}
+			]
+		},
+		{
+			"id": "swing",
+			"kind": "action",
+			"says": "It swings there and back.",
+			"evidence": [
+				{
+					"item": "p",
+					"part": "bob"
+				}
+			]
+		},
+		{
+			"id": "time",
+			"kind": "pause",
+			"says": "Each swing, there and back, takes the same time: 2 seconds.",
+			"evidence": [
+				{
+					"item": "p",
+					"part": "bob"
+				}
+			]
+		}
+	],
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "hook",
+			"beat": "hang",
+			"intent": "Start at the top, where it hangs: the hook and the rod leaving it.",
+			"run": {
+				"freeze": "start",
+				"seconds": 1.4
+			},
+			"move": "hold",
+			"subject": {
+				"item": "p",
+				"part": "hanger"
+			},
+			"frame": {
+				"width": 0.3
+			},
+			"view": "eye",
+			"lens": 50,
+			"audit": {
+				"question": "Can a child see where the pendulum hangs from?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "p",
+						"part": "hanger"
+					}
+				]
+			}
+		},
+		{
+			"id": "down",
+			"beat": "hang",
+			"in": "continue",
+			"intent": "Travel down the rod to the bob at its end: the camera measures the 1 m length by going along it, which a whole shot of a thin rod cannot show.",
+			"run": {
+				"freeze": "start"
+			},
+			"move": "travel",
+			"subject": {
+				"item": "p",
+				"part": "rod"
+			},
+			"travel": {
+				"path": {
+					"through": [
+						{
+							"item": "p",
+							"part": "hanger"
+						},
+						{
+							"item": "p",
+							"part": "bob"
+						}
+					]
+				},
+				"pace": {
+					"seconds": 4.0
+				}
+			},
+			"frame": {
+				"width": 0.3
+			},
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "distance",
+					"on": {
+						"item": "p",
+						"part": "rod"
+					},
+					"text": "1 m"
+				}
+			],
+			"audit": {
+				"question": "Does the camera go down the rod from the hook to the bob?",
+				"key": "middle"
+			}
+		},
+		{
+			"id": "swing",
+			"beat": "swing",
+			"in": "continue",
+			"intent": "Still before the release, ease out just enough to hold the bob's whole swing: from here on the camera is locked, because a rhythm can only be felt against a still picture.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.4
+			},
+			"move": "pull",
+			"ease": "gentle",
+			"subject": {
+				"item": "p",
+				"part": "bob"
+			},
+			"end": {
+				"subject": {
+					"trail": "p",
+					"part": "bob",
+					"from": "start:p",
+					"to": "end"
+				},
+				"frame": {
+					"fit": "snug"
+				},
+				"view": "eye",
+				"lens": 50
+			},
+			"audit": {
+				"question": "Is the bob's whole swing, from one side to the other, inside the picture when the camera stops?",
+				"key": "end",
+				"must_see": [
+					{
+						"item": "p",
+						"part": "bob"
+					}
+				]
+			}
+		},
+		{
+			"id": "count",
+			"beat": "time",
+			"in": "continue",
+			"intent": "Let it go and hold through four swings. A dashed mark stays where it was let go, and each time the bob comes back to it, the measured time of that swing appears: 2.0 s, every time.",
+			"run": {
+				"from": "start",
+				"to": "end",
+				"hold_after": 1.2
+			},
+			"move": "hold",
+			"subject": {
+				"item": "p",
+				"part": "bob"
+			},
+			"keep": [
+				{
+					"trail": "p",
+					"part": "bob",
+					"from": "start:p",
+					"to": "end"
+				}
+			],
+			"annotate": [
+				{
+					"kind": "start-mark",
+					"on": {
+						"item": "p",
+						"part": "bob",
+						"when": "release"
+					}
+				},
+				{
+					"kind": "label",
+					"on": {
+						"item": "p",
+						"part": "bob",
+						"when": "turn:p#2"
+					},
+					"text": "{dt} s",
+					"from": "turn:p#2",
+					"to": "turn:p#4",
+					"since": "release"
+				},
+				{
+					"kind": "label",
+					"on": {
+						"item": "p",
+						"part": "bob",
+						"when": "turn:p#4"
+					},
+					"text": "{dt} s",
+					"from": "turn:p#4",
+					"to": "turn:p#6",
+					"since": "turn:p#2"
+				},
+				{
+					"kind": "label",
+					"on": {
+						"item": "p",
+						"part": "bob",
+						"when": "turn:p#6"
+					},
+					"text": "{dt} s",
+					"from": "turn:p#6",
+					"since": "turn:p#4"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the bob come back to where it was let go, and the same time, 2.0 s, each time?",
+				"key": "turn:p#4",
+				"must_see": [
+					{
+						"item": "p",
+						"part": "bob"
+					}
+				]
+			}
+		}
+	]
+}

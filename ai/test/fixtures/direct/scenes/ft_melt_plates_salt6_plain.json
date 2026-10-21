@@ -1,0 +1,88 @@
+{
+ "version": 2,
+ "id": "ft_melt_plates_salt6_plain",
+ "name": "ft_melt_plates_salt6_plain",
+ "seconds": 3.2,
+ "release": 0.0,
+ "settings": {
+  "room_temp": 22.0,
+  "time_lapse": 1200,
+  "camera": {
+   "x0": 0.9,
+   "x1": 1.53,
+   "y": 0.15,
+   "pitch": 9.0,
+   "hfov": 20.0
+  }
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0.0
+  },
+  {
+   "id": "left_plate",
+   "type": "plate",
+   "name": "Left white plate",
+   "x": 1.03,
+   "y": 0.0015,
+   "props": {
+    "color": "white",
+    "diameter": 0.16,
+    "material": "ceramic"
+   }
+  },
+  {
+   "id": "right_plate",
+   "type": "plate",
+   "name": "Right white plate",
+   "x": 1.4,
+   "y": 0.0015,
+   "props": {
+    "color": "white",
+    "diameter": 0.16,
+    "material": "ceramic"
+   }
+  },
+  {
+   "id": "left_cube",
+   "type": "ice-cube",
+   "name": "Left ice cube",
+   "x": 1.03,
+   "y": 0.033,
+   "props": {
+    "width": 0.05,
+    "height": 0.05,
+    "depth": 0.05,
+    "start_temp_c": -18.0
+   }
+  },
+  {
+   "id": "left_salt",
+   "type": "salt-pile",
+   "name": "Salt on the left cube",
+   "x": 1.03,
+   "y": 0.0595,
+   "props": {
+    "mass_g": 6.0,
+    "grain": "table"
+   }
+  },
+  {
+   "id": "right_cube",
+   "type": "ice-cube",
+   "name": "Right ice cube",
+   "x": 1.4,
+   "y": 0.033,
+   "props": {
+    "width": 0.05,
+    "height": 0.05,
+    "depth": 0.05,
+    "start_temp_c": -18.0
+   }
+  }
+ ],
+ "goals": []
+}

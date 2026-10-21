@@ -1,0 +1,313 @@
+{
+	"version": 1,
+	"title": "Is it a fair test? 1 block vs 3 blocks",
+	"about": "Two identical red cars with the same clay roll down ramps that differ only in height: a fair test of ramp height.",
+	"grade": 3,
+	"source": {
+		"kind": "lesson",
+		"question": "Is this a valid experiment to test ramp height?",
+		"answer": "Yes. The height is different, and everything else is the same.",
+		"words": [
+			"Our question: does a higher ramp make a toy roll farther? We are testing ramp height.",
+			"Now both cars carry the same gray ball of clay."
+		],
+		"runs": {
+			"top": "ft_1b_car_red_clay",
+			"bottom": "ft_3b_car_red_clay"
+		}
+	},
+	"story": [
+		{
+			"id": "height",
+			"kind": "variable",
+			"says": "The top ramp sits on 1 block, the bottom ramp on 3; both cars are the same, with the same clay.",
+			"evidence": [
+				{
+					"role": "blocks"
+				},
+				{
+					"role": "ramp"
+				},
+				{
+					"role": "clay"
+				}
+			]
+		},
+		{
+			"id": "roll",
+			"kind": "action",
+			"says": "Both cars roll down and across the carpet, and stop.",
+			"evidence": [
+				{
+					"role": "toy"
+				}
+			]
+		},
+		{
+			"id": "pause",
+			"kind": "pause",
+			"says": "Only the blocks differ: 1 under one ramp, 3 under the other.",
+			"evidence": [
+				{
+					"role": "blocks"
+				},
+				{
+					"role": "ramp"
+				}
+			]
+		}
+	],
+	"output": {
+		"aspect": "16:9",
+		"fps": 60
+	},
+	"lanes": {
+		"arrange": "rows",
+		"list": [
+			{
+				"id": "top",
+				"label": "1 block",
+				"run": "ft_1b_car_red_clay",
+				"cast": {
+					"toy": "toy",
+					"clay": "clay",
+					"ramp": "ramp",
+					"blocks": [
+						"block1"
+					]
+				}
+			},
+			{
+				"id": "bottom",
+				"label": "3 blocks",
+				"run": "ft_3b_car_red_clay",
+				"cast": {
+					"toy": "toy",
+					"clay": "clay",
+					"ramp": "ramp",
+					"blocks": [
+						"block1",
+						"block2",
+						"block3"
+					]
+				}
+			}
+		]
+	},
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "ramps",
+			"beat": "height",
+			"layout": "split",
+			"intent": "Open close on the two ramps, one band each at one scale: the blocks under each ramp are the one thing that differs, and the same red car with the same gray clay sits on each, right there to be compared.",
+			"run": {
+				"freeze": "start",
+				"seconds": 3.0
+			},
+			"move": "hold",
+			"subject": {
+				"role": "blocks"
+			},
+			"keep": [
+				{
+					"role": "ramp"
+				},
+				{
+					"role": "toy"
+				},
+				{
+					"role": "clay"
+				}
+			],
+			"frame": {
+				"fit": "snug"
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 6
+			},
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "blocks"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "Can a Grade 3 child count 1 block under the top ramp and 3 blocks under the bottom ramp, and see the same car with the same clay on each?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "toy"
+					}
+				],
+				"details": [
+					{
+						"role": "blocks"
+					},
+					{
+						"role": "clay"
+					}
+				]
+			}
+		},
+		{
+			"id": "roll",
+			"beat": "roll",
+			"layout": "split",
+			"in": "continue",
+			"intent": "As the cars are let go, widen with them as they roll, both bands at once and at one scale, so neither car ever leaves the picture.",
+			"run": {
+				"from": "start",
+				"to": "result"
+			},
+			"move": "pull",
+			"subject": {
+				"role": "toy"
+			},
+			"keep": [
+				{
+					"role": "ramp"
+				},
+				{
+					"role": "blocks"
+				},
+				{
+					"role": "toy"
+				}
+			],
+			"frame": {
+				"fit": "snug"
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 6
+			},
+			"lens": 50,
+			"ease": "gentle",
+			"end": {
+				"subject": {
+					"role": "toy"
+				},
+				"keep": [
+					{
+						"role": "ramp"
+					},
+					{
+						"role": "blocks"
+					}
+				],
+				"frame": {
+					"fit": "snug"
+				},
+				"view": {
+					"yaw": 0,
+					"pitch": 6
+				},
+				"lens": 50
+			},
+			"audit": {
+				"question": "Do both cars stay in the picture the whole time they roll?",
+				"key": "end",
+				"must_see": [
+					{
+						"role": "toy"
+					}
+				]
+			}
+		},
+		{
+			"id": "stops",
+			"beat": "roll",
+			"layout": "split",
+			"in": "continue",
+			"intent": "Hold still a moment as the cars come to rest: each car where it stopped, beside its own ramp.",
+			"run": {
+				"freeze": "result",
+				"seconds": 1.6
+			},
+			"move": "hold",
+			"subject": {
+				"role": "toy"
+			},
+			"keep": [
+				{
+					"role": "ramp"
+				},
+				{
+					"role": "blocks"
+				}
+			],
+			"audit": {
+				"question": "Can a child see where each car stopped?",
+				"key": "end",
+				"must_see": [
+					{
+						"role": "toy"
+					}
+				]
+			}
+		},
+		{
+			"id": "ramps-again",
+			"beat": "pause",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Cut back to the two ramps for the question: the question is about the setup, so the pause shows its evidence, the blocks, labelled and big.",
+			"run": {
+				"freeze": "result",
+				"seconds": 3.2
+			},
+			"move": "hold",
+			"subject": {
+				"role": "blocks"
+			},
+			"keep": [
+				{
+					"role": "ramp"
+				}
+			],
+			"frame": {
+				"fit": "snug"
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 6
+			},
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "blocks"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "Can a child see that the only difference between the two ramps is 1 block against 3 blocks?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "ramp"
+					}
+				],
+				"details": [
+					{
+						"role": "blocks"
+					}
+				]
+			}
+		}
+	],
+	"notes": "Two runs (one per lane) share one camera: the plan is solved on both lanes' things and filmed once per run with the same path. Where the cars stop is compared, so both bands keep the same world window all the way (one camera, never one per band)."
+}

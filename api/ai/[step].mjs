@@ -1,4 +1,4 @@
-// Vercel serverless twin of web/server.py's POST /api/ai/<step> (observe | plan | refine | edit | imagine). Not deployed by this file: docs/DEPLOY.md.
+// Vercel serverless twin of web/server.py's POST /api/ai/<step> (observe | plan | refine | edit | imagine | direct). Not deployed by this file: docs/DEPLOY.md.
 // Same request and answer as the local server: body {payload, client?: {requestId}} -> {ok: true, result, model, ms, usage, ...} or
 // {ok: false, error, code, retryable} with the status the error names. The key comes from the project's environment variables
 // (TRUEFOUNDRY_API_KEY, TRUEFOUNDRY_BASE_URL) and never leaves the function. Contract: ai/DESIGN.md §13 "The hosted endpoint".
@@ -34,10 +34,10 @@ const MARGIN_MS = 20000 // the step ends this long before Vercel would stop it
 const MAX_BODY = 12 << 20
 const ON_VERCEL = () => !!process.env.VERCEL
 const SLOTS = () => Math.max(1, Number(process.env.AI_SLOTS) || 12)
-const STEP_SLOTS = { observe: 4, plan: 6, refine: 8, edit: 8, imagine: 4 }
+const STEP_SLOTS = { observe: 4, plan: 6, refine: 8, edit: 8, imagine: 4, direct: 4 }
 const QUEUE_WAIT_MS = () => Math.max(0, Number(process.env.AI_QUEUE_WAIT) || 30) * 1000
 const QUEUE_MAX = () => Math.max(1, Number(process.env.AI_QUEUE_MAX) || 24)
-const TYPICAL_S = { observe: 30, plan: 30, refine: 15, edit: 6, imagine: 25 }
+const TYPICAL_S = { observe: 30, plan: 30, refine: 15, edit: 6, imagine: 25, direct: 90 }
 const SESSION_COOKIE = "ai_session"
 const RID_RE = /^[\w.:-]{1,80}$/
 

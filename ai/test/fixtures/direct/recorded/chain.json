@@ -1,0 +1,1477 @@
+{
+	"about": "The direct step's live run of the design example '06-chain-reaction' (20 Oct 2026): Opus 5.5 (claude-opus-5-5) through the gateway, measured by the engine's executor (web/export/shots.js checkPlan). Each round: the plan the model answered, and what the executor's checks said of it.",
+	"case": "chain",
+	"payload": {
+		"kind": "demo",
+		"lesson": {
+			"question": "What makes ball 2 go into the box?",
+			"answer": "A chain: ball 1 rolls down the ramps, knocks over the dominoes, the last domino tips the seesaw, and the seesaw throws ball 2 into the box.",
+			"grade": 4
+		},
+		"concept": "a chain reaction: each step starts the next",
+		"scene": "web/scenarios/rube-goldberg.json"
+	},
+	"model": "claude-group/claude-opus-5-5",
+	"usd": 0.4275696,
+	"ms": 127942,
+	"rounds": [
+		{
+			"round": 0,
+			"ok": false,
+			"failed": [
+				"lands speed: the picture's fastest point 0.897 widths/s (limit 0.5 for a hold)",
+				"lands zoom-rate: zoom 1.419/s (limit 0.7)",
+				"whole subject-size: too small: {\"item\":\"box\"} s 0.077 h 0.073 (floor s 0.09, h 0.1 unless flat or thin; group 0.554)"
+			],
+			"usd": 0.2068548,
+			"ms": 68253,
+			"plan": {
+				"version": 1,
+				"title": "A chain reaction: what puts ball 2 in the box?",
+				"about": "A chain reaction: ball 1 rolls down two ramps and knocks over dominoes, the last domino tips a seesaw, and the seesaw throws ball 2 into the box. Each step starts the next.",
+				"grade": 4,
+				"source": {
+					"kind": "demo",
+					"scene": "rube-goldberg",
+					"question": "What makes ball 2 go into the box?",
+					"answer": "A chain: ball 1 rolls down the ramps, knocks over the dominoes, the last domino tips the seesaw, and the seesaw throws ball 2 into the box.",
+					"words": [
+						"Rube Goldberg machine",
+						"Ball 2 lands in the box"
+					]
+				},
+				"story": [
+					{
+						"id": "ready",
+						"kind": "setup",
+						"says": "Ball 1 waits at the top of a ramp.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "ramp1"
+							}
+						]
+					},
+					{
+						"id": "step1",
+						"kind": "chain-step",
+						"says": "1. Ball 1 rolls down the ramps.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "ramp1"
+							}
+						]
+					},
+					{
+						"id": "step2",
+						"kind": "chain-step",
+						"says": "2. Ball 1 hits the first domino, and the whole row falls toward the seesaw.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "dominoes"
+							}
+						]
+					},
+					{
+						"id": "step3",
+						"kind": "chain-step",
+						"says": "3. The last domino hits the seesaw, and the seesaw throws ball 2 up.",
+						"evidence": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "ball2"
+							}
+						]
+					},
+					{
+						"id": "step4",
+						"kind": "chain-step",
+						"says": "4. Ball 2 lands in the box and stays there.",
+						"evidence": [
+							{
+								"item": "ball2"
+							},
+							{
+								"item": "box"
+							}
+						]
+					},
+					{
+						"id": "whole",
+						"kind": "pause",
+						"says": "One push started it all: each step started the next, from the ramp to the box.",
+						"evidence": [
+							{
+								"items": [
+									"ramp1",
+									"ramp2",
+									"dominoes",
+									"seesaw",
+									"box"
+								]
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "ready",
+						"beat": "ready",
+						"intent": "Start close on the first actor, ball 1 at the top of its ramp. The chain is told as it happens, one link at a time.",
+						"run": {
+							"freeze": "start",
+							"seconds": 1.4
+						},
+						"move": "hold",
+						"subject": {
+							"item": "ball1"
+						},
+						"keep": [
+							{
+								"item": "ramp1"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see a ball waiting at the top of a ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "roll",
+						"beat": "step1",
+						"in": "continue",
+						"intent": "Go with ball 1 as it is let go and rolls down the first ramp. The ball stays big while the ramp slides by under it.",
+						"run": {
+							"from": {
+								"at": "release",
+								"plus": -0.3
+							},
+							"to": {
+								"at": "contact:ramp2+ball1",
+								"plus": -0.25
+							}
+						},
+						"move": "follow",
+						"subject": {
+							"item": "ball1"
+						},
+						"frame": {
+							"width": 0.8
+						},
+						"follow": {
+							"axis": "xy",
+							"lead": 0.25
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child follow the ball as it rolls down the ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "knock",
+						"beat": "step2",
+						"in": "cut",
+						"intent": "Cut ahead to the dominoes and wait. The ball arrives from the long ramp, hits the first domino, and the row goes over one after another. It is too fast to chase, so the camera is already there.",
+						"run": {
+							"from": {
+								"at": "contact:ramp2+ball1",
+								"plus": -0.25
+							},
+							"to": {
+								"at": "contact:dominoes+seesaw",
+								"plus": -0.1
+							}
+						},
+						"move": "hold",
+						"subject": {
+							"item": "dominoes",
+							"when": "start",
+							"pad": 0.04
+						},
+						"keep": [
+							{
+								"item": "dominoes",
+								"pad": 0.04
+							},
+							{
+								"item": "ball1",
+								"when": {
+									"at": "contact:dominoes+ball1",
+									"plus": -0.15
+								}
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the ball hit the first domino and the dominoes fall one after another?",
+							"key": "contact:dominoes+ball1",
+							"must_see": [
+								{
+									"item": "dominoes",
+									"when": "contact:dominoes+ball1"
+								}
+							],
+							"details": [
+								{
+									"item": "ball1",
+									"when": "contact:dominoes+ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "launch",
+						"beat": "step3",
+						"in": "cut",
+						"intent": "The last domino tips the seesaw and the throw is over in about half a second. It plays at 0.4 speed, from a still frame that already holds the seesaw, the whole flight of ball 2 and the box.",
+						"run": {
+							"from": {
+								"at": "contact:dominoes+seesaw",
+								"plus": -0.1
+							},
+							"to": {
+								"at": "contact:box+ball2",
+								"plus": 0.3
+							},
+							"rate": 0.4
+						},
+						"label": "Slow motion",
+						"move": "hold",
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"keep": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "box"
+							},
+							{
+								"trail": "ball2",
+								"from": "start",
+								"to": "contact:box+ball2"
+							}
+						],
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the last domino hit the seesaw and the seesaw throw the ball up toward the box?",
+							"key": "start:ball2",
+							"must_see": [
+								{
+									"item": "seesaw"
+								},
+								{
+									"item": "box"
+								}
+							],
+							"details": [
+								{
+									"item": "ball2"
+								}
+							]
+						}
+					},
+					{
+						"id": "lands",
+						"beat": "step4",
+						"in": "continue",
+						"intent": "Back to real speed in the same frame. The ball bounces and settles in the box. The picture stays the same so only the ball's motion changes.",
+						"run": {
+							"from": {
+								"at": "contact:box+ball2",
+								"plus": 0.3
+							},
+							"to": "result",
+							"hold_after": 0.4
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"keep": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "box"
+							}
+						],
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Does ball 2 stop and stay in the box?",
+							"key": "end",
+							"must_see": [
+								{
+									"item": "box"
+								}
+							],
+							"details": [
+								{
+									"item": "ball2"
+								}
+							]
+						}
+					},
+					{
+						"id": "inside",
+						"beat": "step4",
+						"in": "continue",
+						"intent": "On the held end, rise and push in over the box. From the side the box's wall hides the ball; from above the child sees ball 2 really is inside.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.2
+						},
+						"move": "push",
+						"ease": "gentle",
+						"move_seconds": 2.5,
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"end": {
+							"subject": {
+								"item": "ball2"
+							},
+							"keep": [
+								{
+									"item": "box"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": "high",
+							"lens": 50
+						},
+						"audit": {
+							"question": "Can a child see ball 2 sitting inside the box?",
+							"key": "end",
+							"must_see": [
+								{
+									"item": "ball2"
+								},
+								{
+									"item": "box"
+								}
+							]
+						}
+					},
+					{
+						"id": "whole",
+						"beat": "whole",
+						"in": "cut",
+						"intent": "Cut to the whole machine at rest for the question. It is a big change of scale, so it is a cut, not a zoom. Numbered labels mark the route of the chain from the first ramp to the box, so the child can say what started what.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.6
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"ramp1",
+								"ramp2",
+								"dominoes",
+								"seesaw",
+								"box"
+							]
+						},
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "ramp1"
+								},
+								"text": "1 ball rolls",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "dominoes"
+								},
+								"text": "2 dominoes fall",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "seesaw"
+								},
+								"text": "3 seesaw tips",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "box"
+								},
+								"text": "4 ball 2 in box",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see the whole chain, from the first ramp to the dominoes to the seesaw to the box, in order?",
+							"key": "middle",
+							"must_see": [
+								{
+									"items": [
+										"ramp1",
+										"ramp2",
+										"dominoes",
+										"seesaw",
+										"box"
+									]
+								}
+							],
+							"details": [
+								{
+									"item": "box"
+								}
+							]
+						}
+					}
+				],
+				"notes": "One shot per link, in time order. Shots are timed from the digest's contacts: the follow starts 0.3 s before release and ends 0.25 s before ball 1 reaches ramp 2; the dominoes shot runs to just before the last domino hits the seesaw; the throw (contact:dominoes+seesaw to contact:box+ball2, about 0.65 s) is slowed to 0.4x and labelled. The high push shows ball 2 inside the box, which the side view hides. The pause is the whole machine with numbered step labels: the answer is the chain itself, so the last frame shows every link at once after each was seen big. The module boards are hidden because no reading carries the answer."
+			}
+		},
+		{
+			"round": 1,
+			"ok": false,
+			"failed": [
+				"lands subject-size: too small: {\"item\":\"ball2\"} s 0.089 h 0.121 (floor s 0.09, h 0.1 unless flat or thin; group 0.595)"
+			],
+			"usd": 0.1051754,
+			"ms": 30003,
+			"plan": {
+				"version": 1,
+				"title": "A chain reaction: what puts ball 2 in the box?",
+				"about": "A chain reaction: ball 1 rolls down two ramps and knocks over dominoes, the last domino tips a seesaw, and the seesaw throws ball 2 into the box. Each step starts the next.",
+				"grade": 4,
+				"source": {
+					"kind": "demo",
+					"scene": "rube-goldberg",
+					"question": "What makes ball 2 go into the box?",
+					"answer": "A chain: ball 1 rolls down the ramps, knocks over the dominoes, the last domino tips the seesaw, and the seesaw throws ball 2 into the box.",
+					"words": [
+						"Rube Goldberg machine",
+						"Ball 2 lands in the box"
+					]
+				},
+				"story": [
+					{
+						"id": "ready",
+						"kind": "setup",
+						"says": "Ball 1 waits at the top of a ramp.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "ramp1"
+							}
+						]
+					},
+					{
+						"id": "step1",
+						"kind": "chain-step",
+						"says": "1. Ball 1 rolls down the ramps.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "ramp1"
+							}
+						]
+					},
+					{
+						"id": "step2",
+						"kind": "chain-step",
+						"says": "2. Ball 1 hits the first domino, and the whole row falls toward the seesaw.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "dominoes"
+							}
+						]
+					},
+					{
+						"id": "step3",
+						"kind": "chain-step",
+						"says": "3. The last domino hits the seesaw, and the seesaw throws ball 2 up.",
+						"evidence": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "ball2"
+							}
+						]
+					},
+					{
+						"id": "step4",
+						"kind": "chain-step",
+						"says": "4. Ball 2 lands in the box and stays there.",
+						"evidence": [
+							{
+								"item": "ball2"
+							},
+							{
+								"item": "box"
+							}
+						]
+					},
+					{
+						"id": "whole",
+						"kind": "reveal",
+						"says": "One push started it all: each step started the next, from the ramp to the box.",
+						"evidence": [
+							{
+								"items": [
+									"ramp1",
+									"ramp2",
+									"dominoes",
+									"seesaw",
+									"box"
+								]
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "ready",
+						"beat": "ready",
+						"intent": "Start close on the first actor, ball 1 at the top of its ramp. The chain is told as it happens, one link at a time.",
+						"run": {
+							"freeze": "start",
+							"seconds": 1.4
+						},
+						"move": "hold",
+						"subject": {
+							"item": "ball1"
+						},
+						"keep": [
+							{
+								"item": "ramp1"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see a ball waiting at the top of a ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "roll",
+						"beat": "step1",
+						"in": "continue",
+						"intent": "Go with ball 1 as it is let go and rolls down the first ramp. The ball stays big while the ramp slides by under it.",
+						"run": {
+							"from": {
+								"at": "release",
+								"plus": -0.3
+							},
+							"to": {
+								"at": "contact:ramp2+ball1",
+								"plus": -0.25
+							}
+						},
+						"move": "follow",
+						"subject": {
+							"item": "ball1"
+						},
+						"frame": {
+							"width": 0.8
+						},
+						"follow": {
+							"axis": "xy",
+							"lead": 0.25
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child follow the ball as it rolls down the ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "knock",
+						"beat": "step2",
+						"in": "cut",
+						"intent": "Cut ahead to the dominoes and wait. The ball arrives from the long ramp, hits the first domino, and the row goes over one after another. It is too fast to chase, so the camera is already there.",
+						"run": {
+							"from": {
+								"at": "contact:ramp2+ball1",
+								"plus": -0.25
+							},
+							"to": {
+								"at": "contact:dominoes+seesaw",
+								"plus": -0.1
+							}
+						},
+						"move": "hold",
+						"subject": {
+							"item": "dominoes",
+							"when": "start",
+							"pad": 0.04
+						},
+						"keep": [
+							{
+								"item": "dominoes",
+								"pad": 0.04
+							},
+							{
+								"item": "ball1",
+								"when": {
+									"at": "contact:dominoes+ball1",
+									"plus": -0.15
+								}
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the ball hit the first domino and the dominoes fall one after another?",
+							"key": "contact:dominoes+ball1",
+							"must_see": [
+								{
+									"item": "dominoes",
+									"when": "contact:dominoes+ball1"
+								}
+							],
+							"details": [
+								{
+									"item": "ball1",
+									"when": "contact:dominoes+ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "launch",
+						"beat": "step3",
+						"in": "cut",
+						"intent": "The last domino tips the seesaw and the throw is over in about half a second. It plays at 0.4 speed, from a still frame that already holds the seesaw, the whole flight of ball 2 and the box.",
+						"run": {
+							"from": {
+								"at": "contact:dominoes+seesaw",
+								"plus": -0.1
+							},
+							"to": {
+								"at": "contact:box+ball2",
+								"plus": 0.3
+							},
+							"rate": 0.4
+						},
+						"label": "Slow motion",
+						"move": "hold",
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"keep": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "box"
+							},
+							{
+								"trail": "ball2",
+								"from": "start",
+								"to": "contact:box+ball2"
+							}
+						],
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the last domino hit the seesaw and the seesaw throw the ball up toward the box?",
+							"key": "start:ball2",
+							"must_see": [
+								{
+									"item": "seesaw"
+								},
+								{
+									"item": "box"
+								}
+							],
+							"details": [
+								{
+									"item": "ball2"
+								}
+							]
+						}
+					},
+					{
+						"id": "lands",
+						"beat": "step4",
+						"in": "continue",
+						"intent": "Back to real speed in exactly the same still frame, the ball's whole flight still in it, so nothing moves but the ball as it bounces and settles in the box.",
+						"run": {
+							"from": {
+								"at": "contact:box+ball2",
+								"plus": 0.3
+							},
+							"to": "result",
+							"hold_after": 0.4
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"keep": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "box"
+							},
+							{
+								"trail": "ball2",
+								"from": "start",
+								"to": "contact:box+ball2"
+							}
+						],
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Does ball 2 stop and stay in the box?",
+							"key": "end",
+							"must_see": [
+								{
+									"item": "box"
+								}
+							],
+							"details": [
+								{
+									"item": "ball2"
+								}
+							]
+						}
+					},
+					{
+						"id": "inside",
+						"beat": "step4",
+						"in": "continue",
+						"intent": "On the held end, rise and push in over the box. From the side the box's wall hides the ball; from above the child sees ball 2 really is inside.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.2
+						},
+						"move": "push",
+						"ease": "gentle",
+						"move_seconds": 2.5,
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"end": {
+							"subject": {
+								"item": "ball2"
+							},
+							"keep": [
+								{
+									"item": "box"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": "high",
+							"lens": 50
+						},
+						"audit": {
+							"question": "Can a child see ball 2 sitting inside the box?",
+							"key": "end",
+							"must_see": [
+								{
+									"item": "ball2"
+								},
+								{
+									"item": "box"
+								}
+							]
+						}
+					},
+					{
+						"id": "whole",
+						"beat": "whole",
+						"in": "cut",
+						"intent": "Cut to the whole machine at rest for the question, a reveal after every part was seen big. It is a big change of scale, so it is a cut, not a zoom. Numbered labels mark the route of the chain from the first ramp to the box.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.6
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"ramp1",
+								"ramp2",
+								"dominoes",
+								"seesaw",
+								"box"
+							]
+						},
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "ramp1"
+								},
+								"text": "1 ball rolls",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "dominoes"
+								},
+								"text": "2 dominoes fall",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "seesaw"
+								},
+								"text": "3 seesaw tips",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "box"
+								},
+								"text": "4 ball 2 in box",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see the whole chain, from the first ramp to the dominoes to the seesaw to the box, in order?",
+							"key": "middle",
+							"must_see": [
+								{
+									"items": [
+										"ramp1",
+										"ramp2",
+										"dominoes",
+										"seesaw",
+										"box"
+									]
+								}
+							],
+							"details": [
+								{
+									"item": "box"
+								}
+							]
+						}
+					}
+				],
+				"notes": "One shot per link, in time order. The throw (contact:dominoes+seesaw to contact:box+ball2, about 0.65 s) is slowed to 0.4x and labelled; the following real-speed shot keeps exactly the same subject, keep (including ball 2's flight trail) and frame, so the camera does not reframe across the join. The high push shows ball 2 inside the box, which the side view hides. The last shot is a reveal of the whole 3.2 m machine: every part was already shown big, so here the parts may be smaller (the box reads at about 0.077). The module boards are hidden because no reading carries the answer."
+			}
+		},
+		{
+			"round": 2,
+			"ok": true,
+			"failed": [],
+			"usd": 0.11553939999999999,
+			"ms": 29464,
+			"plan": {
+				"version": 1,
+				"title": "A chain reaction: what puts ball 2 in the box?",
+				"about": "A chain reaction: ball 1 rolls down two ramps and knocks over dominoes, the last domino tips a seesaw, and the seesaw throws ball 2 into the box. Each step starts the next.",
+				"grade": 4,
+				"source": {
+					"kind": "demo",
+					"scene": "rube-goldberg",
+					"question": "What makes ball 2 go into the box?",
+					"answer": "A chain: ball 1 rolls down the ramps, knocks over the dominoes, the last domino tips the seesaw, and the seesaw throws ball 2 into the box.",
+					"words": [
+						"Rube Goldberg machine",
+						"Ball 2 lands in the box"
+					]
+				},
+				"story": [
+					{
+						"id": "ready",
+						"kind": "setup",
+						"says": "Ball 1 waits at the top of a ramp.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "ramp1"
+							}
+						]
+					},
+					{
+						"id": "step1",
+						"kind": "chain-step",
+						"says": "1. Ball 1 rolls down the ramps.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "ramp1"
+							}
+						]
+					},
+					{
+						"id": "step2",
+						"kind": "chain-step",
+						"says": "2. Ball 1 hits the first domino, and the whole row falls toward the seesaw.",
+						"evidence": [
+							{
+								"item": "ball1"
+							},
+							{
+								"item": "dominoes"
+							}
+						]
+					},
+					{
+						"id": "step3",
+						"kind": "chain-step",
+						"says": "3. The last domino hits the seesaw, and the seesaw throws ball 2 up.",
+						"evidence": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "ball2"
+							}
+						]
+					},
+					{
+						"id": "step4",
+						"kind": "chain-step",
+						"says": "4. Ball 2 lands in the box and stays there.",
+						"evidence": [
+							{
+								"item": "ball2"
+							},
+							{
+								"item": "box"
+							}
+						]
+					},
+					{
+						"id": "whole",
+						"kind": "reveal",
+						"says": "One push started it all: each step started the next, from the ramp to the box.",
+						"evidence": [
+							{
+								"items": [
+									"ramp1",
+									"ramp2",
+									"dominoes",
+									"seesaw",
+									"box"
+								]
+							}
+						]
+					}
+				],
+				"output": {
+					"aspect": "16:9",
+					"fps": 60
+				},
+				"look": {
+					"backdrop": "studio",
+					"tone": "mid",
+					"ground": "sweep",
+					"light": "subject",
+					"labels": "hidden"
+				},
+				"shots": [
+					{
+						"id": "ready",
+						"beat": "ready",
+						"intent": "Start close on the first actor, ball 1 at the top of its ramp. The chain is told as it happens, one link at a time.",
+						"run": {
+							"freeze": "start",
+							"seconds": 1.4
+						},
+						"move": "hold",
+						"subject": {
+							"item": "ball1"
+						},
+						"keep": [
+							{
+								"item": "ramp1"
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see a ball waiting at the top of a ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "roll",
+						"beat": "step1",
+						"in": "continue",
+						"intent": "Go with ball 1 as it is let go and rolls down the first ramp. The ball stays big while the ramp slides by under it.",
+						"run": {
+							"from": {
+								"at": "release",
+								"plus": -0.3
+							},
+							"to": {
+								"at": "contact:ramp2+ball1",
+								"plus": -0.25
+							}
+						},
+						"move": "follow",
+						"subject": {
+							"item": "ball1"
+						},
+						"frame": {
+							"width": 0.8
+						},
+						"follow": {
+							"axis": "xy",
+							"lead": 0.25
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child follow the ball as it rolls down the ramp?",
+							"key": "middle",
+							"must_see": [
+								{
+									"item": "ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "knock",
+						"beat": "step2",
+						"in": "cut",
+						"intent": "Cut ahead to the dominoes and wait. The ball arrives from the long ramp, hits the first domino, and the row goes over one after another. It is too fast to chase, so the camera is already there.",
+						"run": {
+							"from": {
+								"at": "contact:ramp2+ball1",
+								"plus": -0.25
+							},
+							"to": {
+								"at": "contact:dominoes+seesaw",
+								"plus": -0.1
+							}
+						},
+						"move": "hold",
+						"subject": {
+							"item": "dominoes",
+							"when": "start",
+							"pad": 0.04
+						},
+						"keep": [
+							{
+								"item": "dominoes",
+								"pad": 0.04
+							},
+							{
+								"item": "ball1",
+								"when": {
+									"at": "contact:dominoes+ball1",
+									"plus": -0.15
+								}
+							}
+						],
+						"frame": {
+							"fit": "snug"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the ball hit the first domino and the dominoes fall one after another?",
+							"key": "contact:dominoes+ball1",
+							"must_see": [
+								{
+									"item": "dominoes",
+									"when": "contact:dominoes+ball1"
+								}
+							],
+							"details": [
+								{
+									"item": "ball1",
+									"when": "contact:dominoes+ball1"
+								}
+							]
+						}
+					},
+					{
+						"id": "launch",
+						"beat": "step3",
+						"in": "cut",
+						"intent": "The last domino tips the seesaw and the throw is over in about half a second. It plays at 0.4 speed, from a still frame that already holds the seesaw, the whole flight of ball 2 and the box.",
+						"run": {
+							"from": {
+								"at": "contact:dominoes+seesaw",
+								"plus": -0.1
+							},
+							"to": {
+								"at": "contact:box+ball2",
+								"plus": 0.3
+							},
+							"rate": 0.4
+						},
+						"label": "Slow motion",
+						"move": "hold",
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"keep": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "box"
+							},
+							{
+								"trail": "ball2",
+								"from": "start",
+								"to": "contact:box+ball2"
+							}
+						],
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Can a child see the last domino hit the seesaw and the seesaw throw the ball up toward the box?",
+							"key": "start:ball2",
+							"must_see": [
+								{
+									"item": "seesaw"
+								},
+								{
+									"item": "box"
+								}
+							],
+							"details": [
+								{
+									"item": "ball2"
+								}
+							]
+						}
+					},
+					{
+						"id": "lands",
+						"beat": "step4",
+						"in": "continue",
+						"intent": "Back to real speed in exactly the same still frame, the ball's whole flight still in it, so nothing moves but the ball as it bounces and settles in the box. The box is the hero now: the ball ends up in it.",
+						"run": {
+							"from": {
+								"at": "contact:box+ball2",
+								"plus": 0.3
+							},
+							"to": "result",
+							"hold_after": 0.4
+						},
+						"move": "hold",
+						"subject": {
+							"item": "box"
+						},
+						"keep": [
+							{
+								"item": "seesaw"
+							},
+							{
+								"item": "box"
+							},
+							{
+								"trail": "ball2",
+								"from": "start",
+								"to": "contact:box+ball2"
+							}
+						],
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "side",
+						"lens": 50,
+						"audit": {
+							"question": "Does ball 2 stop and stay in the box?",
+							"key": "end",
+							"must_see": [
+								{
+									"item": "box"
+								}
+							],
+							"details": [
+								{
+									"item": "ball2"
+								}
+							]
+						}
+					},
+					{
+						"id": "inside",
+						"beat": "step4",
+						"in": "continue",
+						"intent": "On the held end, rise and push in over the box. From the side the box's wall hides the ball; from above the child sees ball 2 really is inside.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.2
+						},
+						"move": "push",
+						"ease": "gentle",
+						"move_seconds": 2.5,
+						"subject": {
+							"items": [
+								"seesaw",
+								"ball2",
+								"box"
+							]
+						},
+						"end": {
+							"subject": {
+								"item": "ball2"
+							},
+							"keep": [
+								{
+									"item": "box"
+								}
+							],
+							"frame": {
+								"fit": "snug"
+							},
+							"view": "high",
+							"lens": 50
+						},
+						"audit": {
+							"question": "Can a child see ball 2 sitting inside the box?",
+							"key": "end",
+							"must_see": [
+								{
+									"item": "ball2"
+								},
+								{
+									"item": "box"
+								}
+							]
+						}
+					},
+					{
+						"id": "whole",
+						"beat": "whole",
+						"in": "cut",
+						"intent": "Cut to the whole machine at rest for the question, a reveal after every part was seen big. It is a big change of scale, so it is a cut, not a zoom. Numbered labels mark the route of the chain from the first ramp to the box.",
+						"run": {
+							"freeze": "result",
+							"seconds": 3.6
+						},
+						"move": "hold",
+						"subject": {
+							"items": [
+								"ramp1",
+								"ramp2",
+								"dominoes",
+								"seesaw",
+								"box"
+							]
+						},
+						"frame": {
+							"fit": "tight"
+						},
+						"view": "eye",
+						"lens": 50,
+						"annotate": [
+							{
+								"kind": "label",
+								"on": {
+									"item": "ramp1"
+								},
+								"text": "1 ball rolls",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "dominoes"
+								},
+								"text": "2 dominoes fall",
+								"at": "above"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "seesaw"
+								},
+								"text": "3 seesaw tips",
+								"at": "below"
+							},
+							{
+								"kind": "label",
+								"on": {
+									"item": "box"
+								},
+								"text": "4 ball 2 in box",
+								"at": "above"
+							}
+						],
+						"audit": {
+							"question": "Can a child see the whole chain, from the first ramp to the dominoes to the seesaw to the box, in order?",
+							"key": "middle",
+							"must_see": [
+								{
+									"items": [
+										"ramp1",
+										"ramp2",
+										"dominoes",
+										"seesaw",
+										"box"
+									]
+								}
+							],
+							"details": [
+								{
+									"item": "box"
+								}
+							]
+						}
+					}
+				],
+				"notes": "One shot per link, in time order. The throw (contact:dominoes+seesaw to contact:box+ball2, about 0.65 s) is slowed to 0.4x and labelled; the following real-speed shot keeps the same keep (seesaw, box, ball 2's flight trail) and frame, so the camera does not reframe across the join. In that shot the box is the subject and ball 2 a detail (it reads at about 0.089 there; the push that follows shows it big from above). The last shot is a reveal of the whole 3.2 m machine: every part was already shown big, so the box may read smaller there. The module boards are hidden because no reading carries the answer."
+			}
+		}
+	]
+}
