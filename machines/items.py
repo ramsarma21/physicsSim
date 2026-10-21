@@ -1222,12 +1222,12 @@ def summarize(scene, doc, track):
 
 
 def walls_inside(doc, last, iid, cid):
-    """Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right")
-    parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top, each part where the run's last frame has it.
-    False when the container has no such parts or the item no moving solid."""
+    """Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right",
+    a pulley lift's pail's "wall1" and "wall2") parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top,
+    each part where the run's last frame has it. False when the container has no such parts or the item no moving solid."""
     def part(names):
         return next((s for s in doc["solids"] if s["item"] == cid and s.get("part") in names), None)
-    L, R, F = part(("left", "wall-left")), part(("right", "wall-right")), part(("floor", "body", "base", "bottom"))
+    L, R, F = part(("left", "wall-left", "wall1")), part(("right", "wall-right", "wall2")), part(("floor", "body", "base", "bottom"))
     if L is None or R is None or F is None:
         return False
 

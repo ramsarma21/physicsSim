@@ -1248,13 +1248,13 @@ export function summarize(scene, doc, track) {
 	return out
 }
 
-/** Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right")
- *  parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top, each part where the run's last frame has it.
- *  False when the container has no such parts or the item no moving solid. */
+/** Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right",
+ *  a pulley lift's pail's "wall1" and "wall2") parts, above its "floor" (or "body", "base", "bottom"), no higher than the lower wall's top,
+ *  each part where the run's last frame has it. False when the container has no such parts or the item no moving solid. */
 export function walls_inside(doc, last, iid, cid) {
 	const part = (names) => doc.solids.find((s) => s.item === cid && names.includes(s.part))
-	const L = part(["left", "wall-left"])
-	const R = part(["right", "wall-right"])
+	const L = part(["left", "wall-left", "wall1"])
+	const R = part(["right", "wall-right", "wall2"])
 	const F = part(["floor", "body", "base", "bottom"])
 	if (L === undefined || R === undefined || F === undefined) return false
 	const pose = (s) => (s.id in last ? [last[s.id].x, last[s.id].y, "angle" in last[s.id] ? last[s.id].angle : 0] : [s.at.x, s.at.y, "angle" in s ? s.angle : 0])

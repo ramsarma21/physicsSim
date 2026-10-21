@@ -24,7 +24,7 @@ import { clashText, goalClash, statesNewOutcome } from "./edit-outcome.mjs"
 export const RESERVED_IDS = ["table", "air"]
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
 /** Containers an "in" goal is judged by their own walls in the run (ai/goals.mjs wallsInside): the engine's summary does not check them. */
-export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug"]
+export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug", "pulley-lift"]
 export const LIMITS = { items: 150, idLength: 40, goals: 10, tune: 12, patches: 150, missing: 30, observedObjects: 60, relations: 120, covers: 60, differences: 20, stages: 12, stageKnobs: 6 }
 /** Types that count as several things (a domino row's dominoes): the prop that says how many. */
 export const MULTI_UNIT = { "domino-row": "count", "newtons-cradle": "count" }

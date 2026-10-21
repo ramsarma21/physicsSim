@@ -1881,6 +1881,32 @@ const _sample_item = (scene, pick, types) => {
 	return xs.length ? pick(xs) : null
 }
 
+/** A pulley lift's pail's inside in the lift's own frame (m from its anchor, the middle between its pulleys): between its walls' inner faces,
+ *  from its floor's top to its rim (its walls' tops; the bail above it is left out), from the lift built alone at the origin
+ *  (web/sim/plugins.js place.interior: the solver puts what goes inside on the pail's floor). */
+function _pail_inside(props) {
+	const item = { id: "lift", type: "pulley-lift", x: 0.0, y: 0.0, props: props ?? {} }
+	if (!F?.TYPES?.["pulley-lift"]) return null
+	const sb = new F.SceneBuilder()
+	sb.scene_items = new Map([[item.id, item]])
+	const P = F.props_of(item)
+	F.TYPES["pulley-lift"].build_fn(new F.Ctx(sb, item, P), P)
+	const by = new Map(sb.solids.map((s) => [s.id, s]))
+	const at = (s) => {
+		if (!s.parent || !by.has(s.parent)) return { x: s.at.x, y: s.at.y, a: s.angle ?? 0 }
+		const q = at(by.get(s.parent))
+		const c = Math.cos(q.a)
+		const n = Math.sin(q.a)
+		return { x: q.x + s.at.x * c - s.at.y * n, y: q.y + s.at.x * n + s.at.y * c, a: q.a + (s.angle ?? 0) }
+	}
+	const [floor, w1, w2] = ["floor", "wall1", "wall2"].map((k) => by.get(`lift/${k}`))
+	if (!floor || !w1 || !w2) return null
+	const f = at(floor)
+	const a = at(w1)
+	const b = at(w2)
+	return { x0: a.x + w1.body.width / 2, x1: b.x - w2.body.width / 2, floor: f.y + floor.body.height / 2, rim: Math.min(a.y + w1.body.height / 2, b.y + w2.body.height / 2) }
+}
+
 export const plugin = {
 	title: "Machines and motion (mechanics): forces, force arrows (free-body diagrams) and energy bars",
 	howto: HOWTO,
@@ -2026,6 +2052,11 @@ export const plugin = {
 		}))
 	],
 	digest: (item, sim) => digestLines(item, sim),
+	place: {
+		// (a pulley lift's pail is a container: what is put inside it rides up with it; an "in" goal on it is judged by its walls, ai/goals.mjs)
+		containers: ["pulley-lift"],
+		interior: (type, props) => (type === "pulley-lift" ? _pail_inside(props) : null)
+	},
 	words: {
 		change: changeWords,
 		// (requests that need this module though their words are core ones: a balloon rocket on a string line, a cart (ai/catalog-digest.mjs))

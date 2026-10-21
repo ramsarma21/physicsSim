@@ -194,15 +194,15 @@ function inGoal(g, summary, run = null) {
 	}
 	return { ok: !!s.ok, detail: s.ok ? "it ends inside" : "it does not end inside" }
 }
-/** Does the goal's thing end between a container's own walls (its "left" and "right" parts, above its "floor", below their tops)? Every moving
- *  solid of it, at the run's last frame. null when the container has no such parts. */
+/** Does the goal's thing end between a container's own walls (its "left" and "right" parts, a pulley lift's pail's "wall1" and "wall2", above
+ *  its "floor", below their tops)? Every moving solid of it, at the run's last frame. null when the container has no such parts. */
 export function wallsInside(g, run) {
 	const solids = run?.doc?.solids ?? []
 	const last = run?.track?.frames?.at(-1)?.placements ?? null
 	if (!last) return null
 	const part = (name) => solids.find((x) => x.item === g.container && (x.part === name || String(x.id).endsWith(`/${name}`)))
-	const L = part("left")
-	const R = part("right")
+	const L = part("left") ?? part("wall1")
+	const R = part("right") ?? part("wall2")
 	const F = part("floor")
 	if (!L || !R || !F) return outlineInside(g, run, solids, last)
 	const pose = (x) => last[x.id] ?? (x.at ? { x: x.at.x, y: x.at.y, angle: x.angle ?? 0 } : null)
