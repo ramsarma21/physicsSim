@@ -1,0 +1,89 @@
+{
+ "version": 2,
+ "id": "egg-padding",
+ "name": "Padding saves the egg",
+ "seconds": 1.6,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.3,
+  "x1": 2.1,
+  "y0": -0.05,
+  "y1": 1
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 3
+   }
+  },
+  {
+   "id": "egg1",
+   "type": "raw-egg",
+   "name": "Egg onto the table",
+   "x": 0.7,
+   "y": 0.5238126284064326,
+   "held": true
+  },
+  {
+   "id": "foam",
+   "type": "cushion",
+   "name": "Foam pad",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "material": "foam",
+    "thickness": 0.05,
+    "width": 0.25
+   }
+  },
+  {
+   "id": "egg2",
+   "type": "raw-egg",
+   "name": "Egg onto foam",
+   "x": 1.2,
+   "y": 0.5738126284064327,
+   "held": true
+  },
+  {
+   "id": "pillow",
+   "type": "cushion",
+   "name": "Pillow",
+   "x": 1.7,
+   "y": 0,
+   "props": {
+    "material": "pillow stuffing",
+    "thickness": 0.15,
+    "width": 0.3
+   }
+  },
+  {
+   "id": "egg3",
+   "type": "raw-egg",
+   "name": "Egg onto the pillow",
+   "x": 1.7,
+   "y": 0.6738126284064327,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "breaks",
+   "item": "egg1",
+   "label": "The egg on the bare table breaks"
+  },
+  {
+   "kind": "survives",
+   "item": "egg2",
+   "label": "The egg on the foam survives"
+  },
+  {
+   "kind": "survives",
+   "item": "egg3",
+   "label": "The egg on the pillow survives"
+  }
+ ]
+}

@@ -22,6 +22,7 @@ import path from "node:path"
 import { createHash } from "node:crypto"
 import { Worker } from "node:worker_threads"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { missingLine } from "../../../web/ai/missing-words.js"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 export const REPO = path.join(HERE, "..", "..", "..")
@@ -228,7 +229,8 @@ function headsUp(r) {
 	const warn = (r.issues ?? []).find((i) => i.level === "warn" || i.level === "error")
 	const miss = (r.missing ?? [])[0]
 	if (warn) return `Heads-up: ${warn.text}`
-	if (miss) return `Heads-up: there’s no ${String(miss.asked).replace(/^(a|an|the) /i, "")} in the library${miss.substitute_type ? `, so I used a ${miss.substitute_type}` : ", so I left it out"}.`
+	// (worded as web/ai/panel.js words it: ../../../web/ai/missing-words.js)
+	if (miss) return `Heads-up: ${missingLine(miss)}.`
 	if (r.differences?.length) return `Heads-up: ${String(r.differences[0]).replace(/\.$/, "")}.`
 	return null
 }

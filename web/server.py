@@ -128,6 +128,11 @@ def _prop(v, spec, what):
     return int(round(x)) if kind == "int" else x
 
 
+def _open_other(v, spec):
+    """A value an open choice (a colour: its names listed, any "#rrggbb" too) does not list: kept or left out as an unlisted prop is, never an error."""
+    return spec["kind"] == "choice" and spec.get("open") is True and not (isinstance(v, str) and v in spec["choices"])
+
+
 def _item(i, n, seen):
     if not isinstance(i, dict):
         raise BadScene(f"item {n + 1} is not an object")
@@ -155,10 +160,10 @@ def _item(i, n, seen):
     for k, v in (props or {}).items():
         if v is None:
             continue
-        if k in specs:
+        if k in specs and not _open_other(v, specs[k]):
             clean_props[k] = _prop(v, specs[k], f"{iid}: {specs[k]['label']}")
         elif isinstance(v, (bool, int, float, str)) and (not isinstance(v, float) or math.isfinite(v)) and len(str(v)) <= 64:
-            clean_props[k] = v                       # an optional prop the type reads but doesn't list (a ball's colour)
+            clean_props[k] = v                       # an optional prop the type reads but doesn't list (a ball's colour), or an open choice's other value
     out["props"] = clean_props
     return out
 

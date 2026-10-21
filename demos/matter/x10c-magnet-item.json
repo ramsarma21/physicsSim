@@ -1,0 +1,58 @@
+{
+ "version": 2,
+ "id": "x10c-magnet-item",
+ "name": "A bar magnet held over a dish",
+ "seconds": 3,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.1,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "dish",
+   "type": "mixture-dish",
+   "name": "Dish",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "mixture": "sand + paper clips",
+    "magnet": "magnet",
+    "wand": false,
+    "grains": 60,
+    "width": 0.08
+   }
+  },
+  {
+   "id": "magnet",
+   "type": "bar-magnet",
+   "name": "Magnet",
+   "x": 1.2,
+   "y": 0.105,
+   "angle": 90,
+   "fixed": true,
+   "props": {
+    "material": "neodymium"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "separates",
+   "item": "dish"
+  }
+ ]
+}

@@ -78,6 +78,12 @@ while IFS= read -r line; do
 done < <(grep -E '^node ' tools/parity/run.sh)
 [ "$n" -gt 0 ] || { echo "::error::no steps found in tools/parity/run.sh"; exit 1; }
 echo "parity: $n steps from tools/parity/run.sh, ${PARITY_JOBS:-3} at a time, last first (run.sh ends with the longest: fuzz-live)"
+# A hang report if the steps are still going after PARITY_HANG_S (25 min; they take 9-15): the processes left, and a python3 child (not the
+# server) stuck for 10 min or more is sent SIGABRT so its Python stack shows in its step's log (.github/scripts/hang-report.sh)
+export PYTHONFAULTHANDLER=1
+"$PWD/.github/scripts/hang-report.sh" "${PARITY_HANG_S:-1500}" "parity steps" &
+hang=$!
+trap 'kill $server 2>/dev/null || true; kill $hang 2>/dev/null || true' EXIT
 ls ci-logs/parity/*.cmd | awk '{ a[NR] = $0 } END { for (i = NR; i > 0; i--) print a[i] }' | xargs -P "${PARITY_JOBS:-3}" -n 1 "$self" --one
 
 # A step that cannot reach the server or Playwright prints "...; skipped" and exits 0, so its live comparisons would pass unseen: the

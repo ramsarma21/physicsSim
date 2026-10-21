@@ -9,6 +9,7 @@
 // Keep `run` in step with research/poc/worker.ts (the server's copy): the parity test (tools/parity-engine.mjs) compares them.
 import { admitDocument } from "../tooling/src/sim/document.ts"
 import { simulate } from "../tooling/src/sim/physics.ts"
+import { slimExtras } from "../tooling/src/sim/plugins.ts"
 
 // Same result as Python's round(v, d) except on exact binary ties: toFixed is exact decimal rounding. `+ 0` turns -0 into 0 (JSON has no -0).
 const round = (v: number, d: number): number => (Number.isFinite(v) ? Number(v.toFixed(d)) + 0 : (null as unknown as number))
@@ -30,6 +31,7 @@ interface Place {
 	y: number
 	angle: number
 	squash?: number
+	scale?: number
 }
 
 export const run = (doc: unknown, rate: number) => {
@@ -45,7 +47,7 @@ export const run = (doc: unknown, rate: number) => {
 		let same = true
 		for (let k = 1; k < frames.length && same; k++) {
 			const b = frames[k]?.placements[part.id] as Place | undefined
-			same = b !== undefined && b.x === a.x && b.y === a.y && b.angle === a.angle && b.squash === a.squash
+			same = b !== undefined && b.x === a.x && b.y === a.y && b.angle === a.angle && b.squash === a.squash && b.scale === a.scale
 		}
 		if (same) still.add(part.id)
 	}
@@ -56,11 +58,13 @@ export const run = (doc: unknown, rate: number) => {
 			const p = f.placements[id] as Place
 			const q: Place = { x: round(p.x, 5), y: round(p.y, 5), angle: round(p.angle, 5) }
 			if (p.squash !== undefined) q.squash = round(p.squash, 5)
+			if (p.scale !== undefined) q.scale = round(p.scale, 5)
 			placements[id] = q
 		}
 		return { t: round(f.t, 6), placements }
 	})
-	return { fps: asJson(track.fps) as number, frames: slim, impacts: asJson(track.impacts) as typeof track.impacts }
+	// (a module's readings and events, tooling/src/sim/plugins.ts: only when the run made any, so a plain track is what it was)
+	return { fps: asJson(track.fps) as number, frames: slim, impacts: asJson(track.impacts) as typeof track.impacts, ...slimExtras(track, round) }
 }
 
 type Request = { id: number; doc: unknown; rate: number }

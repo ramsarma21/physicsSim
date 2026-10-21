@@ -34,7 +34,7 @@ const isKw = (v) => v !== null && typeof v === "object" && !Array.isArray(v) && 
 export class Prop {
 	constructor(key, label, def, ...rest) {
 		const kw = rest.length && isKw(rest[rest.length - 1]) ? rest.pop() : {}
-		const o = { lo: rest[0] ?? null, hi: rest[1] ?? null, step: rest[2] ?? null, unit: rest[3] ?? "", help: rest[4] ?? "", kind: "number", choices: null, auto: false, slider_max: null, ...kw }
+		const o = { lo: rest[0] ?? null, hi: rest[1] ?? null, step: rest[2] ?? null, unit: rest[3] ?? "", help: rest[4] ?? "", kind: "number", choices: null, auto: false, slider_max: null, open: false, ...kw }
 		this.key = key
 		this.label = label
 		this.default = def
@@ -47,6 +47,7 @@ export class Prop {
 		this.choices = o.choices
 		this.auto = o.auto
 		this.slider_max = o.slider_max
+		this.open = o.open // a choice that also takes any other text of up to 64 characters (items.py Prop.open)
 	}
 
 	json() {
@@ -59,14 +60,72 @@ export class Prop {
 			if (this.slider_max !== null) d.slider_max = this.slider_max // the slider's own top (min..max is what a typed value may be)
 		}
 		if (truthy(this.choices)) d.choices = [...this.choices]
+		if (this.open) d.open = true
 		return d
 	}
+}
+
+/** A link from an item to another item of the scene (items.py Link): new Link(key, label, {types, help}). The other item's id is stored
+ *  in the item's props under `key`; c.link(key) reads it. Listed as the type's `links`, never in `props`. */
+export class Link {
+	constructor(key, label, kw = {}) {
+		const o = { types: [], help: "", ...kw }
+		this.key = key
+		this.label = label
+		this.types = [...o.types]
+		this.help = o.help
+	}
+
+	json() {
+		return { key: this.key, label: this.label, kind: "link", types: [...this.types], help: this.help }
+	}
+}
+
+/** A reading the run makes of an item (items.py Readout): new Readout(key, label, {unit, digits, help, words}). words: what a state code means,
+ *  {0: "whole", 1: "cracked", 2: "in pieces"} (whole numbers only), listed as {"0": "whole", ...} in number order, as items.py lists them. */
+export class Readout {
+	constructor(key, label, kw = {}) {
+		const o = { unit: "", digits: 1, help: "", words: null, ...kw }
+		this.key = key
+		this.label = label
+		this.unit = o.unit
+		this.digits = o.digits
+		this.help = o.help
+		this.words = readoutWords(o.words, key)
+	}
+
+	json() {
+		const d = { key: this.key, label: this.label, unit: this.unit, digits: this.digits, help: this.help }
+		if (this.words) d.words = this.words
+		return d
+	}
+}
+/** A readout's value words: {code: word} -> {"<code>": word} in number order, or null (items.py readout_words). */
+export function readoutWords(words, key = "?") {
+	if (!words || typeof words !== "object" || !Object.keys(words).length) return null
+	const out = []
+	for (const [k, w] of Object.entries(words)) {
+		const n = Number(k)
+		if (k.trim() === "" || !Number.isInteger(n) || typeof w !== "string" || !w) throw new Error(`readout ${key}: words need whole-number codes and words (${JSON.stringify(k)}: ${JSON.stringify(w)})`)
+		out.push([n, w])
+	}
+	out.sort((a, b) => a[0] - b[0])
+	return Object.fromEntries(out.map(([n, w]) => [String(n), w]))
+}
+
+// Props every matching type lists in its catalog entry, given by a module (the mechanics module's colour, start speed, glow): [Prop, applies]
+// with applies(ItemType) -> bool. machines/items.py COMMON_PROPS, the same: listed in `props` ("common": true) and defaulted in the entry's
+// `defaults`, never in ItemType.defaults(), so an item that does not set one builds and resolves exactly as before.
+export const COMMON_PROPS = []
+export function register_common_prop(prop, applies = null) {
+	COMMON_PROPS.push([prop, applies ?? (() => true)])
+	return prop
 }
 
 /** A catalog entry. build_fn(ctx, P) adds its solids in its own frame (its anchor at the origin). */
 export class ItemType {
 	constructor(key, name, category, build, kw = {}) {
-		const o = { props: [], tags: [], description: "", source: "", dynamic: true, material: null, materials: [], anchor: "its centre", edit: [], facts: "", hidden_3d: false, color: null, ...kw }
+		const o = { props: [], tags: [], description: "", source: "", dynamic: true, material: null, materials: [], anchor: "its centre", edit: [], facts: "", hidden_3d: false, color: null, links: [], readouts: [], module: null, ...kw }
 		this.key = key
 		this.name = name
 		this.category = category
@@ -83,6 +142,9 @@ export class ItemType {
 		this.facts = o.facts
 		this.hidden_3d = o.hidden_3d
 		this.color = o.color
+		this.links = [...o.links]
+		this.readouts = [...o.readouts]
+		this.module = o.module
 	}
 
 	/** Every `auto` prop of this type and the props each follows: what a built value of an auto prop depends on (a Set). */
@@ -121,14 +183,24 @@ export class ItemType {
 			)
 		}
 		const autos = new Set(this.props.filter((p) => truthy(p.auto)).map((p) => p.key))
+		// (a module's common props this type takes (COMMON_PROPS), after its own: listed and defaulted here only, never built by default)
+		const own = new Set(props.map((q) => q.key))
+		const common = COMMON_PROPS.filter(([p, ok]) => !own.has(p.key) && ok(this)).map(([p]) => p)
+		for (const p of common) props.push({ ...p.json(), common: true })
 		// (an auto prop has no default of its own: its value at any other size is built, so a value the item sets is always kept)
 		const defaults = {}
 		const all = this.defaults()
 		for (const k of Object.keys(all)) if (!autos.has(k)) setOwn(defaults, k, all[k])
-		return {
+		for (const p of common) setOwn(defaults, p.key, p.default)
+		const d = {
 			key: this.key, name: this.name, category: this.category, tags: [...this.tags], description: this.description, source: this.source,
 			dynamic: this.dynamic, anchor: this.anchor, edit: this.edit.map((h) => ({ ...h })), props, defaults, facts: this.facts
 		}
+		// (a module's types: their links to other items, their readings, and their module; nothing for the others, whose entries stay as they were)
+		if (this.links.length) d.links = this.links.map((k) => k.json())
+		if (this.readouts.length) d.readouts = this.readouts.map((r) => r.json())
+		if (truthy(this.module)) d.module = this.module
+		return d
 	}
 }
 
@@ -317,6 +389,34 @@ export class Ctx {
 		return j.id
 	}
 
+	/** This item's solid "<item id>/<part>". */
+	sid(part) {
+		return `${this.item.id}/${part}`
+	}
+
+	/** The item a link prop (Link) names: its id when it is an item of this scene (of one of the link's types), else null. */
+	link(key) {
+		const v = hasOwn(this.P, key) ? this.P[key] : null
+		if (typeof v !== "string" || v === this.item.id) return null
+		const other = this.sb.scene_items.has(v) ? this.sb.scene_items.get(v) : null
+		if (other === null) return null
+		const spec = TYPES[this.item.type].links.find((k) => k.key === key)
+		if (spec !== undefined && spec.types.length && !spec.types.includes(other.type)) return null
+		return v
+	}
+
+	/** The scene's settings, resolved: {gravity: m/s², air, room_temp: °C, time_lapse} (settings_of). */
+	get settings() {
+		return this.sb.settings
+	}
+
+	/** A module process "<item id>/<part>" (items.py Ctx.process): {kind, id, item, ...fields} in doc.processes, in build order. */
+	process(kind, part, fields = {}) {
+		const rec = { kind, id: `${this.item.id}/${part}`, item: this.item.id, ...fields }
+		this.sb.processes.push(rec)
+		return rec.id
+	}
+
 	cord(part, lx, ly) {
 		const [x, y] = this.world(lx, ly)
 		this.sb.use_sprite("cord")
@@ -358,6 +458,9 @@ export class SceneBuilder {
 		this.instances = new Map()
 		this.sprites_used = new Set()
 		this.joints = []
+		this.processes = []
+		this.scene_items = new Map()
+		this.settings = { ...STANDARD_SETTINGS }
 	}
 
 	/** The name of the material instance (base + props), made on first use: the base name when the props are the base's own, else with a short hash. */
@@ -433,10 +536,75 @@ export function camera_of(stage) {
 }
 
 /** scene -> {doc: the engine document, resolved: {item id: the props it was built with}}. */
+// ---------------------------------------------------------------- the scene's settings (items.py settings_of: gravity, air, room temperature, time-lapse)
+export const GRAVITY_PRESETS = { earth: 9.81, moon: 1.62, mars: 3.71, jupiter: 24.79, none: 0.0 } // m/s²: NASA planetary fact sheets
+// (air_density, with air on: the air's density for the engine's drag and buoyancy, kg/m³: items.py's note, NASA planetary fact sheets)
+export const STANDARD_SETTINGS = { gravity: 9.81, air: true, room_temp: 20.0, time_lapse: 1.0, air_density: 1.2 }
+export const SETTING_LIMITS = { gravity: [0.0, 30.0], room_temp: [-60.0, 60.0], time_lapse: [1.0, 100000.0], air_density: [0.001, 100.0] }
+const SETTING_RANGE_TEXT = { room_temp: "-60 to 60", time_lapse: "1 to 100000", air_density: "0.001 to 100 kg/m³" }
+const isNum = (v) => typeof v === "number"
+
+/** The scene's settings resolved (STANDARD_SETTINGS where it says nothing); ValueError for one the engine cannot take. */
+export function settings_of(scene) {
+	const raw = hasOwn(scene, "settings") ? scene.settings : null
+	const out = { ...STANDARD_SETTINGS }
+	if (raw === null || raw === undefined) return out
+	if (typeof raw !== "object" || Array.isArray(raw)) throw new ValueError("settings must be an object {gravity, air, room_temp, time_lapse}")
+	const gv = hasOwn(raw, "gravity") ? raw.gravity : null
+	if (gv !== null && gv !== undefined) {
+		if (typeof gv === "string") {
+			const k = py.pyLower(py.pyStrip(gv))
+			if (!hasOwn(GRAVITY_PRESETS, k)) throw new ValueError(`settings.gravity must be one of ${Object.keys(GRAVITY_PRESETS).join(", ")} or m/s², not ${py.pyRepr(py.pySlice(gv, 30))}`)
+			out.gravity = GRAVITY_PRESETS[k]
+		} else if (!isNum(gv) || !Number.isFinite(gv) || !(SETTING_LIMITS.gravity[0] <= gv && gv <= SETTING_LIMITS.gravity[1])) {
+			throw new ValueError("settings.gravity must be a preset or a number of m/s² from 0 to 30")
+		} else out.gravity = toFloat(gv)
+	}
+	const air = hasOwn(raw, "air") ? raw.air : null
+	if (air !== null && air !== undefined) {
+		if (typeof air !== "boolean") throw new ValueError("settings.air must be true or false")
+		out.air = air
+	}
+	for (const key of ["room_temp", "time_lapse", "air_density"]) {
+		const v = hasOwn(raw, key) ? raw[key] : null
+		if (v === null || v === undefined) continue
+		const [lo, hi] = SETTING_LIMITS[key]
+		if (!isNum(v) || !Number.isFinite(v) || !(lo <= v && v <= hi)) throw new ValueError(`settings.${key} must be a number from ${SETTING_RANGE_TEXT[key]}`)
+		out[key] = toFloat(v)
+	}
+	return out
+}
+
+/** doc.settings for resolved settings: only what differs from the standard (null when nothing does). */
+export function doc_settings(st) {
+	const out = {}
+	if (st.gravity !== STANDARD_SETTINGS.gravity) out.gravity = st.gravity
+	if (st.air !== true) out.air = false
+	else if (st.air_density !== STANDARD_SETTINGS.air_density) out.airDensity = st.air_density // (a world's own air: only with air on)
+	if (st.room_temp !== STANDARD_SETTINGS.room_temp) out.roomTemperature = st.room_temp
+	if (st.time_lapse !== STANDARD_SETTINGS.time_lapse) out.timeLapse = st.time_lapse
+	return Object.keys(out).length ? out : null
+}
+
+/** Build hooks (items.py BUILD_HOOKS): fn(sb, scene) after every item is built, in registration order. */
+export const BUILD_HOOKS = []
+export function register_build_hook(fn) {
+	BUILD_HOOKS.push(fn)
+	return fn
+}
+/** Warning hooks (items.py WARNING_HOOKS): fn(scene, doc) -> [{items, text}] after the overlaps, in registration order. */
+export const WARNING_HOOKS = []
+export function register_warning_hook(fn) {
+	WARNING_HOOKS.push(fn)
+	return fn
+}
+
 export function build(scene) {
 	const sb = new SceneBuilder()
+	sb.settings = settings_of(scene)
 	const resolved = {}
 	const items = scene.items ?? []
+	sb.scene_items = new Map(items.filter((i) => i !== null && typeof i === "object" && !Array.isArray(i) && typeof i.id === "string").map((i) => [i.id, i]))
 	for (const item of items) {
 		if (!(typeof item.type === "string" && item.type in TYPES)) continue
 		const P = props_of(item)
@@ -451,6 +619,7 @@ export function build(scene) {
 			P._own = pySorted(Object.keys(item.props ?? {}).filter((k) => auto.has(k)))
 		}
 	}
+	for (const hook of BUILD_HOOKS) hook(sb, scene) // (a module's: after every item is built; what it adds is tagged and placed like any item's)
 	// every solid says which item type and which of its parts it is: the 3D view picks its model by (itemType, part)
 	const type_of = new Map(items.map((i) => [i.id, i.type]))
 	for (const s of sb.solids) {
@@ -476,6 +645,10 @@ export function build(scene) {
 		sprites: sprite_records(sb.sprites_used)
 	}
 	if (sb.joints.length) doc.joints = sb.joints
+	const ds = doc_settings(sb.settings)
+	if (ds !== null) doc.settings = ds
+	if (sb.processes.length) doc.processes = sb.processes
+	if (sb.view) doc.view = sb.view // render-only settings a module's build hook gave (web/sim/modules/staging.js: a fixed camera, starting gates)
 	return { doc, resolved }
 }
 
@@ -707,11 +880,18 @@ register(new ItemType("box", "Open box", "Containers", build_box, {
 	edit: [{ kind: "boxWidth", prop: "width" }, { kind: "top", prop: "wall" }]
 }))
 
+/** A module's goal kinds for summarize (items.py GOAL_KINDS): kind -> fn(ctx: GoalCtx, goal) -> {label, ok, kind, ...} or null (left out). */
+export const GOAL_KINDS = new Map()
+export function register_goal_kind(kind, fn) {
+	GOAL_KINDS.set(kind, fn)
+	return fn
+}
+
 // ---------------------------------------------------------------- the rest of the catalog
 /** What a catalog module's register_all(g) gets (machines/items.py passes globals(); catalog_items.py takes the names it NEEDS). */
 export const FRAMEWORK = {
-	register, ItemType, Prop, ball_type, MATERIALS, measured, add_look, LOOK_FILL, LOOK_SHADE, D2R, WOOD_PLANKS, CATEGORIES, TYPES, polygon_problem,
-	define_material, Ctx, LOOKS, CORD, props_of, material_of, MATERIAL_KEYS, MEASURED, SceneBuilder, MATERIAL_INTS,
+	register, ItemType, Prop, Link, Readout, register_build_hook, register_warning_hook, register_goal_kind, GOAL_KINDS, BUILD_HOOKS, STANDARD_SETTINGS, GRAVITY_PRESETS, ball_type, MATERIALS, measured, add_look, LOOK_FILL, LOOK_SHADE, D2R, WOOD_PLANKS, CATEGORIES, TYPES, polygon_problem,
+	define_material, Ctx, LOOKS, CORD, props_of, material_of, MATERIAL_KEYS, MEASURED, SceneBuilder, MATERIAL_INTS, COMMON_PROPS, register_common_prop,
 	py // pymath.js: pyRound (round), fmtF/fmtG (format), hypot, floatRepr, PyInt, truthy, ...
 }
 export const CATALOG_MODULES = []
@@ -838,6 +1018,51 @@ class _Fall {
  *  {kind: "moves", item, min_m?} (the mean of its moving parts ends at least min_m, default 5 cm, from where it started), {kind: "off", item}
  *  (it ends off the table) or {kind: "walls", item, container} (it ends between a cup's, a jar's or a mug's own walls: walls_inside), as
  *  ai/goals.mjs checks them; each is reported {label, ok, item, container} ("in", as always) or {label, ok, kind, ...} (the others). */
+/** What a module's goal kind reads (items.py GoalCtx): the scene, its document and track, and helpers. */
+export class GoalCtx {
+	constructor(scene, doc, track, items, name) {
+		this.scene = scene
+		this.doc = doc
+		this.track = track
+		this.items = items // Map id -> item
+		this.name = name
+		this.frames = track.frames
+		this.times = track.frames.map((f) => f.t)
+	}
+
+	known(v) {
+		return typeof v === "string" && this.items.has(v)
+	}
+
+	num(v) {
+		return _num(v)
+	}
+
+	short_m(m) {
+		return _short_m(m)
+	}
+
+	/** The reading key of item iid at every frame (a module's process set it), or null. */
+	state(iid, key) {
+		const st = this.track.state ?? {}
+		const of = hasOwn(st, iid) ? st[iid] : {}
+		const v = of && hasOwn(of, key) ? of[key] : null
+		return Array.isArray(v) ? v : null
+	}
+
+	solids(iid, dynamic = false) {
+		return this.doc.solids.filter((x) => x.item === iid && (!dynamic || x.kind === "dynamic"))
+	}
+
+	/** The first frame's time at which test(reading) holds, or null. */
+	first_time(iid, key, test) {
+		const v = this.state(iid, key)
+		if (v === null) return null
+		for (let k = 0; k < Math.min(v.length, this.times.length); k++) if (v[k] !== null && v[k] !== undefined && test(v[k])) return this.times[k]
+		return null
+	}
+}
+
 export function summarize(scene, doc, track) {
 	const items = new Map((scene.items ?? []).map((i) => [i.id, i]))
 	const name = (iid) => (items.has(iid) ? (truthy(items.get(iid).name) ? items.get(iid).name : TYPES[items.get(iid).type].name) : iid)
@@ -925,6 +1150,7 @@ export function summarize(scene, doc, track) {
 		stories.push(story)
 	}
 	const goals = []
+	let gctx = null
 	const poses = new Map(Object.entries(fr[fr.length - 1].placements).map(([sid, p]) => [sid, [p.x, p.y]]))
 	const known = (v) => typeof v === "string" && items.has(v)
 	for (const g of scene.goals ?? []) {
@@ -979,9 +1205,27 @@ export function summarize(scene, doc, track) {
 			// run's end, as web/ai/goals.js does, so the results show it too)
 			const ok = walls_inside(doc, fr[fr.length - 1].placements, g.item, g.container)
 			goals.push({ label: truthy(g.label) ? g.label : `${name(g.item)} ends in the ${pyLower(name(g.container))}`, ok, kind: "walls", item: g.item, container: g.container })
+		} else if (typeof kind === "string" && GOAL_KINDS.has(kind)) {
+			// (a module's goal kind: register_goal_kind; items.py reports the same)
+			gctx = gctx ?? new GoalCtx(scene, doc, track, items, name)
+			const r = GOAL_KINDS.get(kind)(gctx, g)
+			if (r !== null && r !== undefined) goals.push(r)
 		}
 	}
-	return { goals, stories, events: first.slice(0, 16) }
+	const out = { goals, stories, events: first.slice(0, 16) }
+	// (a module's readings at the run's end, {item: {key: value}}, and what its processes said happened: only when the run has any)
+	const state = track.state
+	if (state !== null && typeof state === "object" && !Array.isArray(state) && Object.keys(state).length) {
+		out.readings = {}
+		for (const iid of Object.keys(state)) {
+			const keys = state[iid]
+			const o = {}
+			for (const k of Object.keys(keys)) o[k] = Array.isArray(keys[k]) && keys[k].length ? keys[k][keys[k].length - 1] : null
+			out.readings[iid] = o
+		}
+	}
+	if (Array.isArray(track.events) && track.events.length) out.happenings = track.events.map((e) => ({ ...e }))
+	return out
 }
 
 /** Whether item iid's moving solids end between container cid's own walls: inside its "left" and "right" (or "wall-left" and "wall-right")
@@ -1043,22 +1287,27 @@ export function _overlap_depth(sa, pa, sb, pb) {
 		const P = _corners(so, po)
 		let inside = Infinity
 		let near = Infinity
+		let sides = 0
 		for (let i = 0; i < P.length; i++) {
 			const [x1, y1] = P[i]
 			const [x2, y2] = P[(i + 1) % P.length]
 			const ex = x2 - x1
 			const ey = y2 - y1
 			const m = hypot(ex, ey)
+			if (m === 0) continue // (a side of no length, two corners at one point: no line to be inside of; its ends are the next side's)
+			sides++
 			inside = pymin(inside, div(ex * (cy - y1) - ey * (cx - x1), m)) // distance inside this side's line (negative: outside)
 			const u = pymax(0.0, pymin(1.0, div((cx - x1) * ex + (cy - y1) * ey, m * m)))
 			near = pymin(near, hypot(cx - x1 - u * ex, cy - y1 - u * ey))
 		}
+		if (!sides) return 0.0 // (an outline that is a single point holds nothing)
 		if (inside >= 0) return r + inside
 		return near < r ? r - near : 0.0
 	}
 	const A = _corners(sa, pa)
 	const B = _corners(sb, pb)
 	let depth = Infinity
+	let axes = 0
 	for (const poly of [A, B]) {
 		for (let i = 0; i < poly.length; i++) {
 			const [x1, y1] = poly[i]
@@ -1066,6 +1315,8 @@ export function _overlap_depth(sa, pa, sb, pb) {
 			let ax = -(y2 - y1)
 			let ay = x2 - x1
 			const m = hypot(ax, ay)
+			if (m === 0) continue // (a side of no length, as a slab 0 m wide has, or two corners at one point: no direction to test; items.py the same)
+			axes++
 			ax = div(ax, m)
 			ay = div(ay, m)
 			const pA = A.map(([px, py]) => px * ax + py * ay)
@@ -1075,7 +1326,7 @@ export function _overlap_depth(sa, pa, sb, pb) {
 			depth = pymin(depth, o)
 		}
 	}
-	return depth
+	return axes ? depth : 0.0 // (no side with a length: two points, which hold nothing between them)
 }
 
 /** A box [x0, y0, x1, y1] that holds everything _overlap_depth looks at of a solid (a slab: its rectangle and, with a taper, its trapezoid; a polygon:
@@ -1100,7 +1351,7 @@ function _bounds(s, pose) {
 		}
 		return Number.isFinite(x0 + y0 + x1 + y1) ? [x0 - pad, y0 - pad, x1 + pad, y1 + pad] : null
 	}
-	if (b.kind !== "slab" || !(b.width > 0 && b.height > 0)) return null // (a slab with no width or height makes the depth test divide by zero: keep every pair that reaches it)
+	if (b.kind !== "slab" || !(b.width > 0 && b.height > 0)) return null // (a slab with no width or height, a line or a point: every pair with it is measured)
 	const hw = b.width / 2
 	const hh = b.height / 2
 	const hx = pymax(hw, "taper" in b ? Math.abs(hw * b.taper) : hw)
@@ -1120,7 +1371,7 @@ export function overlaps(scene, doc, tol = 0.003) {
 	const items = new Map((scene.items ?? []).map((i) => [i.id, i]))
 	const name = (iid) => (items.has(iid) ? (truthy(items.get(iid).name) ? items.get(iid).name : TYPES[items.get(iid).type].name) : iid)
 	const world = rube._world(doc)
-	const solids = doc.solids
+	const solids = doc.solids.filter((s) => s.ghost !== true) // (a ghost solid, an instrument's face or a painted line, touches nothing)
 	const typeOf = (iid) => (items.has(iid) ? items.get(iid).type : undefined)
 	const n = solids.length
 	const owners = new Map() // item id -> a small number, so a pair of items is one integer
@@ -1162,6 +1413,7 @@ export function overlaps(scene, doc, tol = 0.003) {
 			} else out.push({ items: [a.item, b.item], text: `${na} and ${nb} overlap` })
 		}
 	}
+	for (const hook of WARNING_HOOKS) out.push(...(hook(scene, doc) ?? [])) // (a module's: WARNING_HOOKS)
 	return out
 }
 

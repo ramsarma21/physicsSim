@@ -1,0 +1,57 @@
+{
+ "version": 2,
+ "id": "timers",
+ "name": "Two sand timers: the wider neck runs out first",
+ "seconds": 12,
+ "release": 0.5,
+ "settings": {
+  "time_lapse": 6
+ },
+ "stage": {
+  "x0": 1.0,
+  "x1": 1.6,
+  "y0": -0.02,
+  "y1": 0.2
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "wide",
+   "type": "hourglass",
+   "name": "Wide neck",
+   "x": 1.18,
+   "y": 0,
+   "props": {
+    "neck_mm": 4
+   }
+  },
+  {
+   "id": "narrow",
+   "type": "hourglass",
+   "name": "Narrow neck",
+   "x": 1.42,
+   "y": 0,
+   "props": {
+    "neck_mm": 3
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "runs_out_first",
+   "a": "wide",
+   "b": "narrow"
+  },
+  {
+   "kind": "timer",
+   "item": "narrow",
+   "seconds": 60,
+   "tol": 3
+  }
+ ]
+}

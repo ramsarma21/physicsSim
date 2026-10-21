@@ -1,0 +1,99 @@
+{
+ "version": 2,
+ "id": "tug-of-war-balanced",
+ "name": "Equal pulls: the cart stays",
+ "seconds": 2,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "track",
+   "type": "floor",
+   "name": "Lab floor",
+   "x": 1.3,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "length": 3
+   }
+  },
+  {
+   "id": "cart",
+   "type": "dynamics-cart",
+   "name": "Cart",
+   "x": 1.3,
+   "y": 0.0505,
+   "angle": 0,
+   "props": {
+    "load": 0.75
+   }
+  },
+  {
+   "id": "left",
+   "type": "puller",
+   "name": "Left winch",
+   "x": 0.3,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "pulls": "cart",
+    "faces": "right",
+    "force": 4
+   }
+  },
+  {
+   "id": "right",
+   "type": "puller",
+   "name": "Right winch",
+   "x": 2.3,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "pulls": "cart",
+    "force": 4
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "balanced",
+   "item": "cart"
+  }
+ ]
+}

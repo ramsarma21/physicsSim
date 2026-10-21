@@ -1,0 +1,64 @@
+{
+ "version": 2,
+ "id": "balloon-rocket",
+ "name": "A balloon rocket",
+ "seconds": 4,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "rocket",
+   "type": "balloon-rocket",
+   "name": "Balloon rocket",
+   "x": -0.3,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "string": 3
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "moves",
+   "item": "rocket",
+   "min_m": 1
+  }
+ ]
+}

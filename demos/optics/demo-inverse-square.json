@@ -1,0 +1,61 @@
+{
+ "version": 2,
+ "id": "demo-inverse-square",
+ "name": "Nearer is brighter",
+ "seconds": 1.0,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0.0,
+   "props": {}
+  },
+  {
+   "id": "lamp",
+   "type": "lamp",
+   "name": "Desk lamp",
+   "x": 0.0,
+   "y": 0.0,
+   "props": {
+    "aim": 45.0,
+    "beam_angle": 60.0,
+    "head_height": 0.6
+   }
+  },
+  {
+   "id": "near",
+   "type": "light-meter",
+   "x": 0.47225,
+   "y": 1.01573,
+   "props": {
+    "aim": 230
+   },
+   "name": "Near meter"
+  },
+  {
+   "id": "far",
+   "type": "light-meter",
+   "x": 0.91875,
+   "y": 1.27364,
+   "props": {
+    "aim": 220
+   },
+   "name": "Far meter"
+  }
+ ],
+ "goals": [
+  {
+   "kind": "brighter",
+   "a": "near",
+   "b": "far"
+  }
+ ]
+}

@@ -89,8 +89,9 @@ here became production and its alias answered without a login (no AI key was set
 is still on the project, so a later production deploy would put it back.
 
 `build:static:nogen` fails if `vendor:three:check`, `vendor:media:check` or `gen:scenarios:check` fails, and if the engine bundle
-(`web/sim/engine-worker.js`, `engine-math.js`) is not byte-identical to what `npm run build:engine` makes from the current sources (it
-rebuilds the bundle in a scratch folder and compares; nothing in `web/` changes).
+(`web/sim/engine-worker.js`, `engine-math.js`, and the optics tracer's plain build `web/sim/optics.js`) is not byte-identical to what `npm run
+build:engine` makes from the current sources (it rebuilds them in a scratch folder with `tools/build-engine.mjs` and every `tools/*.mjs` that
+script imports, `tools/build-optics.mjs`, and compares; nothing in `web/` changes).
 
 `check:vercel` (`node tools/build-static.mjs --vercel-check`, about 15 s; needs git and the Vercel CLI, touches nothing in the project):
 copies exactly what `vercel deploy` would upload (`.vercelignore`) to a scratch folder; runs `vercel build` there with a throwaway local

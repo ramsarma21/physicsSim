@@ -1,0 +1,79 @@
+{
+ "version": 2,
+ "id": "heat-spoons",
+ "name": "Metal spoon and wooden spoon in hot tea",
+ "seconds": 10,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "settings": {
+  "room_temp": 22,
+  "time_lapse": 60
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "mug1",
+   "type": "drink-cup",
+   "name": "Mug 1",
+   "x": 0.8,
+   "y": 0,
+   "props": {
+    "style": "mug",
+    "water_temp_c": 90
+   }
+  },
+  {
+   "id": "mug2",
+   "type": "drink-cup",
+   "name": "Mug 2",
+   "x": 1.4,
+   "y": 0,
+   "props": {
+    "style": "mug",
+    "water_temp_c": 90
+   }
+  },
+  {
+   "id": "metal",
+   "type": "spoon",
+   "name": "Metal spoon",
+   "x": 0.8175,
+   "y": 0.0845,
+   "angle": 60,
+   "props": {
+    "material": "aluminium"
+   },
+   "fixed": true
+  },
+  {
+   "id": "wood",
+   "type": "spoon",
+   "name": "Wooden spoon",
+   "x": 1.4175,
+   "y": 0.0845,
+   "angle": 60,
+   "props": {
+    "material": "varnished hardwood"
+   },
+   "fixed": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "warmer",
+   "a": "metal",
+   "b": "wood"
+  }
+ ]
+}

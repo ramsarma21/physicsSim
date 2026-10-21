@@ -42,3 +42,157 @@ test("the pool is made at once (no use before its functions exist) and routes bo
 	await assert.rejects(p, (e) => e.name === "AbortError")
 	pool.terminate()
 })
+
+// ---- no job waits for ever (the video pipeline's batch, 19 Oct: every balanced-forces Build with AI stuck in "Tuning stage by stage")
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const CHECK = [{ item: "x", container: "y" }]
+/** The fix worker as it loads when its imports wait at a top-level await (web/sim's module index): the engine bundle's listener is there at once
+ *  and answers every message, without fix: 1 (a fix job has no doc: an error); the worker's own listener comes 40 ms later, then says it is
+ *  ready. A message that comes in before that meets the engine bundle's listener alone. */
+class LateWorker {
+	constructor() {
+		this.l = { message: [], error: [] }
+		this.own = false
+		setTimeout(() => {
+			this.own = true
+			this.emit({ fix: 1, ready: true })
+		}, 40)
+	}
+	addEventListener(t, f) {
+		this.l[t].push(f)
+	}
+	emit(data) {
+		for (const f of this.l.message) f({ data })
+	}
+	postMessage(m) {
+		setTimeout(() => this.emit({ id: m.id, error: "the document does not fit the format: Expected object" }), 1)
+		if (this.own) setTimeout(() => this.emit(m.op === "stage" ? { fix: 1, id: m.id, goals: [], checks: m.checks.map(() => ({ res: { ok: false }, d: 1.9 })), warnings: 0, ms: 3 } : { fix: 1, id: m.id, results: [], ok: false, f: 1, warn: 0, ms: 3 }), 5)
+	}
+	terminate() {}
+}
+async function withWorker(W, f) {
+	globalThis.Worker = W
+	try {
+		return await f()
+	} finally {
+		globalThis.Worker = FakeWorker
+	}
+}
+
+test("a job goes to a worker only once it has said it is ready: sent sooner, it meets only the engine bundle's listener and never comes back", { timeout: 10000 }, () =>
+	withWorker(LateWorker, async () => {
+		const pool = createFixPool({ size: 2 })
+		try {
+			const lost = Symbol("lost")
+			const r = await Promise.race([Promise.all([pool.stage({ items: [] }, [], CHECK), pool.stage({ items: [] }, [], CHECK), pool.evaluate({ items: [] }, []), pool.stage({ items: [] }, [], [])]), sleep(3000).then(() => lost)])
+			assert.notEqual(r, lost, "every job came back")
+			assert.deepEqual(r.map((x) => x.checks?.length ?? "fix"), [1, 1, "fix", 0])
+		} finally {
+			pool.terminate()
+		}
+	})
+)
+
+test("a job that doesn't come back fails after jobMs (an Error, not an abort: the stage tuner judges it on the app's own engine) and its worker is replaced", { timeout: 10000 }, async () => {
+	let made = 0
+	let stopped = 0
+	class Mute extends FakeWorker {
+		constructor() {
+			super()
+			this.n = ++made
+		}
+		postMessage(m) {
+			if (this.n > 1) super.postMessage(m) // (the first worker takes the job and never answers)
+		}
+		terminate() {
+			stopped++
+		}
+	}
+	await withWorker(Mute, async () => {
+		const pool = createFixPool({ size: 1, jobMs: 120 })
+		try {
+			const t0 = performance.now()
+			await assert.rejects(pool.stage({ items: [] }, [], CHECK), (e) => e.name !== "AbortError" && /didn't answer in/.test(e.message))
+			assert.ok(performance.now() - t0 < 1500)
+			assert.equal(stopped, 1, "the worker that didn't answer was let go")
+			const r = await pool.stage({ items: [] }, [], CHECK)
+			assert.equal(made, 2, "the next job went to a new worker")
+			assert.equal(r.checks.length, 1)
+		} finally {
+			pool.terminate()
+		}
+	})
+})
+
+/** A worker that never says it is ready (nor answers): one whose start takes longer than the pool waits. */
+class Silent {
+	constructor() {
+		this.l = { message: [], error: [] }
+	}
+	addEventListener(t, f) {
+		this.l[t].push(f)
+	}
+	postMessage() {}
+	terminate() {}
+}
+
+test("workers that never say they are ready: after loadMs the pool is broken for restMs and the jobs waiting fail (an Error: the app's own runs are used); then workers are tried again", { timeout: 10000 }, async () => {
+	const pool = createFixPool({ size: 2, loadMs: 120, restMs: 400 })
+	try {
+		await withWorker(Silent, async () => {
+			await assert.rejects(Promise.all([pool.stage({ items: [] }, [], CHECK), pool.evaluate({ items: [] }, [])]), (e) => e.name !== "AbortError" && /not available/.test(e.message))
+			assert.equal(pool.broken, true)
+			await assert.rejects(pool.stage({ items: [] }, [], CHECK), /not available/)
+		})
+		// (a slow start on a busy machine is not for good: before, the pool stayed broken for the page's whole life. Workers that start from here)
+		await sleep(500)
+		assert.equal(pool.broken, false, "tried again after restMs")
+		const r = await pool.stage({ items: [] }, [], CHECK)
+		assert.equal(r.checks.length, 1)
+	} finally {
+		pool.terminate()
+	}
+})
+
+test("a job waiting for a worker fails after loadMs when each new one is slow to start (one was ready before): it never waits for ever", { timeout: 10000 }, async () => {
+	let made = 0
+	// (the first worker starts and answers; every one made after it is slow to start)
+	class FirstOnly extends FakeWorker {
+		constructor() {
+			super()
+			if (++made > 1) this.emit = () => {}
+		}
+	}
+	await withWorker(FirstOnly, async () => {
+		const pool = createFixPool({ size: 1, loadMs: 150 })
+		try {
+			assert.equal((await pool.stage({ items: [] }, [], CHECK)).checks.length, 1, "the first worker answers")
+			// (its job cancelled while it runs: that worker is let go, and the next job waits for a new one)
+			const ctl = new AbortController()
+			const p = pool.stage({ items: [] }, [], CHECK, ctl.signal)
+			ctl.abort()
+			await assert.rejects(p, (e) => e.name === "AbortError")
+			const t0 = performance.now()
+			await assert.rejects(pool.stage({ items: [] }, [], CHECK), (e) => e.name !== "AbortError" && /no fix worker was ready/.test(e.message))
+			const ms = performance.now() - t0
+			assert.ok(ms >= 140 && ms < 1500, `${Math.round(ms)} ms`)
+			assert.equal(pool.broken, false, "one was ready before: the pool is not broken, the slow one is only replaced")
+			assert.ok(made >= 2)
+		} finally {
+			pool.terminate()
+		}
+	})
+})
+
+test("terminate() fails the jobs still out (AbortError): none is left waiting on a worker that was let go", { timeout: 10000 }, async () => {
+	class Busy extends FakeWorker {
+		postMessage() {}
+	}
+	await withWorker(Busy, async () => {
+		const pool = createFixPool({ size: 1 })
+		const p = pool.stage({ items: [] }, [], CHECK)
+		await sleep(40) // (on the worker by now)
+		pool.terminate()
+		await assert.rejects(p, (e) => e.name === "AbortError")
+	})
+})

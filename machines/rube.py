@@ -304,12 +304,15 @@ def _overlap_depth(sa, pa, sb, pb):
         d = math.hypot(lx - qx, ly - qy)
         return sc["body"]["radius"] + (min(hw - abs(lx), hh - abs(ly)) if inside else -d) if inside or d < sc["body"]["radius"] else 0.0
     A, B = _corners(sa, pa), _corners(sb, pb)
-    depth = float("inf")
+    depth, axes = float("inf"), 0
     for poly in (A, B):
         for i in range(4):
             (x1, y1), (x2, y2) = poly[i], poly[(i + 1) % 4]
             ax, ay = -(y2 - y1), x2 - x1
             m = math.hypot(ax, ay)
+            if m == 0:
+                continue    # (a side of no length, a slab 0 m wide or high, has no direction to test; web/sim/rube.js the same)
+            axes += 1
             ax, ay = ax / m, ay / m
             pA = [px * ax + py * ay for px, py in A]
             pB = [px * ax + py * ay for px, py in B]
@@ -317,7 +320,7 @@ def _overlap_depth(sa, pa, sb, pb):
             if o <= 0:
                 return 0.0
             depth = min(depth, o)
-    return depth
+    return depth if axes else 0.0    # (no side with a length: two points, which hold nothing between them)
 
 
 def overlaps(doc, P=None, tol=0.003):

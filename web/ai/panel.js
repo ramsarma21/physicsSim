@@ -25,6 +25,7 @@ import { createOrchestrator, prepareImages, STEP_LABELS, MAX_IMAGES, AiError, AC
 // shadowed it, so "Looking for a fix…" never said what it was doing: V8814, 16 Oct)
 import { editChips, askChips as askChipsOf, offerWords, progressWords as fixProgressWords, reworkWords, nameAsShown } from "./edit-turns.js"
 import { kindNoun } from "./words.js"
+import { missingLine } from "./missing-words.js"
 import { createShot } from "./shot.js"
 import { createFixPool } from "./fix-pool.js"
 import { aiAccess, atWhen } from "./access.js"
@@ -1353,7 +1354,8 @@ export function mountAiPanel(host) {
 		const shownChanges = noChange ? [] : r.human?.length ? r.human.map(cap) : (r.edit?.changes ?? []).filter((c) => !/^Tuning knobs/.test(c))
 		// an edit: exactly what changed, and that everything else is as it was (counted on the scene itself, byte for byte)
 		const un = r.edit?.unchanged
-		const sameLine = un && un.of > 0 && !noChange ? h("li", { class: "ai-same" }, un.same === un.of ? "Everything is exactly as it was" : un.same ? `Everything else is exactly as it was (${plural(un.same, "item")} untouched)` : "Every item was changed") : null
+		// (the scene's only thing changed: its own line says so, never "Every item was changed" (V8956 G2 / A1))
+		const sameLine = un && un.of > 0 && !noChange && (un.same > 0 || un.of > 1) ? h("li", { class: "ai-same" }, un.same === un.of ? "Everything is exactly as it was" : un.same ? `Everything else is exactly as it was (${plural(un.same, "item")} untouched)` : "Every item was changed") : null
 		if (!editCard && (shownChanges.length || sameLine)) card.append(section("What changed", h("ul", { class: "ai-list ai-changes" }, shownChanges.slice(0, 8).map((c) => h("li", {}, c)), shownChanges.length > 8 ? h("li", { title: shownChanges.slice(8).join("\n") }, `and ${shownChanges.length - 8} more`) : null, sameLine)))
 		if (r.goals?.length)
 			card.append(
@@ -1540,7 +1542,10 @@ export function mountAiPanel(host) {
 			lines.length > 8 ? h("li", { title: lines.slice(8).join("\n") }, `and ${lines.length - 8} more`) : null,
 			...skipped.slice(0, 3).map((x) => h("li", { class: "skip" }, `Not done: ${x}`)),
 			...(r.edit?.goalsDropped ?? []).slice(0, 3).map((x) => h("li", { class: "skip" }, `No longer checked: ${x}`)),
-			noChange ? h("li", { class: "same" }, "Nothing in the scene changed") : un && un.of > 0 ? h("li", { class: "same" }, un.same ? `Everything else is exactly as it was (${plural(un.same, "item")} untouched)` : "Every item was changed") : null
+			// (a goal an answer wanted lower, kept as the person set it: ./goal-targets.js; the chip offers the lower one)
+			...(r.edit?.goalsHeld ?? []).slice(0, 3).map((x) => h("li", { class: "skip" }, x)),
+			// (the scene's only thing changed: its own line says so, never "Every item was changed" (V8956 G2 / A1))
+			noChange ? h("li", { class: "same" }, "Nothing in the scene changed") : un && un.of > 0 && (un.same > 0 || un.of > 1) ? h("li", { class: "same" }, un.same ? `Everything else is exactly as it was (${plural(un.same, "item")} untouched)` : "Every item was changed") : null
 		].filter(Boolean)
 		return items.length ? h("ul", { class: "ai-delta", "aria-label": "What changed" }, items) : null
 	}
@@ -1653,19 +1658,17 @@ export function mountAiPanel(host) {
 		if (warn) return `Heads-up: ${warn.text}`
 		// (a stand-in that isn't on the table is never said: V8820 c04)
 		if (miss) {
-			// ("there are no standing toilet paper rolls in the library, so I used toilet paper rolls", never "there’s no … rolls" (V8842 n2))
-			const asked = String(miss.asked).replace(/^(a|an|the|some) /i, "")
-			const many = (/s$/i.test(asked.split(/\s+(?:in place of|instead of|for)\s+/)[0]) && !/ss$/i.test(asked)) || /^(\d+|two|three|four|five|six|seven|eight|nine|ten|several|many)\b/i.test(asked)
-			const sub = miss.substitute_type
-			let used = "I left it out"
-			if (sub) {
-				let subW = String(types.get(sub)?.name ?? sub).toLowerCase()
+			// ("there are no standing toilet paper rolls in the library, so I used toilet paper rolls", never "there’s no … rolls" (V8842 n2); "there’s
+			// no person shaking the end of the rope", never "there’s no someone shaking …" (adv-wmm W2): ./missing-words.js)
+			const nameOf = (sub, n) => {
+				const one = String(types.get(sub)?.name ?? sub)
 				try {
-					if (many) subW = String(kindNoun(sub, 2) ?? subW).toLowerCase()
-				} catch {}
-				used = `I used ${many ? "" : /^[aeiou]/i.test(subW) ? "an " : "a "}${subW}`
+					return n > 1 ? String(kindNoun(sub, 2) ?? one) : one
+				} catch {
+					return one
+				}
 			}
-			return `Heads-up: ${many ? "there are no" : "there’s no"} ${asked} in the library${miss.noSub ? "" : `, so ${used}`}${more(r.missing.length)}.`
+			return `Heads-up: ${missingLine(miss, { nameOf })}${more(r.missing.length)}.`
 		}
 		if (r.differences?.length) return `Heads-up: ${String(r.differences[0]).replace(/\.$/, "")}${more(r.differences.length)}.`
 		return null
@@ -1854,7 +1857,7 @@ export function mountAiPanel(host) {
 			// (each change on its own line, grouped, in real units, read off the two scenes: what was added (a closed laptop), every move, the table
 			// made wider; never "and 1 more change" with nothing under it: V8814 c11 / s3)
 			human: changeLinesOf(before, scene) ?? (Array.isArray(data.changes) && typeof data.changes[0] === "string" ? data.changes : [data.did]),
-			goals: (t.report?.goals ?? []).map((g) => ({ ...g, ok: okAll ? true : results.find((x) => x.label === g.label)?.ok ?? g.ok, was: g.ok })),
+			goals: fixedGoals(t.report?.goals, results, okAll),
 			targets: okAll ? (t.report?.targets ?? []).map((x) => ({ label: x.label, ok: true, implicit: x.implicit })) : results,
 			fix: okAll ? null : { state: "none", goal: fx.goal, checked: fx.checked },
 			suggestions: rest,
@@ -1886,6 +1889,19 @@ export function mountAiPanel(host) {
 		announce(report.lead)
 		scrollToEnd()
 		return true
+	}
+	/** The goals on an applied fix's card, each as the fix's own checked run has it (data.results): its ✓ and what that run shows ("survives ·
+	 *  yes"), never the detail of the run before the fix (FR1 t2: "Goals · 2/2" over "survives · no (at 0.954 s)"). A goal that run has no
+	 *  words for shows its ✓ or ✗ alone; an "in" goal's mark says it all, as on every card. */
+	function fixedGoals(goals, results, okAll) {
+		return (goals ?? []).map((g) => {
+			const r = results.find((x) => x.label === g.label)
+			const { detail: _was, ...rest } = g
+			const ok = okAll ? true : r?.ok ?? g.ok
+			const kind = g.kind ?? r?.kind ?? "in"
+			const words = kind !== "in" && r && r.ok === ok && typeof r.detail === "string" && r.detail ? r.detail : null
+			return { ...rest, ok, ...(words ? { detail: words } : {}), was: g.ok }
+		})
 	}
 	/** A change's lines from one scene to another, grouped, in a person's words (null when they can't be said). */
 	function changeLinesOf(a, b) {

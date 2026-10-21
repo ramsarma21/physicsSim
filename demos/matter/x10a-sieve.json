@@ -1,0 +1,44 @@
+{
+ "version": 2,
+ "id": "x10a-sieve",
+ "name": "Sieve sand from gravel",
+ "seconds": 7,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.1,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "sieve",
+   "type": "sieve",
+   "name": "Sieve",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "mixture": "sand + gravel",
+    "aperture_mm": 4,
+    "grains": 140
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "separates",
+   "item": "sieve"
+  }
+ ]
+}

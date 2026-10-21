@@ -26,7 +26,8 @@ test("the digest lists every catalog type with its props, ranges, anchor and out
 			if (p.min !== undefined) assert.equal(T.props[p.key].min, p.min)
 			if (p.max !== undefined) assert.equal(T.props[p.key].max, p.max)
 		}
-		assert.ok(T.outline, `${t.key} has an outline`)
+		// (a module's type that builds no solid, a circuit's wire or its upright board, is only drawn: it has no outline)
+		if (t.preview?.solids?.length) assert.ok(T.outline, `${t.key} has an outline`)
 	}
 	// the facts a planner needs are there
 	assert.match(d.text, /### box — Open box · static[\s\S]*?goal container/)
@@ -36,8 +37,11 @@ test("the digest lists every catalog type with its props, ranges, anchor and out
 	assert.match(d.text, /### seesaw[\s\S]*?does not fall/)
 	assert.match(d.text, /### spring-launcher[\s\S]*?acts at the scene's release time/)
 	// size: the full digest is what plan/edit carry; the brief one what refine carries
-	assert.ok(d.stats.chars < 110000, `full digest ${d.stats.chars} chars`)
-	assert.ok(d.stats.briefChars < 16000, `brief digest ${d.stats.briefChars} chars`)
+	// (what the plan and edit prompts carry: the whole digest, or with many physics modules' types its core tier, ai/catalog-digest.mjs promptCatalog)
+	assert.ok(d.stats.promptChars < 110000, `the prompts' digest ${d.stats.promptChars} chars (the whole: ${d.stats.chars})`)
+	// (one line per type: a physics module's types add theirs)
+	const moduleTypes = Object.values(d.index.types).filter((T) => T.module).length
+	assert.ok(d.stats.briefChars < 16000 + 120 * moduleTypes, `brief digest ${d.stats.briefChars} chars (${moduleTypes} module types)`)
 })
 
 test("detailFor gives full detail for just the named types (unknown ones skipped, no repeats)", async () => {

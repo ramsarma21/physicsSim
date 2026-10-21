@@ -1,0 +1,234 @@
+{
+ "version": 2,
+ "id": "g3-what-it-attracts",
+ "name": "What a magnet attracts",
+ "seconds": 3.0,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "m0",
+   "type": "bar-magnet",
+   "name": "Magnet 1",
+   "x": 0.2,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "steel-clip",
+   "type": "paper-clip",
+   "name": "Steel clip",
+   "x": 0.29200000000000004,
+   "y": 0.0005,
+   "props": {}
+  },
+  {
+   "id": "m1",
+   "type": "bar-magnet",
+   "name": "Magnet 2",
+   "x": 0.55,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "plastic-clip",
+   "type": "plastic-clip",
+   "name": "Plastic clip",
+   "x": 0.6420000000000001,
+   "y": 0.0006,
+   "props": {}
+  },
+  {
+   "id": "m2",
+   "type": "bar-magnet",
+   "name": "Magnet 3",
+   "x": 0.8999999999999999,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "foil",
+   "type": "foil-ball",
+   "name": "Foil",
+   "x": 0.992,
+   "y": 0.01,
+   "props": {}
+  },
+  {
+   "id": "m3",
+   "type": "bar-magnet",
+   "name": "Magnet 4",
+   "x": 1.2499999999999998,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "nail",
+   "type": "iron-nail",
+   "name": "Nail",
+   "x": 1.3419999999999999,
+   "y": 0.00145,
+   "props": {}
+  },
+  {
+   "id": "m4",
+   "type": "bar-magnet",
+   "name": "Magnet 5",
+   "x": 1.5999999999999999,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "brass-key",
+   "type": "brass-key",
+   "name": "Brass key",
+   "x": 1.692,
+   "y": 0.001,
+   "props": {}
+  },
+  {
+   "id": "m5",
+   "type": "bar-magnet",
+   "name": "Magnet 6",
+   "x": 1.95,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "washer",
+   "type": "steel-washer",
+   "name": "Washer",
+   "x": 2.042,
+   "y": 0.0008,
+   "props": {}
+  },
+  {
+   "id": "m6",
+   "type": "bar-magnet",
+   "name": "Magnet 7",
+   "x": 2.3,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "bead",
+   "type": "wooden-bead",
+   "name": "Bead",
+   "x": 2.3919999999999995,
+   "y": 0.008,
+   "props": {}
+  },
+  {
+   "id": "m7",
+   "type": "bar-magnet",
+   "name": "Magnet 8",
+   "x": 2.65,
+   "y": 0.0095,
+   "fixed": true,
+   "props": {
+    "material": "neodymium",
+    "length": 0.1
+   }
+  },
+  {
+   "id": "copper",
+   "type": "copper-wire",
+   "name": "Copper",
+   "x": 2.7419999999999995,
+   "y": 0.004,
+   "props": {}
+  }
+ ],
+ "goals": [
+  {
+   "kind": "attracts",
+   "source": "m0",
+   "item": "steel-clip"
+  },
+  {
+   "kind": "attracts",
+   "source": "m1",
+   "item": "plastic-clip"
+  },
+  {
+   "kind": "attracts",
+   "source": "m2",
+   "item": "foil"
+  },
+  {
+   "kind": "attracts",
+   "source": "m3",
+   "item": "nail"
+  },
+  {
+   "kind": "attracts",
+   "source": "m4",
+   "item": "brass-key"
+  },
+  {
+   "kind": "attracts",
+   "source": "m5",
+   "item": "washer"
+  },
+  {
+   "kind": "attracts",
+   "source": "m6",
+   "item": "bead"
+  },
+  {
+   "kind": "attracts",
+   "source": "m7",
+   "item": "copper"
+  }
+ ],
+ "expect": [
+  true,
+  false,
+  false,
+  true,
+  false,
+  true,
+  false,
+  false
+ ],
+ "notes": "Each object in front of its own neodymium magnet: the steel clip, the nail and the washer are pulled; the plastic clip, foil, brass key, wooden bead and copper wire are not (expect lists each goal's expected result)."
+}

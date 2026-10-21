@@ -1,0 +1,4 @@
+{"version":2,"id":"kite-breeze","name":"A kite flies in the wind","seconds":6,"release":0.3,"stage":{"x0":-0.56,"x1":3.19,"y0":-0.16,"y1":2.34},"items":[{"id":"table","type":"table","x":1.3,"y":0},
+{"id":"wind","type":"breeze","name":"Breeze","x":-0.45,"y":0,"props":{"speed":4}},
+{"id":"k","type":"kite","name":"Kite","x":0.4,"y":0,"props":{"line_m":1.5}}],
+"goals":[{"kind":"kite_flies","item":"k","at_least_m":0.8}]}

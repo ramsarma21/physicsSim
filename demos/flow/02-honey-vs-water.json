@@ -1,0 +1,99 @@
+{
+ "version": 2,
+ "id": "which-pours-faster-honey-or-water",
+ "name": "Which pours faster, honey or water?",
+ "seconds": 10,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "cup1",
+   "type": "bucket",
+   "name": "Bucket",
+   "x": 0.8,
+   "y": 0.004,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "water",
+   "type": "pitcher",
+   "name": "Cup of water",
+   "x": 0.72,
+   "y": 0.45,
+   "angle": 0,
+   "props": {
+    "vessel": "cup",
+    "fill_ml": 200,
+    "tilt": 75
+   }
+  },
+  {
+   "id": "cup2",
+   "type": "bucket",
+   "name": "Bucket",
+   "x": 1.7,
+   "y": 0.004,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "honey",
+   "type": "pitcher",
+   "name": "Cup of honey",
+   "x": 1.67,
+   "y": 0.45,
+   "angle": 0,
+   "props": {
+    "vessel": "cup",
+    "fill_ml": 200,
+    "liquid": "honey",
+    "tilt": 75
+   }
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "pours_faster",
+   "a": "water",
+   "b": "honey",
+   "label": "Cup of water pours faster than Cup of honey"
+  }
+ ]
+}

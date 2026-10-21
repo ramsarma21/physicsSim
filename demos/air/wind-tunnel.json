@@ -1,0 +1,5 @@
+{"version":2,"id":"wind-tunnel","name":"Smoke and a wind meter in a wind tunnel","seconds":4,"release":0.3,"stage":{"x0":-0.56,"x1":3.19,"y0":-0.16,"y1":2.34},"items":[{"id":"table","type":"table","x":1.3,"y":0},
+{"id":"tunnel","type":"wind-tunnel","name":"Wind tunnel","x":1.3,"y":0,"props":{"speed":3}},
+{"id":"meter","type":"anemometer","name":"Wind meter","x":1.6,"y":0,"props":{"height":0.12}},
+{"id":"smoke","type":"incense-stick","name":"Incense","x":0.9,"y":0}],
+"goals":[{"kind":"wind_reads","item":"meter","at_least":2.5,"at_most":3.1},{"kind":"smoke_drifts","item":"smoke","toward":"right"}]}

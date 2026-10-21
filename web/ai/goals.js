@@ -25,7 +25,53 @@
 //   the engine's own goal check, "falls" for a domino row from its story ("5 of 7 fall": the engine counts a domino that turned over 57°),
 //   "hits" from the first hits (the summary keeps the first 16 pairs), "moves" and "off" only when the item never moved, or from the engine's
 //   own check of the goal; otherwise ok is null.
+//   A physics module's goal kinds (melts, floats, lights, reads, ...: web/sim/plugins.js) are checked here too, by the module's own rule, on a
+//   whole run (doc + track), or from the engine's summary of the scene's own goal of that kind; allGoalKinds() lists them with these.
 export const GOAL_KINDS = ["in", "falls", "hits", "moves", "off"]
+// (the modules' registry, web/sim/plugins.js, kept on globalThis so this file imports nothing: filled wherever web/sim/index.js was loaded)
+const plugged = () => globalThis[Symbol.for("sandbox.plugins")] ?? null
+/** A module's goal kind by its kind or one of its spellings (web/sim/plugins.js goalKind), or undefined. */
+export function moduleGoal(kind) {
+	const S = plugged()
+	if (!S || typeof kind !== "string") return undefined
+	return S.goals.get(kind) ?? S.goals.get(S.aliases.get(kind.toLowerCase()) ?? "")
+}
+/** Every goal kind a plan may use: the five above and the loaded modules' (in their module order). */
+export function allGoalKinds() {
+	const S = plugged()
+	if (!S) return [...GOAL_KINDS]
+	const mods = [...S.modules.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+	return [...GOAL_KINDS, ...mods.flatMap((m) => (m.goals ?? []).map((k) => k.kind))]
+}
+const itemFields = (spec, subject) => {
+	const all = Object.entries(spec?.fields ?? {}).filter(([, t]) => /^items?\??$/.test(String(t))).map(([f]) => f)
+	if (!subject) return all
+	return Array.isArray(spec.subject) && spec.subject.length ? spec.subject : all.slice(0, 1)
+}
+const idsOf = (g, fields) => fields.flatMap((f) => (Array.isArray(g?.[f]) ? g[f] : typeof g?.[f] === "string" ? [g[f]] : []))
+/** The fields a module's goal kind takes: {field: "item" | "items" | "number" | "string" | "bool", with "?" when optional}. */
+export const moduleGoalFields = (kind) => ({ ...(moduleGoal(kind)?.fields ?? {}) })
+/** What a goal of a module kind is missing or has wrong, or null. has(id): whether the plan or scene has that item. */
+export function moduleGoalProblem(g, has = () => true) {
+	const mod = moduleGoal(g?.kind)
+	if (!mod) return `no goal kind "${g?.kind}"`
+	for (const [f, t0] of Object.entries(mod.fields ?? {})) {
+		const opt = String(t0).endsWith("?")
+		const t = String(t0).replace(/\?$/, "")
+		const v = g[f]
+		if (v === undefined || v === null) {
+			if (!opt) return `a "${mod.kind}" goal needs ${f} (${t === "item" ? "an item id" : t === "items" ? "a list of item ids" : t})`
+			continue
+		}
+		if (t === "item" && (typeof v !== "string" || !has(v))) return `${f}: "${v}" is not an item of the plan`
+		if (t === "items" && (!Array.isArray(v) || !v.length || v.some((x) => typeof x !== "string" || !has(x)))) return `${f} must list items of the plan`
+		if (t === "number" && !(typeof v === "number" && Number.isFinite(v))) return `${f} must be a number`
+		if (t === "string" && typeof v !== "string") return `${f} must be text`
+		if (t === "bool" && typeof v !== "boolean") return `${f} must be true or false`
+	}
+	for (const f of Object.keys(g)) if (!["kind", "label", ...Object.keys(mod.fields ?? {})].includes(f)) return `a "${mod.kind}" goal has no ${f} (its fields: ${Object.keys(mod.fields ?? {}).join(", ")})`
+	return null
+}
 /** The least and the most a part must turn to count as fallen, and the margin past its geometric tipping angle (degrees). */
 export const FALL_MIN_DEG = 20
 export const FALL_MAX_DEG = 85
@@ -35,6 +81,8 @@ const R2D = 180 / Math.PI
 /** A goal's kind: its own, else read from its fields (a container: "in"; a target: "hits"; min_m: "moves"; items: "falls"). */
 export function goalKind(g) {
 	if (g && GOAL_KINDS.includes(g.kind)) return g.kind
+	const mod = moduleGoal(g?.kind)
+	if (mod) return mod.kind
 	if (g?.container) return "in"
 	if (g?.target) return "hits"
 	if (g?.min_m !== undefined) return "moves"
@@ -42,14 +90,32 @@ export function goalKind(g) {
 	return "in"
 }
 /** The item ids a goal is about (the thing that must fall, move, hit or land; not the container or the target). */
-export const goalItems = (g) => (Array.isArray(g?.items) && g.items.length ? [...g.items] : g?.item ? [g.item] : [])
+export const goalItems = (g) => {
+	const mod = GOAL_KINDS.includes(g?.kind) ? undefined : moduleGoal(g?.kind)
+	if (mod) return idsOf(g, itemFields(mod, true))
+	return Array.isArray(g?.items) && g.items.length ? [...g.items] : g?.item ? [g.item] : []
+}
 /** Every item id a goal names (its items, the container, the target). */
-export const goalRefs = (g) => [...goalItems(g), ...(g?.container ? [g.container] : []), ...(g?.target ? [g.target] : [])]
+export const goalRefs = (g) => {
+	const mod = GOAL_KINDS.includes(g?.kind) ? undefined : moduleGoal(g?.kind)
+	if (mod) return [...new Set(idsOf(g, itemFields(mod, false)))]
+	return [...goalItems(g), ...(g?.container ? [g.container] : []), ...(g?.target ? [g.target] : [])]
+}
 
-/** A plain label for a goal that has none. names: id -> what the user calls it. */
+/** A plain label for a goal that has none. names: id -> what the user calls it. A module's goal is said as its run's summary says it
+ *  (summaryWords: its thresholds, deadlines and an `expect: false`, "Unheated balloon does not rise 5 cm"), else by the module's label(). */
 export function goalLabel(g, names = {}) {
 	const n = (id) => names[id] ?? id
 	const k = goalKind(g)
+	const mod = GOAL_KINDS.includes(k) ? undefined : moduleGoal(k)
+	if (mod) {
+		const said = summaryWords(mod, g, n)
+		if (said) return said
+		try {
+			if (typeof mod.label === "function") return String(mod.label(g, n))
+		} catch {}
+		return `${n(goalItems(g)[0] ?? "?")} ${mod.kind.replace(/_/g, " ")}`
+	}
 	const its = goalItems(g)
 	const who = its.length > 1 ? `all ${its.length} of ${its.slice(0, 3).map(n).join(", ")}${its.length > 3 ? "…" : ""}` : n(its[0] ?? "?")
 	if (k === "in") return `${who} lands in ${n(g.container)}`
@@ -59,6 +125,29 @@ export function goalLabel(g, names = {}) {
 	return `${who} moves at least ${fmtM(g.min_m)}`
 }
 const fmtM = (m) => (Number.isFinite(m) ? (m >= 1 ? `${+m.toFixed(2)} m` : `${+(m * 100).toFixed(1)} cm`) : "?")
+/**
+ * A module goal's words as the summary of its run gives them to a goal without a label: its kind's summarize on a run with nothing in it
+ * (web/sim/items.js GoalCtx through the registry's goalCtx, every reading there but empty; that label is made from the goal's own fields),
+ * or null when the kind says nothing without a run, or nothing whole ("nan g"): a module's label() then. A label minted from the kind alone
+ * said the opposite of an `expect: false` goal ("Unheated balloon rises" for {lifts_off, expect: false}, reported "yes" while it sat on its
+ * stand) and left out its numbers ("rises" for at least 50 cm).
+ */
+function summaryWords(mod, g, n) {
+	const S = plugged()
+	if (typeof S?.goalCtx !== "function" || typeof mod.summarize !== "function") return null
+	try {
+		const goal = { ...g, kind: mod.kind }
+		delete goal.label
+		const scene = { items: goalRefs(goal).map((id) => ({ id: String(id), name: String(n(id)) })), goals: [] }
+		const ctx = S.goalCtx(scene, { solids: [], processes: [] }, { frames: [{ t: 0, placements: {} }] })
+		ctx.state = () => []
+		const entry = mod.summarize(ctx, goal)
+		const said = typeof entry?.label === "string" ? entry.label.trim() : ""
+		return said && !/\b(undefined|nan|null|infinity)\b/i.test(said) ? said : null
+	} catch {
+		return null
+	}
+}
 const wrapDeg = (rad) => {
 	let d = (rad * R2D) % 360
 	if (d > 180) d -= 360
@@ -81,6 +170,13 @@ export function checkGoals(goals, run = {}) {
 		const label = typeof g.label === "string" && g.label.trim() ? g.label.trim() : goalLabel(g)
 		const base = { label, kind, item: g.item ?? null, ...(g.items ? { items: g.items } : {}), ...(g.container ? { container: g.container } : {}), ...(g.target ? { target: g.target } : {}) }
 		let r
+		const mod = GOAL_KINDS.includes(kind) ? undefined : moduleGoal(kind)
+		if (mod) {
+			// (a module's goal: its own fields kept on the result, judged by its rule on the whole run, else from the engine's summary of it)
+			for (const f of Object.keys(mod.fields ?? {})) if (g[f] !== undefined && !(f in base)) base[f] = g[f]
+			out.push({ ...base, ...moduleResult(mod, g, run, exact, summary) })
+			continue
+		}
 		try {
 			if (!goalItems(g).length || (kind === "hits" && !g.target) || (kind === "in" && !g.container)) r = { ok: null, detail: "the goal does not name its items" }
 			else r = kind === "in" ? inGoal(g, summary, exact ? run : null) : exact ? exactGoal(kind, g, T) : summaryGoal(kind, g, summary)
@@ -90,6 +186,26 @@ export function checkGoals(goals, run = {}) {
 		out.push({ ...base, ...r })
 	}
 	return out
+}
+
+function moduleResult(mod, g, run, exact, summary) {
+	if (!goalItems({ ...g, kind: mod.kind }).length) return { ok: null, detail: "the goal does not name its items" }
+	const S = plugged()
+	if (exact && typeof S?.goalCtx === "function") {
+		try {
+			const entry = mod.summarize(S.goalCtx(run.scene ?? null, run.doc, run.track), { ...g, kind: mod.kind })
+			if (!entry) return { ok: null, detail: "the goal names an item the run does not have" }
+			const t = Number.isFinite(entry.t) ? ` (at ${entry.t} s)` : ""
+			// (a module's own words for its result, when it has them: lesson time, the readings compared)
+			const said = typeof mod.detail === "function" ? mod.detail(entry) : null
+			return { ok: !!entry.ok, detail: typeof said === "string" && said ? said : `${entry.ok ? "yes" : "no"}${t}`, ...(entry.t !== undefined ? { t: entry.t } : {}) }
+		} catch (e) {
+			return { ok: null, detail: `could not be checked (${e?.message ?? e})` }
+		}
+	}
+	const own = (summary?.goals ?? []).find((x) => x?.kind === mod.kind && goalItems({ ...x, kind: mod.kind }).join() === goalItems({ ...g, kind: mod.kind }).join())
+	if (own && typeof own.ok === "boolean") return { ok: own.ok, detail: own.ok ? "yes" : "no" }
+	return { ok: null, detail: "cannot tell from the run's summary" }
 }
 
 function inGoal(g, summary, run = null) {

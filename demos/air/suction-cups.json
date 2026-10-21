@@ -1,0 +1,6 @@
+{"version":2,"id":"suction-cups","name":"How much can a suction cup hold?","seconds":3,"release":0.5,"stage":{"x0":-0.56,"x1":3.19,"y0":-0.16,"y1":2.34},"items":[{"id":"table","type":"table","x":1.3,"y":0},
+{"id":"light","type":"suction-cup","name":"Cup with 1 kg","x":0.3,"y":0},
+{"id":"heavy","type":"suction-cup","name":"Cup with 9 kg","x":1.1,"y":0,"props":{"load_kg":9}},
+{"id":"wood","type":"suction-cup","name":"Cup on wood","x":1.9,"y":0,"props":{"surface":"wood"}},
+{"id":"big","type":"suction-cup","name":"Big cup with 9 kg","x":2.7,"y":0,"props":{"load_kg":9,"diameter":0.08}}],
+"goals":[{"kind":"stays_held","item":"light"},{"kind":"lets_go","item":"heavy"},{"kind":"lets_go","item":"wood"},{"kind":"stays_held","item":"big"}]}

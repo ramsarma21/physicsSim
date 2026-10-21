@@ -9,7 +9,7 @@
 
 # Coordinates (metres, seconds, degrees)
 - x: the scene's own horizontal coordinate in metres, increasing to the right along the table. The stage (what the camera frames) and the table's two ends are given with each request; by default the stage runs x −0.56…3.19 and the table top x −0.55…3.15 (3.7 m long).
-- y: metres up from the table top: **the table top is y = 0**. Positive is up. Nothing should start below y = 0 (that is inside the table).
+- y: metres up from the table top: **the table top is y = 0**. Positive is up. Nothing should start below y = 0 (that is inside the table). Nothing starts higher than 3 m above it either: that is as high as the room's camera shows (its ceiling is 4.45 m up), so a drop asked from higher starts from 3 m and the reply (or the assumptions) says so ("the room only shows drops up to 3 m").
 - Angles: degrees, counter-clockwise positive. A plank at angle −15 slopes down to the right (its right end is lower); at +15 it slopes down to the left. 90 is upright (rotated a quarter turn counter-clockwise).
 - An item's (x, y) is its **anchor**, which differs per type (its centre, the middle of its base, its hinge, the floor under it...): the catalog says which for every type, and gives its outline relative to the anchor.
 - Typical scale: a ball 2–25 cm, a domino 5 cm tall, a ramp 0.5–1.5 m long, the whole table 3.7 m. A thing dropped from 1 m falls in 0.45 s and lands at 4.4 m/s; a ball rolling down a 30 cm high ramp leaves it at about 2 m/s.

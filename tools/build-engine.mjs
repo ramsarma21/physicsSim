@@ -92,3 +92,6 @@ console.log(`web/sim/engine-worker.js  ${(bytes / 1024).toFixed(1)} KiB, gzip ${
 console.log("  by source:", Object.entries(byPkg).map(([k, v]) => `${k} ${(v / 1024).toFixed(1)} KiB`).join(", "))
 console.log(`web/sim/engine-math.js  ${(statSync(mathOut).size / 1024).toFixed(1)} KiB, gzip ${(gzipSync(readFileSync(mathOut), { level: 9 }).length / 1024).toFixed(1)} KiB`)
 console.log(stubbed.size ? `  node built-ins stubbed: ${[...stubbed].join("; ")}` : "  no node built-ins in the bundle")
+
+// the optics module's ray tracer as plain JavaScript for the 3D view and the AI's digest (tools/build-optics.mjs: web/sim/optics.js)
+await import("./build-optics.mjs")

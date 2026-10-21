@@ -1,0 +1,320 @@
+[
+ {
+  "name": "egg-drop-heights",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The egg dropped 3 cm survives",
+    true
+   ],
+   [
+    "The egg dropped 10 cm cracks",
+    true
+   ],
+   [
+    "The egg dropped 40 cm smashes",
+    true
+   ]
+  ],
+  "happenings": [
+   "Egg from 10 cm cracks at 0.44 s, hitting a varnished hardwood table top at 1.38 m/s (48.5 N); the shell breaks at 35 N",
+   "Egg from 40 cm smashes at 0.59 s, hitting a varnished hardwood table top at 2.77 m/s (97.1 N); the shell breaks at 35 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "egg-padding",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The egg on the bare table breaks",
+    true
+   ],
+   [
+    "The egg on the foam survives",
+    true
+   ],
+   [
+    "The egg on the pillow survives",
+    true
+   ]
+  ],
+  "happenings": [
+   "Egg onto the table smashes at 0.62 s, hitting a varnished hardwood table top at 3.09 m/s (108 N); the shell breaks at 35 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "egg-drop-challenge",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The egg with padding and a parachute survives",
+    true
+   ],
+   [
+    "The egg in the bare box breaks",
+    true
+   ]
+  ],
+  "happenings": [
+   "Bare box smashes at 0.88 s, hitting a varnished hardwood table top at 4.83 m/s (169 N); the egg breaks at 35 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "spaghetti-bridge",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The bridge holds 100 g",
+    true
+   ],
+   [
+    "The bridge snaps under 500 g",
+    true
+   ]
+  ],
+  "happenings": [
+   "Bridge with 500 g snaps at 0.33 s under 2.2 N (222 g) of load (bending 0.0966 N·m; it holds 0.0947 N·m)"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "more-strands",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "3 strands snap under 200 g",
+    true
+   ],
+   [
+    "12 strands hold 200 g",
+    true
+   ]
+  ],
+  "happenings": [
+   "3 strands snaps at 0.35 s under 1.2 N (124 g) of load (bending 0.0573 N·m; it holds 0.0568 N·m)"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "glass-and-plate",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The glass shatters on the hard table",
+    true
+   ],
+   [
+    "The glass survives on carpet",
+    true
+   ],
+   [
+    "The plate survives on carpet",
+    true
+   ],
+   [
+    "The plate breaks on the table",
+    true
+   ]
+  ],
+  "happenings": [
+   "Glass onto the table shatters at 0.65 s, hitting a varnished hardwood table top at 3.41 m/s (2086 N); the glass breaks at 1840 N",
+   "Plate onto the table breaks at 0.65 s, hitting a varnished hardwood table top at 3.32 m/s (3147 N); the plate breaks at 2470 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "glued-tower",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The loose tower comes apart",
+    true
+   ],
+   [
+    "The glued tower stays in one piece",
+    true
+   ]
+  ],
+  "happenings": [
+   "Loose tower comes apart at 0.90 s: block 5 of 6 falls off block 4",
+   "Loose tower is knocked down at 0.93 s: 5 of 6 blocks have fallen",
+   "Glued tower is knocked down at 1.12 s: 6 of 6 blocks have fallen"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "egg-carton-load",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "An egg holds 3 kg",
+    true
+   ],
+   [
+    "An egg cracks under 4 kg",
+    true
+   ]
+  ],
+  "happenings": [
+   "Egg holding 4 kg cracks at 0.37 s, under a steady 35.0 N; the shell breaks at 35 N",
+   "Egg holding 4 kg smashes (already cracked) at 0.38 s, under a steady 35.3 N; the shell breaks at 35 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "egg-mass-conserved",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The egg smashes on the scale",
+    true
+   ],
+   [
+    "The scale still reads 57 g",
+    true
+   ]
+  ],
+  "happenings": [
+   "Egg dropped on the scale smashes at 0.55 s, hitting its steel platform at 2.41 m/s (84.5 N); the shell breaks at 35 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "soft-landings",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The egg dropped 50 cm onto the exercise ball survives",
+    true
+   ],
+   [
+    "The egg dropped 1 m onto the trampoline survives",
+    true
+   ],
+   [
+    "The egg dropped 50 cm onto the table breaks",
+    true
+   ]
+  ],
+  "happenings": [
+   "Egg onto the table smashes at 0.62 s, hitting a varnished hardwood table top at 3.09 m/s (108 N); the shell breaks at 35 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "egg-in-water",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The egg sinks in fresh water",
+    true
+   ],
+   [
+    "It survives the 30 cm drop into the water",
+    true
+   ],
+   [
+    "The egg floats in 12 % salt water",
+    true
+   ],
+   [
+    "The egg dropped 30 cm onto the table breaks",
+    true
+   ]
+  ],
+  "happenings": [
+   "Egg onto the table smashes at 0.55 s, hitting a varnished hardwood table top at 2.41 m/s (84.5 N); the shell breaks at 35 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "window-baseball",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The hard throw shatters the window",
+    true
+   ],
+   [
+    "The gentle toss bounces off",
+    true
+   ]
+  ],
+  "happenings": [
+   "Window shatters at 0.12 s, hitting a baseball at 8.99 m/s (650 N); the pane breaks at 257.8 N"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "knock-down",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "The bowling ball knocks the tower down",
+    true
+   ],
+   [
+    "The nudged tower still stands",
+    true
+   ]
+  ],
+  "happenings": [
+   "Tower hit by a bowling ball comes apart at 0.48 s: block 5 of 6 falls off block 4",
+   "Tower hit by a bowling ball is knocked down at 0.51 s: 3 of 6 blocks have fallen"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "glass-on-glass",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "From 60 cm the standing glass shatters",
+    true
+   ],
+   [
+    "and so does the falling one",
+    true
+   ],
+   [
+    "From 20 cm both stay whole",
+    true
+   ]
+  ],
+  "happenings": [
+   "Standing glass shatters at 0.65 s, hitting a drinking glass at 3.41 m/s (1475 N); the glass breaks at 1840 N (920 N in a hard edge-on-edge hit like this one)",
+   "Glass dropped 60 cm on it shatters at 0.65 s, hitting a drinking glass at 3.41 m/s (1475 N); the glass breaks at 1840 N (920 N in a hard edge-on-edge hit like this one)"
+  ],
+  "warnings": []
+ },
+ {
+  "name": "moon-egg",
+  "engines_identical": true,
+  "python_equals_js": true,
+  "goals": [
+   [
+    "On the Moon a 20 cm drop leaves the egg whole",
+    true
+   ]
+  ],
+  "happenings": [],
+  "warnings": []
+ }
+]

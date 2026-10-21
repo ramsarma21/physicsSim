@@ -4,6 +4,7 @@
 //
 // Model files (web/models/<group>.js) export `default function register({ addModel, kit, THREE })`.
 //   addModel(itemType, part, build)   part = a part name from the item's builder ("book", "body", "wheel1"...), or "*"
+//   addThumb(itemType, build)          the whole item for its catalog photo, when its parts draw nothing (a view plug-in draws it in a scene)
 //   build(ctx) -> THREE.Object3D, or null to draw nothing for that part (e.g. a hidden helper part of a composite)
 //   ctx = { solid, body, props, look, color, w, h, d, r, THREE, kit }
 //     frame: origin = the solid's origin (a slab's centre, a ball's centre); +x along the body's width, +y along its
@@ -14,11 +15,22 @@
 import * as THREE from "three"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
+import { addFrameHook, addViewPlugin, ownMaterial } from "./view-plugins.js"
+import { MODULE_GROUPS } from "./models/modules.js"
 
 const models = new Map()
 export function addModel(itemType, part, build) {
 	models.set(`${itemType}|${part}`, build)
 }
+// A whole item's model for its catalog photo (web/thumbs3d.js), for a type whose picture in a scene a view plug-in draws rather than its parts'
+// models (a wire between two terminals, the circuit board, a motion trail, the sun's light): build({props, preview, looks, THREE, kit}) -> an
+// Object3D in the item's frame (the preview's), or null. Used only when no part of the preview has a model to draw.
+const thumbs = new Map()
+export function addThumb(itemType, build) {
+	thumbs.set(itemType, build)
+}
+/** The catalog photo's whole-item model for this type (addThumb), or undefined. */
+export const thumbFor = (itemType) => thumbs.get(itemType)
 /** The model registered for this solid: a builder, null (draw nothing), or undefined (no model: the view's default). */
 export function modelFor(solid) {
 	if (!solid.itemType) return undefined
@@ -773,12 +785,13 @@ export const prebakeReady = () => pool.off || pool.list.some((e) => e.ready)
 export const prebakeStats = () => ({ off: pool.off, workers: pool.list.length, ready: pool.list.filter((e) => e.ready).length, queued: pool.queue.length, running: pool.list.reduce((n, e) => n + e.jobs.length, 0), records: prebaked.size, models: pool.byModel.size, noBake: noBake.size })
 
 // ---------------------------------------------------------------- the model files
-const GROUPS = ["balls", "blocks", "surfaces", "containers", "rods", "everyday-a", "everyday-b", "vehicles", "mechanisms"]
+// (and the physics modules' model files, web/models/mod-<name>.js: web/models/modules.js lists them; they get the view hooks too, web/view-plugins.js)
+const GROUPS = ["balls", "blocks", "surfaces", "containers", "rods", "everyday-a", "everyday-b", "vehicles", "mechanisms", ...MODULE_GROUPS]
 const loaded = await Promise.allSettled(GROUPS.map((g) => import(`./models/${g}.js`)))
 loaded.forEach((r, i) => {
 	if (r.status === "fulfilled" && typeof r.value.default === "function") {
 		try {
-			r.value.default({ addModel, kit, THREE })
+			r.value.default({ addModel, addThumb, kit, THREE, addViewPlugin, addFrameHook, ownMaterial })
 		} catch (e) {
 			console.warn(`models/${GROUPS[i]}.js failed to register:`, e)
 		}

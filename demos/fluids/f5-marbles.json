@@ -1,0 +1,74 @@
+{
+ "version": 2,
+ "name": "Five marbles in a measuring cylinder",
+ "seconds": 4,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "cyl",
+   "type": "graduated-cylinder",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "size": "100 mL",
+    "fill_ml": 60
+   },
+   "name": "Graduated cylinder"
+  },
+  {
+   "id": "m1",
+   "type": "glass-marble",
+   "x": 1.198,
+   "y": 0.22,
+   "name": "Marble 1"
+  },
+  {
+   "id": "m2",
+   "type": "glass-marble",
+   "x": 1.202,
+   "y": 0.25,
+   "name": "Marble 2"
+  },
+  {
+   "id": "m3",
+   "type": "glass-marble",
+   "x": 1.198,
+   "y": 0.28,
+   "name": "Marble 3"
+  },
+  {
+   "id": "m4",
+   "type": "glass-marble",
+   "x": 1.202,
+   "y": 0.31,
+   "name": "Marble 4"
+  },
+  {
+   "id": "m5",
+   "type": "glass-marble",
+   "x": 1.198,
+   "y": 0.33999999999999997,
+   "name": "Marble 5"
+  }
+ ],
+ "goals": [
+  {
+   "kind": "level",
+   "container": "cyl",
+   "at_least_ml": 70.4,
+   "at_most_ml": 71
+  }
+ ]
+}

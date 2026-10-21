@@ -13,6 +13,7 @@ import "../../tools/engine-math-node.mjs"
 
 const { admitDocument } = await import("../../tooling/src/sim/document.ts")
 const { simulate } = await import("../../tooling/src/sim/physics.ts")
+const { slimExtras } = await import("../../tooling/src/sim/plugins.ts")
 
 // Same result as Python's round(v, d) except on exact binary ties (a few multiples of 1/64): toFixed is exact decimal rounding.
 const round = (v: number, d: number): number => Number(v.toFixed(d))
@@ -22,6 +23,7 @@ interface Place {
 	y: number
 	angle: number
 	squash?: number
+	scale?: number
 }
 
 const run = (doc: unknown, rate: number): string => {
@@ -37,7 +39,7 @@ const run = (doc: unknown, rate: number): string => {
 		let same = true
 		for (let k = 1; k < frames.length && same; k++) {
 			const b = frames[k]?.placements[part.id] as Place | undefined
-			same = b !== undefined && b.x === a.x && b.y === a.y && b.angle === a.angle && b.squash === a.squash
+			same = b !== undefined && b.x === a.x && b.y === a.y && b.angle === a.angle && b.squash === a.squash && b.scale === a.scale
 		}
 		if (same) still.add(part.id)
 	}
@@ -48,11 +50,13 @@ const run = (doc: unknown, rate: number): string => {
 			const p = f.placements[id] as Place
 			const q: Place = { x: round(p.x, 5), y: round(p.y, 5), angle: round(p.angle, 5) }
 			if (p.squash !== undefined) q.squash = round(p.squash, 5)
+			if (p.scale !== undefined) q.scale = round(p.scale, 5)
 			placements[id] = q
 		}
 		return { t: round(f.t, 6), placements }
 	})
-	return JSON.stringify({ fps: track.fps, frames: slim, impacts: track.impacts })
+	// (a module's readings and events, tooling/src/sim/plugins.ts: only when the run made any, so a plain track is what it was)
+	return JSON.stringify({ fps: track.fps, frames: slim, impacts: track.impacts, ...slimExtras(track, round) })
 }
 
 for await (const line of createInterface({ input: process.stdin })) {

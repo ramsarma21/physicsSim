@@ -1,0 +1,138 @@
+{
+ "version": 2,
+ "id": "c12-solar",
+ "name": "C12 A solar panel runs a solar motor in the sun; shaded, it stops",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "pv1",
+   "type": "solar-panel",
+   "name": "Panel in the sun",
+   "x": 0.5,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "m1",
+   "type": "motor",
+   "name": "Solar motor",
+   "x": 0.75,
+   "y": 0.006,
+   "props": {
+    "kind": "solar",
+    "drives": "disc",
+    "size": 0.06
+   }
+  },
+  {
+   "id": "w1",
+   "type": "wire",
+   "name": "w1",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "pv1",
+    "a_end": "+",
+    "b": "m1",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w2",
+   "type": "wire",
+   "name": "w2",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "m1",
+    "a_end": "-",
+    "b": "pv1",
+    "b_end": "-",
+    "color": "black"
+   }
+  },
+  {
+   "id": "pv2",
+   "type": "solar-panel",
+   "name": "Shaded panel",
+   "x": 1.5,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "card",
+   "type": "cardboard-box",
+   "name": "Shade",
+   "x": 1.5,
+   "y": 0.3,
+   "props": {},
+   "fixed": true
+  },
+  {
+   "id": "m2",
+   "type": "motor",
+   "name": "Shaded motor",
+   "x": 1.75,
+   "y": 0.006,
+   "props": {
+    "kind": "solar",
+    "drives": "disc",
+    "size": 0.06
+   }
+  },
+  {
+   "id": "w3",
+   "type": "wire",
+   "name": "w3",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "pv2",
+    "a_end": "+",
+    "b": "m2",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w4",
+   "type": "wire",
+   "name": "w4",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "m2",
+    "a_end": "-",
+    "b": "pv2",
+    "b_end": "-",
+    "color": "black"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "spins",
+   "item": "m1",
+   "label": "In the sun the motor turns"
+  },
+  {
+   "kind": "current",
+   "item": "m2",
+   "at_most_a": 0.001,
+   "label": "Shaded, no current"
+  }
+ ]
+}

@@ -1,0 +1,129 @@
+{
+ "version": 2,
+ "id": "c1-complete-loop",
+ "name": "C1 A complete loop lights the bulb; an open one does not",
+ "seconds": 2,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "bat1",
+   "type": "battery",
+   "name": "Battery 1",
+   "x": 0.5,
+   "y": 0.01025,
+   "props": {
+    "cells": 1
+   }
+  },
+  {
+   "id": "bulb1",
+   "type": "bulb",
+   "name": "Bulb 1",
+   "x": 0.7,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "w1",
+   "type": "wire",
+   "name": "w1",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bat1",
+    "a_end": "+",
+    "b": "bulb1",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w2",
+   "type": "wire",
+   "name": "w2",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bulb1",
+    "a_end": "-",
+    "b": "bat1",
+    "b_end": "-",
+    "color": "black"
+   }
+  },
+  {
+   "id": "bat2",
+   "type": "battery",
+   "name": "Battery 2",
+   "x": 1.4,
+   "y": 0.01025,
+   "props": {
+    "cells": 1
+   }
+  },
+  {
+   "id": "bulb2",
+   "type": "bulb",
+   "name": "Bulb 2",
+   "x": 1.6,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "w3",
+   "type": "wire",
+   "name": "w3",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bat2",
+    "a_end": "+",
+    "b": "bulb2",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w4",
+   "type": "wire",
+   "name": "w4",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bulb2",
+    "a_end": "-",
+    "b_end": "-",
+    "color": "black"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "lights",
+   "item": "bulb1",
+   "label": "A complete loop: Bulb 1 lights"
+  },
+  {
+   "kind": "stays_dark",
+   "item": "bulb2",
+   "label": "An open loop: Bulb 2 stays dark"
+  },
+  {
+   "kind": "current",
+   "item": "bulb2",
+   "at_most_a": 0,
+   "label": "No current at all in the open loop"
+  }
+ ]
+}

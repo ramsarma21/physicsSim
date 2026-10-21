@@ -26,6 +26,7 @@
 /tools/*
 !/tools/build-static.mjs
 !/tools/build-engine.mjs
+!/tools/build-optics.mjs
 !/tools/vendor-three.mjs
 !/tools/vendor-media.mjs
 !/tools/vendor-clerk.mjs

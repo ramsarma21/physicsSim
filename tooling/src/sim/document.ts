@@ -1,6 +1,8 @@
 import { Schema } from "effect"
 import type { Part } from "#part.ts"
 import { type Contact, type Material, polygonProblem, type SimScene } from "#sim/part.ts"
+import { type ProcessRecord, processesProblem, settingsProblem } from "#sim/plugins.ts"
+import "#sim/modules/index.ts" // (every module's process kinds, registered before any document is admitted)
 
 /**
  * A simulated demonstration's record: one JSON document that every editor reads and writes and
@@ -82,7 +84,9 @@ const SolidRecord = Schema.Struct({
 	/** 1/s: its turning slows as dω/dt = −c·ω (a raw egg's liquid); none without it. */
 	angularDamping: Schema.optionalKey(Finite),
 	shape: Schema.optionalKey(Schema.String),
-	length: Schema.optionalKey(Finite)
+	length: Schema.optionalKey(Finite),
+	/** A display only (an instrument's face, a painted line, a lane's number boards): it collides with nothing (part.ts `ghost`). */
+	ghost: Schema.optionalKey(Schema.Boolean)
 })
 
 /** A joint's solid, by id, or null for the world. */
@@ -282,7 +286,18 @@ export const SceneDocument = Schema.Struct({
 	layers: Schema.optionalKey(Schema.Array(LayerRecord)),
 	marks: Schema.optionalKey(Schema.Array(MarkRecord)),
 	joints: Schema.optionalKey(Schema.Array(JointRecord)),
-	sprites: Schema.Record(Schema.String, SpriteRecord)
+	sprites: Schema.Record(Schema.String, SpriteRecord),
+	// (plugins.ts: the run's settings and the modules' process records; a document without them runs as before)
+	settings: Schema.optionalKey(
+		Schema.Struct({
+			gravity: Schema.optionalKey(Finite),
+			air: Schema.optionalKey(Schema.Boolean),
+			airDensity: Schema.optionalKey(Finite),
+			roomTemperature: Schema.optionalKey(Finite),
+			timeLapse: Schema.optionalKey(Finite)
+		})
+	),
+	processes: Schema.optionalKey(Schema.Array(Schema.Record(Schema.String, Schema.Unknown)))
 })
 export type SceneDocument = typeof SceneDocument.Type
 
@@ -349,6 +364,14 @@ export const admitDocument = (input: unknown): { readonly document: SceneDocumen
 		const problem = s.body.kind === "polygon" ? polygonProblem(s.body.points) : undefined
 		if (problem !== undefined) throw new Error(`${document.id}: ${s.id}'s polygon body ${problem}`)
 	}
+	// the run's settings within their limits, and every process of a kind this engine knows, as its module checks it (plugins.ts)
+	const badSettings = settingsProblem(document.settings)
+	if (badSettings !== undefined) throw new Error(`${document.id}: ${badSettings}`)
+	const records = (document.processes ?? []) as unknown as readonly ProcessRecord[]
+	if (records.length > 0) {
+		const badProcess = processesProblem(records, new Set(document.solids.map((s) => s.id)))
+		if (badProcess !== undefined) throw new Error(`${document.id}: ${badProcess}`)
+	}
 	for (const id of parents.keys()) {
 		const seen = new Set([id])
 		for (let up = parents.get(id); up !== undefined; up = parents.get(up)) {
@@ -392,6 +415,8 @@ export const admitDocument = (input: unknown): { readonly document: SceneDocumen
 		...(document.setting === undefined ? {} : { setting: document.setting }),
 		marks: document.marks ?? [],
 		...(document.joints === undefined ? {} : { joints: document.joints }),
+		...(document.processes === undefined || document.processes.length === 0 ? {} : { processes: records }),
+		...(document.settings === undefined ? {} : { settings: document.settings }),
 		layers: (document.layers ?? []).map(({ hitbox, ...layer }) =>
 			hitbox === undefined ? layer : { ...layer, hitbox: { ...hitbox, material: material(hitbox.material) } }
 		)

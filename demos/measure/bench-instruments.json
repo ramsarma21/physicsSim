@@ -1,0 +1,17 @@
+{"version": 2, "id": "bench-instruments", "name": "Measuring bench", "seconds": 4, "release": 0.5,
+ "stage": {"x0": -0.56, "x1": 3.19, "y0": -0.16, "y1": 2.0},
+ "items": [
+  {"id": "table", "type": "table", "x": 1.3, "y": 0},
+  {"id": "lane", "type": "lane", "x": 0.2, "y": 0.02, "props": {"length": 2, "marks_every": "10 cm", "label_cm": 8, "margin": 0.3, "color": "pale green"}, "name": "Short lane"},
+  {"id": "car", "type": "motor-car", "x": 0.1, "y": 0.02, "held": true, "props": {"speed": 1.0}, "name": "Car"},
+  {"id": "gate", "type": "speed-gate", "x": 1.2, "y": 0.02, "props": {"watch": "car", "face_cm": 14}},
+  {"id": "sw", "type": "stopwatch", "x": 1.1, "y": 0.55, "props": {"watch": "car", "finish_line": "lane", "face_cm": 18}, "name": "Stopwatch"},
+  {"id": "tape", "type": "measuring-tape", "x": 0.2, "y": 0.02, "props": {"length": 2.5, "watch": "car", "label_cm": 3}},
+  {"id": "radar", "type": "speedometer", "x": 2.2, "y": 0.7, "props": {"watch": "car", "face_cm": 26}},
+  {"id": "scale", "type": "kitchen-scale", "x": 2.75, "y": 0},
+  {"id": "w100", "type": "gram-mass", "x": 2.75, "y": 0.026, "props": {"grams": "200 g"}},
+  {"id": "nm", "type": "spring-scale", "x": -0.25, "y": 1.1, "props": {"range": "5 N", "hook": "apple"}},
+  {"id": "apple", "type": "apple", "x": -0.25, "y": 0.73},
+  {"id": "prot", "type": "protractor", "x": 2.6, "y": 0.35, "props": {"watch": "radar", "size_cm": 20}}
+ ],
+ "goals": []}

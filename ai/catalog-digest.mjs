@@ -18,8 +18,12 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const PG = dirname(HERE)
 const SIM = join(PG, "web", "sim")
 const CACHE_DIR = process.env.AI_CACHE_DIR || join(HERE, ".cache")
-const CACHE_FILE = join(CACHE_DIR, "catalog-digest.json")
-const DIGEST_VERSION = 7 // bump when the digest's format or notes change (invalidates the cache)
+// (a process that loads only some physics modules, PLAYGROUND_MODULES="a,b" (a test, a module's own server), keeps its smaller digest in a file of
+// its own: the shared one is always every module's, so a server that loads them all never finds those modules' types missing, and the two never
+// take turns rebuilding one file)
+const ONLY_MODULES = globalThis.process?.env?.PLAYGROUND_MODULES
+const CACHE_FILE = join(CACHE_DIR, typeof ONLY_MODULES === "string" ? `catalog-digest.only-${createHash("sha1").update(ONLY_MODULES).digest("hex").slice(0, 10)}.json` : "catalog-digest.json")
+const DIGEST_VERSION = 10 // bump when the digest's format or notes change (invalidates the cache)
 
 /** Container types whose "in" goal the engine's summary can check (machines/items.py inside()). */
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
@@ -142,7 +146,18 @@ function simFingerprint() {
 	} catch {
 		h.update("no-sim")
 	}
+	try {
+		// (the physics modules' files: their types and plug-ins are in the digest)
+		for (const f of readdirSync(join(SIM, "modules")).sort()) {
+			if (!f.endsWith(".js")) continue
+			const st = statSync(join(SIM, "modules", f))
+			h.update(`modules/${f}:${st.size}:${st.mtimeMs}\n`)
+		}
+	} catch {}
 	h.update(readSafe(join(HERE, "catalog-digest.mjs")).length.toString())
+	// (the module selection too: a process run with PLAYGROUND_MODULES="a,b" (a test, a module's own server) digests a smaller catalog, and must
+	// never hand it, through the shared cache file, to one that loads every module: its edits would find those modules' types unknown)
+	h.update(typeof ONLY_MODULES === "string" ? `modules=${ONLY_MODULES}` : "modules=*")
 	return h.digest("hex").slice(0, 16)
 }
 function readSafe(p) {
@@ -213,10 +228,14 @@ function indexType(t, materials) {
 		if (p.min !== undefined) spec.min = p.min
 		if (p.max !== undefined) spec.max = p.max
 		if (p.choices) spec.choices = p.choices
+		if (p.open) spec.open = true // (an open choice: any "#rrggbb" too)
 		if (p.auto) spec.auto = p.auto
 		if (p.help) spec.help = p.help
+		if (p.common) spec.common = true // (a module's catalog-wide prop, a colour, a start speed: listed once in its module's how-to, not under every type)
 		props[p.key] = spec
 	}
+	// (a physics module's links to other items: set in props like any prop, the other item's id; its readings: what a run reports of it)
+	for (const l of t.links ?? []) props[l.key] = { kind: "link", label: l.label, ...(l.types?.length ? { types: [...l.types] } : {}), ...(l.help ? { help: l.help } : {}) }
 	// mass at the defaults: the type's own mass-like prop if it has one, else density x volume of its moving parts
 	let mass = null
 	let massNote = ""
@@ -237,7 +256,8 @@ function indexType(t, materials) {
 		}
 	}
 	const dyn = solids.filter((s) => s.kind === "dynamic")
-	const container = t.category === "Containers"
+	// (a physics module's container, a water tank, a bowl, a zip bag: its plugin's place.containers; things go in it with place.inside too)
+	const container = t.category === "Containers" || moduleContainers().has(t.key)
 	const joints = t.preview?.joints ?? []
 	const pinned = dyn.some((s) => s.pivot && !s.parent) || joints.some((j) => j.a === null || j.b === null || j.chassis === null)
 	const out = {
@@ -261,7 +281,9 @@ function indexType(t, materials) {
 		usesRelease: RELEASE_RE.test(t.description) || ["spring-launcher", "spring-catapult", "pinball-flipper"].includes(t.key),
 		parts: solids.length,
 		movingParts: dyn.length,
-		note: TYPE_NOTES[t.key] ?? ""
+		note: TYPE_NOTES[t.key] ?? "",
+		...(t.module ? { module: t.module } : {}),
+		...(t.readouts?.length ? { readouts: t.readouts.map((r) => ({ ...r })) } : {})
 	}
 	if (t.preview?.error) out.previewError = t.preview.error
 	return out
@@ -371,9 +393,11 @@ const CATEGORY_NOTES = {
 }
 
 function propText(key, p, own) {
+	if (p.kind === "link") return `${key}: link → the id of ${p.types?.length ? `a ${p.types.join(" | ")}` : "another item"}${p.help ? ` (${p.help})` : ""}`
 	const unit = p.unit && !/^(of |heights|×)/.test(p.unit) ? ` ${p.unit}` : p.unit ? ` (${p.unit})` : ""
 	if (p.kind === "bool") return `${key}: bool =${p.default}`
-	if (p.kind === "choice") return `${key}: ${p.choices.map((c) => (c === p.default ? `*${c}*` : c)).join(" | ")}`
+	// (an open choice takes any other text: a colour's "#rrggbb", or a torch's blink pattern, a word in Morse code)
+	if (p.kind === "choice") return `${key}: ${p.choices.map((c) => (c === p.default ? `*${c}*` : c)).join(" | ")}${p.open ? (/colou?r|paint/i.test(String(p.key)) ? " | any #rrggbb" : " | any other text (up to 64 characters)") : ""}`
 	const follows = Array.isArray(p.auto) ? p.auto.filter((k) => !own || own.includes(k)) : null
 	const auto = p.auto ? ` auto (follows ${follows?.length ? follows.join(", ") : "the other props"} unless set)` : ""
 	const range = p.min !== undefined || p.max !== undefined ? ` [${fmt(p.min)}…${fmt(p.max)}]` : ""
@@ -395,10 +419,12 @@ function typeDetail(T) {
 		const centred = Math.abs(o.x0 + o.x1) < 1e-4 && Math.abs(o.y0 + o.y1) < 1e-4
 		lines.push(`Anchor (x, y): ${T.anchor}. Outline at defaults: ${fmt(w)} × ${fmt(h)} m${centred ? ", centred on the anchor" : `; from the anchor x ${signed(o.x0)}…${signed(o.x1)}, y ${signed(o.y0)}…${signed(o.y1)}`}.`)
 	} else lines.push(`Anchor (x, y): ${T.anchor}.`)
-	const own = Object.entries(T.props).filter(([k]) => !MATERIAL_KEYS.includes(k))
+	const own = Object.entries(T.props).filter(([k, p]) => !MATERIAL_KEYS.includes(k) && !p.common)
 	const keys = Object.keys(T.props)
 	if (own.length) lines.push(`Props: ${own.map(([k, p]) => propText(k, p, keys)).join("; ")}.`)
 	if (T.note) lines.push(T.note)
+	// (a state code's words with it: "broken (Broken: 0 whole, 1 cracked, 2 in pieces)")
+	if (T.readouts?.length) lines.push(`Readings (the run reports them; goals and edits can use them): ${T.readouts.map((r) => `${r.key} (${r.label}${r.unit ? `, ${r.unit}` : ""}${r.words ? `: ${Object.entries(r.words).map(([k, w]) => `${k} ${w}`).join(", ")}` : ""})`).join(", ")}.`)
 	if (LOOK_NOTES[T.key]) lines.push(`Looks: ${LOOK_NOTES[T.key]}.`)
 	const m = T.props.material
 	if (m) {
@@ -440,8 +466,265 @@ function buildText(index) {
 		parts.push(`\n## ${cat} (${types.length})${CATEGORY_NOTES[cat] ? "\n" + CATEGORY_NOTES[cat] : ""}`)
 		for (const T of types) parts.push(typeDetail(T))
 	}
+	const mods = modulesText()
+	if (mods) parts.push(mods)
 	return parts.join("\n")
 }
+
+/** The container types the loaded physics modules add (their plugins' place.containers). */
+const moduleContainers = () => {
+	const out = new Set()
+	for (const m of loadedModules()) for (const t of m.place?.containers ?? []) out.add(t)
+	return out
+}
+/** The loaded physics modules (web/sim/plugins.js's registry), in name order. */
+const loadedModules = () => {
+	const S = globalThis[Symbol.for("sandbox.plugins")]
+	return S && S.modules.size ? [...S.modules.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)) : []
+}
+/** A plan worked into one line: each item's id, type, props and place, and the goals ("magnet: bar-magnet {material: neodymium} fixed, on
+ *  air x 1 y_m 0.086 angle_deg -90; …; goals lifts {source: magnet, item: clip}"), for an example given as {ask, plan} without its `how`. */
+function planHow(plan) {
+	const val = (v) => (Array.isArray(v) ? `[${v.map(val).join(", ")}]` : v !== null && typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `${k}: ${val(x)}`).join(", ")}}` : String(v))
+	const items = (Array.isArray(plan?.items) ? plan.items : []).map((it) => {
+		const props = it?.props && Object.keys(it.props).length ? ` ${val(it.props)}` : ""
+		const place = it?.place ? `, ${Object.entries(it.place).map(([k, v]) => `${k} ${val(v)}`).join(" ")}` : ""
+		return `${it?.id}: ${it?.type}${props}${it?.fixed ? " fixed" : ""}${it?.held ? " held" : ""}${place}`
+	})
+	const goals = (Array.isArray(plan?.goals) ? plan.goals : []).map((g) => `${g?.kind} ${val(Object.fromEntries(Object.entries(g ?? {}).filter(([k]) => k !== "kind" && k !== "label")))}`)
+	const text = `${items.join("; ")}${goals.length ? `; goals ${goals.join(", ")}` : ""}`
+	return text.length > 600 ? `${text.slice(0, 599)}…` : text
+}
+/** A module's worked examples for the digest: its own `how`, or its plan in one line (planHow) when it gives only {ask, plan}. */
+const moduleExamples = (m) =>
+	(m.examples ?? []).filter((e) => e && typeof e.ask === "string" && (typeof e.how === "string" || (e.plan && typeof e.plan === "object"))).map((e) => `  - e.g. "${e.ask}": ${typeof e.how === "string" ? e.how : planHow(e.plan)}`)
+/** One module's section: its how-to, goal kinds, knobs and examples. */
+function moduleSection(m) {
+	const goals = (m.goals ?? []).map((k) => `  - goal ${k.about ?? `${k.kind} {${Object.keys(k.fields ?? {}).join(", ")}}`}`)
+	const knobs = (m.knobs ?? []).filter((k) => k.why).map((k) => `  - knob ${k.type}.${k.key}${k.how === "link" ? " (a link)" : ""}: ${k.why}`)
+	const examples = moduleExamples(m)
+	const list = [...goals, ...knobs, ...examples]
+	return `### ${m.title ?? m.name}${m.howto ? `\n${String(m.howto).trim()}` : ""}${list.length ? `\n${list.join("\n")}` : ""}`
+}
+/** The physics modules' part of the digest (web/sim/plugins.js, loaded with web/sim): how their items work together, their goal kinds and the
+ *  scene's settings. "" without modules, so the digest is what it was. */
+function modulesText() {
+	const S = globalThis[Symbol.for("sandbox.plugins")]
+	if (!S || !S.modules.size) return ""
+	const mods = [...S.modules.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+	const parts = ["\n## Physics modules (heat, liquids, circuits, light, sound, magnets…): how their items work together"]
+	for (const m of mods) {
+		const goals = (m.goals ?? []).map((k) => `  - goal ${k.about ?? `${k.kind} {${Object.keys(k.fields ?? {}).join(", ")}}`}`)
+		// (what the make-it-work search may turn, and what turning it does: so a plan's tune knobs and an edit's fixes pick the honest ones)
+		const knobs = (m.knobs ?? []).filter((k) => k.why).map((k) => `  - knob ${k.type}.${k.key}${k.how === "link" ? " (a link)" : ""}: ${k.why}`)
+		const examples = moduleExamples(m)
+		parts.push(`### ${m.title ?? m.name}${m.howto ? `\n${String(m.howto).trim()}` : ""}${[...goals, ...knobs, ...examples].length ? `\n${[...goals, ...knobs, ...examples].join("\n")}` : ""}`)
+	}
+	parts.push(SETTINGS_NOTE)
+	return parts.join("\n")
+}
+
+// ---------------------------------------------------------------- tiers: a digest too big for every prompt (many module types)
+/** A digest up to this many characters goes whole into the plan and edit prompts (every catalog without modules, and with a few). Past it the
+ *  prompts carry the tiered digest: the core catalog in full, every module type in one line and each module's title (the cached system prompt),
+ *  and, with the request, the full detail (types, how-to, goal kinds, knobs, examples) of the modules the request and the scene use. */
+export const FULL_LIMIT = 160000
+const STOP = new Set("a an the and or of on in into onto to with without from for at by as is are be it its this that these those some any one two three four five six than then so do does not no yes how what which who when where why make made build show let put set use using up down over under left right top bottom side same more less very much many each every both other others like vs versus toy small big large little real thing things item items push pull move moves go goes roll rolls fall falls drop hit hits get gets start end run".split(" "))
+/** A word's stem, a little: "cubes" -> cube, "boxes" -> box, "batteries" -> battery, "melting" -> melt, "timed" -> time (kept short words whole). */
+const stem = (w) => {
+	if (w.length <= 3) return w
+	if (/ies$/.test(w)) return `${w.slice(0, -3)}y`
+	if (/(ss|us|is)$/.test(w)) return w
+	if (/(s|x|z|ch|sh)es$/.test(w)) return w.slice(0, -2)
+	if (/s$/.test(w)) return w.slice(0, -1)
+	if (/ing$/.test(w) && w.length > 5) return w.slice(0, -3).replace(/(.)\1$/, "$1")
+	if (/ed$/.test(w) && w.length > 4) return w.slice(0, -2).replace(/(.)\1$/, "$1")
+	return w
+}
+/** The words of a text, lower case, stemmed a little ("melting ice cubes" -> melt, ice, cube), without the most common ones. */
+export const wordsOf = (t) => new Set(String(t ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2 && !STOP.has(w)).map(stem).filter((w) => !STOP.has(w)))
+/** Everyday and classroom words that never pick a module on their own, though a module's title, goal kinds, types or tags use them ("my class"
+ *  picked the levers through "first class lever", "held", "off" and "let" the air module, "land" and "together" the space one: V8956, 20 Oct). */
+const GENERIC_WORDS = "class classroom grade lesson video demo demonstration experiment kid student teacher school science test fair trial explain compare record result data watch time minute second clock off out back held hold let land stand together run bigger smaller spring stop between first third fast faster slow slower far farther farthest further high higher low lower long longer short shorter heavy heavier lighter empty full turn spin change state mass level length fraction dry reach target see lit point stick pull store rise jump period cross louder brighter warmer colder hotter steeper gate start fix same different side end top bottom middle edge way model kind type pick place build show stay goe come keep look win beat quick quicker bright dark image read shows fall floor sheet line mark object material size shape colour color red blue green yellow white black big large small little real toy home kitchen lab office set use knock tower fly flight meter metre carry crash push reaction least most need work make thing cool hole hill above below closer nearer apart away toward towards harder softer again"
+// (each in every form the stem makes of it: "spring", "springs" and "springing" stem apart)
+const GENERIC = new Set(GENERIC_WORDS.split(" ").flatMap((w) => [w, `${w}s`, `${w}es`, `${w}ing`, `${w}ed`].map((x) => stem(x))))
+/** A word's plural made singular, and nothing else ("plates" -> plate, "boxes" -> box; "bowling" stays): names and phrases are matched so. */
+const single = (w) => (w.length <= 3 ? w : /(sses|xes|zes|ches|shes)$/.test(w) ? w.slice(0, -2) : /ies$/.test(w) ? `${w.slice(0, -3)}y` : w.replace(/(?<![su])s$/, ""))
+/** A text's words in order, lower case, plurals made singular, without the most common ones: what a type's name or phrase is matched against. */
+const tokensOf = (t) => String(t ?? "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1 && !STOP.has(w)).map(single)
+const GENERIC_SINGLE = new Set(GENERIC_WORDS.split(" ").map(single))
+/** The phrases that name a type: its name, the words in its name's brackets, its key, and its tags of two words or more ("ceramic plate",
+ *  "stream table", "sand timer", "first class lever"), each as its words; a phrase of only everyday words is left out. And its one-word names
+ *  ("pitcher", "battery", "stopwatch": its name or key when that is one word). */
+function typeNames(T) {
+	const phrases = new Set()
+	const names = new Set()
+	const add = (s, whole) => {
+		const t = tokensOf(s)
+		// (a name of everyday words is still its name, "start line", "metre stick"; a tag of them says nothing, "fair test", "same mass")
+		if (t.length >= 2 && (whole || !t.every((w) => GENERIC_SINGLE.has(w)))) phrases.add(t.join(" "))
+		else if (whole && t.length === 1 && t[0].length >= 3 && !GENERIC_SINGLE.has(t[0])) names.add(t[0])
+	}
+	const name = String(T.name ?? "")
+	add(name.replace(/\([^)]*\)/g, " "), true)
+	for (const m of name.matchAll(/\(([^)]*)\)/g)) add(m[1], true)
+	for (const part of name.split(",")) add(part.replace(/\([^)]*\)/g, " "), true)
+	add(String(T.key).replace(/[-_]/g, " "), true)
+	for (const tag of T.tags ?? []) add(tag, false)
+	return { phrases, names }
+}
+function buildTiers(index) {
+	const mods = loadedModules()
+	const modOf = (T) => (T.module ? (mods.find((m) => m.name === `mod_${T.module}` || m.name === T.module)?.name ?? `mod_${T.module}`) : null)
+	const core = [HEADER]
+	for (const cat of index.categories) {
+		const types = Object.values(index.types).filter((T) => T.category === cat && !T.module)
+		if (!types.length) continue
+		core.push(`\n## ${cat} (${types.length})${CATEGORY_NOTES[cat] ? "\n" + CATEGORY_NOTES[cat] : ""}`)
+		for (const T of types) core.push(typeDetail(T))
+	}
+	// (a word of a core type's own key or name, "ball", "ramp", "cup", "cart", says nothing about which module: it picks none)
+	// (and a core type's name, key or tag of two words or more in the words, "glass marble", "plastic ball", "soda can", is that core thing: its
+	// words are taken out of the request before any module word is looked for)
+	const coreWords = new Set()
+	const coreNames = new Set() // (stemmed: for title and goal-kind words)
+	const coreSingles = new Set() // (plurals made singular: for one-word names; "bowling" is never "bowl")
+	const corePhrases = new Set()
+	// (a one-word name a core type has as a tag, "prism" (a wedge), "cork" (a baseball's), still picks its module; one many core types are
+	// tagged with, "ramp", does not)
+	const coreTagDf = new Map()
+	for (const T of Object.values(index.types)) {
+		if (T.module) continue
+		for (const w of new Set((T.tags ?? []).flatMap((x) => tokensOf(x)))) coreTagDf.set(w, (coreTagDf.get(w) ?? 0) + 1)
+		for (const s of [String(T.key).replace(/[-_]/g, " "), T.name, ...String(T.name ?? "").split(",")]) {
+			for (const w of wordsOf(s)) coreNames.add(w)
+			for (const w of tokensOf(s)) coreSingles.add(w)
+		}
+		for (const s of [String(T.key).replace(/[-_]/g, " "), T.name, ...String(T.name ?? "").split(","), ...(T.tags ?? [])]) {
+			for (const w of wordsOf(s)) coreWords.add(w)
+			const t = tokensOf(s.replace(/\([^)]*\)/g, " "))
+			if (t.length >= 2) corePhrases.add(t.join(" "))
+			else if (t.length === 1) coreWords.add(t[0])
+		}
+	}
+	const modules = {}
+	const own = (e, words, weight) => {
+		for (const w of wordsOf(words)) if (!GENERIC.has(w) && !coreWords.has(w)) e.weights[w] = Math.max(e.weights[w] ?? 0, weight)
+	}
+	const entry = (name) => (modules[name] ??= { title: mods.find((x) => x.name === name)?.title ?? name, keys: [], weights: {}, phrases: new Set(), names: new Set() })
+	for (const T of Object.values(index.types)) {
+		const name = modOf(T)
+		if (!name) continue
+		const m = entry(name)
+		m.keys.push(T.key)
+		own(m, [String(T.key).replace(/[-_]/g, " "), T.name, ...(T.tags ?? [])].join(" "), 1)
+		const tn = typeNames(T)
+		for (const p of tn.phrases) m.phrases.add(p)
+		for (const n of tn.names) if (!coreSingles.has(n) && !((coreTagDf.get(n) ?? 0) >= 2)) m.names.add(n)
+		for (const p of tn.phrases) if (corePhrases.has(p)) m.phrases.delete(p)
+	}
+	const titleOf = new Map()
+	const kindsOf = new Map()
+	for (const m of mods) {
+		const e = entry(m.name)
+		// (its title's words and its goal kinds' are its own, "floats" picks the liquids module whatever else floats; never an everyday word,
+		// "off" of lifts_off, "held" of stays_held, "land" of lands_together)
+		titleOf.set(m.name, [...wordsOf(m.title ?? "")].filter((w) => !GENERIC.has(w) && !coreNames.has(w)))
+		kindsOf.set(m.name, [...wordsOf((m.goals ?? []).map((k) => String(k.kind).replace(/_/g, " ")).join(" "))].filter((w) => !GENERIC.has(w) && !coreNames.has(w)))
+		// (a goal kind's other spellings count as its types' words do, and a spelling of two words or more as a type's phrase: "shatter", "smash",
+		// "carts push apart")
+		const aliases = (m.goals ?? []).flatMap((k) => (k.aliases ?? []).map((x) => String(x).replace(/_/g, " ")))
+		own(e, aliases.join(" "), 1)
+		for (const a of aliases) {
+			const t = tokensOf(a)
+			if (t.length >= 2 && !t.every((w) => GENERIC_SINGLE.has(w)) && !corePhrases.has(t.join(" "))) e.phrases.add(t.join(" "))
+		}
+		e.section = moduleSection(m)
+		// (a module's own request words, a regex (web/sim/plugins.js words.picks): "time it", "how many seconds" pick the measure module though
+		// "time" and "second" are everyday words that pick nothing by themselves)
+		if (typeof m.words?.picks === "string" && m.words.picks) e.picks = m.words.picks
+	}
+	const names = Object.keys(modules).sort()
+	if (names.length) {
+		core.push("\n## Physics module items (one line each: key (name; static|dyn; size; mass): what it is). Before each request comes the FULL detail (props, links, readings, how the items work together, goal kinds) of the modules it may need: use a module item only with that detail; ask for nothing that is not listed.")
+		for (const n of names) {
+			core.push(`### ${modules[n].title}`)
+			for (const k of modules[n].keys) core.push(briefLine(index.types[k]))
+		}
+		core.push(SETTINGS_NOTE)
+	}
+	const out = {}
+	// (a title word is its module's when no other title has it ("light" is the optics module's, though a circuit's goal is "lights"); a goal
+	// kind's word when no other module's title or goal kinds have it ("reads", "level" say nothing about which)
+	const titleDf = new Map()
+	const allDf = new Map()
+	for (const n of names) {
+		for (const w of titleOf.get(n) ?? []) titleDf.set(w, (titleDf.get(w) ?? 0) + 1)
+		for (const w of new Set([...(titleOf.get(n) ?? []), ...(kindsOf.get(n) ?? [])])) allDf.set(w, (allDf.get(w) ?? 0) + 1)
+	}
+	for (const n of names) {
+		const m = modules[n]
+		const weights = Object.fromEntries(Object.entries(m.weights).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)))
+		const strong = [...new Set([...(titleOf.get(n) ?? []).filter((w) => titleDf.get(w) === 1), ...(kindsOf.get(n) ?? []).filter((w) => allDf.get(w) === 1)])].sort()
+		out[n] = { title: m.title, keys: m.keys, words: Object.keys(weights), weights, strong, phrases: [...m.phrases].sort(), names: [...m.names].sort(), ...(m.picks ? { picks: m.picks } : {}), text: [m.section ?? `### ${m.title}`, ...m.keys.map((k) => typeDetail(index.types[k]))].join("\n") }
+	}
+	return { core: core.join("\n"), modules: out, corePhrases: [...corePhrases].sort() }
+}
+
+/**
+ * The catalog for one plan or edit prompt: {system, extra, modules}. A digest within FULL_LIMIT: system = the whole digest, extra "". Else the
+ * tiered one: system = the core tier (cached), extra = the full sections of the modules the request or the scene uses (put before the request).
+ * A module is picked by: one of its types in the scene or plan; a type's name ("pitcher", "battery"), or its name, key, tag or goal spelling of two
+ * words or more ("ceramic plate", "stream table", "stop watch", "carts push apart"), in the words; a word of its title or goal kinds no other
+ * module has ("melt", "orbit", "light"); or enough of its own words, each counting 1 / the number of modules that use it; or its own request
+ * words (words.picks, a regex: the measure module's "time it", "how many seconds"). Never by an everyday
+ * word ("class", "held", "land", "stand": GENERIC) nor a word of a core type's key or name ("ball", "ramp", "cup", "cart").
+ */
+export function promptCatalog(cat, { text = "", types = [] } = {}) {
+	if (!cat.tiers || cat.text.length <= FULL_LIMIT) return { system: cat.text, extra: "", modules: [] }
+	let toks = tokensOf(text)
+	// (a core thing named in full, "glass marble", "plastic ball", "rubber duck": its words pick no module)
+	const cp = new Set(cat.tiers.corePhrases ?? [])
+	if (cp.size) {
+		const keep = toks.map(() => true)
+		for (let n = 4; n >= 2; n--) for (let i = 0; i + n <= toks.length; i++) if (keep.slice(i, i + n).every(Boolean) && cp.has(toks.slice(i, i + n).join(" "))) for (let k = i; k < i + n; k++) keep[k] = false
+		toks = toks.filter((_, i) => keep[i])
+	}
+	const left = toks.join(" ")
+	// (two words written apart are the one word too: "stop watch" is a stopwatch, "paper clip" a paperclip)
+	const joined = toks.slice(1).map((w, i) => `${toks[i]}${w}`)
+	const said = ` ${toks.join(" ")} `
+	// (a module type's phrase in the words is that type: its words are no other module's one-word name, "ceramic plate" is never the heat
+	// module's plate)
+	const inPhrase = toks.map(() => false)
+	for (const m of Object.values(cat.tiers.modules))
+		for (const p of m.phrases ?? []) {
+			const pt = p.split(" ")
+			for (let i = 0; i + pt.length <= toks.length; i++) if (pt.every((w, k) => toks[i + k] === w)) for (let k = 0; k < pt.length; k++) inPhrase[i + k] = true
+		}
+	const singles = new Set([...toks.filter((_, i) => !inPhrase[i]), ...joined])
+	const want = new Set([...wordsOf(left), ...wordsOf(joined.join(" "))])
+	const have = new Set(types)
+	const df = new Map()
+	for (const m of Object.values(cat.tiers.modules)) for (const w of m.words) df.set(w, (df.get(w) ?? 0) + 1)
+	const score = (m) => m.words.filter((w) => want.has(w)).reduce((a, w) => a + (m.weights?.[w] ?? 1) / (df.get(w) ?? 1), 0)
+	const picks = (m) => {
+		if (typeof m.picks !== "string" || !m.picks) return false
+		try {
+			return new RegExp(`(?:${m.picks})`, "i").test(String(text ?? ""))
+		} catch {
+			return false
+		}
+	}
+	const picked = Object.entries(cat.tiers.modules)
+		.filter(([, m]) => m.keys.some((k) => have.has(k)) || (m.names ?? []).some((w) => singles.has(w)) || (m.phrases ?? []).some((p) => said.includes(` ${p} `)) || (m.strong ?? []).some((w) => want.has(w)) || score(m) >= 1 - 1e-9 || picks(m))
+		.map(([n]) => n)
+	const extra = picked.length ? `# Catalog detail: the physics modules this request may use (${picked.map((n) => cat.tiers.modules[n].title).join("; ")})\n${picked.map((n) => cat.tiers.modules[n].text).join("\n\n")}` : ""
+	return { system: cat.tiers.core, extra, modules: picked }
+}
+
+const SETTINGS_NOTE = `### Scene settings (plan.settings; an edit: set_scene {settings})
+settings: {gravity: "earth" | "moon" | "mars" | "jupiter" | "none" or m/s² 0…30, air: true | false (false = a vacuum: no drag, no buoyancy, fans move nothing), air_density: kg/m³ 0.001…100 with air on (a world's own air for drag and buoyancy: Mars 0.020, Venus 65, Jupiter 0.16; left out: a room's 1.2), room_temp: °C −60…60 (where heat starts and cools to), time_lapse: 1…100000 (seconds of slow processes, heating, melting, cooling, per second of the run; motion stays real-time)}. Leave it out for an ordinary room.`
 
 function buildBrief(index) {
 	const parts = ["# Catalog (one line per type; key (name; static|dyn; size; mass): what it is)"]
@@ -478,6 +761,8 @@ export function digestFromCatalog(raw, { source = "given", fingerprint = "given"
 	const index = { categories, types, materials: Object.keys(raw.materials ?? {}), count: raw.types.length }
 	const text = buildText(index)
 	const brief = buildBrief(index)
+	// (a digest past FULL_LIMIT: the prompts carry its tiers, promptCatalog)
+	const tiers = text.length > FULL_LIMIT ? buildTiers(index) : null
 	return {
 		version: DIGEST_VERSION,
 		fingerprint,
@@ -486,9 +771,12 @@ export function digestFromCatalog(raw, { source = "given", fingerprint = "given"
 		index,
 		text,
 		brief,
+		...(tiers ? { tiers } : {}),
 		stats: {
 			types: raw.types.length,
 			chars: text.length,
+			// (what a plan or edit prompt carries of it before a request's own module detail: the whole digest, or its core tier)
+			promptChars: tiers ? tiers.core.length : text.length,
 			tokens: estimateTokens(text),
 			tokensOpenAI: estimateTokens(text, "openai"),
 			briefChars: brief.length,

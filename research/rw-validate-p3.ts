@@ -8,8 +8,8 @@
 //   node --no-warnings research/rw-validate-p3.ts [weld|spring|pulley|swing|friction|chain|wheel|belt|spin|drag|all]
 //   ENGINE_DIR=<a folder holding physics.ts and document.ts> runs the same scenes on another copy of the engine (the numbers before
 //   this batch: the checks then report what that engine does; they are written for this one).
-import { execFileSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { execFileSync } from "../tools/child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 
@@ -39,6 +39,9 @@ const fineEngine = async (hz: number) => {
 		}
 		writeFileSync(path.join(root, "src", "sim", f), text)
 	}
+	// (document.ts imports #sim/modules/index.ts, the physics modules' process kinds, which import #sim/matter/…: those folders' .ts files as they are)
+	for (const d of readdirSync(DIR, { withFileTypes: true }).filter((e) => e.isDirectory()))
+		cpSync(path.join(DIR, d.name), path.join(root, "src", "sim", d.name), { recursive: true, filter: (src) => !/\.[a-z]+$/i.test(src) || src.endsWith(".ts") })
 	writeFileSync(path.join(root, "package.json"), JSON.stringify({ private: true, type: "module", imports: { "#*": "./src/*" } }))
 	symlinkSync(`${PG}/tooling/node_modules`, path.join(root, "node_modules"))
 	const sim = ((await import(path.join(root, "src", "sim", "physics.ts"))) as { simulate: Simulate }).simulate

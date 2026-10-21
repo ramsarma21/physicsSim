@@ -1,0 +1,323 @@
+[
+ {
+  "id": "heat-salt-ice",
+  "expect": "the salted cube melts first; both melt within 2.5 h",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 41594,
+  "browserMs": 23370,
+  "goals": [
+   {
+    "label": "Salted ice cube melts before Plain ice cube",
+    "ok": true,
+    "kind": "melts_first",
+    "a": "salted",
+    "b": "plain",
+    "t_a": 4340,
+    "t_b": 5680,
+    "melted_a": 1,
+    "melted_b": 1
+   },
+   {
+    "label": "Salted ice cube melts within 2 h 30 min",
+    "ok": true,
+    "kind": "melts",
+    "item": "salted",
+    "t": 4340,
+    "melted": 1
+   }
+  ]
+ },
+ {
+  "id": "heat-size-vs-salt",
+  "expect": "the small plain cube melts first (size beats salt: not a fair test)",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 7982,
+  "browserMs": 13714,
+  "goals": [
+   {
+    "label": "Small plain cube melts before Big salted cube",
+    "ok": true,
+    "kind": "melts_first",
+    "a": "small",
+    "b": "big",
+    "t_a": 1965,
+    "t_b": 4590,
+    "melted_a": 1,
+    "melted_b": 1
+   }
+  ]
+ },
+ {
+  "id": "heat-lamp",
+  "expect": "the cube under the lamp melts first",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 43310,
+  "browserMs": 105496,
+  "goals": [
+   {
+    "label": "Lit cube melts before Unlit cube",
+    "ok": true,
+    "kind": "melts_first",
+    "a": "lit",
+    "b": "unlit",
+    "t_a": 4250,
+    "t_b": 4690,
+    "melted_a": 1,
+    "melted_b": 1
+   }
+  ]
+ },
+ {
+  "id": "heat-led",
+  "expect": "the cube under the incandescent bulb melts first; the LED barely changes anything",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 116724,
+  "browserMs": 55738,
+  "goals": [
+   {
+    "label": "Under the old bulb melts before Under the LED",
+    "ok": true,
+    "kind": "melts_first",
+    "a": "hot",
+    "b": "cool",
+    "t_a": 5110,
+    "t_b": 5640,
+    "melted_a": 1,
+    "melted_b": 1
+   }
+  ]
+ },
+ {
+  "id": "heat-plates",
+  "expect": "aluminium fastest, then ceramic, foam slowest",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 24431,
+  "browserMs": 46064,
+  "goals": [
+   {
+    "label": "Cube on aluminium melts before Cube on ceramic",
+    "ok": true,
+    "kind": "melts_first",
+    "a": "on_alu",
+    "b": "on_cer",
+    "t_a": 2250,
+    "t_b": 5680,
+    "melted_a": 1,
+    "melted_b": 1
+   },
+   {
+    "label": "Cube on ceramic melts before Cube on foam",
+    "ok": true,
+    "kind": "melts_first",
+    "a": "on_cer",
+    "b": "on_foam",
+    "t_a": 5680,
+    "t_b": null,
+    "melted_a": 1,
+    "melted_b": 0.827
+   }
+  ]
+ },
+ {
+  "id": "heat-cups",
+  "expect": "the foam cup with a lid stays warmest; the open paper cup cools fastest",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 8974,
+  "browserMs": 5692,
+  "goals": [
+   {
+    "label": "Foam cup with lid is warmer than Steel cup",
+    "ok": true,
+    "kind": "warmer",
+    "a": "foam",
+    "b": "steel",
+    "a_c": 61.26,
+    "b_c": 51.06
+   },
+   {
+    "label": "Foam cup with lid is warmer than Paper cup",
+    "ok": true,
+    "kind": "warmer",
+    "a": "foam",
+    "b": "paper",
+    "a_c": 61.26,
+    "b_c": 44.68
+   },
+   {
+    "label": "Foam cup with lid is warmer than Mug",
+    "ok": true,
+    "kind": "warmer",
+    "a": "foam",
+    "b": "mug",
+    "a_c": 61.26,
+    "b_c": 48.24
+   }
+  ]
+ },
+ {
+  "id": "heat-boil",
+  "expect": "the water warms to 100 °C and boils; the thermometer stops rising at 100",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 9403,
+  "browserMs": 4950,
+  "goals": [
+   {
+    "label": "Thermometer reaches at least 99 °C",
+    "ok": true,
+    "kind": "reaches",
+    "item": "therm",
+    "t": 450,
+    "end_c": 99.89
+   },
+   {
+    "label": "the water in Pot boils",
+    "ok": true,
+    "kind": "boils",
+    "item": "pot",
+    "t": 455
+   }
+  ]
+ },
+ {
+  "id": "heat-spoons",
+  "expect": "the metal spoon's handle gets warm, the wooden one's hardly",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 11549,
+  "browserMs": 6080,
+  "goals": [
+   {
+    "label": "Metal spoon is warmer than Wooden spoon",
+    "ok": true,
+    "kind": "warmer",
+    "a": "metal",
+    "b": "wood",
+    "a_c": 60.67,
+    "b_c": 44.03
+   }
+  ]
+ },
+ {
+  "id": "heat-puddle",
+  "expect": "the puddle under the lamp dries up first",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 14407,
+  "browserMs": 8848,
+  "goals": [
+   {
+    "label": "Lit puddle dries up",
+    "ok": true,
+    "kind": "dries",
+    "item": "lit",
+    "t": 17340,
+    "left_g": 0
+   },
+   {
+    "label": "Lit puddle is warmer than Puddle in the shade",
+    "ok": true,
+    "kind": "warmer",
+    "a": "lit",
+    "b": "shade",
+    "a_c": 28.16,
+    "b_c": 18.98
+   }
+  ]
+ },
+ {
+  "id": "heat-dew",
+  "expect": "water condenses on the cold glass",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 2751,
+  "browserMs": 3877,
+  "goals": [
+   {
+    "label": "water condenses on Glass of ice water",
+    "ok": true,
+    "kind": "dew",
+    "item": "glass",
+    "most_g": 0.331
+   }
+  ]
+ },
+ {
+  "id": "heat-thermometer",
+  "expect": "the thermometer rises to the water's temperature in about a minute of lesson time",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 1852,
+  "browserMs": 2817,
+  "goals": [
+   {
+    "label": "Thermometer reaches at least 38 °C",
+    "ok": true,
+    "kind": "reaches",
+    "item": "therm",
+    "t": 18,
+    "end_c": 38.89
+   }
+  ]
+ },
+ {
+  "id": "heat-rods",
+  "expect": "the butter on the copper rod melts first",
+  "sameDoc": true,
+  "sameTrack": true,
+  "sameSummary": true,
+  "allOk": true,
+  "serverMs": 4430,
+  "browserMs": 8148,
+  "goals": [
+   {
+    "label": "Butter on copper melts before Butter on steel",
+    "ok": true,
+    "kind": "melts_first",
+    "a": "dab1",
+    "b": "dab2",
+    "t_a": 394,
+    "t_b": null,
+    "melted_a": 1,
+    "melted_b": 0
+   },
+   {
+    "label": "Copper rod is warmer than Steel rod",
+    "ok": true,
+    "kind": "warmer",
+    "a": "copper",
+    "b": "steel",
+    "a_c": 113.94,
+    "b_c": 72.28
+   }
+  ]
+ }
+]

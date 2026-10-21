@@ -1,0 +1,6 @@
+{"version": 2, "id": "shadow-through-the-day", "name": "A stick's shadow from 8:00 to 16:00 (Austin, equinox)", "seconds": 8.0, "release": 0.5,
+ "stage": {"x0": -0.56, "x1": 3.19, "y0": -0.16, "y1": 2.34}, "settings": {"time_lapse": 3600},
+ "items": [{"id": "table", "type": "table", "x": 1.3, "y": 0, "props": {}},
+           {"id": "stick", "type": "gnomon", "x": 1.3, "y": 0, "props": {"height": 0.6, "hour": 8}}],
+ "goals": [{"kind": "shadow_length", "item": "stick", "m": 0.35, "at_s": 4, "tol": 0.01, "label": "Shortest at noon: 0.35 m"},
+           {"kind": "shadow_length", "item": "stick", "m": 0.778, "at_s": 1, "tol": 0.01, "label": "At 9:00 it is 0.78 m long"}]}

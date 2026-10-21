@@ -1,0 +1,87 @@
+{
+ "version": 2,
+ "id": "glued-tower",
+ "name": "Loose or glued?",
+ "seconds": 2.5,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.2,
+  "x1": 3.2,
+  "y0": -0.05,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.6,
+   "y": 0,
+   "props": {
+    "width": 4
+   }
+  },
+  {
+   "id": "loose",
+   "type": "block-tower",
+   "name": "Loose tower",
+   "x": 0.9,
+   "y": 0
+  },
+  {
+   "id": "ramp1",
+   "type": "plank",
+   "x": 0.3,
+   "y": 0.25,
+   "angle": -30,
+   "props": {
+    "length": 0.8
+   }
+  },
+  {
+   "id": "ball1",
+   "type": "bowling-ball",
+   "x": 0.5,
+   "y": 0.42,
+   "held": true
+  },
+  {
+   "id": "glued",
+   "type": "block-tower",
+   "name": "Glued tower",
+   "x": 2.3,
+   "y": 0,
+   "props": {
+    "glue": "white glue"
+   }
+  },
+  {
+   "id": "ramp2",
+   "type": "plank",
+   "x": 1.7,
+   "y": 0.25,
+   "angle": -30,
+   "props": {
+    "length": 0.8
+   }
+  },
+  {
+   "id": "ball2",
+   "type": "bowling-ball",
+   "x": 1.9,
+   "y": 0.42,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "breaks",
+   "item": "loose",
+   "label": "The loose tower comes apart"
+  },
+  {
+   "kind": "survives",
+   "item": "glued",
+   "label": "The glued tower stays in one piece"
+  }
+ ]
+}

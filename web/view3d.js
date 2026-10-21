@@ -15,7 +15,9 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
 import { frameIndex, placementsAt } from "./track.js"
+import { animates, collectHooks, framePlugins, startPlugins, stopPlugins } from "./view-plugins.js"
 import { buildModel, beginRun, endRun, modelFor, modelKey, isModelCached, pinModel, gradeShader, gradeKeyFor, gradeSat, isPlainPaint, prebake, stealPrebake, prebakeReady, stopPrebake } from "./models3d.js"
+import { makeGate } from "./start-gate.js"
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Constants (all lengths in meters)
@@ -1628,8 +1630,25 @@ export function createView3D(container) {
 	const shell = new THREE.Mesh(new THREE.BoxGeometry(26, 5.21, 11.2), shellMat)
 	shell.position.set(1.3, 1.845, -0.802 + 5.6)
 	scene.add(shell, wall, roomFloor, cabinet)
+	let roomWanted = true // (a module's view plugin may leave the room out for a run: applyEnvironment)
+	let tableWanted = true // (and the table top: it still collides)
 	const setRoomVisible = (v) => {
-		shell.visible = wall.visible = roomFloor.visible = cabinet.visible = v
+		shell.visible = wall.visible = roomFloor.visible = cabinet.visible = v && roomWanted
+	}
+	const ROOM_BACKGROUND = scene.background
+	/** A module's view plugin may ask for another world round the machine for its run (web/view-plugins.js `environment`: space scenes leave out
+	 *  the room and the table top, show a starry sky and dim the room's lights); every run without one gets the room back as it was. */
+	const applyEnvironment = (r) => {
+		const env = r?.plugins?.find((p) => p.environment)?.environment ?? null
+		roomWanted = env?.room !== false
+		setRoomVisible(true)
+		cabinet.visible = cabinetWanted && roomWanted
+		tableWanted = env?.table !== false
+		if (r?.tableMesh) r.tableMesh.visible = tableWanted
+		scene.background = env?.background ?? ROOM_BACKGROUND
+		key.intensity = env?.key ?? 4.0
+		fill.intensity = env?.fill ?? 0.3
+		scene.environmentIntensity = env?.envIntensity ?? 0.5
 	}
 	let cabinetWanted = true
 	const fitCabinet = (table) => {
@@ -2121,6 +2140,7 @@ ${GRADE}
 	let editing = false
 	let frameSpec = null // what the wide shot was last fitted to (frameOf(run), kept while the user edits)
 	let lastFrame = null // where that put the machine in the picture (for dev pages and tests)
+	let fixedShown = false // the wide shot shows a scene's fixed camera (doc.view.camera): a new load frames afresh even when the camera is kept
 	let mode = "wide"
 
 	// ----- state -------------------------------------------------------------------------------------------------------
@@ -2258,10 +2278,10 @@ ${GRADE}
 		if (fast) renderer.shadowMap.needsUpdate = shadowDue
 		if (rt === refl.rt) reflValid = true
 		setRoomVisible(true)
-		cabinet.visible = cabinetWanted
+		cabinet.visible = cabinetWanted && roomWanted
 		if (run?.blobs) run.blobs.visible = true
 		scene.background = prevBg
-		if (run?.tableMesh) run.tableMesh.visible = true
+		if (run?.tableMesh) run.tableMesh.visible = tableWanted
 	}
 
 	// ----- chrome: the real room in a mirror ball (high tier) ----------------------------------------------------------------------------
@@ -2596,6 +2616,7 @@ ${GRADE}
 		run.ready.length = 0
 		run.late.length = 0
 		releaseMirrors(true)
+		stopPlugins(run)
 		scene.remove(run.group)
 		run.group.traverse((o) => {
 			if (o.userData.blob) blobPool.push(o.material) // geometries and materials belong to the caches; the blobs' materials go back to the pool
@@ -3467,6 +3488,7 @@ ${GRADE}
 			}
 		}
 		const spinners = [] // model parts that turn: {obj, axis, rate, from, q0}
+		const frameHooks = [] // model parts a module's frame hook redraws by the clock (web/view-plugins.js: a glow, a dial, a level)
 		const helpers = [] // while models are deferred: the parts a model covers for its whole welded item (a jar's walls, a cone's collar), which get no stand-in of their own in the loop
 		for (const s of solids) {
 			const body = s.body
@@ -3505,6 +3527,7 @@ ${GRADE}
 						const sp = spinOf(o) // a model part that turns about its own axis (a fan's blades): turned by t in updateParts
 						if (sp) spinners.push(sp)
 					}
+					if (o.userData.frame) collectHooks(o, s.id, frameHooks)
 				})
 				holder.position.set(q.x, q.y, 0)
 				holder.rotation.z = q.angle
@@ -3708,7 +3731,7 @@ ${GRADE}
 		for (const j of doc.joints ?? []) {
 			if (j.kind === "spring") buildSpring(group, j, owned, updaters)
 			else if (j.kind === "rope") (j.render?.style === "chain" ? buildChain : buildRope)(group, j, owned, updaters)
-			else if (j.kind === "pulley") buildPulley(group, j, owned, updaters)
+			else if (j.kind === "pulley" && j.render?.draw !== "none") buildPulley(group, j, owned, updaters) // (render.draw "none": a module draws its own rope: an edge pulley's string, a block and tackle's strands)
 			else if (j.kind === "pin" && j.render?.hinge !== "none") { // a joint may say its own model draws the pivot (a pinball flipper), with no generic hinge or motor can
 				const at = j.b !== null ? [j.b, j.anchorB] : [j.a, j.anchorA]
 				if (at[0] !== null) buildHinge(group, { atId: at[0], atAnchor: at[1], aId: j.a, bId: j.b, depth: Math.max(bodyDepth(j.a), bodyDepth(j.b)), motor: j.motor }, updaters)
@@ -3854,7 +3877,7 @@ ${GRADE}
 		const plans = []
 		const byItem = new Map()
 		for (const s of supporters) {
-			if (s === table || isTableSolid(s)) continue
+			if (s === table || isTableSolid(s) || s.stand === "none") continue // ("none": drawn in mid-air with no support, as a body in space)
 			if (!byItem.has(s.item)) byItem.set(s.item, [])
 			byItem.get(s.item).push(s)
 		}
@@ -4263,6 +4286,7 @@ ${GRADE}
 		const POST_R = 0.012 // the post's radius (dowel below)
 		const POST_GAP = 0.015 // air between the post and anything in front of it
 		const pins = []
+		const gates = [] // starting gates (web/start-gate.js) of the items doc.view.gates names (machines/mod_staging.py start_gate), drawn instead of their pins
 		const postFits = [] // (pose of a solid, obstacles) => one post and pin placed again
 		const hangOf = (o) => {
 			// the world point a part hangs from (its pivot, a rope's, spring's or pin's end on the world or on a static part), or null
@@ -4313,10 +4337,40 @@ ${GRADE}
 			if (!heldByItem.has(o.item)) heldByItem.set(o.item, [])
 			heldByItem.get(o.item).push(o)
 		}
+		const gated = new Set(doc.view?.gates ?? [])
+		const gateStatics = gated.size ? solids.filter((o) => o.kind === "static" && !o.hidden_3d) : []
 		for (const list of heldByItem.values()) {
 			const s = postPart(list)
 			if (!s) continue
 			const id = s.id
+			const gate = gated.has(s.item) ? makeGate({ list, addMesh, steel: steelMaterial() }) : null
+			if (gate && gate.layout(poseOf, track, doc.release?.at ?? 0.5, gateStatics)) {
+				// a starting gate: the pin's post, a boom on its top whose stop touches the item's front; it lifts at the release (gate.at in updateParts)
+				const post = addMesh(group, dowel(POST_R, "post", `post-${id}`), wood)
+				group.add(gate.root)
+				gates.push(gate)
+				scenery.push(gate.root, post)
+				for (const m of [post, ...gate.meshes]) {
+					m.userData.solidId = id
+					m.userData.stand = true
+					pickables.push(m)
+				}
+				const postBlob = addBlob(blobs, 0, -0.09, 0.07, 0.07, AO_OPACITY)
+				postFits.push((pf) => {
+					// the post stands just behind the item's path, on what is under it there (the ramp, a carpet, the table): start-gate.js layout
+					const L = gate.layout(pf, postTrack, doc.release?.at ?? 0.5, gateStatics)
+					post.visible = !!L
+					postBlob.visible = !!L && Math.abs(L.footY) < 0.003 // (the contact shade lies on the tabletop)
+					if (!L) return gate.hide()
+					const top = L.P.y + L.rs + 0.006
+					post.scale.y = top - L.foot
+					post.position.set(L.P.x, (top + L.foot) / 2, L.zPost)
+					freeze(post)
+					postBlob.position.set(L.P.x, postBlob.position.y, L.zPost)
+					gate.place(L)
+				})
+				continue
+			}
 			const pin = addMesh(group, dowel(0.004, "pin", `pin-${id}`), wood)
 			pin.scale.y = 0.16
 			pin.rotation.x = Math.PI / 2
@@ -4574,10 +4628,13 @@ ${GRADE}
 			mounts: plans,
 			staticGroups,
 			spinners,
+			frameHooks,
+			plugins: [], // the modules' view plugins (web/view-plugins.js startPlugins, below)
 			panes,
 			itemOf,
 			pickables,
 			pins,
+			gates,
 			table,
 			tableMesh,
 			lens, // how many lens parts it has (markLens): the table's mirror draws them in a pass of their own
@@ -4602,6 +4659,7 @@ ${GRADE}
 			follow: null, // built on first use: the camera paths take a moment and a drag never needs them
 		}
 		settleStatics(r)
+		r.plugins = startPlugins(r)
 		return r
 	}
 
@@ -4833,6 +4891,7 @@ ${GRADE}
 				const sp = spinOf(o)
 				if (sp) r.spinners.push(sp)
 			}
+			if (o.userData.frame) collectHooks(o, job.s.id, r.frameHooks)
 		})
 		stats.modelsSwapped++
 		const rec = r.aoRecs.get(job.s.id) // the finished model's own materials decide how much contact shading it casts (the stand-in went by the look)
@@ -5305,6 +5364,21 @@ ${GRADE}
 		// the framing maths projects points through the camera, so work without any view offset (the dev page's crop() sets one), then put it back
 		const vo = wideCam.view?.enabled ? { ...wideCam.view } : null
 		wideCam.clearViewOffset()
+		const fixed = run?.doc?.view?.camera // (machines/mod_staging.py settings.camera: x0..x1 across the picture at height y, whatever the run)
+		fixedShown = !!fixed
+		if (fixed) {
+			const fp = fixedPose(fixed)
+			setPose(wideCam, fp.px, fp.py, fp.pz, fp.tx, fp.ty, 0, fp.hfov, aspect())
+			wideCam.near = fp.near
+			wideCam.far = fp.far
+			wideCam.updateProjectionMatrix()
+			wideTarget.set(fp.tx, fp.ty, 0)
+			lastFrame = { box: null, rect: null, size: [width > 0 ? width : 1600, height > 0 ? height : 900], d: fp.d, tx: fp.tx, ty: fp.ty, steps: 0, fixed: { ...fixed } }
+			if (vo) wideCam.setViewOffset(vo.fullWidth, vo.fullHeight, vo.offsetX, vo.offsetY, vo.width, vo.height)
+			return
+		}
+		wideCam.near = 0.05 // (as made: a fixed camera far away moves them)
+		wideCam.far = 80
 		setFov(wideCam, HFOV_26MM)
 		const spec = frameSpec ?? (run ? frameOf(run) : null)
 		const W = width > 0 ? width : 1600
@@ -5505,7 +5579,17 @@ ${GRADE}
 		if (r.frame) return r.frame
 		const f = r.framed
 		const out = []
-		const put = (x, y, z) => out.push(Math.min(FRAME_X[1], Math.max(FRAME_X[0], x)), Math.min(FRAME_Y[1], Math.max(FRAME_Y[0], y)), z) // (what falls off the table leaves the shot)
+		// (a long floor reaches the shot's sides: a lane, a display over it (ghost solids) or a static slab 4.5 m long or more widens the x range
+		// a falling mover may drag the shot to, so a 12 m race is framed whole; a scene without them frames as it always did)
+		let fx0 = FRAME_X[0]
+		let fx1 = FRAME_X[1]
+		for (const s of r.doc.solids) {
+			if (s.kind !== "static" || !(s.itemType === "lane" || s.ghost === true || ((s.body.kind === "slab" || s.body.kind === "polygon") && (s.body.width ?? 0) >= 4.5 && s.itemType !== "table"))) continue
+			const half = s.body.kind === "ball" ? s.body.radius : (s.body.width ?? 0.1) / 2
+			fx0 = Math.min(fx0, s.at.x - half)
+			fx1 = Math.max(fx1, s.at.x + half)
+		}
+		const put = (x, y, z) => out.push(Math.min(fx1, Math.max(fx0, x)), Math.min(FRAME_Y[1], Math.max(FRAME_Y[0], y)), z) // (what falls off the table leaves the shot)
 		const tmp = []
 		for (const root of f.still) {
 			if (!root.visible) continue
@@ -5554,7 +5638,9 @@ ${GRADE}
 		const t = f.table
 		r.frame = {
 			pts: Float32Array.from(out),
-			tableFront: t ? { x: t.at.x, y: t.at.y - t.body.height / 2, z: depthOf(t.body) / 2 } : null,
+			// (a scene a long floor widened is framed round its content: sinking it until the table's front edge meets the picture's bottom would
+			// leave a 12 m race in a strip along the bottom under metres of bare wall)
+			tableFront: t && fx0 === FRAME_X[0] && fx1 === FRAME_X[1] ? { x: t.at.x, y: t.at.y - t.body.height / 2, z: depthOf(t.body) / 2 } : null,
 		}
 		return r.frame
 	}
@@ -5670,13 +5756,22 @@ ${GRADE}
 			}
 			part.blob.material.opacity = o
 			part.blob.visible = o > 0.01
+			if (p.scale !== undefined) {
+				// (a body a module resized, melting ice or a filling balloon: its model shrinks or grows about the solid's origin; gone at 0)
+				const k = p.scale + ((n.scale ?? p.scale) - p.scale) * u
+				part.mesh.scale.setScalar(Math.max(1e-4, k))
+				part.mesh.visible = k > 1e-3
+				if (k <= 1e-3) part.blob.visible = false
+			}
 		}
 		for (const pose of run.joints) pose(t)
 		for (const sp of run.spinners) sp.obj.quaternion.copy(sp.q0).multiply(_sq.setFromAxisAngle(AXES[sp.axis], sp.rate * Math.max(0, t - sp.from)))
+		if (run.frameHooks.length || run.plugins.length) framePlugins(run, t) // (a module's glows, dials, beams, labels)
 		if (run.pins.length) {
 			const u2 = Math.min(1, Math.max(0, (t - (run.tRelease - 0.01)) / 0.07))
 			for (const pin of run.pins) pin.position.z = -(0.02 + pin.userData.extra / 2 + (0.13 - 0.02) * u2) // slides out backwards, away from the camera
 		}
+		for (const g of run.gates) g.at(t, run.tRelease) // (the starting gates swing up at the release)
 	}
 
 	/** A part that stands on no static support but on another mover is drawn with that mover's offset (the gap between the two stays the physics' own;
@@ -6000,7 +6095,8 @@ ${GRADE}
 		}
 		fitCabinet(run.table)
 		cabinet.visible = cabinetWanted
-		const keep = !!opts?.keepCamera && !!frameSpec
+		applyEnvironment(run)
+		const keep = !!opts?.keepCamera && !!frameSpec && !sim.doc?.view?.camera && !fixedShown
 		if (!keep) {
 			frameSpec = frameOf(run)
 			orbitStarted = false
@@ -6031,6 +6127,7 @@ ${GRADE}
 					clearMaterials() // the cached materials were made from the old looks
 					run = buildRun(sim)
 					fitCabinet(run.table)
+					applyEnvironment(run)
 					fitShadow()
 				} else clearMaterials()
 			}
@@ -6284,7 +6381,7 @@ ${GRADE}
 	// picture; anything asked meanwhile is done when it ends); it ends at endExport(), at a new load, or EXPORT_IDLE_MS after the last frame.
 	const EXPORT_IDLE_MS = 4000
 	const EXPORT_MIRROR = 256 // cube map side of a chrome ball in an export (the canvas's are 128)
-	const EXPORT_CAMERAS = ["wide", "follow", "orbit", "director", "live"]
+	const EXPORT_CAMERAS = ["wide", "follow", "orbit", "director", "live", "fixed"] // fixed: the scene's fixed camera (doc.view.camera), else the wide shot
 	const BLUR_MAX = 32 // most sub-frames a blurred frame takes
 	const DIRECTOR_PEAK = 2400 // px/s across a 1920 px picture: the director's moves stay under this at their fastest point (the picture's edge as it zooms; ~1.25 widths a second)
 	const BLUR_STEP_PX = 2 // ... and as many as keep anything from moving more than this between two of them (no visible steps)
@@ -6353,6 +6450,7 @@ ${GRADE}
 			gpu: gpuName,
 			softwareGL,
 			lastFrameMs: xstats.lastMs,
+			fixed: ok ? (run.doc.view?.camera ?? null) : null, // the scene's fixed camera {x0, x1, y, pitch, hfov} (the wide and fixed cameras), or null
 		}
 	}
 
@@ -6700,9 +6798,9 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		renderer.render(scene, g.nullCam)
 		renderer.shadowMap.needsUpdate = false
 		setRoomVisible(true)
-		cabinet.visible = cabinetWanted
+		cabinet.visible = cabinetWanted && roomWanted
 		if (run.blobs) run.blobs.visible = true
-		if (tm) tm.visible = true
+		if (tm) tm.visible = tableWanted
 	}
 
 	/** How many sub-frames frame t needs: o.blur at least; more (up to o.most) where the image moves so far while the shutter is open that o.blur would show steps
@@ -6753,7 +6851,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			move(x, y, 0, x, y, 0)
 		}
 		// what moves without being a body: a turning fan or rotor, a running belt, the pull pins sliding out at the release (no shortcut to one sub-frame then)
-		const busy = run.spinners.length > 0 || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(t - run.tRelease) < 0.1)
+		const busy = run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(t - run.tRelease) < 0.1) || (run.gates.length > 0 && t > run.tRelease - 0.02 && t < run.tRelease + 0.2)
 		if (px < 0.5 && !busy) return 1
 		return Math.min(o.most, Math.max(o.blur, Math.ceil(px / BLUR_STEP_PX)))
 	}
@@ -6773,7 +6871,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			for (const pn of panes) pn.mesh.visible = false
 			reflUniforms.tReflect.value = g.refl.texture
 			reflUniforms.uReflMatrix.value = g.matrix
-			refl.k.value = 1
+			refl.k.value = refl.enabled ? 1 : 0 // (setOptions({reflections: false}) turns the table's mirror off in exports too)
 			const N = o.blur > 1 ? blurCount(g, t, o, shot) : 1
 			xstats.blurN = N
 			// the coils' and chains' detail, for the camera at moment t (as the canvas picks it for its own camera and drawing buffer), before the shadow map is drawn
@@ -6797,7 +6895,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 				const ti = N > 1 ? Math.min(dur, Math.max(0, t + ((i + 0.5) / N - 0.5) * o.open)) : t
 				if (N > 1) exportPose(g, ti)
 				shot.at(ti, g.cam)
-				renderReflection(g.cam, false, g.refl, g.matrix, g.reflCam, r.lens > 0 ? (g.reflBase ??= mirrorBase(g.refl)) : null)
+				if (refl.enabled) renderReflection(g.cam, false, g.refl, g.matrix, g.reflCam, r.lens > 0 ? (g.reflBase ??= mirrorBase(g.refl)) : null)
 				renderer.setRenderTarget(g.rt)
 				renderer.render(scene, g.cam)
 				if (N > 1) quadPass(g, exportQuad(g).acc, g.rt.texture, g.acc, i === 0 ? THREE.NoBlending : THREE.CustomBlending, 1 / N)
@@ -7169,9 +7267,33 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 	function staticShot(kind, px, py, pz, tx, ty, tz, hfov, asp) {
 		return { kind, at: (t, cam) => setPose(cam, px, py, pz, tx, ty, tz, hfov, asp) }
 	}
+	/** A scene's fixed camera c = doc.view.camera {x0, x1, y, pitch, hfov} (machines/mod_staging.py) as a pose: d = (x1 - x0) / 2 / tan(hfov / 2) in front of
+	 *  the machine plane (z = d), at the height y + d tan(pitch), looking at ((x0 + x1) / 2, y, 0) with +y up and a horizontal field of hfov degrees: at pitch 0
+	 *  the plane spans exactly x0..x1 across the picture at height y (its centre line); tilted, 1 / cos(pitch) of that. Nothing else goes into it, so every run
+	 *  with the same c is filmed from the same place: lanes run apart line up pixel for pixel. (lesson-regen/compositor/camera.py camera_pose, cy = y.) */
+	function fixedPose(c) {
+		const hfov = THREE.MathUtils.degToRad(c.hfov)
+		const d = (c.x1 - c.x0) / 2 / Math.tan(hfov / 2)
+		const tx = (c.x0 + c.x1) / 2
+		return { tx, ty: c.y, px: tx, py: c.y + d * Math.tan(THREE.MathUtils.degToRad(c.pitch)), pz: d, d, hfov, near: Math.max(0.02, Math.min(0.5, d / 200)), far: Math.max(80, 4 * d) }
+	}
+	function fixedShot(kind, c, W, H) {
+		const f = fixedPose(c)
+		return {
+			kind,
+			fixed: { ...c },
+			at(t, cam) {
+				setPose(cam, f.px, f.py, f.pz, f.tx, f.ty, 0, f.hfov, W / H)
+				cam.near = f.near
+				cam.far = f.far
+				cam.updateProjectionMatrix()
+			},
+		}
+	}
 
-	/** 'wide': the wide shot, fitted to this picture (no buttons over it). */
+	/** 'wide': the wide shot, fitted to this picture (no buttons over it); the scene's fixed camera when it has one (doc.view.camera). */
 	function wideShot(W, H) {
+		if (run.doc.view?.camera) return fixedShot("wide", run.doc.view.camera, W, H)
 		const w = fitWide(exportFrameOf(run), W, H, XWIDE.top * H)
 		return staticShot("wide", w.tx, w.ty + WIDE_PITCH * w.d, w.d, w.tx, w.ty, 0, HFOV_26MM, W / H)
 	}
@@ -7686,7 +7808,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		const k = `${kind}|${W}x${H}`
 		let s = xshots.map.get(k)
 		if (!s) {
-			s = kind === "follow" ? followShot(W, H) : kind === "orbit" ? orbitShot(W, H) : kind === "director" ? directorShot(W, H) : wideShot(W, H)
+			s = kind === "follow" ? followShot(W, H) : kind === "orbit" ? orbitShot(W, H) : kind === "director" ? directorShot(W, H) : wideShot(W, H) // (fixed: wideShot is it)
 			xshots.map.set(k, s)
 		}
 		return s
@@ -7707,9 +7829,11 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 		const v = (xproj.v ??= new THREE.Vector3())
 		shot.at(Math.min(exportDuration(), Math.max(0, Number.isFinite(t) ? t : 0)), cam)
 		cam.updateMatrixWorld()
-		v.set(x, y, 0).applyMatrix4(cam.matrixWorldInverse)
+		const z = Number.isFinite(o?.z) ? o.z : 0
+		v.set(x, y, z).applyMatrix4(cam.matrixWorldInverse)
 		if (v.z >= -cam.near) return null
-		v.set(x, y, 0).project(cam)
+		v.set(x, y, z).project(cam)
+		if (o?.xy) return Number.isFinite(v.x) && Number.isFinite(v.y) ? { x: v.x, y: v.y } : null // (both: -1 at the left / bottom edge, 1 at the right / top)
 		return Number.isFinite(v.x) ? v.x : null
 	}
 

@@ -1,0 +1,99 @@
+{
+ "version": 2,
+ "id": "heat-plates",
+ "name": "Ice cubes on aluminium, ceramic and foam plates",
+ "seconds": 15,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "settings": {
+  "room_temp": 22,
+  "time_lapse": 600
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "alu",
+   "type": "plate",
+   "x": 0.6,
+   "y": 0,
+   "props": {
+    "material": "aluminium"
+   }
+  },
+  {
+   "id": "cer",
+   "type": "plate",
+   "x": 1.2,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "foam",
+   "type": "plate",
+   "x": 1.8,
+   "y": 0,
+   "props": {
+    "material": "foam"
+   }
+  },
+  {
+   "id": "on_alu",
+   "type": "ice-cube",
+   "name": "Cube on aluminium",
+   "x": 0.6,
+   "y": 0.0215,
+   "props": {
+    "width": 0.04,
+    "height": 0.04,
+    "depth": 0.04
+   }
+  },
+  {
+   "id": "on_cer",
+   "type": "ice-cube",
+   "name": "Cube on ceramic",
+   "x": 1.2,
+   "y": 0.0255,
+   "props": {
+    "width": 0.04,
+    "height": 0.04,
+    "depth": 0.04
+   }
+  },
+  {
+   "id": "on_foam",
+   "type": "ice-cube",
+   "name": "Cube on foam",
+   "x": 1.8,
+   "y": 0.0225,
+   "props": {
+    "width": 0.04,
+    "height": 0.04,
+    "depth": 0.04
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "melts_first",
+   "a": "on_alu",
+   "b": "on_cer"
+  },
+  {
+   "kind": "melts_first",
+   "a": "on_cer",
+   "b": "on_foam"
+  }
+ ]
+}

@@ -1,0 +1,122 @@
+{
+ "version": 2,
+ "id": "em1-turns",
+ "name": "More turns hold more clips",
+ "seconds": 3.0,
+ "release": 0.4,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "em10",
+   "type": "battery-electromagnet",
+   "name": "10 turns",
+   "x": 0.6,
+   "y": 0.24400000000000002,
+   "props": {
+    "turns": 10
+   }
+  },
+  {
+   "id": "clips10",
+   "type": "paper-clip",
+   "name": "Clips under 10 turns",
+   "x": 0.6,
+   "y": 0.11425000000000002,
+   "angle": -90,
+   "held": true,
+   "props": {
+    "count": 6,
+    "spacing": 0.0345
+   }
+  },
+  {
+   "id": "em50",
+   "type": "battery-electromagnet",
+   "name": "50 turns",
+   "x": 1.2999999999999998,
+   "y": 0.24400000000000002,
+   "props": {
+    "turns": 50
+   }
+  },
+  {
+   "id": "clips50",
+   "type": "paper-clip",
+   "name": "Clips under 50 turns",
+   "x": 1.2999999999999998,
+   "y": 0.11425000000000002,
+   "angle": -90,
+   "held": true,
+   "props": {
+    "count": 6,
+    "spacing": 0.0345
+   }
+  },
+  {
+   "id": "em200",
+   "type": "battery-electromagnet",
+   "name": "200 turns",
+   "x": 2.0,
+   "y": 0.24400000000000002,
+   "props": {
+    "turns": 200
+   }
+  },
+  {
+   "id": "clips200",
+   "type": "paper-clip",
+   "name": "Clips under 200 turns",
+   "x": 2.0,
+   "y": 0.11425000000000002,
+   "angle": -90,
+   "held": true,
+   "props": {
+    "count": 6,
+    "spacing": 0.0345
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "holds",
+   "magnet": "em10",
+   "count": 1,
+   "items": [
+    "clips10"
+   ]
+  },
+  {
+   "kind": "holds",
+   "magnet": "em50",
+   "count": 1,
+   "items": [
+    "clips50"
+   ]
+  },
+  {
+   "kind": "holds",
+   "magnet": "em200",
+   "count": 2,
+   "items": [
+    "clips200"
+   ]
+  }
+ ],
+ "expect": [
+  false,
+  true,
+  true
+ ],
+ "notes": "Three nail electromagnets on 2 AA cells, 10, 50 and 200 turns, each holding a chain of 6 clips until 0.4 s: 10 turns holds none, 50 one, 200 two (MS-PS2-3)."
+}

@@ -1,3 +1,4 @@
+import type { ProcessRecord, RunSettings } from "#sim/plugins.ts"
 import type { Part } from "#part.ts"
 
 /**
@@ -306,6 +307,12 @@ export interface SolidPart {
 	readonly shape?: string
 	/** A cylinder's extent along the depth axis, m. */
 	readonly length?: number
+	/**
+	 * A display only (the measure module's instruments: a stopwatch's face over its lane, a painted start line, a tape on the
+	 * floor): its fixture's collision mask is 0, so nothing ever touches it (no contacts, no impacts, no time-of-impact). Meant for
+	 * static solids; drawn and picked like any other.
+	 */
+	readonly ghost?: boolean
 }
 
 /** A drive on a hinge: the speed it turns at (rad/s, counterclockwise) and the most torque it gives (N·m). */
@@ -818,6 +825,10 @@ export interface SimScene<L extends string> {
 	readonly layers: readonly Layer[]
 	readonly marks: readonly Mark[]
 	readonly joints?: readonly Joint[]
+	/** Module processes (tooling/src/sim/plugins.ts): {kind, id, item?, ...the module's fields}, run in this order. */
+	readonly processes?: readonly ProcessRecord[]
+	/** The run's settings (gravity, air, room temperature, time-lapse); the standard ones without it. */
+	readonly settings?: Partial<RunSettings>
 }
 
 /**

@@ -1,0 +1,177 @@
+{
+ "version": 2,
+ "id": "demo-materials",
+ "name": "Transparent, translucent, opaque",
+ "seconds": 1.0,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0.0,
+   "props": {}
+  },
+  {
+   "id": "torch-ref",
+   "type": "flashlight",
+   "x": 0.0,
+   "y": 0.15,
+   "props": {
+    "beam_angle": 10.0
+   },
+   "name": "Flashlight (ref)"
+  },
+  {
+   "id": "meter-ref",
+   "type": "light-meter",
+   "x": 0.645,
+   "y": 0.15,
+   "props": {},
+   "name": "Meter behind nothing"
+  },
+  {
+   "id": "torch-glass",
+   "type": "flashlight",
+   "x": 0.0,
+   "y": 0.4,
+   "props": {
+    "beam_angle": 10.0
+   },
+   "name": "Flashlight (glass)"
+  },
+  {
+   "id": "panel-glass",
+   "type": "material-panel",
+   "x": 0.55,
+   "y": 0.4,
+   "props": {
+    "sample": "clear glass"
+   },
+   "name": "Clear glass"
+  },
+  {
+   "id": "meter-glass",
+   "type": "light-meter",
+   "x": 0.645,
+   "y": 0.4,
+   "props": {},
+   "name": "Meter behind clear glass"
+  },
+  {
+   "id": "torch-wax",
+   "type": "flashlight",
+   "x": 0.0,
+   "y": 0.65,
+   "props": {
+    "beam_angle": 10.0
+   },
+   "name": "Flashlight (wax)"
+  },
+  {
+   "id": "panel-wax",
+   "type": "material-panel",
+   "x": 0.55,
+   "y": 0.65,
+   "props": {
+    "sample": "wax paper"
+   },
+   "name": "Wax paper"
+  },
+  {
+   "id": "meter-wax",
+   "type": "light-meter",
+   "x": 0.645,
+   "y": 0.65,
+   "props": {},
+   "name": "Meter behind wax paper"
+  },
+  {
+   "id": "torch-card",
+   "type": "flashlight",
+   "x": 0.0,
+   "y": 0.9,
+   "props": {
+    "beam_angle": 10.0
+   },
+   "name": "Flashlight (card)"
+  },
+  {
+   "id": "panel-card",
+   "type": "material-panel",
+   "x": 0.55,
+   "y": 0.9,
+   "props": {
+    "sample": "cardboard"
+   },
+   "name": "Cardboard"
+  },
+  {
+   "id": "meter-card",
+   "type": "light-meter",
+   "x": 0.645,
+   "y": 0.9,
+   "props": {},
+   "name": "Meter behind cardboard"
+  },
+  {
+   "id": "torch-foil",
+   "type": "flashlight",
+   "x": 0.0,
+   "y": 1.15,
+   "props": {
+    "beam_angle": 10.0
+   },
+   "name": "Flashlight (foil)"
+  },
+  {
+   "id": "panel-foil",
+   "type": "material-panel",
+   "x": 0.55,
+   "y": 1.15,
+   "props": {
+    "sample": "aluminium foil"
+   },
+   "name": "Aluminium foil"
+  },
+  {
+   "id": "meter-foil",
+   "type": "light-meter",
+   "x": 0.645,
+   "y": 1.15,
+   "props": {},
+   "name": "Meter behind aluminium foil"
+  }
+ ],
+ "goals": [
+  {
+   "kind": "brighter",
+   "a": "meter-ref",
+   "b": "meter-glass"
+  },
+  {
+   "kind": "brighter",
+   "a": "meter-glass",
+   "b": "meter-wax"
+  },
+  {
+   "kind": "lit",
+   "item": "meter-wax",
+   "at_least_lux": 1
+  },
+  {
+   "kind": "dark",
+   "item": "meter-card"
+  },
+  {
+   "kind": "dark",
+   "item": "meter-foil"
+  }
+ ]
+}

@@ -1,0 +1,178 @@
+{
+ "version": 2,
+ "id": "c4-series-parallel",
+ "name": "C4 Series and parallel bulbs",
+ "seconds": 2,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "bat1",
+   "type": "battery",
+   "name": "Series battery",
+   "x": 0.4,
+   "y": 0.01025,
+   "props": {}
+  },
+  {
+   "id": "s1",
+   "type": "bulb",
+   "name": "Series bulb 1",
+   "x": 0.6,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "s2",
+   "type": "bulb",
+   "name": "Series bulb 2",
+   "x": 0.8,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "w1",
+   "type": "wire",
+   "name": "w1",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bat1",
+    "a_end": "+",
+    "b": "s1",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w2",
+   "type": "wire",
+   "name": "w2",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "s1",
+    "a_end": "-",
+    "b": "s2",
+    "b_end": "+",
+    "color": "yellow"
+   }
+  },
+  {
+   "id": "w3",
+   "type": "wire",
+   "name": "w3",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "s2",
+    "a_end": "-",
+    "b": "bat1",
+    "b_end": "-",
+    "color": "black"
+   }
+  },
+  {
+   "id": "bat2",
+   "type": "battery",
+   "name": "Parallel battery",
+   "x": 1.5,
+   "y": 0.01025,
+   "props": {}
+  },
+  {
+   "id": "p1",
+   "type": "bulb",
+   "name": "Parallel bulb 1",
+   "x": 1.7,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "p2",
+   "type": "bulb",
+   "name": "Parallel bulb 2",
+   "x": 1.9,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "w4",
+   "type": "wire",
+   "name": "w4",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bat2",
+    "a_end": "+",
+    "b": "p1",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w5",
+   "type": "wire",
+   "name": "w5",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "p1",
+    "a_end": "-",
+    "b": "bat2",
+    "b_end": "-",
+    "color": "black"
+   }
+  },
+  {
+   "id": "w6",
+   "type": "wire",
+   "name": "w6",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bat2",
+    "a_end": "+",
+    "b": "p2",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w7",
+   "type": "wire",
+   "name": "w7",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "p2",
+    "a_end": "-",
+    "b": "bat2",
+    "b_end": "-",
+    "color": "black"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "glows_brighter",
+   "a": "p1",
+   "b": "s1",
+   "label": "Each parallel bulb is brighter than each series bulb"
+  },
+  {
+   "kind": "lights",
+   "item": "s2",
+   "label": "The series bulbs still glow"
+  }
+ ]
+}

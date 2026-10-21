@@ -88,16 +88,24 @@ const diff = (a, b, p = "", o = []) => {
 	return o
 }
 
+// the physics modules whose catalog-wide props core.mjs registered on the port here (their JS file's register_catalog_wide; core.mjs loadCatalogWide)
+const simDir = path.join(PG, "web/sim/modules")
+const onlyMods = process.env.PLAYGROUND_MODULES === undefined ? null : process.env.PLAYGROUND_MODULES.split(",").map((s) => s.trim()).filter(Boolean)
+const wide = (fs.existsSync(simDir) ? fs.readdirSync(simDir).filter((f) => f.endsWith(".js")).sort() : [])
+	.map((f) => f.slice(0, -3))
+	.filter((n) => (onlyMods === null || onlyMods.includes(n)) && /export function register_catalog_wide\b/.test(fs.readFileSync(path.join(simDir, `${n}.js`), "utf8")))
+
 let bad = 0
 try {
 	for (const config of ["items.js + tables + catalog-everyday.js", "index.js (all three ports)"]) {
 		const integrated = config.startsWith("index.js")
 		const page = await browser.newPage()
+		if (process.env.PLAYGROUND_MODULES !== undefined) await page.addInitScript((v) => { globalThis.PLAYGROUND_MODULES = v }, process.env.PLAYGROUND_MODULES) // (the physics modules the page loads: as node's)
 		const errors = []
 		page.on("pageerror", (e) => errors.push(e.message))
 		page.on("console", (m) => m.type() === "error" && errors.push(m.text()))
 		await page.goto(base)
-		const out = await page.evaluate(async ({ casesJson, tablesJson, integrated }) => {
+		const out = await page.evaluate(async ({ casesJson, tablesJson, integrated, wide }) => {
 			const rev = (v) => {
 				if (Array.isArray(v)) return v.map(rev)
 				if (v && typeof v === "object") {
@@ -125,6 +133,7 @@ try {
 				for (const c of pre.categories) if (!items.CATEGORIES.includes(c)) items.CATEGORIES.push(c)
 				const mod = await import("/sim/catalog-everyday.js")
 				items.use_catalog_module("catalog_everyday", mod.register_all)
+				for (const name of wide) (await import(`/sim/modules/${name}.js`)).register_catalog_wide(items.FRAMEWORK)
 				keys = mod.KEYS
 			}
 			const { clean, BadScene } = await import("/sim/clean.js")
@@ -148,7 +157,7 @@ try {
 			const cat = items.catalog()
 			const catalogMs = performance.now() - t1
 			return { answers, ms, catalog: JSON.stringify({ categories: cat.categories, materials: cat.materials, looks: cat.looks, types: cat.types.filter((t) => keys.includes(t.key)) }, enc), catalogMs, catalogTypes: cat.types.length, userAgent: navigator.userAgent }
-		}, { casesJson: JSON.stringify(cases.map((c) => ({ req: c.req }))), tablesJson: JSON.stringify(exported.tables), integrated })
+		}, { casesJson: JSON.stringify(cases.map((c) => ({ req: c.req }))), tablesJson: JSON.stringify(exported.tables), integrated, wide })
 		console.log(`${config}: ${out.userAgent.match(/(Headless)?Chrome\/[\d.]+/)?.[0]}; ${cases.length} cases in ${out.ms.toFixed(0)} ms in the page; catalog() ${out.catalogMs.toFixed(0)} ms (${out.catalogTypes} types)`)
 		if (errors.length) console.log("  page errors:", errors.slice(0, 5))
 		const per = {}
@@ -173,7 +182,15 @@ try {
 		for (const [g, r] of Object.entries(per)) console.log(`  ${g.padEnd(18)} ${String(r.n).padStart(5)} cases, ${r.bad} mismatches${r.warningsOnly ? ` (${r.warningsOnly} of them only in the overlap warnings)` : ""}`)
 		// catalog(): every everyday type with its preview, the categories, the materials and looks
 		const js = revive(JSON.parse(out.catalog))
-		const ds = diff(js.types, pyCatalog.types, "types")
+		// (Python lists every physics module's catalog-wide props ("common": true) on these types; a page without those modules (page 1: only the ones
+		// core.mjs registered) lists fewer: each entry is compared without the common props the page's own entry does not list)
+		const pyTypes = pyCatalog.types.map((pt) => {
+			const own = new Set((js.types.find((t) => t.key === pt.key)?.props ?? []).map((p) => p.key))
+			const drop = new Set((pt.props ?? []).filter((p) => p.common && !own.has(p.key)).map((p) => p.key))
+			if (!drop.size) return pt
+			return { ...pt, props: pt.props.filter((p) => !drop.has(p.key)), ...(pt.defaults ? { defaults: Object.fromEntries(Object.entries(pt.defaults).filter(([k]) => !drop.has(k))) } : {}) }
+		})
+		const ds = diff(js.types, pyTypes, "types")
 			.concat(diff(js.categories, pyCatalog.categories.slice(0, js.categories.length), "categories"))
 			.concat(diff(js.materials, Object.fromEntries(Object.keys(js.materials).map((k) => [k, pyCatalog.materials[k]])), "materials"))
 			.concat(diff(js.looks, Object.fromEntries(Object.keys(js.looks).map((k) => [k, pyCatalog.looks[k]])), "looks"))

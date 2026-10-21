@@ -1,0 +1,78 @@
+{
+ "version": 2,
+ "id": "jupiter-moons",
+ "name": "Io, Europa and Ganymede: 1 : 2 : 4",
+ "seconds": 15.0,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.0,
+  "x1": 2.6,
+  "y0": 0.3,
+  "y1": 2.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "jupiter",
+   "type": "planet",
+   "x": 1.3,
+   "y": 1.6,
+   "props": {
+    "body": "jupiter"
+   }
+  },
+  {
+   "id": "io",
+   "type": "moon",
+   "x": 1.7218,
+   "y": 1.6,
+   "props": {
+    "body": "io",
+    "primary": "jupiter"
+   }
+  },
+  {
+   "id": "europa",
+   "type": "moon",
+   "x": 0.6289,
+   "y": 1.6,
+   "props": {
+    "body": "europa",
+    "primary": "jupiter"
+   }
+  },
+  {
+   "id": "ganymede",
+   "type": "moon",
+   "x": 1.3,
+   "y": 2.6704,
+   "props": {
+    "body": "ganymede",
+    "primary": "jupiter"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "orbits",
+   "item": "io",
+   "turns": 4
+  },
+  {
+   "kind": "orbits",
+   "item": "europa",
+   "turns": 2
+  },
+  {
+   "kind": "orbits",
+   "item": "ganymede",
+   "turns": 1
+  }
+ ]
+}

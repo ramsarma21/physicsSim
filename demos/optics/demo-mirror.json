@@ -1,0 +1,57 @@
+{
+ "version": 2,
+ "id": "demo-mirror",
+ "name": "Angle in equals angle out",
+ "seconds": 1.0,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0.0,
+   "props": {}
+  },
+  {
+   "id": "laser",
+   "type": "laser-pointer",
+   "x": 0.2,
+   "y": 0.25,
+   "props": {},
+   "name": "Laser"
+  },
+  {
+   "id": "mirror",
+   "type": "mirror",
+   "x": 0.8,
+   "y": 0.25,
+   "props": {
+    "aim": 150.0
+   },
+   "name": "Mirror"
+  },
+  {
+   "id": "target",
+   "type": "light-sensor",
+   "x": 0.55,
+   "y": 0.68301,
+   "props": {
+    "size": 0.03
+   },
+   "name": "Target"
+  }
+ ],
+ "goals": [
+  {
+   "kind": "hits_target",
+   "light": "laser",
+   "target": "target"
+  }
+ ]
+}

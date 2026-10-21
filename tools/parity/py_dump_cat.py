@@ -33,5 +33,7 @@ for name in ALL:
         stub.register_all = lambda g: None
         sys.modules[name] = stub
 
+# (the catalog ports only: no physics module (machines/mod_*.py, PLAYGROUND_MODULES), whose types are built on materials the stubbed catalogs define)
+os.environ["PLAYGROUND_MODULES"] = ""
 sys.argv = [os.path.join(HERE, "py_dump.py"), "--mode", "server", *argv]
 runpy.run_path(sys.argv[0], run_name="__main__")

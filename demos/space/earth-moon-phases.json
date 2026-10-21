@@ -1,0 +1,73 @@
+{
+ "version": 2,
+ "id": "earth-moon-phases",
+ "name": "Earth, Moon and a far Sun: phases",
+ "seconds": 14.5,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.6,
+  "x1": 3.2,
+  "y0": -0.2,
+  "y1": 3.0
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "sun",
+   "type": "sun",
+   "x": -0.35,
+   "y": 1.45,
+   "props": {
+    "pulls": false,
+    "diameter": 0.3
+   }
+  },
+  {
+   "id": "earth",
+   "type": "planet",
+   "x": 1.6,
+   "y": 1.45,
+   "props": {}
+  },
+  {
+   "id": "moon",
+   "type": "moon",
+   "x": 0.31867,
+   "y": 1.45,
+   "props": {
+    "primary": "earth"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "orbits",
+   "item": "moon",
+   "around": "earth"
+  },
+  {
+   "kind": "phase",
+   "item": "moon",
+   "name": "new moon",
+   "at_s": 0.4
+  },
+  {
+   "kind": "phase",
+   "item": "moon",
+   "name": "full moon",
+   "any": true
+  },
+  {
+   "kind": "phase",
+   "item": "moon",
+   "name": "first quarter",
+   "any": true
+  }
+ ]
+}

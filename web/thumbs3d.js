@@ -19,7 +19,7 @@ import * as THREE from "three"
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js"
-import { buildModel, modelFor, prebake } from "./models3d.js"
+import { buildModel, modelFor, prebake, thumbFor } from "./models3d.js"
 import { startPoses } from "./editor.js"
 
 const W = 384 // the stored photo
@@ -193,10 +193,19 @@ export function drawPreview3D(canvas, preview, lk, fallback) {
 	pump()
 }
 
-/** Whether every visible part of this item has its realistic model (or is a part another part's model covers). */
+/** Whether every visible part of this item has its realistic model (or is a part another part's model covers), or the item has a model of
+ *  its whole for the photo (models3d.js addThumb: a type a view plug-in draws in a scene). */
 function modelled(preview) {
 	const solids = (preview.solids ?? []).filter((s) => !s.hidden_3d)
-	return solids.length > 0 && solids.every((s) => modelFor(s) !== undefined)
+	return (solids.length > 0 && solids.every((s) => modelFor(s) !== undefined)) || thumbFor(typeOf.get(preview)?.key) !== undefined
+}
+/** The props a photo's models are built with: the type's defaults, with its automatic props at their listed defaults too (the catalog's
+ *  `defaults` leave those out, as an item that does not set them resolves them; a water tank's model needs its length, height, depth and
+ *  fill, which its style sets: without them it came out NaN, "nothing to photograph", and its card kept the flat drawing). */
+function propsOf(t) {
+	const out = {}
+	for (const p of t?.props ?? []) if (p && typeof p.key === "string" && p.default !== undefined) out[p.key] = p.default
+	return { ...out, ...(t?.defaults ?? {}) }
 }
 
 /** The next preview to photograph (with a canvas on screen, when gated), or null. */
@@ -252,7 +261,7 @@ function pump() {
 const PREBAKE_WAIT_MS = 6000
 const AHEAD = 3
 function prebakeJobs(preview, list) {
-	const props = typeOf.get(preview)?.defaults ?? {}
+	const props = propsOf(typeOf.get(preview))
 	for (const s of preview.solids ?? []) if (!s.hidden_3d) list.push({ solid: s, props, look: looks[s.look] ?? {} })
 	return list
 }
@@ -1221,10 +1230,19 @@ async function render(preview) {
 	const poses = startPoses({ solids })
 	hangLoads(preview, solids, poses)
 	const t = typeOf.get(preview)
-	const props = t?.defaults ?? {}
+	const props = propsOf(t)
 	const wheels = new Set((preview.joints ?? []).filter((j) => j.kind === "wheel").map((j) => j.wheel))
 	const movers = [] // the parts that move (a pulley's loads hang from a bar above the floor: their size sets how far the contact shadow reaches)
 	const belts = solids.filter((s) => !s.hidden_3d && modelFor(s) === undefined && isBelt(s))
+	const place = (obj, s) => {
+		const p = poses[s.id]
+		const holder = new THREE.Group()
+		holder.add(obj)
+		holder.position.set(p.x, p.y, 0)
+		holder.rotation.z = p.angle
+		group.add(holder)
+		if (s.kind === "dynamic") movers.push(holder)
+	}
 	for (const s of solids) {
 		if (s.hidden_3d) continue
 		const L = looks[s.look] ?? {}
@@ -1234,13 +1252,22 @@ async function render(preview) {
 			if (s.body.kind === "ball" && s.shape === "cylinder" && belts.some((b) => b.item === s.item && Math.abs(poses[b.id].y - poses[s.id].y) < 1e-6)) continue // a belt's roller: the belt draws its own, through the band's ends
 			obj = isBelt(s) ? beltMesh(s) : fallbackMesh(s, L, wheels.has(s.id))
 		}
-		const p = poses[s.id]
-		const holder = new THREE.Group()
-		holder.add(obj)
-		holder.position.set(p.x, p.y, 0)
-		holder.rotation.z = p.angle
-		group.add(holder)
-		if (s.kind === "dynamic") movers.push(holder)
+		place(obj, s)
+	}
+	if (!group.children.length) {
+		// none of its parts draws anything (a scene's view plug-in draws the item: a wire between two terminals, the circuit board, a coaster's
+		// rail, a motion trail, the sun's light): its whole-item model for the photo (models3d.js addThumb), else its parts' plain stand-ins
+		const thumb = thumbFor(t?.key)
+		let obj = null
+		if (thumb) {
+			try {
+				obj = thumb({ props, preview, looks, THREE }) ?? null
+			} catch (e) {
+				console.warn(`thumbnail model ${t?.key} failed:`, e)
+			}
+		}
+		if (obj) group.add(obj)
+		else for (const s of solids) if (!s.hidden_3d && poses[s.id]) place(fallbackMesh(s, looks[s.look] ?? {}, wheels.has(s.id)), s)
 	}
 	const anchor = (id, a) => {
 		if (!id) return new THREE.Vector3(a.x, a.y, 0)

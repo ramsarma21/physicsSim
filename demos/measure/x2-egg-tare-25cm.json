@@ -1,0 +1,103 @@
+{
+ "version": 2,
+ "id": "x2-egg-tare-25cm",
+ "name": "Egg smash on a kitchen scale (25 cm)",
+ "seconds": 4,
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "scale_ref",
+   "type": "kitchen-scale",
+   "name": "Kitchen scale (whole egg)",
+   "x": 1,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "egg_ref",
+   "type": "raw-egg",
+   "name": "Whole raw egg",
+   "x": 1,
+   "y": 0.05131,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "scale",
+   "type": "kitchen-scale",
+   "name": "Kitchen scale (drop)",
+   "x": 1.6,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "tare": true
+   }
+  },
+  {
+   "id": "plate",
+   "type": "bowl",
+   "name": "Bowl",
+   "x": 1.6,
+   "y": 0.0275,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "egg",
+   "type": "raw-egg",
+   "name": "Dropped raw egg",
+   "x": 1.6,
+   "y": 0.365,
+   "angle": 0,
+   "held": true,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "reads",
+   "item": "scale_ref",
+   "grams": 57,
+   "tol": 2,
+   "label": "Before: the whole egg weighs 57 g"
+  },
+  {
+   "kind": "reads",
+   "item": "scale",
+   "grams": 57,
+   "tol": 2,
+   "label": "After: the smashed egg still weighs 57 g"
+  }
+ ]
+}

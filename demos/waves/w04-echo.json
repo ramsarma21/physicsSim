@@ -1,0 +1,68 @@
+{
+ "version": 2,
+ "id": "w04-echo",
+ "name": "An echo off a wall 17 m away",
+ "seconds": 1.0,
+ "release": 0.2,
+ "stage": {
+  "x0": -1.2,
+  "x1": 19.2,
+  "y0": -0.2,
+  "y1": 3.2
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 9.0,
+   "y": 0,
+   "props": {
+    "width": 20
+   }
+  },
+  {
+   "id": "clap",
+   "type": "clapper",
+   "name": "Clapper",
+   "x": 1.0,
+   "y": 0,
+   "props": {
+    "strike_at": 0.3
+   }
+  },
+  {
+   "id": "meter",
+   "type": "sound-meter",
+   "name": "Sound meter",
+   "x": 0.7,
+   "y": 0,
+   "props": {
+    "height": 0.35
+   }
+  },
+  {
+   "id": "wall",
+   "type": "wall",
+   "name": "Brick wall",
+   "x": 18.15,
+   "y": 0,
+   "props": {
+    "height": 3.0,
+    "material": "steel"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "echo",
+   "meter": "meter",
+   "delay_s": 0.1,
+   "tol": 0.0005
+  },
+  {
+   "kind": "hears",
+   "meter": "meter",
+   "source": "clap"
+  }
+ ]
+}

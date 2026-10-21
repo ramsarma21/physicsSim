@@ -1,0 +1,42 @@
+{
+ "version": 2,
+ "id": "hourglass",
+ "name": "A one-minute sand timer",
+ "seconds": 16,
+ "release": 0.5,
+ "settings": {
+  "time_lapse": 4
+ },
+ "stage": {
+  "x0": 1.15,
+  "x1": 1.45,
+  "y0": -0.02,
+  "y1": 0.18
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "timer",
+   "type": "hourglass",
+   "name": "Sand timer",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "bulb_cm": 6
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "timer",
+   "item": "timer",
+   "seconds": 60,
+   "tol": 3
+  }
+ ]
+}

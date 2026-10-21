@@ -1,0 +1,79 @@
+{
+ "version": 2,
+ "id": "x04-panel-vs-wall",
+ "name": "A foam panel sends back less sound than a wall",
+ "seconds": 1.0,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "spk",
+   "type": "speaker",
+   "name": "Speaker",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "pitch": 1000,
+    "level": 80,
+    "on_at": 0.3,
+    "on_for": 0.2
+   }
+  },
+  {
+   "id": "mw",
+   "type": "sound-meter",
+   "name": "Meter by the wall",
+   "x": 0.6,
+   "y": 0
+  },
+  {
+   "id": "wall",
+   "type": "wall",
+   "name": "Wall",
+   "x": 0.3,
+   "y": 0,
+   "props": {
+    "height": 1.5
+   }
+  },
+  {
+   "id": "mp",
+   "type": "sound-meter",
+   "name": "Meter by the foam",
+   "x": 2.0,
+   "y": 0
+  },
+  {
+   "id": "foam",
+   "type": "sound-panel",
+   "name": "Foam panel",
+   "x": 2.3,
+   "y": 0,
+   "props": {
+    "height": 1.5
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "echo",
+   "meter": "mw"
+  },
+  {
+   "kind": "louder",
+   "a": "mw",
+   "b": "mp"
+  }
+ ]
+}

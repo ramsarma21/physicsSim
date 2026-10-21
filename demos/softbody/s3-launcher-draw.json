@@ -1,0 +1,124 @@
+{
+ "version": 2,
+ "id": "s3-launcher-draw",
+ "name": "Pull it back farther",
+ "seconds": 2.6,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "L1",
+   "type": "band-launcher",
+   "name": "Pulled 5 cm",
+   "x": 0.0,
+   "y": 0,
+   "props": {
+    "draw": 0.05
+   }
+  },
+  {
+   "id": "car1",
+   "type": "toy-car",
+   "name": "Car 1",
+   "x": 0.053,
+   "y": 0.012,
+   "props": {
+    "color": "blue"
+   }
+  },
+  {
+   "id": "shelf",
+   "type": "plank",
+   "x": 1.3,
+   "y": 0.5,
+   "props": {
+    "length": 3.7,
+    "thickness": 0.022
+   },
+   "name": "Upper lane shelf"
+  },
+  {
+   "id": "stop2",
+   "type": "wooden-block",
+   "name": "Upper lane end stop",
+   "x": 3.06,
+   "y": 0.551,
+   "fixed": true,
+   "props": {
+    "width": 0.08,
+    "height": 0.08,
+    "depth": 0.1
+   }
+  },
+  {
+   "id": "stand-left",
+   "type": "wooden-block",
+   "name": "Left shelf stand",
+   "x": -0.49,
+   "y": 0.2445,
+   "props": {
+    "width": 0.12,
+    "height": 0.489,
+    "depth": 0.12
+   }
+  },
+  {
+   "id": "stand-right",
+   "type": "wooden-block",
+   "name": "Right shelf stand",
+   "x": 3.09,
+   "y": 0.2445,
+   "props": {
+    "width": 0.12,
+    "height": 0.489,
+    "depth": 0.12
+   }
+  },
+  {
+   "id": "L2",
+   "type": "band-launcher",
+   "name": "Pulled 10 cm",
+   "x": -0.2,
+   "y": 0.511,
+   "props": {
+    "draw": 0.1
+   }
+  },
+  {
+   "id": "car2",
+   "type": "toy-car",
+   "name": "Car 2",
+   "x": -0.197,
+   "y": 0.523,
+   "props": {
+    "color": "red"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "farther",
+   "a": "car2",
+   "b": "car1",
+   "label": "The car pulled back farther goes farther"
+  },
+  {
+   "kind": "stores",
+   "item": "L2",
+   "at_least_j": 0.5,
+   "label": "The 10 cm pull stores over 0.5 J"
+  }
+ ]
+}

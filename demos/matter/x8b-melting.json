@@ -1,0 +1,50 @@
+{
+ "version": 2,
+ "id": "x8b-melting",
+ "name": "Ice half melted",
+ "seconds": 4,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.1,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "box",
+   "type": "particle-box",
+   "name": "Particle box",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "substance": "water",
+    "temp_c": -5,
+    "sample_g": 1,
+    "heater_w": 3,
+    "particles": 60
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "state",
+   "item": "box",
+   "is": "melting"
+  }
+ ],
+ "settings": {
+  "time_lapse": 30
+ }
+}

@@ -34,7 +34,8 @@
 //   check runs on the result (the target: no warnings).
 import { TYPES, build, layout, MAX_ITEMS } from "../sim/index.js"
 import { _world_poses } from "../sim/items.js"
-import { goalKind, goalItems, goalLabel } from "./goals.js"
+import { goalKind, goalItems, goalLabel, GOAL_KINDS, moduleGoal } from "./goals.js"
+import { containerInterior, floatHeight, heldByModule, hoversByModule, placeRules } from "../sim/plugins.js"
 
 export const DEFAULT_STAGE = Object.freeze({ x0: -0.55908203125, x1: 3.19091796875, y0: -0.15625, y1: 2.34375 })
 export const DEFAULT_TABLE = Object.freeze({ x: 1.3, y: 0, width: 3.7, thickness: 0.15 })
@@ -520,6 +521,7 @@ function schemaOf(type) {
 	if (!s) {
 		s = TYPES[type].schema()
 		s.byKey = new Map(s.props.map((p) => [p.key, p]))
+		for (const l of s.links ?? []) s.byKey.set(l.key, l) // (a module's links to other items: set like props, resolved to ids below)
 		schemaCache.set(type, s)
 	}
 	return s
@@ -545,11 +547,20 @@ export function holdsItselfUp(type, props = {}, fixed = false) {
 }
 /** The prop keys a type has (its catalog props and its material's), or null for a type the library doesn't have. */
 export const propKeys = (type) => (TYPES[type] ? new Set(schemaOf(type).byKey.keys()) : null)
-const isContainer = (type) => TYPES[type]?.category === "Containers"
+const isContainer = (type) => TYPES[type]?.category === "Containers" || placeRules().containers.has(type) // (and a module's: a beaker, a tank)
 const SUPPORT_WORDS = new Map([["table", "table"], ["floor", "table"], ["ground", "table"], ["tabletop", "table"], ["table top", "table"], ["air", "air"], ["held", "air"], ["mid-air", "air"], ["midair", "air"]])
+
+/** Whether v joins an open choice's words with "+" (force arrows' "gravity+support+net"): ai/schemas.mjs joinedChoice. */
+function joinedChoice(spec, v) {
+	if (spec.open !== true || typeof v !== "string" || !(spec.choices ?? []).some((c) => typeof c === "string" && c.includes("+"))) return false
+	const words = new Set(spec.choices.flatMap((c) => String(c).toLowerCase().split("+")))
+	const mine = v.trim().toLowerCase().split(/[,+\s]+/).filter(Boolean)
+	return mine.length > 0 && v.trim().length <= 64 && mine.every((w) => words.has(w))
+}
 
 /** A prop value the catalog accepts: numbers clamped into range (ints rounded), yes/no from words, choices checked. -> {value} or {drop: why} */
 function checkProp(spec, v) {
+	if (spec.kind === "link") return typeof v === "string" && v.trim() ? { value: v.trim() } : { drop: `“${v}” doesn't name another item` } // (resolved once every item has its id)
 	if (spec.kind === "bool") {
 		if (typeof v === "boolean") return { value: v }
 		if (v === 0 || v === 1) return { value: v === 1 }
@@ -561,7 +572,9 @@ function checkProp(spec, v) {
 	if (spec.kind === "choice") {
 		if (spec.choices?.includes(v)) return { value: v }
 		const hit = spec.choices?.find((c) => String(c).toLowerCase() === String(v).toLowerCase())
-		return hit !== undefined ? { value: hit } : { drop: `“${v}” isn't one of ${spec.choices?.join(", ")}` }
+		if (hit === undefined && spec.open === true && typeof v === "string" && /^#[0-9a-fA-F]{6}$/.test(v.trim())) return { value: v.trim() } // (an open choice: a colour's "#rrggbb" too, as ai/schemas.mjs takes it)
+		if (hit === undefined && joinedChoice(spec, v)) return { value: v.trim().toLowerCase().split(/[,+\s]+/).filter(Boolean).join("+") } // (an open choice of joinable words: force arrows' "gravity+support+net", as ai/schemas.mjs takes it)
+		return hit !== undefined ? { value: hit } : { drop: `“${v}” isn't one of ${spec.choices?.join(", ")}${spec.open === true ? " or a #rrggbb colour" : ""}` }
 	}
 	let x = num(v)
 	if (x === null) return { drop: `“${v}” isn't a number` }
@@ -690,6 +703,23 @@ export function solve(plan, opts = {}) {
 		byId.set(s.id, s)
 	}
 
+	// ---- 1b. links to other items (a module's: a stopwatch's watched car, a wire's ends): the plan may name the other item by its id as the plan
+	// wrote it, by the id it got, or by its name; anything else is dropped with a note
+	for (const s of specs) {
+		for (const l of schemaOf(s.type).links ?? []) {
+			const v = s.props?.[l.key]
+			if (typeof v !== "string") continue
+			const low = v.trim().toLowerCase()
+			const hit = byId.has(v) ? v : idMap.has(v) ? idMap.get(v) : [...byId.values()].find((o) => o !== s && (o.name.toLowerCase() === low || o.id.toLowerCase() === low))?.id
+			const ok = hit && hit !== s.id && (!l.types?.length || l.types.includes(byId.get(hit)?.type))
+			if (ok) s.props[l.key] = hit
+			else {
+				delete s.props[l.key]
+				say("warn", "bad_link", `${s.name}'s ${String(l.label ?? l.key).toLowerCase()} “${v}” isn't ${l.types?.length ? `a ${l.types.map(typeName).join(" or ")}` : "an item"} of the scene: left unlinked`, s.id)
+			}
+		}
+	}
+
 	// ---- 2. the table (always: "on the table" needs one) and what each item depends on
 	let table = specs.find((s) => s.type === "table")
 	if (!table) {
@@ -759,7 +789,8 @@ export function solve(plan, opts = {}) {
 			indeg.set(id, indeg.get(id) + 1)
 			users.get(r).push(id)
 		}
-		const rank = new Map(specs.map((s, i) => [s.id, (s === table ? -1e6 : 0) + (s.place.x === null && s.place.rel === undefined && !s.place.lean && s.place.inside === undefined && !byId.has(s.place.on) ? 1e4 : 0) + i]))
+		// (a thing a module says a hand holds over the others, a pitcher, after them: it is raised clear of a bowl, never the bowl pushed aside)
+		const rank = new Map(specs.map((s, i) => [s.id, (s === table ? -1e6 : 0) + (s.place.x === null && s.place.rel === undefined && !s.place.lean && s.place.inside === undefined && !byId.has(s.place.on) ? 1e4 : 0) + (s.place.on === "air" && hoversByModule(s.type) ? 5e3 : 0) + i]))
 		const ready = specs.filter((s) => indeg.get(s.id) === 0).map((s) => s.id)
 		const done = new Set()
 		const pop = () => {
@@ -854,6 +885,39 @@ export function solve(plan, opts = {}) {
 		if (p.inside !== undefined && !isContainer(byId.get(p.inside)?.type)) say("warn", "not_container", `${s.name} is meant to go inside ${byId.get(p.inside).name}, which isn't a container: it was put on top of it`, s.id)
 		if (sup === "air") placeAir(s, geo, report)
 		else placeOn(s, geo, sup, p.inside !== undefined && isContainer(byId.get(p.inside)?.type), report)
+	}
+
+	// ---- 4b. a thing floating in a container starts at its LOADED floating height: what rests on it (a boat's cargo, and what rests on that)
+	// weighs it down, so it and its riders go down together by that much (web/sim/plugins.js place.float); one that would sink loaded is left
+	for (const rep of placements) {
+		if (rep.floats === undefined) continue
+		const s = byId.get(rep.id)
+		const riders = []
+		const seen = new Set([rep.id])
+		for (let grew = true; grew; ) {
+			grew = false
+			for (const q of specs) {
+				if (seen.has(q.id) || !placed.has(q.id) || q.place?.inside !== undefined) continue
+				if (q.place?.on !== undefined && seen.has(q.place.on)) {
+					seen.add(q.id)
+					riders.push(q)
+					grew = true
+				}
+			}
+		}
+		if (!riders.length || !s?.place?.inside) continue
+		const C = byId.get(s.place.inside)
+		const CP = placed.get(C.id)
+		const P = placed.get(s.id)
+		const fy = floatHeight({ type: s.type, props: s.props, x: P.x, angle: P.angle }, { type: C.type, props: C.props, x: CP.x, y: CP.y }, riders.map((q) => ({ type: q.type, props: q.props })))
+		if (fy === null || Math.abs(fy - P.y) < 1e-5) continue
+		const dy = fy - P.y
+		for (const q of [s, ...riders]) {
+			const Q = placed.get(q.id)
+			put(q, Q.geo, Q.x, Q.y + dy, Q.angle)
+		}
+		rep.floats = r6(fy)
+		rep.cargo = riders.map((q) => q.id)
 	}
 
 	// ---- 5. the table: everything on it, safety walls at its ends; the stage around it all
@@ -954,6 +1018,33 @@ export function solve(plan, opts = {}) {
 		if (!isObj(g)) continue
 		const label = typeof g.label === "string" && g.label.trim() ? g.label.trim() : null
 		const kind = goalKind(g)
+		const mod = GOAL_KINDS.includes(kind) ? undefined : moduleGoal(kind)
+		if (mod) {
+			// (a physics module's goal: every field that names items mapped to the ids they got; in the scene's own goals too, so the summary under
+			// the view reports it, and checked on each run by ./goals.js)
+			const mapId = (v) => idMap.get(String(v)) ?? String(v)
+			const out = { kind: mod.kind }
+			let missing = false
+			for (const [f, t0] of Object.entries(mod.fields ?? {})) {
+				const t = String(t0).replace(/\?$/, "")
+				const v = g[f]
+				if (v === undefined || v === null) continue
+				if (t === "item") out[f] = mapId(v)
+				else if (t === "items" && Array.isArray(v)) out[f] = v.map(mapId)
+				else out[f] = v
+				for (const id of t === "item" ? [out[f]] : t === "items" ? out[f] ?? [] : []) if (!byId.has(id)) missing = true
+			}
+			if (missing || !goalItems(out).length) {
+				say("warn", "goal_ref", `The goal “${label ?? kind}” names something that isn't in the scene: left out`)
+				continue
+			}
+			// (the scene keeps the plan's own label or none: an unlabelled goal, as an edit carries one through, stays unlabelled, so the run's
+			// summary says it in its own words from its fields, "does not rise 5 cm"; the AI's own list gets a label to say on the card)
+			goals.push(label ? { ...out, label } : { ...out })
+			out.label = label ?? goalLabel(out, names)
+			allGoals.push(out)
+			continue
+		}
 		if (kind !== "in") {
 			const mapId = (v) => idMap.get(String(v)) ?? String(v)
 			const its = goalItems(g).map(mapId)
@@ -1000,6 +1091,8 @@ export function solve(plan, opts = {}) {
 	const release = Math.min(20, Math.max(0, num(plan.release) ?? 0.5))
 	const title = (typeof plan.title === "string" && plan.title.trim() ? plan.title.trim() : "AI scene").slice(0, 80)
 	const scene = { version: 2, id: slug(title), name: title, seconds, release, stage, items, goals }
+	// (the plan's settings, gravity, air, room temperature, time-lapse: the builder checks them; left out, the standard ones)
+	if (isObj(plan.settings) && Object.keys(plan.settings).length) scene.settings = { ...plan.settings }
 
 	let warnings = []
 	try {
@@ -1057,7 +1150,15 @@ export function solve(plan, opts = {}) {
 		const supItem = sup === "table" ? table.id : sup
 		const S = placed.get(supItem)
 		// the table's top counts as unbounded here: a layout that runs past its ends is shifted (or the table widened) as a whole afterwards
-		const sshapes = supItem === table.id ? [polyShape([[-1e3, S.box.y1 - 1], [1e3, S.box.y1 - 1], [1e3, S.box.y1], [-1e3, S.box.y1]], true)] : S.shapes
+		// (a module's closed container, a vacuum jar or a wind tunnel, has a lid at its rim: what goes inside is set down under it, on its floor,
+		// never on its lid)
+		const lidAt = inside && supItem !== table.id ? containerInterior(byId.get(sup)?.type, byId.get(sup)?.props)?.rim : undefined
+		const sshapes =
+			supItem === table.id
+				? [polyShape([[-1e3, S.box.y1 - 1], [1e3, S.box.y1 - 1], [1e3, S.box.y1], [-1e3, S.box.y1]], true)]
+				: Number.isFinite(lidAt)
+					? S.shapes.filter((q) => q.y0 < S.y + lidAt - 1e-6)
+					: S.shapes
 		let angle = p.angle ?? 0
 		let x
 		const pile = () => (inside ? [...placed.values()].filter((Q) => Q.spec.place?.inside === sup && Q.spec !== s).flatMap((Q) => Q.shapes) : [])
@@ -1074,7 +1175,9 @@ export function solve(plan, opts = {}) {
 				const C = byId.get(sup)
 				const w = num(C.props.width) ?? schemaOf(C.type).defaults.width ?? 0.2
 				const t = num(C.props.thickness) ?? schemaOf(C.type).defaults.thickness ?? 0.012
-				range = { x0: S.x - w / 2 + t, x1: S.x + w / 2 - t }
+				// (a module's container says where its inside is: a tank's walls, a beaker's; web/sim/plugins.js place.interior)
+				const inner = containerInterior(C.type, C.props)
+				range = inner ? { x0: S.x + inner.x0, x1: S.x + inner.x1 } : { x0: S.x - w / 2 + t, x1: S.x + w / 2 - t }
 				const b = boxOf(shapesAt(geo, 0, 0, angle))
 				if (b.x1 - b.x0 > range.x1 - range.x0 + 1e-9) say("error", "too_big", `${s.name} (${((b.x1 - b.x0) * 100).toFixed(1)} cm wide) is too big to go inside ${C.name} (${((range.x1 - range.x0) * 100).toFixed(1)} cm between its walls)`, s.id)
 			}
@@ -1124,9 +1227,17 @@ export function solve(plan, opts = {}) {
 		if (inside) {
 			report.inside = sup
 			const C = placed.get(sup)
-			const rim = C.y + (num(byId.get(sup).props.wall) ?? schemaOf(byId.get(sup).type).defaults.wall ?? 0.1)
+			const inner = containerInterior(byId.get(sup).type, byId.get(sup).props)
+			const rim = C.y + (inner ? inner.rim : (num(byId.get(sup).props.wall) ?? schemaOf(byId.get(sup).type).defaults.wall ?? 0.1))
 			const bottom = placed.get(s.id).box.y0
 			if (bottom > rim - 0.002) say("error", "too_big", `${s.name} doesn't fit inside ${byId.get(sup).name}: it rests on the rim`, s.id)
+			// (a thing that floats on the container's liquid starts at its own floating height, not on the floor: web/sim/plugins.js place.float)
+			const fy = floatHeight({ type: s.type, props: s.props, x, angle }, { type: byId.get(sup).type, props: byId.get(sup).props, x: C.x, y: C.y })
+			if (fy !== null && fy > y + 1e-4) {
+				y = fy
+				put(s, geo, x, y, angle)
+				report.floats = r6(y)
+			}
 		}
 		clearOverlaps(s, "support", report, { drop: (xx) => drop(xx, angle), range, angle })
 	}
@@ -1408,7 +1519,8 @@ export function solve(plan, opts = {}) {
 	/** Is this placed thing one that must be held up (static or fixed, not the table or a safety wall, not held up by the view itself)? */
 	function mustBeHeld(P) {
 		const s = P.spec
-		return !(s === table || s.safety || (TYPES[s.type].dynamic && !s.fixed) || P.geo.mounted)
+		// (a module's view may hold it up itself in this scene: a fan raised to a sailboat's sail on a lab stand, web/sim/plugins.js place.held)
+		return !(s === table || s.safety || (TYPES[s.type].dynamic && !s.fixed) || P.geo.mounted || heldByModule(s.type, specs.map((q) => q.type)))
 	}
 	/** Where along its underside something holds P up (its own legs, or the top of another thing within HOLD_GAP): the x positions, or [] when it floats. */
 	function heldXs(P) {
@@ -1457,6 +1569,8 @@ export function solve(plan, opts = {}) {
 		const top = tableTop()
 		for (const P of [...placed.values()]) {
 			if (!mustBeHeld(P)) continue
+			// (no outline to hold up: a thing drawn only by its module, a wire between two terminals, has no finite box; "floats Infinity cm" was wrong)
+			if (!P.shapes?.length || !Number.isFinite(P.box?.y0) || !Number.isFinite(P.box?.y1)) continue
 			const s = P.spec
 			const held = heldXs(P)
 			const hint = schemaOf(s.type).byKey.has("legs")
@@ -1708,7 +1822,8 @@ export function solve(plan, opts = {}) {
 				y += Math.max(up, 0.001) + (exact ? 0.001 : ROOM_GAP)
 			}
 			const bodyNames = [...new Set(first.filter((b) => !b.leg && !b.mine).map((b) => b.Q.spec.name))].join(", ")
-			if (exact && y - P0.y > AIR_NUDGE) {
+			// (a pitcher a hand holds over a bowl is raised however far it takes: module place.hover)
+			if (exact && y - P0.y > AIR_NUDGE && !hoversByModule(s.type)) {
 				say("warn", "overlap", `${s.name} starts inside ${bodyNames} at the height it was asked to be (clearing it would take ${((y - P0.y) * 100).toFixed(1)} cm more height)`, s.id)
 				return
 			}
@@ -1813,6 +1928,7 @@ export function planFromScene(scene) {
 		} else out.push({ ...base, place: { on: "air", x: it.x, y_m: r6(it.y - top), angle_deg: Number(it.angle) || 0, keep: true } })
 	}
 	const plan = { title: scene?.name ?? "Scene", seconds: scene?.seconds, release: scene?.release, items: out, goals: (scene?.goals ?? []).filter((g) => g && typeof g === "object").map((g) => ({ ...g })), stage: scene?.stage }
+	if (isObj(scene?.settings) && Object.keys(scene.settings).length) plan.settings = { ...scene.settings } // (re-solving keeps the scene's settings)
 	if (table) plan.table = { x: table.x, ...(Number(table.y) ? { y: table.y } : {}), props: { ...(table.props ?? {}) } }
 	return pinDrifters(plan, items)
 }

@@ -46,6 +46,8 @@ MODE = "server"
 if "--mode" in sys.argv:
     MODE = sys.argv[sys.argv.index("--mode") + 1]
 if MODE == "core":
+    # (items.py alone: no physics module either, whose types are built on the catalog's materials; machines/mod_*.py, PLAYGROUND_MODULES)
+    os.environ["PLAYGROUND_MODULES"] = ""
     for _name in ("catalog_items", "catalog_everyday", "catalog_mechanisms"):
         _m = types.ModuleType(_name)
         _m.__spec__ = importlib.machinery.ModuleSpec(_name, None)

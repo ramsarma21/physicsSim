@@ -1,0 +1,106 @@
+{
+ "version": 2,
+ "id": "heat-cups",
+ "name": "Which cup keeps hot cocoa warm",
+ "seconds": 12,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "settings": {
+  "room_temp": 22,
+  "time_lapse": 120
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "foam",
+   "type": "drink-cup",
+   "name": "Foam cup with lid",
+   "x": 0.6,
+   "y": 0,
+   "props": {
+    "style": "foam",
+    "lid": true
+   }
+  },
+  {
+   "id": "paper",
+   "type": "drink-cup",
+   "name": "Paper cup",
+   "x": 1,
+   "y": 0,
+   "props": {
+    "style": "paper"
+   }
+  },
+  {
+   "id": "mug",
+   "type": "drink-cup",
+   "name": "Mug",
+   "x": 1.4,
+   "y": 0,
+   "props": {
+    "style": "mug"
+   }
+  },
+  {
+   "id": "steel",
+   "type": "drink-cup",
+   "name": "Steel cup",
+   "x": 1.8,
+   "y": 0,
+   "props": {
+    "style": "steel"
+   }
+  },
+  {
+   "id": "t_mug",
+   "type": "thermometer",
+   "x": 1.4,
+   "y": 0.02,
+   "props": {
+    "style": "digital"
+   },
+   "fixed": true,
+   "name": "Thermometer in the mug"
+  },
+  {
+   "id": "t_steel",
+   "type": "thermometer",
+   "x": 1.8,
+   "y": 0.02,
+   "props": {
+    "style": "digital"
+   },
+   "fixed": true,
+   "name": "Thermometer in the steel cup"
+  }
+ ],
+ "goals": [
+  {
+   "kind": "warmer",
+   "a": "foam",
+   "b": "steel"
+  },
+  {
+   "kind": "warmer",
+   "a": "foam",
+   "b": "paper"
+  },
+  {
+   "kind": "warmer",
+   "a": "foam",
+   "b": "mug"
+  }
+ ]
+}

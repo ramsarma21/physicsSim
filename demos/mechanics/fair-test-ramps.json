@@ -1,0 +1,116 @@
+{
+ "version": 2,
+ "id": "fair-test-ramps",
+ "name": "Is this a fair test? 1 block vs 3 blocks",
+ "seconds": 7,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.62,
+  "x1": 7.44092,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 3.4,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "width": 8
+   }
+  },
+  {
+   "id": "gym-floor",
+   "type": "floor",
+   "name": "Carpet",
+   "x": 3.4,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "length": 8,
+    "material": "carpet"
+   }
+  },
+  {
+   "id": "low",
+   "type": "ramp",
+   "name": "Ramp on 1 block",
+   "x": 1,
+   "y": 0.05,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "high",
+   "type": "ramp",
+   "name": "Ramp on 3 blocks",
+   "x": 3.4,
+   "y": 0.05,
+   "angle": 0,
+   "props": {
+    "blocks": 3
+   }
+  },
+  {
+   "id": "car1",
+   "type": "toy-car",
+   "name": "Car on 1 block",
+   "x": 0.133,
+   "y": 0.111392,
+   "angle": -4.017444581928918,
+   "props": {
+    "color": "red"
+   }
+  },
+  {
+   "id": "car3",
+   "type": "toy-car",
+   "name": "Car on 3 blocks",
+   "x": 2.533,
+   "y": 0.202714,
+   "angle": -9.957596738913102,
+   "props": {
+    "color": "red"
+   }
+  },
+  {
+   "id": "clay1",
+   "type": "clay-lump",
+   "name": "Clay",
+   "x": 0.134791,
+   "y": 0.197214,
+   "angle": -4.017444581928934,
+   "props": {}
+  },
+  {
+   "id": "clay3",
+   "type": "clay-lump",
+   "name": "Clay",
+   "x": 2.53742,
+   "y": 0.288966,
+   "angle": -9.957596738913066,
+   "props": {}
+  }
+ ],
+ "goals": [
+  {
+   "kind": "farther",
+   "a": "car3",
+   "b": "car1",
+   "label": "The car from 3 blocks rolls farther"
+  },
+  {
+   "kind": "sticks",
+   "item": "clay1",
+   "to": "car1"
+  },
+  {
+   "kind": "sticks",
+   "item": "clay3",
+   "to": "car3"
+  }
+ ]
+}

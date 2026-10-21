@@ -367,6 +367,11 @@ def scenario_checks(sid, res):
 # ---------------------------------------------------------------- main
 def main(argv):
     keys = [k for k in (argv or items.TYPES) if k != "table"]
+    # (a module's type that builds no solid, a circuit's wire or its upright board, is only drawn: nothing to drop, weigh or run alone)
+    drawn = [k for k in keys if not is_ball_type(items.TYPES[k]) and not alone(k, {})["solids"]]
+    for k in drawn:
+        print(f"skip  {k}  (draws only: it builds no solid)")
+    keys = [k for k in keys if k not in drawn]
     jobs = []
     for k in keys:
         item, extra = placed(k)

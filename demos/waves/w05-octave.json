@@ -1,0 +1,61 @@
+{
+ "version": 2,
+ "id": "w05-octave",
+ "name": "Half the string, an octave higher",
+ "seconds": 3,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "a",
+   "type": "monochord",
+   "name": "Long string",
+   "x": 0.6,
+   "y": 0,
+   "props": {
+    "length": 0.648
+   }
+  },
+  {
+   "id": "b",
+   "type": "monochord",
+   "name": "Half string",
+   "x": 2.0,
+   "y": 0,
+   "props": {
+    "length": 0.324,
+    "strike_at": 1.5
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "sounds",
+   "source": "a",
+   "pitch_hz": 329.6,
+   "tol_hz": 1.6
+  },
+  {
+   "kind": "sounds",
+   "source": "b",
+   "pitch_hz": 659.3,
+   "tol_hz": 3.3
+  },
+  {
+   "kind": "higher",
+   "a": "b",
+   "b": "a"
+  }
+ ]
+}

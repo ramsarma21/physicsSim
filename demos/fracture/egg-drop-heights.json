@@ -1,0 +1,65 @@
+{
+ "version": 2,
+ "id": "egg-drop-heights",
+ "name": "How high can an egg fall?",
+ "seconds": 1.6,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.45,
+  "x1": 1.85,
+  "y0": -0.05,
+  "y1": 0.6
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 3
+   }
+  },
+  {
+   "id": "egg1",
+   "type": "raw-egg",
+   "name": "Egg from 3 cm",
+   "x": 0.7,
+   "y": 0.05381262840643267,
+   "held": true
+  },
+  {
+   "id": "egg2",
+   "type": "raw-egg",
+   "name": "Egg from 10 cm",
+   "x": 1.15,
+   "y": 0.12381262840643267,
+   "held": true
+  },
+  {
+   "id": "egg3",
+   "type": "raw-egg",
+   "name": "Egg from 40 cm",
+   "x": 1.6,
+   "y": 0.4238126284064327,
+   "held": true
+  }
+ ],
+ "goals": [
+  {
+   "kind": "survives",
+   "item": "egg1",
+   "label": "The egg dropped 3 cm survives"
+  },
+  {
+   "kind": "breaks",
+   "item": "egg2",
+   "label": "The egg dropped 10 cm cracks"
+  },
+  {
+   "kind": "breaks",
+   "item": "egg3",
+   "label": "The egg dropped 40 cm smashes"
+  }
+ ]
+}

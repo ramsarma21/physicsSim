@@ -1,0 +1,84 @@
+{
+ "version": 2,
+ "id": "a-tap-turns-a-waterwheel",
+ "name": "A tap turns a waterwheel.",
+ "seconds": 5,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "wheel",
+   "type": "waterwheel",
+   "name": "Waterwheel",
+   "x": 1.2,
+   "y": 0.25,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "tap",
+   "type": "tap",
+   "name": "Tap",
+   "x": 1.29,
+   "y": 0.55,
+   "angle": 0,
+   "props": {
+    "flow_ml_s": 140,
+    "on_at": 0.3
+   }
+  },
+  {
+   "id": "tub",
+   "type": "bucket",
+   "name": "Bucket",
+   "x": 1.464946,
+   "y": 0.004,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "turns",
+   "item": "wheel",
+   "at_least_rpm": 20,
+   "label": "Waterwheel turns at 20 rpm or more"
+  }
+ ]
+}

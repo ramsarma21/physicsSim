@@ -271,6 +271,8 @@ export default function register({ addModel, kit, THREE }) {
 	function cupSkins(ctx) {
 		const look = ctx.solid.look ?? ""
 		if (look === "cardboard") {
+			// painted (the item's colour prop: its solids' colour): a plain coloured paper cup, no printed band
+			if (ctx.solid.color) return { outer: L.cardboardMat(ctx.solid.color), rim: L.cardboardMat(ctx.solid.color), inner: L.plasticMat("#f4f1ea", 0.55), kind: "painted" }
 			const outer = M("cup-kraft3", kraftParams())
 			return { outer, rim: L.cardboardMat("#d6b78a"), inner: L.plasticMat("#f4f1ea", 0.55), kind: "paper" }
 		}

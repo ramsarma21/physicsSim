@@ -1,0 +1,5 @@
+{"version":2,"id":"smoke-fan","name":"Smoke shows a fan's wind","seconds":6,"release":0.3,"stage":{"x0":-0.56,"x1":3.19,"y0":-0.16,"y1":2.34},"items":[{"id":"table","type":"table","x":1.3,"y":0},
+{"id":"still","type":"incense-stick","name":"Incense in still air","x":0.0,"y":0},
+{"id":"fan","type":"fan","name":"Fan","x":1.0,"y":0.25,"props":{"speed":2.0,"diameter":0.3,"on_at":0}},
+{"id":"blown","type":"incense-stick","name":"Incense in the fan's wind","x":1.6,"y":0}],
+"goals":[{"kind":"smoke_drifts","item":"blown","toward":"right"},{"kind":"smoke_drifts","item":"still","toward":"up"}]}

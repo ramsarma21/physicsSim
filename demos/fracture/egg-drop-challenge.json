@@ -1,0 +1,60 @@
+{
+ "version": 2,
+ "id": "egg-drop-challenge",
+ "name": "Egg-drop challenge",
+ "seconds": 2.4,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.05,
+  "y1": 2
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 3
+   }
+  },
+  {
+   "id": "box1",
+   "type": "egg-drop-box",
+   "name": "Padded box with a parachute",
+   "x": 0.8,
+   "y": 1.5,
+   "held": true,
+   "props": {
+    "padding": "foam",
+    "padding_thickness": 0.04,
+    "parachute": 0.7
+   }
+  },
+  {
+   "id": "box2",
+   "type": "egg-drop-box",
+   "name": "Bare box",
+   "x": 1.6,
+   "y": 1.5,
+   "held": true,
+   "props": {
+    "padding": "none"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "survives",
+   "item": "box1",
+   "label": "The egg with padding and a parachute survives"
+  },
+  {
+   "kind": "breaks",
+   "item": "box2",
+   "label": "The egg in the bare box breaks"
+  }
+ ]
+}

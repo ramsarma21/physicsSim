@@ -1,0 +1,65 @@
+{
+ "version": 2,
+ "id": "s8-ball-squash",
+ "name": "A soft ball squashes more",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "big",
+   "type": "exercise-ball",
+   "name": "Exercise ball",
+   "x": 0.6,
+   "y": 0.325,
+   "props": {}
+  },
+  {
+   "id": "w1",
+   "type": "steel-weight-5kg",
+   "x": 0.6,
+   "y": 0.75,
+   "props": {}
+  },
+  {
+   "id": "pg",
+   "type": "playground-ball",
+   "name": "Playground ball",
+   "x": 1.8,
+   "y": 0.108,
+   "props": {}
+  },
+  {
+   "id": "w2",
+   "type": "steel-weight-5kg",
+   "x": 1.8,
+   "y": 0.3,
+   "props": {}
+  }
+ ],
+ "goals": [
+  {
+   "kind": "deforms_more",
+   "a": "big",
+   "b": "pg",
+   "label": "The exercise ball squashes more"
+  },
+  {
+   "kind": "springs_back",
+   "item": "big",
+   "label": "It springs back"
+  }
+ ]
+}

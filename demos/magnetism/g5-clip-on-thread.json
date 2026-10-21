@@ -1,0 +1,49 @@
+{
+ "version": 2,
+ "id": "g5-clip-on-thread",
+ "name": "A clip floats on its thread",
+ "seconds": 3.0,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "magnet",
+   "type": "bar-magnet",
+   "name": "Magnet",
+   "x": 1.0,
+   "y": 0.22200000000000003,
+   "angle": -90,
+   "fixed": true,
+   "props": {
+    "material": "neodymium"
+   }
+  },
+  {
+   "id": "clip",
+   "type": "clip-on-thread",
+   "name": "Clip",
+   "x": 1.0,
+   "y": 0.0,
+   "props": {
+    "thread": 0.1
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "levitates",
+   "item": "clip"
+  }
+ ]
+}

@@ -1,0 +1,54 @@
+{
+ "version": 2,
+ "id": "Fill a mug from the kitchen tap",
+ "name": "Fill a mug from the kitchen tap",
+ "seconds": 3.5,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "mug",
+   "type": "coffee-mug",
+   "name": "Mug",
+   "x": 1.2,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "tap",
+   "type": "tap",
+   "name": "Tap",
+   "x": 1.2,
+   "y": 0.3,
+   "props": {
+    "flow_ml_s": 100,
+    "on_at": 0.3,
+    "off_at": 2.3
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "fills",
+   "container": "mug",
+   "at_least_ml": 180
+  },
+  {
+   "kind": "delivers",
+   "item": "tap",
+   "at_least_ml": 190
+  }
+ ]
+}

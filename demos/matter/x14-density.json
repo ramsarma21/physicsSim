@@ -1,0 +1,67 @@
+{
+ "version": 2,
+ "id": "x14-density",
+ "name": "Same size, different mass",
+ "seconds": 4,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.2,
+  "x1": 2.2,
+  "y0": -0.1,
+  "y1": 0.9
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "props": {
+    "width": 3.7,
+    "thickness": 0.15
+   }
+  },
+  {
+   "id": "tank",
+   "type": "water-tank",
+   "name": "Tank",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "style": "aquarium",
+    "length": 0.5
+   }
+  },
+  {
+   "id": "pine",
+   "type": "density-cube",
+   "name": "Pine cube",
+   "x": 1.05,
+   "y": 0.15,
+   "props": {
+    "made_of": "pine"
+   }
+  },
+  {
+   "id": "copper",
+   "type": "density-cube",
+   "name": "Copper cube",
+   "x": 1.35,
+   "y": 0.15,
+   "props": {
+    "made_of": "copper"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "floats",
+   "item": "pine"
+  },
+  {
+   "kind": "sinks",
+   "item": "copper"
+  }
+ ]
+}

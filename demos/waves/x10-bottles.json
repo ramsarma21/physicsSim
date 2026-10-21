@@ -1,0 +1,94 @@
+{
+ "version": 2,
+ "id": "x10-bottles",
+ "name": "A bottle xylophone: more water, lower note",
+ "seconds": 2.8,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "b1",
+   "type": "glass-bottle",
+   "name": "Bottle 1 (10 % full)",
+   "x": 0.4,
+   "y": 0,
+   "props": {
+    "fill": 0.1,
+    "strike_at": 0.4
+   }
+  },
+  {
+   "id": "b2",
+   "type": "glass-bottle",
+   "name": "Bottle 2 (35 % full)",
+   "x": 0.75,
+   "y": 0,
+   "props": {
+    "fill": 0.35,
+    "strike_at": 0.9
+   }
+  },
+  {
+   "id": "b3",
+   "type": "glass-bottle",
+   "name": "Bottle 3 (60 % full)",
+   "x": 1.1,
+   "y": 0,
+   "props": {
+    "fill": 0.6,
+    "strike_at": 1.4
+   }
+  },
+  {
+   "id": "b4",
+   "type": "glass-bottle",
+   "name": "Bottle 4 (85 % full)",
+   "x": 1.4499999999999997,
+   "y": 0,
+   "props": {
+    "fill": 0.85,
+    "strike_at": 1.9
+   }
+  },
+  {
+   "id": "m",
+   "type": "sound-meter",
+   "name": "Sound meter",
+   "x": 2.4,
+   "y": 0
+  }
+ ],
+ "goals": [
+  {
+   "kind": "higher",
+   "a": "b1",
+   "b": "b2"
+  },
+  {
+   "kind": "higher",
+   "a": "b2",
+   "b": "b3"
+  },
+  {
+   "kind": "higher",
+   "a": "b3",
+   "b": "b4"
+  },
+  {
+   "kind": "hears",
+   "meter": "m",
+   "source": "b4"
+  }
+ ]
+}

@@ -35,7 +35,8 @@
 // What clean() is given: the app sent JSON.stringify(scene) over HTTP, so a NaN or an infinity arrived as null. clean() does the same to the scene
 // it is handed (a NaN in a scene means null, as it did over HTTP), so the cases that carry a NaN or an infinity ("@@float" markers) are sent to
 // Python as null, which is what its server received; the "direct" group hands in-memory scenes (real NaN, undefined, Date, toJSON) to clean() itself.
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -106,6 +107,16 @@ function askPython(requests, mode = MODE) {
 // ---------------------------------------------------------------- comparing
 const isObj = (v) => v !== null && typeof v === "object"
 /** Differences between two JSON-like values: numbers by Object.is, objects by keys and key order. */
+/** A server catalog entry without the physics modules' catalog-wide props ("common": true in props, and their defaults) that the port's own entry
+ *  (`mine`, built here without those modules: loadCatalogWide registers only the ones a module's JS file offers) does not list: what the two must
+ *  then agree on. The props both list are compared as they are. */
+function withoutCommon(mine, server) {
+	const own = new Set((mine.props ?? []).map((p) => p.key))
+	const keys = new Set((server.props ?? []).filter((p) => p.common && !own.has(p.key)).map((p) => p.key))
+	if (!keys.size) return server
+	return { ...server, props: server.props.filter((p) => !keys.has(p.key)), ...(server.defaults ? { defaults: Object.fromEntries(Object.entries(server.defaults).filter(([k]) => !keys.has(k))) } : {}) }
+}
+
 function diff(a, b, p = "", out = [], limit = 8) {
 	if (out.length >= limit) return out
 	if (typeof a === "number" && typeof b === "number") {
@@ -1032,14 +1043,18 @@ const groups = {
 		let ds = diff(js.categories, MODE === "core" ? py.categories : py.categories.slice(0, js.categories.length), "categories") // (the catalog modules add categories)
 		for (const t of js.types) {
 			const pt = py.types.find((x) => x.key === t.key)
-			ds = ds.concat(pt ? diff(t, pt, `types[${t.key}]`) : [`types[${t.key}]: missing from python`])
+			ds = ds.concat(pt ? diff(t, withoutCommon(t, pt), `types[${t.key}]`) : [`types[${t.key}]: missing from python`])
 		}
 		const order = py.types.map((t) => t.key).filter((k) => js.types.some((t) => t.key === k))
 		ds = ds.concat(diff(js.types.map((t) => t.key), order, "type order"))
 		ds = ds.concat(diff(js.materials, MODE === "core" ? py.materials : Object.fromEntries(Object.keys(js.materials).map((k) => [k, py.materials[k]])), "materials"))
 		ds = ds.concat(diff(js.looks, MODE === "core" ? py.looks : Object.fromEntries(Object.keys(js.looks).map((k) => [k, py.looks[k]])), "looks"))
 		note("catalog", ds.length === 0, "catalog()", ds)
-		for (const t of js.types) note("catalog types", !diff(t, py.types.find((x) => x.key === t.key)).length, t.key, diff(t, py.types.find((x) => x.key === t.key)))
+		for (const t of js.types) {
+			const pt = py.types.find((x) => x.key === t.key)
+			const d = pt ? diff(t, withoutCommon(t, pt)) : ["missing from python"]
+			note("catalog types", !d.length, t.key, d)
+		}
 		console.log(`  catalog: ${js.types.length - 1} core types (+ the harness's probe type) compared; python lists ${py.types.length - 1} types in this mode; ${Object.keys(js.materials).length} materials, ${Object.keys(js.looks).length} looks`)
 	},
 
@@ -1162,13 +1177,15 @@ const groups = {
 
 	async live() {
 		let base = process.env.PARITY_SERVER ?? "http://localhost:8790"
+		// (the server loads the physics modules: their catalog-wide props, listed with "common": true, sit on every type there; the port here
+		// without its modules has none, so they are left out of the server's entry before comparing)
 		try {
 			const cat = await (await fetch(`${base}/api/catalog`)).json()
 			const js = items.catalog()
 			let bad = 0
 			for (const t of js.types.filter((x) => x.key !== "probe")) {
 				const pt = cat.types.find((x) => x.key === t.key)
-				const d = pt ? diff(t, pt, `types[${t.key}]`) : ["missing"]
+				const d = pt ? diff(t, withoutCommon(t, pt), `types[${t.key}]`) : ["missing"]
 				note("live catalog (running server)", d.length === 0, t.key, d)
 				bad += d.length
 			}
@@ -1215,6 +1232,25 @@ const groups = {
 	}
 }
 
+// ---------------------------------------------------------------- the physics modules' catalog-wide props (server and everyday modes)
+/** Python loads the physics modules here (machines/mod_*.py; PLAYGROUND_MODULES names them when set): a module that adds props to EVERY type
+ *  (the mechanics module's colour, glow, start speed: register_common_prop) lists them on the core and everyday types too, and builds what an item
+ *  sets. The port here holds the catalogs only, so each such module's catalog-wide part (its JS file's `register_catalog_wide`: those props and the
+ *  build hooks that read them, nothing else) is registered on it, as the server has them. */
+async function loadCatalogWide() {
+	const dir = path.join(path.resolve(process.env.PARITY_SIM || path.join(PG, "web/sim")), "modules")
+	const only = process.env.PLAYGROUND_MODULES === undefined ? null : process.env.PLAYGROUND_MODULES.split(",").map((s) => s.trim()).filter(Boolean)
+	const done = []
+	for (const f of fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith(".js")).sort() : []) {
+		const name = f.slice(0, -3)
+		if ((only !== null && !only.includes(name)) || !/export function register_catalog_wide\b/.test(fs.readFileSync(path.join(dir, f), "utf8"))) continue
+		const m = await import(`${SIM}/modules/${f}`)
+		m.register_catalog_wide(items.FRAMEWORK)
+		done.push(name)
+	}
+	if (done.length) console.log(`  catalog-wide props of the physics module${done.length > 1 ? "s" : ""} ${done.join(", ")} registered here, as the server has them on every type: ${items.COMMON_PROPS.map(([p]) => p.key).join(", ")}`)
+}
+
 // ---------------------------------------------------------------- the everyday catalog (--mode everyday): web/sim/catalog-everyday.js
 let EV = [] // the keys the module registered, in order
 let EV_PRE = null // py_dump.py's snapshot of the tables just before catalog_everyday.py registered (what the module starts from)
@@ -1247,6 +1283,7 @@ async function loadEveryday() {
 	for (const c of EV_PRE.categories) if (!items.CATEGORIES.includes(c)) items.CATEGORIES.push(c)
 	EV_MODULE = await import(`${SIM}/catalog-everyday.js`)
 	items.use_catalog_module("catalog_everyday", EV_MODULE.register_all)
+	await loadCatalogWide()
 	EV = [...EV_MODULE.KEYS]
 	console.log(`  tables before catalog_everyday.py (items.py + catalog_items.py): ${added} materials added, ${EV_PRE.measured.length} measured pairs, ${Object.keys(EV_PRE.looks).length} looks; the ${checked} entries web/sim held already are Python's`)
 	console.log(`  web/sim/catalog-everyday.js registered ${EV.length} types: ${EV.join(", ")}${EV_MODULE.CLASHES.length ? `; CLASHES: ${EV_MODULE.CLASHES.join(", ")}` : ""}`)
@@ -1356,7 +1393,7 @@ Object.assign(groups, {
 		let solids = 0
 		for (const t of js.types.filter((x) => x.key !== "probe")) {
 			const pt = py.types.find((x) => x.key === t.key)
-			const d = pt ? diff(t, pt, `types[${t.key}]`) : [`types[${t.key}]: missing from python`]
+			const d = pt ? diff(t, withoutCommon(t, pt), `types[${t.key}]`) : [`types[${t.key}]: missing from python`]
 			note("ev-catalog", d.length === 0, t.key, d)
 			if (EV.includes(t.key) && t.preview?.solids?.length) {
 				withPreview++
@@ -1431,7 +1468,7 @@ Object.assign(groups, {
 		let bad = 0
 		for (const t of js.types.filter((x) => EV.includes(x.key))) {
 			const pt = cat.types.find((x) => x.key === t.key)
-			const d = pt ? diff(t, pt, `types[${t.key}]`) : ["missing from the server"]
+			const d = pt ? diff(t, withoutCommon(t, pt), `types[${t.key}]`) : ["missing from the server"]
 			note("ev-live catalog (running server)", d.length === 0, t.key, d)
 			bad += d.length ? 1 : 0
 		}
@@ -1712,7 +1749,10 @@ async function main() {
 		const st = fs.statSync(path.join(PG, f))
 		console.log(`  ${f.padEnd(34)} ${st.size} bytes, modified ${st.mtime.toISOString().slice(0, 19)}`)
 	}
-	if (MODE === "server") loadTables()
+	if (MODE === "server") {
+		loadTables()
+		await loadCatalogWide()
+	}
 	if (MODE === "everyday") await loadEveryday()
 	try {
 		for (const g of GROUPS) {

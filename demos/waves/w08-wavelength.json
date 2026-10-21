@@ -1,0 +1,57 @@
+{
+ "version": 2,
+ "id": "w08-wavelength",
+ "name": "Faster dipping, shorter waves",
+ "seconds": 4,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "slow",
+   "type": "ripple-tank",
+   "name": "5 Hz tank",
+   "x": 0.4,
+   "y": 0,
+   "props": {
+    "length": 0.6,
+    "depth": 0.02,
+    "frequency": 5,
+    "floater": "none"
+   }
+  },
+  {
+   "id": "fast",
+   "type": "ripple-tank",
+   "name": "10 Hz tank",
+   "x": 2.1,
+   "y": 0,
+   "props": {
+    "length": 0.6,
+    "depth": 0.02,
+    "frequency": 10,
+    "floater": "none"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "wave_reaches",
+   "item": "slow"
+  },
+  {
+   "kind": "wave_reaches",
+   "item": "fast"
+  }
+ ]
+}

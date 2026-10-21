@@ -1,0 +1,62 @@
+{
+ "version": 2,
+ "name": "Density column",
+ "seconds": 8,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "jar",
+   "type": "density-column",
+   "x": 1.2,
+   "y": 0,
+   "name": "Density column"
+  },
+  {
+   "id": "grape",
+   "type": "grape",
+   "x": 1.2,
+   "y": 0.345,
+   "name": "Grape"
+  },
+  {
+   "id": "bead",
+   "type": "plastic-bead",
+   "x": 1.196,
+   "y": 0.375,
+   "name": "Plastic bead"
+  },
+  {
+   "id": "cork",
+   "type": "cork",
+   "x": 1.204,
+   "y": 0.4,
+   "name": "Cork"
+  }
+ ],
+ "goals": [
+  {
+   "kind": "floats",
+   "item": "cork"
+  },
+  {
+   "kind": "floats",
+   "item": "grape"
+  },
+  {
+   "kind": "floats",
+   "item": "bead"
+  }
+ ]
+}

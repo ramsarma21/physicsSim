@@ -1,0 +1,47 @@
+{
+ "version": 2,
+ "id": "x08-vacuum-room",
+ "name": "In a vacuum nothing is heard",
+ "seconds": 2.0,
+ "release": 0.2,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "fork",
+   "type": "tuning-fork",
+   "name": "Tuning fork",
+   "x": 0.5,
+   "y": 0
+  },
+  {
+   "id": "meter",
+   "type": "sound-meter",
+   "name": "Sound meter",
+   "x": 1.5,
+   "y": 0,
+   "props": {
+    "room": 20
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "sounds",
+   "source": "fork"
+  }
+ ],
+ "settings": {
+  "air": false
+ }
+}

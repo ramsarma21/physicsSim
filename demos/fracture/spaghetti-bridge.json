@@ -1,0 +1,70 @@
+{
+ "version": 2,
+ "id": "spaghetti-bridge",
+ "name": "Spaghetti bridges",
+ "seconds": 1.6,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.6,
+  "x1": 1.8,
+  "y0": -0.03,
+  "y1": 0.45
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 2.4
+   }
+  },
+  {
+   "id": "bridge1",
+   "type": "snap-bridge",
+   "name": "Bridge with 100 g",
+   "x": 0.9,
+   "y": 0
+  },
+  {
+   "id": "m1",
+   "type": "gram-mass",
+   "name": "100 g mass",
+   "x": 0.9,
+   "y": 0.1035,
+   "props": {
+    "grams": "100 g"
+   }
+  },
+  {
+   "id": "bridge2",
+   "type": "snap-bridge",
+   "name": "Bridge with 500 g",
+   "x": 1.5,
+   "y": 0
+  },
+  {
+   "id": "m2",
+   "type": "gram-mass",
+   "name": "500 g mass",
+   "x": 1.5,
+   "y": 0.1035,
+   "props": {
+    "grams": "500 g"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "survives",
+   "item": "bridge1",
+   "label": "The bridge holds 100 g"
+  },
+  {
+   "kind": "breaks",
+   "item": "bridge2",
+   "label": "The bridge snaps under 500 g"
+  }
+ ]
+}

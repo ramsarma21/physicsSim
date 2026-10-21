@@ -1,0 +1,14 @@
+{"version": 2, "id": "heat-new", "name": "heat new items", "seconds": 4, "release": 0.2,
+ "stage": {"x0": -0.56, "x1": 3.19, "y0": -0.16, "y1": 2.34}, "settings": {"room_temp": 22},
+ "items": [
+  {"id": "table", "type": "table", "x": 1.3, "y": 0, "props": {}},
+  {"id": "sander", "type": "sanding-block", "x": 0.2, "y": 0, "props": {"rub_s": 3}},
+  {"id": "candle", "type": "candle", "x": 0.7, "y": 0.04, "props": {"height": 0.08, "lit": true}},
+  {"id": "jar", "type": "candle-jar", "x": 0.7, "y": 0, "props": {"volume_ml": 1000}},
+  {"id": "candle2", "type": "candle", "x": 1.0, "y": 0.04, "props": {"height": 0.08, "lit": true}},
+  {"id": "ring", "type": "ball-and-ring", "x": 1.4, "y": 0, "props": {"ball_temp_c": 300}},
+  {"id": "bim", "type": "bimetal-strip", "x": 1.8, "y": 0, "props": {"start_temp_c": 120}},
+  {"id": "bs", "type": "bowl", "x": 2.3, "y": 0, "props": {"contents": "sand"}},
+  {"id": "bw", "type": "bowl", "x": 2.6, "y": 0, "props": {"contents": "water"}},
+  {"id": "th", "type": "thermometer", "x": 2.9, "y": 0.2, "props": {}}
+ ], "goals": []}

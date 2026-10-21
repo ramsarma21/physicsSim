@@ -1,6 +1,6 @@
 // A scene as the AI steps read it: every item with its anchor, angle, the props it sets, and its true outline box (built by web/sim's
 // layout(), the exact port of the server's builder), what it rests on, and the builder's overlap warnings. Plain text for prompts.
-//   const d = await sceneDigest(scene, catalogIndex)   // {text, items: [{id, type, x, y, angle, box, parts? ([{part, kind, w, h}]: each solid's own size, for items of 2-40 solids), rests_on, ...}], warnings, stage, table}
+//   const d = await sceneDigest(scene, catalogIndex)   // {text, items: [{id, type, x, y, angle, box, parts? ([{part, kind, w, h}]: each solid's own size, for items of 2-40 solids), rests_on, ghost? (every solid a ghost: display only), firm_box? (the box without its ghost solids), ...}], warnings, stage, table}
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { boundsOf, worldPoses, DEFAULT_STAGE } from "./catalog-digest.mjs"
@@ -67,6 +67,14 @@ export async function sceneDigest(scene, catalog, { maxItems = 200 } = {}) {
 			moves: T ? (it.fixed ? false : kinds.size ? kinds.has("dynamic") : T.dynamic) : null,
 			box: B ? { x0: B[0], y0: B[1], x1: B[2], y1: B[3] } : null,
 			...(parts.length ? { parts } : {}),
+			// (display only: every solid a ghost, which nothing ever touches (web/CONTRACT.md "Ghost solids"), a stopwatch's face or a trail's tag)
+			...(solids.length && solids.every((s) => s.ghost) ? { ghost: true } : {}),
+			// (some solids ghosts: the box of the others, what things can really rest on; a balance's pointer is drawn but holds nothing up)
+			...(() => {
+				if (!solids.some((s) => s.ghost) || solids.every((s) => s.ghost)) return {}
+				const F = boundsOf(solids.filter((s) => !s.ghost), poses)
+				return F ? { firm_box: { x0: F[0], y0: F[1], x1: F[2], y1: F[3] } } : {}
+			})(),
 			unknown: !T
 		})
 	}
@@ -74,6 +82,9 @@ export async function sceneDigest(scene, catalog, { maxItems = 200 } = {}) {
 	if (doc) {
 		const outlines = new Map() // item id -> [outline] (world points, or a circle)
 		for (const [id, solids] of byItem) outlines.set(id, solids.map((s) => outlineOf(s, poses.get(s.id))).filter(Boolean))
+		// what can hold something up: the same outlines without ghost solids (nothing touches a ghost: a stopwatch's face holds no lane up)
+		const firm = new Map()
+		for (const [id, solids] of byItem) firm.set(id, solids.filter((s) => !s.ghost).map((s) => outlineOf(s, poses.get(s.id))).filter(Boolean))
 		for (const r of rows) {
 			if (!r.box || r.type === "table") continue
 			const mine = outlines.get(r.id) ?? []
@@ -87,7 +98,7 @@ export async function sceneDigest(scene, catalog, { maxItems = 200 } = {}) {
 				let best = null
 				for (const o of rows) {
 					if (o === r) continue
-					for (const ol of outlines.get(o.id) ?? []) {
+					for (const ol of firm.get(o.id) ?? []) {
 						const top = spanAt(ol, x)?.[1]
 						if (top === undefined) continue
 						const gap = bottom - top

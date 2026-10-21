@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>plugin toy</title>
+<script type="importmap">{"imports": {"three": "/web/vendor/three/build/three.module.js", "three/addons/": "/web/vendor/three/examples/jsm/"}}</script>
+<link rel="stylesheet" href="/web/panels.css">
+<style>body{margin:0;background:#fff} #view{width:960px;height:540px} #insp{width:320px}</style>
+</head><body><div id="view"></div><div id="insp"></div>
+<script type="module">
+// tools/plugin-toy/browser.mjs drives this page (headless): the toy's view hooks and the inspector's module controls, in a browser.
+import * as sim from "/web/sim/index.js"
+import * as items from "/web/sim/items.js"
+import * as toy from "/tools/plugin-toy/toy.js"
+import { addModel } from "/web/models3d.js"
+import { addFrameHook, addViewPlugin, ownMaterial } from "/web/view-plugins.js"
+import * as THREE from "three"
+import registerView from "/tools/plugin-toy/mod-toy.js"
+import { createView3D } from "/web/view3d.js"
+import { createInspector } from "/web/inspector.js"
+items.use_catalog_module("mod_toy", toy.register_all)
+const mod = sim.plugins.registerModule({ ...toy.plugin, name: "mod_toy" })
+for (const k of mod.goals) items.register_goal_kind(k.kind, (ctx, g) => k.summarize(ctx, g))
+registerView({ addModel, addFrameHook, addViewPlugin, ownMaterial, THREE })
+const B = await import("/toy-engine.js")
+const scene = { version: 2, id: "toy", name: "Toy", seconds: 3, release: 0.2, settings: { time_lapse: 600 }, stage: { x0: 0.5, x1: 1.6, y0: -0.1, y1: 0.5 },
+	items: [{ id: "table", type: "table", x: 1.3, y: 0, props: {} }, { id: "pad", type: "toy-heater", name: "Hot pad", x: 1.0, y: 0.0, props: { power: 60 } },
+		{ id: "cube", type: "toy-cube", name: "Wax", x: 1.0, y: 0.0165, props: { heater: "pad", size: 0.04 } }, { id: "pad2", type: "toy-heater", name: "Cold pad", x: 1.3, y: 0, props: {} }] }
+const p = sim.prepare(scene)
+const m = B.handle({ id: 1, doc: p.doc, rate: 120 })
+const meta = sim.finish(p.scene, p.doc, p.resolved, m.track)
+const catalog = sim.catalog()
+const view = createView3D(document.getElementById("view"))
+view.setOptions({ looks: catalog.looks, camera: "wide" })
+view.load({ key: "toy", doc: p.doc, track: m.track, summary: meta.summary, resolved: p.resolved }, null, { rebuild: true })
+const changes = []
+const insp = createInspector(document.getElementById("insp"), { catalog, onSelect() {}, onChange: (id, patch) => changes.push([id, patch]), onScene: (patch) => changes.push(["scene", patch]) })
+insp.render(p.scene, "cube", p.resolved, meta.summary.readings)
+window.__toy = { view, insp, scene: p.scene, summary: meta.summary, changes, track: m.track }
+window.__ready = true
+</script></body></html>

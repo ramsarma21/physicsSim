@@ -214,8 +214,13 @@ test("per-step slots: a step at its own cap waits while another step runs at onc
 	const h2 = mkdtempSync(join(tmpdir(), "ai-server2-"))
 	mkdirSync(join(h2, ".config", "truefoundry"), { recursive: true })
 	writeFileSync(join(h2, ".config", "truefoundry", "env"), `export TRUEFOUNDRY_API_KEY=${FAKE_KEY}\nexport TRUEFOUNDRY_BASE_URL=${gw.url}\n`)
-	writeFileSync(join(h2, "models.json"), JSON.stringify(testRouting({ timeoutMs: 600, budgetMs: 2500, backoffMs: 10 })))
-	const s2 = spawn("python3", [HARNESS], { env: { PATH: process.env.PATH, HOME: h2, AI_MODELS: join(h2, "models.json"), AI_CACHE_DIR: h2, AI_SLOTS: "3", AI_STEP_SLOTS: "plan=1", AI_QUEUE_WAIT: "1.2" }, stdio: ["ignore", "pipe", "pipe"] })
+	// (the margins: an edit queued behind the waiting plan would start only when that plan's wait runs out, QUEUE_S after it came, so it takes
+	// at least QUEUE_S - 0.35 s more than its own run; its own run, a zsh and a node process loading the AI core, web/sim and the physics
+	// modules, took 0.2-0.7 s here and over 1 s on a busy 4-core CI runner (Node 24, 20 Oct): it is given 3 s. The hog's attempts outlast
+	// the plan's wait (9 attempts of 0.6 s, its budget 6 s), so that plan is still waiting when it is refused.)
+	const QUEUE_S = 4
+	writeFileSync(join(h2, "models.json"), JSON.stringify(testRouting({ timeoutMs: 600, budgetMs: 6000, backoffMs: 10 })))
+	const s2 = spawn("python3", [HARNESS], { env: { PATH: process.env.PATH, HOME: h2, AI_MODELS: join(h2, "models.json"), AI_CACHE_DIR: h2, AI_SLOTS: "3", AI_STEP_SLOTS: "plan=1", AI_QUEUE_WAIT: String(QUEUE_S) }, stdio: ["ignore", "pipe", "pipe"] })
 	try {
 		const port = await new Promise((resolve, reject) => {
 			s2.stdout.once("data", (c) => resolve(Number(String(c).trim())))
@@ -231,7 +236,8 @@ test("per-step slots: a step at its own cap waits while another step runs at onc
 		const t0 = Date.now()
 		const ed = await p2("/api/ai/edit", EDIT("edit2"))
 		assert.equal(ed.status, 200, JSON.stringify(ed.json))
-		assert.ok(Date.now() - t0 < 1000, "the edit did not wait behind the plan that waits for the plan slot")
+		const took = Date.now() - t0
+		assert.ok(took < 3000, `the edit did not wait behind the plan that waits for the plan slot (${took} ms; queued behind it, at least ${QUEUE_S * 1000 - 350} ms more than its run)`)
 		const st = await fetch(`${b2}/api/ai/progress`).then((r) => r.json())
 		assert.deepEqual([st.slots, st.steps.plan.slots, st.steps.plan.running, st.steps.plan.waiting], [3, 1, 1, 1])
 		const pw = await fetch(`${b2}/api/ai/progress?id=wait2`).then((r) => r.json())

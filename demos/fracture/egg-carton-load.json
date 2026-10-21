@@ -1,0 +1,72 @@
+{
+ "version": 2,
+ "id": "egg-carton-load",
+ "name": "How much can an egg hold?",
+ "seconds": 1,
+ "release": 0.3,
+ "stage": {
+  "x0": 0.6,
+  "x1": 1.8,
+  "y0": -0.03,
+  "y1": 0.4
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.2,
+   "y": 0,
+   "props": {
+    "width": 3
+   }
+  },
+  {
+   "id": "egg1",
+   "type": "raw-egg",
+   "name": "Egg holding 3 kg",
+   "x": 0.9,
+   "y": 0.023812628406432668,
+   "fixed": true
+  },
+  {
+   "id": "w1",
+   "type": "steel-weight-1kg",
+   "name": "3 kg",
+   "x": 0.9,
+   "y": 0.08388149607055055,
+   "props": {
+    "mass": 3
+   }
+  },
+  {
+   "id": "egg2",
+   "type": "raw-egg",
+   "name": "Egg holding 4 kg",
+   "x": 1.5,
+   "y": 0.023812628406432668,
+   "fixed": true
+  },
+  {
+   "id": "w2",
+   "type": "steel-weight-1kg",
+   "name": "4 kg",
+   "x": 1.5,
+   "y": 0.08751028311207033,
+   "props": {
+    "mass": 4
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "survives",
+   "item": "egg1",
+   "label": "An egg holds 3 kg"
+  },
+  {
+   "kind": "breaks",
+   "item": "egg2",
+   "label": "An egg cracks under 4 kg"
+  }
+ ]
+}

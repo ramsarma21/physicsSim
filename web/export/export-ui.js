@@ -7,7 +7,8 @@
 //   the view (view3d.js)  renderFrame(t, {width, height, camera, motionBlur, fps, runId}) → a canvas / ImageBitmap / VideoFrame of that moment
 //                         (view3d.js: a 2D OffscreenCanvas it reuses, so the encoder copies it before the next frame is asked for)
 //                         whenSettled() → a promise that resolves once every model and texture of the run on screen is built
-//                         exportInfo() → optional facts: {runId (passed with every frame), cameras, maxSize | maxWidth/maxHeight, motionBlur, ...}
+//                         exportInfo() → optional facts: {runId (passed with every frame), cameras, maxSize | maxWidth/maxHeight, motionBlur,
+//                         fixed (the scene's fixed camera or null: the Fixed choice shows only with one), ...}
 //                         endExport() → the view's export session ends now (after an export, and once the dialog closes)
 //                         exportProject(t, x, y, {camera, width, height}) → −1 … 1: where a point of the machine shows across the export's picture
 //                         (the impact sounds are panned by it, so a hit is heard where it is seen)
@@ -32,6 +33,8 @@ const CAMERAS = [
 	{ id: "follow", label: "Follow", hint: "Stays with whatever is moving." },
 	{ id: "orbit", label: "Orbit", hint: "A slow turn around the machine." },
 	{ id: "director", label: "Director", hint: "Picks the shot for each moment, close in on the hits." },
+	// (offered only when the run's scene sets one: its settings.camera, exportInfo().fixed; the view's Wide shot is then the same camera)
+	{ id: "fixed", label: "Fixed", hint: "The scene’s own fixed camera: every run that sets it is filmed from the same place." },
 ]
 // H.264 at the bitrates YouTube recommends for uploads (Mbit/s at 30 and 60 fps), when the encoder can't say (its videoBitrate());
 // the size estimate also learns from real exports (calib.bytes)
@@ -40,7 +43,7 @@ const AUDIO_KBPS = 192 // the encoder's AAC
 // What part of that bitrate a file of these scenes really takes (the encoder is VBR: a still shot costs little, a moving camera much more).
 // Measured with the real encoder on three scenes at 720p30, 1080p60 and 4K30 (Wide 0.04–0.28, Follow 0.48–0.57); each camera then learns
 // from this device's own exports (calib.bytes[camera]). Bigger frames compress better (fewer bits per pixel for the same picture).
-const SIZE_PRIOR = { wide: 0.16, follow: 0.55, orbit: 0.6, director: 0.5 }
+const SIZE_PRIOR = { wide: 0.16, follow: 0.55, orbit: 0.6, director: 0.5, fixed: 0.16 } // (fixed: a still camera, as Wide)
 const SIZE_RES = { "720p": 1, "1080p": 1, "1440p": 0.85, "4k": 0.7 }
 const PREVIEW = { w: 640, h: 360, fps: 15, hold: 0.7 } // the settings preview: its size, how often it draws, how long it waits at the end
 const PREVIEW_MS_PRIOR = 8 // ms a preview frame takes before any is timed (Apple M5 Pro: 6.3, 10.8 with five chrome balls; a slower device shows its own)
@@ -49,7 +52,7 @@ const PREVIEW_MS_SOFT = 400 // ... on a device that draws without a graphics chi
 // How many times a sharp frame a motion-blurred one costs at 1920 wide and 30 fps, per camera: the view takes more sub-frames where the picture moves
 // more (measured on 3 scenes: Wide 1.7–2.1, Orbit 2.3–2.4, Director 2.8–3.3, Follow 3.9–5.6); about √(width / 1920) more at other widths
 // (4K: Wide 2.7–3.6, Follow 5.2–6.8), and fewer at 60 fps (a shutter half as long).
-const BLUR_COST = { wide: 1.9, orbit: 2.4, director: 3.1, follow: 4.7 }
+const BLUR_COST = { wide: 1.9, orbit: 2.4, director: 3.1, follow: 4.7, fixed: 1.9 } // (fixed: a still camera, as Wide)
 const MIN_LEN = 0.2 // s: the shortest trim
 // What this device has room for: a 1440p or 4K export holds big frame targets on the GPU (4K at its worst about 1.2 GB more than idle, 1440p about 0.7 GB:
 // ai/EXPORT.md) besides the page and the whole file in memory. navigator.deviceMemory (Chrome, Edge, Opera; GB, rounded down, at most 8) of 2 or less offers
@@ -426,12 +429,21 @@ export function mountExportUI(o) {
 			if (info.motionBlur === false) caps.blur = false
 			caps.soft = info.softwareGL === true
 			if (info.recommended && typeof info.recommended === "object") caps.recommendedBlur = Number(info.recommended.motionBlur) > 0
+			if ("fixed" in info) caps.fixed = info.fixed && typeof info.fixed === "object" ? info.fixed : null
 		}
+	}
+	/** The shown run's fixed camera {x0, x1, y, pitch, hfov} (exportInfo().fixed: its scene's settings.camera) or null, read again as the dialog
+	 *  draws (a run made while it is open may set one or not); a view whose exportInfo is asynchronous keeps what viewFacts() found. */
+	function readFixed() {
+		try {
+			const info = get().view?.exportInfo?.()
+			if (info && typeof info === "object" && typeof info.then !== "function" && "fixed" in info) caps.fixed = info.fixed && typeof info.fixed === "object" ? info.fixed : null
+		} catch {}
 	}
 
 	// ----- settings helpers -----
 	const resNow = () => RES.find((r) => r.id === set.res) ?? RES[1]
-	const camList = () => CAMERAS.filter((c) => !caps.cameras || caps.cameras.includes(c.id))
+	const camList = () => CAMERAS.filter((c) => (!caps.cameras || caps.cameras.includes(c.id)) && (c.id !== "fixed" || !!caps.fixed))
 	const camNow = () => (camList().some((c) => c.id === set.camera) ? set.camera : camList()[0]?.id ?? "wide")
 	/** Recorded as it plays (no VideoEncoder in this browser): every frame must be made in real time. A size, rate or motion blur whose frames take more than
 	 *  0.8 of a frame's time here (the estimate's own cost) is not offered; the smallest size at 30 fps always is (it skips frames rather than slowing down). */
@@ -469,6 +481,8 @@ export function mountExportUI(o) {
 	}
 	/** Sound for this trim: the impacts inside it, in video time. */
 	const impactsIn = (sim) => (sim?.track?.impacts ?? []).filter((m) => m.t >= trim.start && m.t < trim.end)
+	// (the waves module's tones count as sounds too: a scene with only a tuning fork, a drum or a buzzer has a sound track)
+	const tonesIn = (sim) => (sim?.doc?.processes ?? []).some((p) => p.kind === "sound" && (p.role === "source" || p.role === "buzzer"))
 
 	// ----- estimates -----
 	/** ms one export frame takes to make here: {base (before this device's own correction), ms}.
@@ -485,7 +499,7 @@ export function mountExportUI(o) {
 		const r = resNow()
 		const secs = trim.end - trim.start
 		const fps = set.fps
-		const audio = set.sound && caps.audio?.ok !== false && impactsIn(get().sim).length ? AUDIO_KBPS * 1000 : 0
+		const audio = set.sound && caps.audio?.ok !== false && (impactsIn(get().sim).length || tonesIn(get().sim)) ? AUDIO_KBPS * 1000 : 0
 		const cam = camNow()
 		const share = calib.bytes[cam] > 0 ? calib.bytes[cam] * SIZE_RES[r.id] : (SIZE_PRIOR[cam] ?? 0.5) * SIZE_RES[r.id]
 		const bytes = ((bitrateFor(r, fps) * share + audio) / 8) * secs + 40e3
@@ -558,11 +572,15 @@ export function mountExportUI(o) {
 		setSeg("fps", set.fps, (v) => fpsAllowed(Number(v)))
 		for (const b of $$('.xv-seg[data-k="fps"] button')) b.title = fpsAllowed(Number(b.dataset.v)) ? "" : realtimeAt(resNow(), Number(b.dataset.v)) ? slow : caps.whyNot.get(`${resNow().id}@${b.dataset.v}`) || ""
 		$("#xv-fps-cap").textContent = set.fps === 60 ? "Smoothest motion" : "Smaller file"
+		readFixed()
 		for (const b of $$('.xv-seg[data-k="camera"] button')) b.hidden = !camList().some((c) => c.id === b.dataset.v)
 		const cam = camNow()
 		setSeg("camera", cam)
 		const cdef = CAMERAS.find((c) => c.id === cam)
-		$("#xv-cam-hint").textContent = caps.camInfo?.[cam]?.hint ?? caps.camInfo?.[cam]?.description ?? cdef?.hint ?? ""
+		const fx = caps.fixed
+		const span = fx && Number.isFinite(fx.x0) && Number.isFinite(fx.x1) ? ` (x ${+fx.x0.toFixed(2)} to ${+fx.x1.toFixed(2)} m across)` : ""
+		const fixedHint = cam === "fixed" && fx ? `The scene’s own fixed camera${span}: every run that sets it is filmed from the same place.` : null
+		$("#xv-cam-hint").textContent = caps.camInfo?.[cam]?.hint ?? caps.camInfo?.[cam]?.description ?? fixedHint ?? cdef?.hint ?? ""
 		$("#xv-prev-cam").textContent = cdef?.label ?? cam
 		// toggles
 		const blur = $('input[data-k="blur"]')
@@ -576,10 +594,11 @@ export function mountExportUI(o) {
 		const snd = $('input[data-k="sound"]')
 		const nHits = impactsIn(s.sim).length
 		const audioOk = caps.audio?.ok !== false
-		snd.checked = set.sound && audioOk && (!fresh || nHits > 0)
-		snd.disabled = !audioOk || (fresh && !nHits)
+		const nTones = tonesIn(s.sim)
+		snd.checked = set.sound && audioOk && (!fresh || nHits > 0 || nTones)
+		snd.disabled = !audioOk || (fresh && !nHits && !nTones)
 		// (until the run of the scene as it is now lands, the hits counted would be the last run's)
-		$("#xv-sound-cap").textContent = !audioOk ? caps.audio.why : !s.sim || !fresh ? "Made from the run’s collisions." : nHits ? `${nHits} ${nHits === 1 ? "hit" : "hits"}, each sounding like its materials and speed.` : "Nothing hits anything in this part of the run."
+		$("#xv-sound-cap").textContent = !audioOk ? caps.audio.why : !s.sim || !fresh ? "Made from the run’s collisions." : nHits ? `${nHits} ${nHits === 1 ? "hit" : "hits"}, each sounding like its materials and speed${nTones ? ", and the notes of what sounds" : ""}.` : nTones ? "The notes of what sounds, as its listener hears them." : "Nothing hits anything in this part of the run."
 		$(".xv-trim-marks").style.visibility = fresh ? "" : "hidden"
 		// length
 		const T = trim.seconds || 0
@@ -963,9 +982,10 @@ export function mountExportUI(o) {
 		const start = trim.start
 		const end = trim.end
 		const total = Math.max(1, Math.round((end - start) * fps))
+		readFixed() // (the run being filmed: Fixed only if its scene sets a camera)
 		const camera = camNow()
 		const blur = blurNow()
-		const wantSound = set.sound && caps.audio?.ok !== false && impactsIn(sim).length > 0
+		const wantSound = set.sound && caps.audio?.ok !== false && (impactsIn(sim).length > 0 || tonesIn(sim))
 		const sceneJSON = JSON.stringify(s.scene) // (the done pane is shown again only for this very scene)
 		const name = fileNameFor(s.scene?.name)
 		const ctl = new AbortController()

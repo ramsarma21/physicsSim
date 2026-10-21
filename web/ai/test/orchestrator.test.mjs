@@ -1093,6 +1093,26 @@ test("the stage tuner judges candidates through evalRun (the fix workers) when g
 	assert.deepEqual(st.lostChecks(t.ev, ev0), ["The ball lands in the box"])
 })
 
+test("a fix worker's job that never comes back can't hold a Build with AI (the video pipeline's balanced-forces builds, 19 Oct): the stage tuner ends in its time and the build goes on", { timeout: 60000 }, async () => {
+	// (the pool as the batch met it: a job sent before the worker's own listener was there never came back)
+	const sent = []
+	const lostPool = { size: 4, broken: false, stage: (scene, goals, checks, signal) => (sent.push(signal), new Promise(() => {})), evaluate: () => new Promise(() => {}), probe: () => new Promise(() => {}), prewarm() {}, terminate() {} }
+	const log = []
+	const events = []
+	const critic = { done: true, score_0_10: 7, issues: ["the ball misses the box"], patches: [] }
+	const r = await createOrchestrator({ api: mockApi({ plan: dropPlan(1.2), refine: critic }, log), fixPool: () => lostPool }).build({ text: "drop a ball into a box" }, { stageMs: 700, onEvent: (e) => events.push(e) }).result
+	assert.ok(sent.length > 0, "the stage tuner's candidates went to the fix workers")
+	assert.ok(sent.every((s) => s?.aborted === true), "each was stopped at the tuner's deadline (a real pool replaces the worker)")
+	// (and a little for what was in hand at the deadline: more on a slower machine, AI_FIX_TIME_SCALE)
+	assert.ok(r.stageTune.ms < 700 + 1500 * Math.max(1, Number(process.env.AI_FIX_TIME_SCALE) || 1), `the stage tuner took ${r.stageTune.ms} ms of its 700`)
+	assert.equal(r.stageTune.runs, 0, "none came back")
+	assert.equal(r.stageTune.kept, false)
+	assert.ok(events.some((e) => e.type === "step" && e.step === "stagetune" && e.state === "done"))
+	assert.ok(log.some((l) => l.step === "refine"), "the critic looked at the plan as it was placed")
+	// (and the tuner after the critic, on the app's own engine, still puts the ball in the box)
+	assert.deepEqual(r.goals.map(({ label, ok }) => ({ label, ok })), [{ label: "The ball lands in the box", ok: true }])
+})
+
 // ================================================================ round 3 (round3-plan §4.2 (3)): what the replay of the stored n7 edit answers found the live application
 // failing, against ai/experiments/edit/integrate/apply-edit.js v3 (ai/bench/tools/edit-apply-replay.mjs; partB/B/replay-verdict.md)
 async function editWith(scene, patches, text, extra = {}) {
@@ -1186,7 +1206,10 @@ test("swap lines: the person's own words with the name on screen, and before →
 
 test("a built-in scene has no plan stages: a stack of bricks knocked down less is said in the heads-up (w-add-brick-top)", async () => {
 	const scene = sceneOf("wrecking-ball")
-	const { r } = await editWith(scene, [{ op: "add", item: { id: "brick6", type: "brick", name: "Brick 6", props: {}, place: { on: "brick5" } } }], "add one more brick on top of the stack")
+	// (three more: since the engine repair of 19 Oct (web/CONTRACT.md) the scenario's bricks no longer walk before the ball comes, and with one
+	// more on top 4 of 5 still fall, as without it)
+	const more = [6, 7, 8].map((n) => ({ op: "add", item: { id: `brick${n}`, type: "brick", name: `Brick ${n}`, props: {}, place: { on: `brick${n - 1}` } } }))
+	const { r } = await editWith(scene, more, "add three more bricks on top of the stack")
 	assert.ok(r.edit.headsUp.includes("Bricks: 3 of 5 fall (was 4 of 5)"), JSON.stringify(r.edit.headsUp))
 	const before = await simulate(scene)
 	assert.deepEqual(lostGroups(before, before, scene, scene), [], "nothing lost against itself")

@@ -1,0 +1,5 @@
+{"version":2,"id":"paper-airplanes","name":"Dart or glider: which flies farther?","seconds":4,"release":0.3,"stage":{"x0":-0.56,"x1":6.5,"y0":-0.16,"y1":2.6},"items":[
+{"id":"table","type":"table","x":3.0,"y":0,"props":{"width":7.0}},
+{"id":"dart","type":"paper-airplane","name":"Dart","x":0.0,"y":1.5,"props":{"design":"dart"}},
+{"id":"glider","type":"paper-airplane","name":"Glider","x":0.0,"y":2.0,"props":{"design":"glider","color":"yellow"}}],
+"goals":[{"kind":"glides","item":"dart","at_least_m":2.5},{"kind":"glides","item":"glider","at_least_m":3.0}]}

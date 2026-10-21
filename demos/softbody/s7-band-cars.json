@@ -1,0 +1,94 @@
+{
+ "version": 2,
+ "id": "s7-band-cars",
+ "name": "Wind it more, it goes farther",
+ "seconds": 6,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "car5",
+   "type": "toy-car",
+   "name": "5 turns",
+   "x": -0.3,
+   "y": 0,
+   "props": {
+    "band_turns": 5,
+    "band_size": "thin",
+    "color": "green"
+   }
+  },
+  {
+   "id": "shelf",
+   "type": "plank",
+   "x": 1.3,
+   "y": 0.5,
+   "props": {
+    "length": 4,
+    "thickness": 0.022
+   }
+  },
+  {
+   "id": "stand-left",
+   "type": "wooden-block",
+   "name": "Left shelf stand",
+   "x": -0.45,
+   "y": 0.2445,
+   "props": {
+    "width": 0.12,
+    "height": 0.489,
+    "depth": 0.12
+   }
+  },
+  {
+   "id": "stand-right",
+   "type": "wooden-block",
+   "name": "Right shelf stand",
+   "x": 3.05,
+   "y": 0.2445,
+   "props": {
+    "width": 0.12,
+    "height": 0.489,
+    "depth": 0.12
+   }
+  },
+  {
+   "id": "car10",
+   "type": "toy-car",
+   "name": "10 turns",
+   "x": -0.3,
+   "y": 0.511,
+   "props": {
+    "band_turns": 10,
+    "band_size": "thin",
+    "color": "yellow"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "farther",
+   "a": "car10",
+   "b": "car5",
+   "label": "The car wound more goes farther"
+  },
+  {
+   "kind": "stores",
+   "item": "car10",
+   "at_least_j": 0.05,
+   "label": "10 turns store over 0.05 J"
+  }
+ ]
+}

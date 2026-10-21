@@ -1,0 +1,62 @@
+{
+ "version": 2,
+ "id": "lever-in-balance",
+ "name": "A first-class lever in balance",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.55908203125,
+  "x1": 3.19091796875,
+  "y0": -0.15625,
+  "y1": 2.34375
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "name": "Table",
+   "x": 1.3,
+   "y": 0,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "lever",
+   "type": "lever-kit",
+   "name": "Lever",
+   "x": 1.3,
+   "y": 0.6,
+   "angle": 0,
+   "props": {}
+  },
+  {
+   "id": "wall-left",
+   "type": "wall",
+   "name": "Left wall",
+   "x": -0.52,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  },
+  {
+   "id": "wall-right",
+   "type": "wall",
+   "name": "Right wall",
+   "x": 3.12,
+   "y": 0,
+   "angle": 0,
+   "props": {
+    "invisible_in_3d": true
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "balanced",
+   "item": "lever",
+   "label": "0.5 kg at 20 cm balances 0.25 kg at 40 cm"
+  }
+ ]
+}

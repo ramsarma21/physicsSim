@@ -146,8 +146,9 @@ test("the search finds a stand-in for the lost hit (a closed laptop on its edge)
 	assert.deepEqual(tippers().filter((t) => t.thin).map((t) => [t.type, t.props.height]), [["laptop-closed", 0.006]])
 	const fr = await findFix(r.fixCtx, { simulate, parallel: 2, budgetMs: 60000 })
 	assert.equal(fr.status, "found")
-	// (and where the row now starts, as the fix card says it: the offer leaves nothing of the fix out, V8820)
-	assert.match(fr.fix.words.say, /^stand a closed laptop on its edge between the soda cans and the seesaw, so they tip it onto the seesaw, with the 6 soda cans emptied \(370 g → 15 g each\) and 7 cm apart, starting [\d.]+ cm further (left|right)$/)
+	// (and where the row now starts, as the fix card says it: the offer leaves nothing of the fix out, V8820. Since the engine repair of 19 Oct
+	// (web/CONTRACT.md) a full-thickness laptop there tips only at its exact place, so the sturdy fix found is the thinner one, said so)
+	assert.match(fr.fix.words.say, /^stand a closed laptop (6 mm thick )?on its edge between the soda cans and the seesaw, so they tip it onto the seesaw, with the 6 soda cans emptied \(370 g → 15 g each\) and 7 cm apart, starting [\d.]+ cm further (left|right)$/)
 	const start = /starting ([\d.]+ cm further (left|right))$/.exec(fr.fix.words.say)[1]
 	assert.ok(humanChangeList(r.scene, fr.fix.scene).some((c) => c.text.includes(`starting ${start}`)), "the card's line says the same start")
 	assert.equal(fr.fix.words.label, "Stand a closed laptop by the seesaw")

@@ -1,0 +1,1326 @@
+[
+ {
+  "version": 2,
+  "id": "fluids-f1-floating-depth",
+  "name": "Floating depth",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "style": "aquarium"
+    },
+    "name": "Aquarium"
+   },
+   {
+    "id": "block",
+    "type": "wooden-block",
+    "x": 1.1,
+    "y": 0.22322699999999998,
+    "props": {
+     "width": 0.1,
+     "height": 0.05,
+     "depth": 0.05
+    },
+    "name": "Wooden block"
+   },
+   {
+    "id": "ice",
+    "type": "ice-cube",
+    "x": 1.32,
+    "y": 0.195552,
+    "name": "Ice cube"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "floats",
+    "item": "block"
+   },
+   {
+    "kind": "floats",
+    "item": "ice"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f10-sail-size",
+  "name": "Big sail or small sail",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "big-tank",
+    "type": "water-tank",
+    "x": 1.55,
+    "y": 0,
+    "props": {
+     "style": "trough"
+    },
+    "name": "big lane"
+   },
+   {
+    "id": "big-boat",
+    "type": "sailboat",
+    "x": 0.45,
+    "y": 0.07645,
+    "props": {
+     "sail": "big"
+    },
+    "name": "big boat"
+   },
+   {
+    "id": "big-fan",
+    "type": "fan",
+    "x": 0.14999999999999997,
+    "y": 0.22644999999999998,
+    "props": {
+     "diameter": 0.12,
+     "speed": 5
+    },
+    "name": "big fan"
+   },
+   {
+    "id": "small-tank",
+    "type": "water-tank",
+    "x": 1.55,
+    "y": 0.35,
+    "props": {
+     "style": "trough"
+    },
+    "name": "small lane"
+   },
+   {
+    "id": "small-boat",
+    "type": "sailboat",
+    "x": 0.45,
+    "y": 0.42645,
+    "props": {
+     "sail": "small"
+    },
+    "name": "small boat"
+   },
+   {
+    "id": "small-fan",
+    "type": "fan",
+    "x": 0.14999999999999997,
+    "y": 0.53765,
+    "props": {
+     "diameter": 0.12,
+     "speed": 5
+    },
+    "name": "small fan"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "farther",
+    "a": "big-boat",
+    "b": "small-boat"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f10b-tiny-sail",
+  "name": "Small sail or tiny sail",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "small-tank",
+    "type": "water-tank",
+    "x": 1.55,
+    "y": 0,
+    "props": {
+     "style": "trough"
+    },
+    "name": "small lane"
+   },
+   {
+    "id": "small-boat",
+    "type": "sailboat",
+    "x": 0.45,
+    "y": 0.07645,
+    "props": {
+     "sail": "small"
+    },
+    "name": "small boat"
+   },
+   {
+    "id": "small-fan",
+    "type": "fan",
+    "x": 0.14999999999999997,
+    "y": 0.18764999999999998,
+    "props": {
+     "diameter": 0.12,
+     "speed": 5
+    },
+    "name": "small fan"
+   },
+   {
+    "id": "tiny-tank",
+    "type": "water-tank",
+    "x": 1.55,
+    "y": 0.35,
+    "props": {
+     "style": "trough"
+    },
+    "name": "tiny lane"
+   },
+   {
+    "id": "tiny-boat",
+    "type": "sailboat",
+    "x": 0.45,
+    "y": 0.42645,
+    "props": {
+     "sail": "tiny"
+    },
+    "name": "tiny boat"
+   },
+   {
+    "id": "tiny-fan",
+    "type": "fan",
+    "x": 0.14999999999999997,
+    "y": 0.51515,
+    "props": {
+     "diameter": 0.12,
+     "speed": 5
+    },
+    "name": "tiny fan"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "farther",
+    "a": "small-boat",
+    "b": "tiny-boat"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f12-density-column",
+  "name": "Density column",
+  "seconds": 8,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "jar",
+    "type": "density-column",
+    "x": 1.2,
+    "y": 0,
+    "name": "Density column"
+   },
+   {
+    "id": "grape",
+    "type": "grape",
+    "x": 1.2,
+    "y": 0.345,
+    "name": "Grape"
+   },
+   {
+    "id": "bead",
+    "type": "plastic-bead",
+    "x": 1.196,
+    "y": 0.375,
+    "name": "Plastic bead"
+   },
+   {
+    "id": "cork",
+    "type": "cork",
+    "x": 1.204,
+    "y": 0.4,
+    "name": "Cork"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "floats",
+    "item": "cork"
+   },
+   {
+    "kind": "floats",
+    "item": "grape"
+   },
+   {
+    "kind": "floats",
+    "item": "bead"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f4-sinks",
+  "name": "Sink or float",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "style": "aquarium"
+    },
+    "name": "Aquarium"
+   },
+   {
+    "id": "ball",
+    "type": "steel-ball",
+    "x": 1.1,
+    "y": 0.21180000000000002,
+    "props": {
+     "diameter": 0.0254
+    },
+    "name": "Steel ball"
+   },
+   {
+    "id": "duck",
+    "type": "rubber-duck",
+    "x": 1.3,
+    "y": 0.228328,
+    "name": "Rubber duck"
+   },
+   {
+    "id": "apple",
+    "type": "apple",
+    "x": 1,
+    "y": 0.197584,
+    "name": "Apple"
+   },
+   {
+    "id": "coin",
+    "type": "coin-flat",
+    "x": 1.38,
+    "y": 0.2318,
+    "name": "Coin"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "sinks",
+    "item": "ball"
+   },
+   {
+    "kind": "floats",
+    "item": "duck"
+   },
+   {
+    "kind": "floats",
+    "item": "apple"
+   },
+   {
+    "kind": "sinks",
+    "item": "coin"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f5-displacement",
+  "name": "Measure a pebble's volume",
+  "seconds": 3,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "cyl",
+    "type": "graduated-cylinder",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "size": "100 mL",
+     "fill_ml": 60
+    },
+    "name": "Graduated cylinder"
+   },
+   {
+    "id": "stone",
+    "type": "pebble",
+    "x": 1.2,
+    "y": 0.24,
+    "props": {
+     "width": 0.022,
+     "height": 0.014
+    },
+    "name": "Pebble"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "sinks",
+    "item": "stone"
+   },
+   {
+    "kind": "level",
+    "container": "cyl",
+    "at_least_ml": 63
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f5-marbles",
+  "name": "Five marbles in a measuring cylinder",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "cyl",
+    "type": "graduated-cylinder",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "size": "100 mL",
+     "fill_ml": 60
+    },
+    "name": "Graduated cylinder"
+   },
+   {
+    "id": "m1",
+    "type": "glass-marble",
+    "x": 1.198,
+    "y": 0.22,
+    "name": "Marble 1"
+   },
+   {
+    "id": "m2",
+    "type": "glass-marble",
+    "x": 1.202,
+    "y": 0.25,
+    "name": "Marble 2"
+   },
+   {
+    "id": "m3",
+    "type": "glass-marble",
+    "x": 1.198,
+    "y": 0.28,
+    "name": "Marble 3"
+   },
+   {
+    "id": "m4",
+    "type": "glass-marble",
+    "x": 1.202,
+    "y": 0.31,
+    "name": "Marble 4"
+   },
+   {
+    "id": "m5",
+    "type": "glass-marble",
+    "x": 1.198,
+    "y": 0.33999999999999997,
+    "name": "Marble 5"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "level",
+    "container": "cyl",
+    "at_least_ml": 70.4,
+    "at_most_ml": 71
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f6-clay",
+  "name": "Clay ball or clay boat",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "style": "aquarium",
+     "length": 0.6
+    },
+    "name": "Aquarium"
+   },
+   {
+    "id": "ball",
+    "type": "clay-ball",
+    "x": 1.02,
+    "y": 0.02615,
+    "props": {
+     "diameter": 0.0393
+    },
+    "name": "Clay ball"
+   },
+   {
+    "id": "boat",
+    "type": "clay-boat",
+    "x": 1.35,
+    "y": 0.191187,
+    "props": {
+     "mass": 0.05
+    },
+    "name": "Clay boat"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "sinks",
+    "item": "ball"
+   },
+   {
+    "kind": "floats",
+    "item": "boat"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f7-egg",
+  "name": "An egg in tap water and in salt water",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "fresh",
+    "type": "water-tank",
+    "x": 0.75,
+    "y": 0,
+    "props": {
+     "style": "aquarium",
+     "length": 0.25,
+     "height": 0.2,
+     "depth": 0.15
+    },
+    "name": "Tap water"
+   },
+   {
+    "id": "salty",
+    "type": "water-tank",
+    "x": 1.55,
+    "y": 0,
+    "props": {
+     "style": "aquarium",
+     "length": 0.25,
+     "height": 0.2,
+     "depth": 0.15,
+     "liquid": "salt water",
+     "salt_pct": 12
+    },
+    "name": "Salt water"
+   },
+   {
+    "id": "egg1",
+    "type": "egg",
+    "x": 0.75,
+    "y": 0.0291,
+    "name": "Egg in tap water"
+   },
+   {
+    "id": "egg2",
+    "type": "egg",
+    "x": 1.55,
+    "y": 0.122907,
+    "name": "Egg in salt water"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "sinks",
+    "item": "egg1"
+   },
+   {
+    "kind": "floats",
+    "item": "egg2"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f8-penny-boat",
+  "name": "How many pennies?",
+  "seconds": 5,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "tankA",
+    "type": "water-tank",
+    "x": 0.8,
+    "y": 0,
+    "props": {
+     "style": "aquarium",
+     "length": 0.3,
+     "height": 0.2,
+     "depth": 0.2
+    },
+    "name": "Tank A"
+   },
+   {
+    "id": "tankB",
+    "type": "water-tank",
+    "x": 1.6,
+    "y": 0,
+    "props": {
+     "style": "aquarium",
+     "length": 0.3,
+     "height": 0.2,
+     "depth": 0.2
+    },
+    "name": "Tank B"
+   },
+   {
+    "id": "boatA",
+    "type": "foil-boat",
+    "x": 0.8,
+    "y": 0.131925,
+    "name": "Foil boat A"
+   },
+   {
+    "id": "boatB",
+    "type": "foil-boat",
+    "x": 1.6,
+    "y": 0.141736,
+    "name": "Foil boat B"
+   },
+   {
+    "id": "a1",
+    "type": "penny",
+    "x": 0.778,
+    "y": 0.138145,
+    "props": {
+     "count": 7
+    },
+    "name": "Stack A1"
+   },
+   {
+    "id": "a2",
+    "type": "penny",
+    "x": 0.8,
+    "y": 0.138145,
+    "props": {
+     "count": 7
+    },
+    "name": "Stack A2"
+   },
+   {
+    "id": "a3",
+    "type": "penny",
+    "x": 0.8220000000000001,
+    "y": 0.138145,
+    "props": {
+     "count": 7
+    },
+    "name": "Stack A3"
+   },
+   {
+    "id": "b1",
+    "type": "penny",
+    "x": 1.578,
+    "y": 0.151756,
+    "props": {
+     "count": 12
+    },
+    "name": "Stack B1"
+   },
+   {
+    "id": "b2",
+    "type": "penny",
+    "x": 1.6,
+    "y": 0.151756,
+    "props": {
+     "count": 12
+    },
+    "name": "Stack B2"
+   },
+   {
+    "id": "b3",
+    "type": "penny",
+    "x": 1.622,
+    "y": 0.151756,
+    "props": {
+     "count": 12
+    },
+    "name": "Stack B3"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "floats",
+    "item": "boatA"
+   },
+   {
+    "kind": "sinks",
+    "item": "boatB"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "fluids-f9-fan-distance",
+  "name": "Fan near or far",
+  "seconds": 4,
+  "release": 0.5,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0
+   },
+   {
+    "id": "near-tank",
+    "type": "water-tank",
+    "x": 1.55,
+    "y": 0,
+    "props": {
+     "style": "trough"
+    },
+    "name": "near lane"
+   },
+   {
+    "id": "near-boat",
+    "type": "sailboat",
+    "x": 0.45,
+    "y": 0.07645,
+    "props": {
+     "sail": "small"
+    },
+    "name": "near boat"
+   },
+   {
+    "id": "near-fan",
+    "type": "fan",
+    "x": 0.19999999999999998,
+    "y": 0.18764999999999998,
+    "props": {
+     "diameter": 0.12,
+     "speed": 5
+    },
+    "name": "near fan"
+   },
+   {
+    "id": "far-tank",
+    "type": "water-tank",
+    "x": 1.55,
+    "y": 0.35,
+    "props": {
+     "style": "trough"
+    },
+    "name": "far lane"
+   },
+   {
+    "id": "far-boat",
+    "type": "sailboat",
+    "x": 1.2,
+    "y": 0.42645,
+    "props": {
+     "sail": "small"
+    },
+    "name": "far boat"
+   },
+   {
+    "id": "far-fan",
+    "type": "fan",
+    "x": 0.19999999999999984,
+    "y": 0.53765,
+    "props": {
+     "diameter": 0.12,
+     "speed": 5
+    },
+    "name": "far fan"
+   }
+  ],
+  "goals": [
+   {
+    "kind": "farther",
+    "a": "near-boat",
+    "b": "far-boat"
+   },
+   {
+    "kind": "floats",
+    "item": "near-boat"
+   },
+   {
+    "kind": "floats",
+    "item": "far-boat"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "s1b-clip-floats",
+  "name": "A paper clip floats on water",
+  "seconds": 2,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "name": "Aquarium",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "style": "aquarium"
+    }
+   },
+   {
+    "id": "clip",
+    "type": "paper-clip",
+    "name": "Paper clip",
+    "x": 1.1,
+    "props": {},
+    "y": 0.2115
+   }
+  ],
+  "goals": [
+   {
+    "kind": "floats",
+    "item": "clip"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "s1-clip-soap",
+  "name": "Soap sinks the paper clip",
+  "seconds": 6,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "name": "Aquarium",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "style": "aquarium"
+    }
+   },
+   {
+    "id": "clip",
+    "type": "paper-clip",
+    "name": "Paper clip",
+    "x": 1.1,
+    "props": {},
+    "y": 0.2115
+   },
+   {
+    "id": "soap",
+    "type": "soap-drop",
+    "name": "Drop of soap",
+    "x": 1.3,
+    "y": 0.27,
+    "props": {
+     "at_s": 2
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "floats_then_sinks",
+    "item": "clip"
+   },
+   {
+    "kind": "sinks",
+    "item": "clip"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "s2-soap-boat",
+  "name": "A soap-powered boat",
+  "seconds": 5,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "name": "Water tank",
+    "x": 1.2,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "boat",
+    "type": "foil-boat",
+    "name": "Foil boat",
+    "x": 1.02,
+    "y": 0.211732,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "soap",
+    "type": "soap-drop",
+    "name": "Drop of soap",
+    "x": 0.975,
+    "y": 0.28,
+    "angle": 0,
+    "props": {
+     "at_s": 0.5
+    }
+   },
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "x": -0.52,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 3.12,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "moves",
+    "item": "boat",
+    "min_m": 0.15
+   },
+   {
+    "kind": "floats",
+    "item": "boat"
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "s3-capillary",
+  "name": "Water climbs higher in a thinner tube",
+  "seconds": 2,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "name": "Aquarium",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "style": "aquarium"
+    }
+   },
+   {
+    "id": "thin",
+    "type": "capillary-tube",
+    "name": "Thin tube",
+    "x": 1.1,
+    "y": 0.19,
+    "props": {
+     "bore_mm": 1
+    }
+   },
+   {
+    "id": "wide",
+    "type": "capillary-tube",
+    "name": "Wide tube",
+    "x": 1.3,
+    "y": 0.19,
+    "props": {
+     "bore_mm": 4
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "climbs_higher",
+    "a": "thin",
+    "b": "wide"
+   },
+   {
+    "kind": "climbs",
+    "item": "thin",
+    "at_least_mm": 29
+   },
+   {
+    "kind": "climbs",
+    "item": "wide",
+    "at_least_mm": 7,
+    "at_most_mm": 8
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "s4-paper",
+  "name": "Water climbs paper towel faster than filter paper",
+  "seconds": 6,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "x": 1.3,
+    "y": 0,
+    "props": {}
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "name": "Aquarium",
+    "x": 1.2,
+    "y": 0,
+    "props": {
+     "style": "aquarium"
+    }
+   },
+   {
+    "id": "towel",
+    "type": "paper-strip",
+    "name": "Paper towel",
+    "x": 1.05,
+    "y": 0.19,
+    "props": {
+     "paper": "paper towel"
+    }
+   },
+   {
+    "id": "filter",
+    "type": "paper-strip",
+    "name": "Filter paper",
+    "x": 1.2,
+    "y": 0.19,
+    "props": {
+     "paper": "filter paper"
+    }
+   },
+   {
+    "id": "printer",
+    "type": "paper-strip",
+    "name": "Printer paper",
+    "x": 1.35,
+    "y": 0.19,
+    "props": {
+     "paper": "printer paper"
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "climbs_higher",
+    "a": "towel",
+    "b": "filter"
+   },
+   {
+    "kind": "climbs_higher",
+    "a": "filter",
+    "b": "printer"
+   },
+   {
+    "kind": "climbs",
+    "item": "towel",
+    "at_least_mm": 14
+   }
+  ]
+ },
+ {
+  "version": 2,
+  "id": "f13-bowl-hose",
+  "name": "A floating bowl fills until it sinks",
+  "seconds": 12,
+  "release": 0.2,
+  "stage": {
+   "x0": -0.56,
+   "x1": 3.19,
+   "y0": -0.16,
+   "y1": 2.34
+  },
+  "items": [
+   {
+    "id": "table",
+    "type": "table",
+    "name": "Table",
+    "x": 1.3,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "tank",
+    "type": "water-tank",
+    "name": "Water tank",
+    "x": 1.45,
+    "y": 0,
+    "angle": 0,
+    "props": {}
+   },
+   {
+    "id": "bowl",
+    "type": "bowl",
+    "name": "Bowl",
+    "x": 1.45,
+    "y": 0.196195,
+    "angle": 0,
+    "props": {
+     "material": "melamine"
+    }
+   },
+   {
+    "id": "shelf",
+    "type": "plank",
+    "name": "Shelf",
+    "x": 0.8,
+    "y": 0.3,
+    "angle": 0,
+    "props": {
+     "length": 0.3
+    }
+   },
+   {
+    "id": "src",
+    "type": "beaker",
+    "name": "Beaker of water",
+    "x": 0.8,
+    "y": 0.311,
+    "angle": 0,
+    "props": {
+     "size": "1000 mL",
+     "fill_ml": 900
+    }
+   },
+   {
+    "id": "hose",
+    "type": "hose",
+    "name": "Hose (siphon)",
+    "x": 1.45,
+    "y": 0.32,
+    "angle": 0,
+    "props": {
+     "from": "src",
+     "to": "bowl"
+    }
+   },
+   {
+    "id": "wall-left",
+    "type": "wall",
+    "name": "Left wall",
+    "x": -0.52,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   },
+   {
+    "id": "wall-right",
+    "type": "wall",
+    "name": "Right wall",
+    "x": 3.12,
+    "y": 0,
+    "angle": 0,
+    "props": {
+     "invisible_in_3d": true
+    }
+   }
+  ],
+  "goals": [
+   {
+    "kind": "floats_then_sinks",
+    "item": "bowl"
+   }
+  ]
+ }
+]

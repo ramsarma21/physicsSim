@@ -32,7 +32,8 @@
 // catalog_everyday, catalog_mechanisms) and compare against the whole server: then the scene files in web/scenarios are compared with every item in them, and the
 // tables, catalog and registration checks hold for the whole of web/sim. (The default run needs only this module's port; this is the integration check.)
 // --export writes the layout/clean cases and Python's answers (with the "before" tables) for tools/parity/browser-mechanisms.mjs, which replays them in headless Chromium.
-import { execFileSync, spawn } from "node:child_process"
+import { spawn } from "node:child_process"
+import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
 import fs from "node:fs"
 import path from "node:path"
 import readline from "node:readline"
@@ -90,7 +91,8 @@ function askPython(requests) {
 	for (let i = 0; i < requests.length; i += B) {
 		const chunk = requests.slice(i, i + B)
 		const input = chunk.map(toPython).join("\n") + "\n"
-		const res = execFileSync(PYTHON, PY_ARGS, { input, maxBuffer: 1 << 30, encoding: "utf8", cwd: PG })
+		// (no physics module, machines/mod_*.py: this side registers the catalog ports alone; the modules have parity checks of their own)
+		const res = execFileSync(PYTHON, PY_ARGS, { input, maxBuffer: 1 << 30, encoding: "utf8", cwd: PG, env: { ...process.env, PLAYGROUND_MODULES: "" } })
 		const lines = res.split("\n").filter((l) => l.trim())
 		if (lines.length !== chunk.length) throw new Error(`python answered ${lines.length} of ${chunk.length}`)
 		for (const l of lines) out.push(JSON.parse(l))

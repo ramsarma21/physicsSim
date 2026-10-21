@@ -1,0 +1,61 @@
+{
+ "version": 2,
+ "id": "repose",
+ "name": "Sand and gravel heaps: angle of repose",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": 0.6,
+  "x1": 2.0,
+  "y0": -0.1,
+  "y1": 0.5
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "sand",
+   "type": "sand-pile",
+   "name": "Sand heap",
+   "x": 0.95,
+   "y": 0,
+   "props": {
+    "sand_kg": 1.5
+   }
+  },
+  {
+   "id": "gravel",
+   "type": "sand-pile",
+   "name": "Gravel heap",
+   "x": 1.65,
+   "y": 0,
+   "props": {
+    "grain": "gravel",
+    "sand_kg": 1.5
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "piles",
+   "item": "sand",
+   "min_deg": 31,
+   "max_deg": 37
+  },
+  {
+   "kind": "piles",
+   "item": "gravel",
+   "min_deg": 35,
+   "max_deg": 41
+  },
+  {
+   "kind": "steeper",
+   "a": "gravel",
+   "b": "sand"
+  }
+ ]
+}

@@ -1,0 +1,53 @@
+{
+ "version": 2,
+ "id": "g12-balloons-repel",
+ "name": "Two rubbed balloons push apart",
+ "seconds": 5.0,
+ "release": 0.3,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0
+  },
+  {
+   "id": "b1",
+   "type": "balloon",
+   "name": "Balloon 1",
+   "x": 1.0,
+   "y": 0.6,
+   "props": {
+    "rubbed": 10,
+    "rubbed_side": "right",
+    "thread": 0.5
+   }
+  },
+  {
+   "id": "b2",
+   "type": "balloon",
+   "name": "Balloon 2",
+   "x": 1.3,
+   "y": 0.6,
+   "props": {
+    "rubbed": 10,
+    "rubbed_side": "left",
+    "color": "blue",
+    "thread": 0.5
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "repels",
+   "a": "b1",
+   "b": "b2"
+  }
+ ]
+}

@@ -1,0 +1,61 @@
+{
+ "version": 2,
+ "id": "s2-clay-vs-ball",
+ "name": "Clay squashes, the ball springs back",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "clay",
+   "type": "soft-clay",
+   "name": "Clay ball",
+   "x": 0.6,
+   "y": 1.03,
+   "held": true,
+   "props": {
+    "color": "red"
+   }
+  },
+  {
+   "id": "ball",
+   "type": "playground-ball",
+   "name": "Playground ball",
+   "x": 1.6,
+   "y": 1.108,
+   "held": true,
+   "props": {}
+  }
+ ],
+ "goals": [
+  {
+   "kind": "squashes",
+   "item": "clay",
+   "at_least_mm": 5,
+   "label": "The clay stays squashed"
+  },
+  {
+   "kind": "springs_back",
+   "item": "ball",
+   "label": "The ball springs back"
+  },
+  {
+   "kind": "deforms_more",
+   "a": "ball",
+   "b": "clay",
+   "label": "The ball squashes more while it bounces"
+  }
+ ]
+}

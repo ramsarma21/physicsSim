@@ -40,6 +40,7 @@
 //  - Not modelled: rolling and sliding noise (the engine reports impacts, not contacts; a guessed rumble would add hiss, not realism),
 //    breaking, and air (a fan's whoosh).
 import { placementsAt } from "../track.js"
+import { addTones } from "./tones.js"
 
 const TAU = Math.PI * 2
 const TARGET_LUFS = -18 // the loudest 400 ms of every sound track (BS.1770 momentary loudness); see synthesizeImpacts
@@ -382,6 +383,15 @@ export function renderImpacts(impacts, doc, opts = {}) {
 		const m = Math.min(n, length - start)
 		for (let i = 0; i < m; i++) { const s = buf[i]; left[start + i] += s * gl; right[start + i] += s * gr }
 		events.push({ t: im.t, a: im.a, b: im.b, speed: im.speed, classes: [A.cls, B.cls], tau, amp, pan })
+	}
+	// the waves module's tones (a fork, a drum, a string, a buzzer…: web/export/tones.js), panned as a hit there would be; nothing in a run without them
+	if (opts.tones !== false && (doc?.processes ?? []).some((p) => p.kind === "sound")) {
+		const panOf = (t, x, y) => {
+			let seen = null
+			if (typeof opts.panAt === "function") { try { const v = opts.panAt(t, x, y); seen = typeof v === "number" ? v : null } catch { seen = null } }
+			return Number.isFinite(seen) ? seen : ((x - stage.x0) / (stage.x1 - stage.x0)) * 2 - 1
+		}
+		for (const e of addTones(doc, opts.track, left, right, sr, panOf)) events.push(e)
 	}
 	highPass(left, sr, 60)
 	highPass(right, sr, 60)

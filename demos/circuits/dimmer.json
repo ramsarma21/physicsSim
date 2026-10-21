@@ -1,0 +1,105 @@
+{
+ "version": 2,
+ "id": "dimmer",
+ "name": "A dimmer turned up dims the bulb",
+ "seconds": 3,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.56,
+  "x1": 3.19,
+  "y0": -0.16,
+  "y1": 2.34
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 1.3,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "bat",
+   "type": "battery",
+   "name": "Battery",
+   "x": 0.6,
+   "y": 0.01025,
+   "props": {}
+  },
+  {
+   "id": "dim",
+   "type": "dimmer",
+   "name": "Dimmer",
+   "x": 0.8,
+   "y": 0.006,
+   "props": {
+    "knob": 0,
+    "knob_to": 1,
+    "turn_at": 1,
+    "turn_seconds": 1
+   }
+  },
+  {
+   "id": "bulb",
+   "type": "bulb",
+   "name": "Bulb",
+   "x": 1,
+   "y": 0.006,
+   "props": {}
+  },
+  {
+   "id": "w1",
+   "type": "wire",
+   "name": "w1",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bat",
+    "a_end": "+",
+    "b": "dim",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w2",
+   "type": "wire",
+   "name": "w2",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "dim",
+    "a_end": "-",
+    "b": "bulb",
+    "b_end": "+"
+   }
+  },
+  {
+   "id": "w3",
+   "type": "wire",
+   "name": "w3",
+   "x": 0,
+   "y": 0,
+   "props": {
+    "a": "bulb",
+    "a_end": "-",
+    "b": "bat",
+    "b_end": "-",
+    "color": "black"
+   }
+  }
+ ],
+ "goals": [
+  {
+   "kind": "lights",
+   "item": "bulb",
+   "before_s": 0.5,
+   "label": "It lights first"
+  },
+  {
+   "kind": "current",
+   "item": "bulb",
+   "at_most_a": 0.07,
+   "label": "Turned up, the current falls (the bulb dims out)"
+  }
+ ]
+}

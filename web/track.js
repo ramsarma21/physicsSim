@@ -52,6 +52,8 @@ export function placementsAt(track, t) {
 			y: p.y + (q.y - p.y) * u,
 			angle: p.angle + (q.angle - p.angle) * u,
 			...(p.squash !== undefined ? { squash: p.squash } : {}),
+			// (a body a module resized: its scale against its document body, linear between samples)
+			...(p.scale !== undefined ? { scale: p.scale + ((q.scale ?? p.scale) - p.scale) * u } : {}),
 		}
 	}
 	return out

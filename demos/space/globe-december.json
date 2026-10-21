@@ -1,0 +1,5 @@
+{"version": 2, "id": "globe-december", "name": "The globe at the december solstice", "seconds": 10.5, "release": 0.5, "stage": {"x0": -0.4, "x1": 2.4, "y0": -0.2, "y1": 1.4},
+ "items": [{"id": "table", "type": "table", "x": 1.3, "y": 0, "props": {}},
+  {"id": "lamp", "type": "lamp", "x": 0.25, "y": 0, "props": {"target": "globe", "head_height": 0.4, "aim": 0}},
+  {"id": "globe", "type": "globe", "x": 1.3, "y": 0, "props": {"lean": "away from the light", "town_lat": 30.27, "start_hour": 12}}],
+ "goals": [{"kind": "noon_sun", "item": "globe", "deg": 36.29, "tol": 1}, {"kind": "day_night", "item": "globe", "is": "day", "at_s": 0}, {"kind": "day_night", "item": "globe", "days": 1}]}
