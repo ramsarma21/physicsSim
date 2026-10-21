@@ -4,7 +4,7 @@
 // the cheeks of a pivot fork) may stand out of it a little, and the z extent stays inside the part's depth.
 import { makeLib } from "./surfaces-lib.js"
 
-export default function register({ addModel, kit, THREE }) {
+export default function register({ addModel, addFrameHook, kit, THREE }) {
 	const L = makeLib(kit, THREE)
 	const { T, TAU, M, V2, clamp, sstep, f5, bake, withRepeat, rbox, faces, mesh, put, decalPlane, board, upright } = L
 	const group = (...c) => kit.group(...c)
@@ -500,7 +500,24 @@ export default function register({ addModel, kit, THREE }) {
 
 	// ------------------------------------------------------------- fan: a desk fan, a round wire cage on a motor housing, tilt yoke, neck and base (it blows toward +x)
 	const arc = (cr, cz, rad, a0, a1, n = 6) => Array.from({ length: n + 1 }, (_, i) => { const a = a0 + ((a1 - a0) * i) / n; return [cr + rad * Math.cos(a), cz + rad * Math.sin(a)] })
-	const fanPlastic = () => L.plasticMat("#e9edf0", 0.55)
+	/** The fan's plastic: white, or the item's paint (the mechanics module's colour prop puts it on every one of its solids). */
+	const fanPlastic = (ctx) => L.plasticMat(ctx?.solid?.color ?? "#e9edf0", 0.55)
+	/** A fan part drawn turned about the fan's upright (its neck, `dx` behind this part's origin) by its staging prop turn_to_camera, its face
+	 *  toward the camera (+z): render only, its air still blows the way the fan points. */
+	const fanTurned = (g, ctx, dx) => {
+		const deg = clamp(Number(ctx.props?.turn_to_camera) || 0, 0, 60)
+		if (!deg) return g
+		const pivot = new T.Group()
+		pivot.position.x = dx
+		pivot.rotation.y = (-deg * Math.PI) / 180
+		g.position.x -= dx
+		pivot.add(g)
+		return group(pivot)
+	}
+	// (the blur of the running blades: shown from the moment the fan is switched on; a catalog photo is of a fan at rest)
+	addFrameHook?.("fan:running", (obj, f, a) => {
+		obj.visible = f.t >= a.from
+	})
 	addModel("fan", "housing", (ctx) => {
 		// the cage as the physics polygon: an octagon, flat front and back, cones to a rim band 3 cm wide
 		const pts = ctx.body.points
@@ -513,7 +530,7 @@ export default function register({ addModel, kit, THREE }) {
 		const FAN_SAG = xf - Math.max(...pts.filter((p) => Math.abs(Math.abs(p.y) - R) < 1e-6).map((p) => p.x))
 		const key = `fan3|${f5(R)}|${f5(xf - xb)}`
 		const wire = M("fan-wire", { color: "#e2e5e9", metalness: 1, roughness: 0.26, envMapIntensity: 1.4 })
-		const plastic = fanPlastic()
+		const plastic = fanPlastic(ctx)
 		const parts = []
 		const wr = 0.0011 // wire radius
 		const xrimF = xf - FAN_SAG, xrimB = xb + FAN_SAG // where the guards meet the rim band
@@ -580,7 +597,9 @@ export default function register({ addModel, kit, THREE }) {
 			return g
 		})
 		// the blades turn together about the fan's axis (x): one group, marked for the view's clock. Each blade's +z edge stands downstream (+x) of its -z edge, so the blades
-		// throw air toward +x when they swing toward -z, which is clockwise about +x (a negative rps); at most 4 turns a second, so five blades never strobe backwards
+		// throw air toward +x when they swing toward -z, which is clockwise about +x (a negative rps). A real fan's 20 turns a second cannot be filmed at 30 frames: the
+		// blades turn at most 1.8 a second (22° a frame at 30 fps, under a third of the 72° between blades, so they are always seen going forward, never strobing back),
+		// and a faint disc where they sweep shows them running fast, from the moment the fan is switched on
 		const spinner = new T.Group()
 		spinner.position.x = hubX - 0.006
 		for (let i = 0; i < 5; i++) {
@@ -588,15 +607,22 @@ export default function register({ addModel, kit, THREE }) {
 			b.rotation.x = (i / 5) * TAU
 			spinner.add(b)
 		}
-		spinner.userData.spin = { axis: "x", rps: -Math.min(4, 0.8 * (P.speed ?? 5)), from: P.on_at ?? 0.5 }
+		const on = P.on_at ?? 0
+		spinner.userData.spin = { axis: "x", rps: -Math.min(1.8, 0.36 * (P.speed ?? 5)), from: on }
 		parts.push(spinner)
-		return group(...parts)
+		const sweep = mesh(kit.geo(`${key}|sweep|${f5(bl)}`, () => new T.RingGeometry(hubR * 1.05, bl, 72, 1).rotateY(PI2)), M("fan-sweep", { color: "#9cc3e2", roughness: 0.4, metalness: 0, transparent: true, opacity: 0.3, depthWrite: false, side: T.DoubleSide }), { cast: false })
+		sweep.position.x = hubX - 0.006
+		sweep.visible = false
+		sweep.renderOrder = 2
+		sweep.userData.frame = { hook: "fan:running", from: on, scaled: false }
+		parts.push(sweep)
+		return fanTurned(group(...parts), ctx, -0.1)
 	})
 	addModel("fan", "motor", (ctx) => {
 		// a rounded cylinder behind the cage with vents, a tilt yoke at its sides and a knob
 		const { w, h, d } = ctx
 		const R = h / 2
-		const plastic = fanPlastic()
+		const plastic = fanPlastic(ctx)
 		const parts = []
 		const x0 = -w / 2, x1 = w / 2 // the front (toward the cage) is +x
 		const f = 0.003
@@ -623,12 +649,12 @@ export default function register({ addModel, kit, THREE }) {
 		parts.push(put(mesh(kit.cylinderZ(0.0045, 2 * kz + 0.012, 16), L.stainless()), 0, 0, 0))
 		parts.push(put(mesh(kit.cylinderZ(0.0125, 0.012, 24), knobM), 0, 0, kz + 0.006 + 0.0))
 		for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU; parts.push(put(mesh(kit.box(0.003, 0.003, 0.012, 0.0005, 1), knobM), 0.0125 * Math.cos(a), 0.0125 * Math.sin(a), kz + 0.006)) }
-		return group(...parts)
+		return fanTurned(group(...parts), ctx, 0)
 	})
 	addModel("fan", "neck", (ctx) => {
 		const { h } = ctx
 		const r = ctx.w / 2
-		const white = fanPlastic()
+		const white = fanPlastic(ctx)
 		const rubber = L.rubber("#26282b")
 		const parts = [mesh(kit.cylinderY(r * 0.8, h, 32), white)]
 		parts.push(put(mesh(kit.cylinderY(r, h * 0.2, 32), rubber), 0, -h / 2 + h * 0.1, 0)) // a rubber boot at the foot
@@ -638,7 +664,7 @@ export default function register({ addModel, kit, THREE }) {
 	addModel("fan", "base", (ctx) => {
 		const { h } = ctx
 		const R = ctx.w / 2
-		const white = fanPlastic()
+		const white = fanPlastic(ctx)
 		const prof = [[0, -h / 2], [R - 0.012, -h / 2], [R - 0.008, -h / 2 + 0.004], [R, -h / 2 + 0.0045], [R, h / 2 - 0.006], ...arc(R - 0.006, h / 2 - 0.006, 0.006, 0, PI2, 4).slice(1), [R * 0.35, h / 2 - 0.0005], [R * 0.3, h / 2], [0, h / 2]]
 		const parts = [mesh(L.lathe(`fanbase|${f5(R)}|${f5(h)}`, prof, { seg: 72, crease: 0.7 }), white)]
 		parts.push(mesh(L.lathe(`fanbase-foot|${f5(R)}|${f5(h)}`, [[R * 0.2, -h / 2], [R - 0.012, -h / 2], [R - 0.011, -h / 2 + 0.0012], [R * 0.2, -h / 2 + 0.0012]], { seg: 72, crease: 0.7 }), L.rubber("#26282b")))

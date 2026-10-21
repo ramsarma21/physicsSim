@@ -11,6 +11,8 @@
                    on a post behind the track whose stop touches the item's front and lifts away at the release (web/start-gate.js). The
                    engine's hold is exact (the item is still until the release), so the gate only shows what holds it. doc.view.gates lists
                    the items that set it.
+  turn_to_camera   (a common prop of the fan) degrees the fan is DRAWN turned about its upright toward the camera (web/models/rods.js), so its
+                   face and blades show in a side view; its air still blows the way it points (render only: nothing is built for it).
 
 The build hook writes doc.view (machines/items.py build: a module's build hook may set sb.view) only for a scene that sets one of these, so
 every other scene builds the very document it did before. web/sim/modules/staging.js is its port, line for line.
@@ -27,6 +29,7 @@ CAMERA_KEYS = ("x0", "x1", "y", "pitch", "hfov")
 CAMERA_RANGE_TEXT = {"x0": "-1000 to 1000", "x1": "-1000 to 1000", "y": "-10 to 100", "pitch": "-20 to 80", "hfov": "5 to 120"}
 SPAN = (0.1, 300.0)          # m: the narrowest and the widest x1 - x0
 GATE_CATEGORIES = ("Balls", "Wheels & vehicles", "Blocks & shapes")
+TURN_TYPES = ("fan",)        # drawn turned toward the camera by turn_to_camera (render only)
 
 
 def register_all(g):
@@ -34,6 +37,10 @@ def register_all(g):
     register_common_prop(Prop("start_gate", "Starting gate", False, kind="bool",
                               help="While it is held: a starting gate holds it (a bar that lifts away at the release) instead of the pull pin"),
                          lambda t: bool(t.dynamic) and t.category in GATE_CATEGORIES)
+    register_common_prop(Prop("turn_to_camera", "Turned toward you", 0.0, 0.0, 60.0, 5.0, "°",
+                              "Drawing only: the fan is drawn turned this far toward the camera, so its face and its turning blades show; its air "
+                              "still blows the way it points"),
+                         lambda t: t.key in TURN_TYPES)
     register_build_hook(_staging)
 
 
