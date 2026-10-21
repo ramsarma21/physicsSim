@@ -3,7 +3,7 @@
 // (tooling/src/sim/granular.ts GRAINS, holderOf, heapIn, TipCup; tooling/src/sim/modules/granular.ts; tooling/src/sim/flow.ts seenOf;
 // machines/mod_granular.py, mod_flow.py, mod_fluids.py and their ports). Every scene is built by web/sim (the exact port of the Python builder)
 // and run by the server's engine (node, with the browser bundle's math), at 480 Hz, 120 frames a second. Exits 1 on any failure (a gate).
-//   node --no-warnings --import ./tools/engine-math-node.mjs research/rw-validate-kitchen.ts [grains|glass|containers|cup|cupengine|liquids|color|determinism|fuzz|perf|all]
+//   node --no-warnings --import ./tools/engine-math-node.mjs research/rw-validate-kitchen.ts [grains|glass|containers|cup|cupengine|conserve|liquids|color|determinism|fuzz|perf|all]
 // Reference values (cited where they are used; the files' headers have them in full):
 //   [CRC] sucrose 1587 kg/m³, sodium chloride 2165 kg/m³. [ETB-BULK] granulated sugar 800 kg/m³, clean rice 770 kg/m³. [SALT-SPEC] fine table
 //   salt 1100-1300 kg/m³. [ETB-REPOSE] sugar, salt and rice 30-45° (35°, 32°, 32° used). [BEVERLOO61] W = 0.58·ρ_b·√g·(D − 1.4d)^2.5.
@@ -190,6 +190,24 @@ if (want === "all" || want === "cup") {
 	const full = (to: number) => turn(0.999, to).cup.poured
 	claim(`a full cup tipped to ${phi - 2}°: nothing pours (${fmt(full(phi - 2))} m² poured)`, full(phi - 2) === 0)
 	claim(`a full cup tipped to ${phi + 4}°: it pours`, full(phi + 4) > 0)
+	// turned as a hand tips it (90°/s, to 135°): past 90° + φ its spout wall stands steeper than repose and what rested on it slides out as a layer
+	// no thicker than the grains over the line through the lip, at √(g·δ) (before: excess ÷ a chord the line only clipped at the corner, a
+	// layer as thick as the cup is long, 69 mL at once at 1.8 m/s, a lump thrown 20 cm past the jar it was poured into)
+	{
+		const cup = new core.TipCup(inside, D, 0.547 * w * h * D, tanPhi, 0.0005)
+		const dt = 1 / 480
+		let most = 0
+		let fastest = 0
+		for (let k = 0; k < 2.5 * 480; k++) {
+			const a = -Math.min(135, 90 * k * dt) * DEG
+			const out = cup.step(a, dt, G)
+			most = Math.max(most, out)
+			fastest = Math.max(fastest, cup.speed)
+		}
+		const vmax = Math.sqrt(G * Math.hypot(w, h))
+		claim(`a cup 55 % full turned to 135° at 90°/s: it empties (${fmt(cup.volume() * 1e6)} mL left), no step lets out more than 2 mL (most ${fmt(most * 1e6)} mL)`, cup.volume() <= 1e-12 && most <= 2e-6)
+		claim(`... and its grains leave no faster than a layer as thick as the cup is wide and deep, √(g·√(w² + h²)) = ${fmt(vmax)} m/s (fastest ${fmt(fastest)} m/s)`, fastest <= vmax)
+	}
 }
 
 // ---------------------------------------------------------------- the tipped cup in the engine: the flow module's hand tips it, its grains land in a jar
@@ -227,6 +245,45 @@ if (want === "all" || want === "cupengine") {
 		const top = hm.reduce((a, b) => Math.max(a, b), 0)
 		claim(`${label}: while it pours, its heap stands no more than 15 mm over its end (highest ${fmt(top)} mm, at the end ${fmt(last(R.track, src, "heap_mm"))} mm)`, top <= last(R.track, src, "heap_mm") + 15)
 	}
+}
+
+// ---------------------------------------------------------------- every gram a cup pours is read: in its container or outside it
+if (want === "all" || want === "conserve") {
+	console.log("\n# conserve: a cup of sugar held 0 to 15 cm over each container's rim: heap_g + outside_g = poured_g (within 1 g); a stream thrown past its landing bed is read outside")
+	const kf = (R: ReturnType<typeof run>, item: string) => {
+		const k = (R.track as unknown as { keyframes?: Record<string, Record<string, number[][]>> }).keyframes?.[item] ?? {}
+		const key = Object.keys(k).find((q) => q.startsWith("holders:"))
+		return key ? (k[key]?.[0] ?? null) : null
+	}
+	let worst = 0
+	let n = 0
+	for (const [type, y0, props] of [
+		["glass-jar", 0, {}], ["plastic-cup", 0, {}], ["bowl", 0, {}], ["box", 0, { hung: false }], ["bucket", 0, {}], ["beaker", 0, { fill_ml: 0 }], ["coffee-mug", 0.0475, {}]
+	] as const) {
+		// (its rim and axis as the engine found them: the holders keyframe, [t, n, round, x, floor, r0, rb, ylo, rt, yhi, wall, rim, k, ring])
+		const row = kf(run(scene([{ id: "c", type, x: 1.2, y: y0, props: { ...props } }, { id: "p", type: "pitcher", x: 1.185, y: 0.6, props: { vessel: "cup", contents: "grains", grain: "sugar", fill_ml: 100, tilt: 60 } }], 1)), "p")
+		if (row === null) {
+			claim(`${type}: the engine finds its inside`, false)
+			continue
+		}
+		const [hx, rim] = [row[3] as number, row[11] as number]
+		for (const d of [0, 0.05, 0.1, 0.15])
+			for (const tilt of [125, 150]) {
+				const R = run(scene([{ id: "c", type, x: 1.2, y: y0, props: { ...props } }, { id: "p", type: "pitcher", x: hx - 0.015, y: rim + d, props: { vessel: "cup", contents: "grains", grain: "sugar", fill_ml: 200, tilt, tip_s: 1.5, pour_at: 0.6 } }], 6))
+				const miss = last(R.track, "p", "poured_g") - last(R.track, "p", "heap_g") - last(R.track, "p", "outside_g")
+				worst = Number.isFinite(miss) ? Math.max(worst, Math.abs(miss)) : Number.POSITIVE_INFINITY
+				n++
+			}
+	}
+	check(`${n} pours over 7 containers (lip 0, 5, 10, 15 cm over the rim; tipped 125° and 150°): the worst |poured − heap − outside|`, worst, 0, 1, "g")
+	// the AI's own build (V2 release, 2026-10-21): its lip 12.5 cm over the jar's rim, tipped 135°: every grain in the jar (before: 56 g missing)
+	const ai = run(scene([{ id: "jar", type: "glass-jar", x: 1.4, y: 0.003 }, { id: "cup", type: "pitcher", x: 1.37, y: 0.24, props: { vessel: "cup", contents: "grains", fill_ml: 200, tilt: 135 } }], 6))
+	check("the AI's sugar into a jar (lip 12.5 cm over the rim): in the jar", last(ai.track, "cup", "heap_g"), last(ai.track, "cup", "poured_g"), 1, "g")
+	// a cup 1 m up tipped to 170°: much of its stream comes down past its landing bed and falls off it; all of that is read outside, and said
+	const hi = run(scene([{ id: "jar", type: "glass-jar", x: 1.4, y: 0.003 }, { id: "cup", type: "pitcher", x: 1.37, y: 1.0, props: { vessel: "cup", contents: "grains", fill_ml: 200, tilt: 170 } }], 6))
+	const hiMiss = last(hi.track, "cup", "poured_g") - last(hi.track, "cup", "heap_g") - last(hi.track, "cup", "outside_g")
+	check(`a cup 1 m up tipped 170° (outside ${fmt(last(hi.track, "cup", "outside_g"))} g): poured − heap − outside`, hiMiss, 0, 1, "g")
+	claim("... and the run says it spills outside the jar", (hi.track.events ?? []).some((e) => /^cup spills sugar outside jar$/.test(e.text)))
 }
 
 // ---------------------------------------------------------------- milk, chocolate milk, white and brown colouring

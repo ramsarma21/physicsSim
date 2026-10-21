@@ -595,10 +595,14 @@ def _pours(sb, scene):
         spread = cbrt(3 * vol / (3.141592653589793 * tan_low(grain, "dry")))
         reach = max(0.12, spread * 1.4 + 0.04)
         x = lx + side * 0.03
-        top = ly - h - rec["wall"] - 0.004
+        # (its floor may be anything under its lip, where the grains leave (a funnel's: 4 mm under its spout); its own solids are left out. Under
+        # its body, as it was, a cup held low, its body down beside a bowl's or a mug's rim or past the table's top, had the container's inside or
+        # the table over the region's top: a wall, and the grains fell through it. Its base is where it was: 1 m under the cup's body.)
+        under = ly - h - rec["wall"] - 0.004
+        top = ly - 0.004
         own = [s["id"] for s in sb.solids if s["item"] == iid]
         sb.processes.append({"kind": "sand-region", "id": f"{iid}/landing", "item": iid, "x0": _r(x - reach), "x1": _r(x + reach), "z0": _r(-reach),
-                             "z1": _r(reach), "base": _r(top - 1.0), "top": _r(top), "cell": _cell(reach), "grain": grain, "wet": "dry", "role": "landing",
+                             "z1": _r(reach), "base": _r(under - 1.0), "top": _r(top), "cell": _cell(reach), "grain": grain, "wet": "dry", "role": "landing",
                              "deposit": {"shape": "none"}, "exclude": own})
         pour = {"kind": "sand-pour", "id": f"{iid}/grains", "item": iid, "solid": rec["solid"], "inside": rec["inside"], "depth": rec["depth"],
                 "wall": rec["wall"], "grain": grain, "wet": "dry", "volume": vol}

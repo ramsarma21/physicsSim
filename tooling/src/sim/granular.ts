@@ -562,6 +562,8 @@ export class Bed {
 	/** Volume (m³ packed) that left by its edges as falling grains; that fell in as parcels. */
 	dropped = 0
 	landed = 0
+	/** The mass (kg) of what left by its edges (each class at its bulk density): a container's readings count it outside the container. */
+	droppedMass = 0
 	/** Parcels to launch (its edges' spill), collected by the world. */
 	readonly spill: Parcel[] = []
 	water: Water | undefined
@@ -1094,7 +1096,10 @@ export class Bed {
 					const a = this.hk[k] as Float64Array
 					const v = (a[c] as number) * A
 					const ci = this.classes[k] as ClassInfo
-					if (v > 0) this.spill.push({ x: this.cx(i), y: this.surface(c), z: this.cz(j), vx: ox, vy: 0, vz: 0, vol: v, grain: ci.grain.key, wet: ci.wet, age: 0 })
+					if (v > 0) {
+						this.spill.push({ x: this.cx(i), y: this.surface(c), z: this.cz(j), vx: ox, vy: 0, vz: 0, vol: v, grain: ci.grain.key, wet: ci.wet, age: 0 })
+						this.droppedMass += v * ci.rhoB
+					}
 					a[c] = 0
 				}
 				this.dropped += (this.h[c] as number) * A
@@ -1573,6 +1578,12 @@ export class World {
 	/** m³ of grains fallen off everything (lost below), and parcels that ever flew. */
 	lost = 0
 	thrown = 0
+	/** m³ of each pourer's grains (by its item, a parcel's `src`: a tipped cup's) that fell past every bed and were lost below, and that came
+	 *  down on a bed other than its landing bed (`homeOf`: its bed's id, set by whoever made the beds): a container's readings count them
+	 *  outside it (a stream thrown beyond its landing bed). */
+	readonly lostOf = new Map<string, number>()
+	readonly strayOf = new Map<string, number>()
+	readonly homeOf = new Map<string, string>()
 	private readonly lastEmit = new Map<string, number>()
 	/** Each body on each bed: the surface where it struck, and its steps in the sand. */
 	private readonly strikes = new Map<string, { level: number; steps: number; seen?: number; bowl?: number }>()
@@ -1754,11 +1765,13 @@ export class World {
 				// (it lands where it is at or under a surface: from above, or against the side of a heap or a crater's wall)
 				if (p.y > s || b.id === p.skip) continue
 				if (kc === 1) {
-					// (on a wall's top: it rolls off to the nearest column that holds grains)
+					// (on a wall's top: it rolls off to the nearest column that holds grains; past 3 columns only on a wall thicker than that, a
+					// thick-walled box's or a container's ring along its long side, where it once fell on through the wall and was lost)
 					const i = c % b.nx
 					const j = (c - i) / b.nx
 					let near = -1
-					for (let d = 1; d <= 3 && near < 0; d++)
+					const reach = Math.max(b.nx, b.nz)
+					for (let d = 1; d <= reach && near < 0; d++)
 						for (const [di, dj] of [[-d, 0], [d, 0], [0, -d], [0, d]] as const) {
 							const ii = i + di
 							const jj = j + dj
@@ -1778,6 +1791,7 @@ export class World {
 			if (landed) continue
 			if (p.age > 6 || p.y < -20) {
 				this.lost += p.vol
+				if (p.src !== undefined) this.lostOf.set(p.src, (this.lostOf.get(p.src) ?? 0) + p.vol)
 				continue
 			}
 			this.parcels[w++] = p
@@ -1833,6 +1847,8 @@ export class World {
 		if (p.src !== undefined) {
 			const was = this.lands.get(p.src)
 			this.lands.set(p.src, was === undefined ? p.x : was + (p.x - was) / 30)
+			const home = this.homeOf.get(p.src)
+			if (home !== undefined && home !== b.id) this.strayOf.set(p.src, (this.strayOf.get(p.src) ?? 0) + p.vol)
 		}
 		let k = b.classOf(p.grain, p.wet)
 		if (k < 0) k = 0
@@ -2861,7 +2877,12 @@ export class TipCup {
 		const hold = clipArea(this.inside, this.nx, this.ny, cMax)
 		const excess = this.area - hold
 		const len = Math.max(chordLength(this.inside, this.nx, this.ny, cMax), 0.005)
-		const delta = excess / len
+		// (the flowing layer: the excess spread along that line, but never thicker than the grains standing over it, from the line (or their
+		// deepest point, when the line is under them all) to their surface: where the line only clips the opening's corner, its chord is short and
+		// excess ÷ chord was a layer as thick as the cup is long, at once: a cup of sugar tipped past 90° + φ threw 69 mL in one step at 1.8 m/s)
+		let lo = Number.POSITIVE_INFINITY
+		for (const p of this.inside) lo = Math.min(lo, this.nx * p.x + this.ny * p.y)
+		const delta = Math.min(excess / len, Math.max(0, this.c - Math.max(cMax, lo)))
 		if (!(excess > 1e-12)) {
 			this.flowing = false
 			this.rest = 0

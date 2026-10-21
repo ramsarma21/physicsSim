@@ -3490,16 +3490,23 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
 - **Readings in a container**: a pile or landing region whose middle is over a container's inside is read inside it: `height_mm`/`heap_mm` (its top
   over the container's floor), `angle_deg`/`heap_deg` (the upper quartile of the surface's slope over the inside's floor cells, so a heap that fills
   the container to its wall reads its sides from the top down to the wall; with under 8 floor cells, the free cone's atan(height / radius)),
-  `mass_g`/`heap_g` (inside it), and what lies outside it: a pile's `spilled_g`, a funnel's or a cup's new `outside_g`.
+  `mass_g`/`heap_g` (inside it), and what lies outside it: a pile's `spilled_g`, a funnel's or a cup's new `outside_g`: its grains on the bed outside
+  the container (on the region's own columns and on the margin the bed grew round its containers that no region's rectangle covers), what fell
+  off the bed's edges and, of a cup's stream, what came down on another bed, fell past every bed or is falling below the bed's floor; so
+  `heap_g + outside_g` is everything poured but what is still in the air over it (2026-10-21: before, a stream thrown past its landing bed was in
+  neither). Once a gram lies outside it the run says "<cup> spills sugar outside <jar>" (a funnel's too; kind `spilled`).
 - **A cup of grains** (the flow module's `pitcher`: `contents` liquid | grains (default liquid), `grain` sugar (default) | salt | rice | sand | fine
   sand | coarse sand | gravel | soil | flour, `fill_ml` ("Amount in it") the grains' packed volume: 200 mL of sugar is 160 g): its `flow-pour` record
   carries `contents: "grains"`, `grain`, `grains` (m³), `grains_asked?` and `volume: 0` (the flow module only tips it, pours no liquid and reads only its
   `tilt_deg`); the granular build hook adds `sand-pour {id: <item>/grains, item, solid, inside [4 {x, y}], depth, wall, grain, wet: "dry", volume (m³),
   asked? (mL)}` and a landing `sand-region` (`<item>/landing`, role landing, centred 3 cm past the lip toward the pour, reaching max(12 cm, 1.4 × the
-  heap's spread + 4 cm) each way, its top 4 mm under the upright cup's bottom, the cup's own solids excluded), which the containers' hook names holders
-  on. `TipCup` (granular.ts; the cup's section in its own frame × its depth): the grains turn with the cup until their surface stands steeper than the
+  heap's spread + 4 cm) each way, its top 4 mm under the lip, where the grains leave (as a funnel's under its spout; 2026-10-21: under the upright
+  cup's bottom, a cup held low, its body down beside a bowl's or a mug's rim or past the table's top, had that container's inside or the table
+  over its top, walls its grains fell through), its base 1 m under the cup's body, the cup's own solids excluded), which the containers' hook names
+  holders on; a container's inside holds grains up to its rim whatever the region's top. `TipCup` (granular.ts; the cup's section in its own frame × its depth): the grains turn with the cup until their surface stands steeper than the
   angle of repose φ, then slump to it; they hold what lies under the repose line through the lowest corner of the opening, and the excess leaves over
-  that corner as a surface avalanche, δ·√(g·δ) of section a second (δ = excess ÷ the surface's length; [LUBE04], provisional), from as soon as anything
+  that corner as a surface avalanche, δ·√(g·δ) of section a second (δ = excess ÷ the length of the line through the corner, but never thicker than
+  the grains standing over that line, from it (or their deepest point) to their surface; [LUBE04], provisional), from as soon as anything
   lies over that line until the layer is under two grains. A cup w wide and h tall filled to a share f starts to pour at φ + atan(2h(1 − f)/w) (f ≥ ½)
   or φ + atan(h/(2fw)) (f < ½); past 90° + φ it empties; what it held = what is in it + what it poured, exactly. The grains leave as falling parcels from
   the lip's corner and land on the landing bed (in a jar under it, inside the jar). Readings on the pitcher: `left_g, poured_g, flow_gs, lands_x,
@@ -3540,6 +3547,17 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
   milk and chocolate milk caught, levelled and named white and brown (as water with white or brown colouring); seenOf == tintOf for 200 clear dyes, bit
   for bit; a grape sinks in milk and floats in chocolate milk, an egg sinks in it; determinism; 16 random container scenes finite with their grains
   kept. Parity: tools/parity/granular.mjs and flow.mjs (with these scenes in their engine runs), fluids.mjs, 0 mismatches.
+- **Repair of 2026-10-21 (a tipped cup's spill read)**: the AI's "Sugar poured into a jar" (the cup's lip 12.5 cm over the jar's rim, tipped to 135°)
+  read 94 g in the jar and 10 g outside of the 160 g poured: as the cup passed 90° + φ its spout wall stood steeper than repose, the line through the
+  lip only clipped the opening's corner, and excess ÷ that short chord was a layer as thick as the cup is long: 69 mL left in one step at 1.8 m/s and
+  flew 20 cm, past the landing bed, and was lost (from about 3 cm over the rim up, whatever the height). Now the layer is never thicker than the
+  grains over the line (at most 0.9 mL a step, 0.42 m/s: all 160 g in the jar at every height the probe tried, 0-19 cm over the rim); what does
+  land outside (a cup held high, a stream thrown wide) is read in `outside_g` wherever it went, and said; a grain landing on a wall's top more than
+  3 columns from any column that holds grains rolls to the nearest one (it fell on through the wall); the landing region's top is under the lip.
+  Checked: `rw-validate-kitchen.ts conserve` (56 pours over 7 containers, the lip 0-15 cm over each rim, tipped 125° and 150°: the worst
+  |poured − heap − outside| 7e-15 g; the AI's scene 160 g in the jar; a cup 1 m up tipped 170°: 158 g outside, all of it read, the spill said) and
+  `cup` (turned to 135° at 90°/s: at most 0.81 mL a step, 0.41 m/s; the old rule failed both, 66.6 mL and 1.79 m/s); every earlier kitchen and
+  granular check as before (the cup's onset and what rests on its spout wall at 115° unchanged); tools/parity/granular.mjs 0 mismatches.
 - **Known limits**: a container keeps grains where it stood at the start (moved or tipped in the run, its walls for the grains stay where it began;
   one `held` to be let go is not a holder); a jar filled past its shoulder heaps as if its body went straight up (its neck is not a wall for the grains); grains and liquids do not meet (milk on
   sugar neither wets nor dissolves it; the matter module's dissolving is its own); milk and water do not mix (different liquids layer by density in the

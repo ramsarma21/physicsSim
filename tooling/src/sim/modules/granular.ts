@@ -40,8 +40,9 @@
  *   stream:    eroded_g (the sand gone from where it lay: what the water carried away), delta_cm (how far the deposit reaches past the sand's
  *              toe), channel_mm (the deepest cut), water_lpm
  *   a cup of grains (its item, the pitcher): left_g, poured_g, flow_gs, lands_x (where its stream comes down), and its landing region's heap_mm,
- *              heap_deg, heap_g (+ outside_g in a container); keyframe "cup" (its grains' surface in the cup's frame: nx, ny, c (m), area (m²),
- *              and the cup's world angle (rad), up to 30 a second while they change)
+ *              heap_deg, heap_g (+ outside_g in a container: everything it poured that is not in it, on the bed, off its edges, on another bed,
+ *              lost below or falling under the bed's floor, so heap_g + outside_g = poured_g but what is still in the air); keyframe "cup" (its
+ *              grains' surface in the cup's frame: nx, ny, c (m), area (m²), and the cup's world angle (rad), up to 30 a second while they change)
  *   a bed with containers: keyframe "holders:<bed>" once ([n, (round, x, floor, r0, rb, ylo, rt, yhi, wall, rim, k, ring) ×n])
  * Keyframes (track.keyframes, for the view): each bed under its first item: "grid" once ([x0, z0, dx, nx, nz, K, grain index ×K (GRAIN_KEYS),
  * wetness index ×K (WETNESS), base (m), the floor as N runs [N, (step, count) ×N] of its column-to-column steps in tenths of a mm over the
@@ -54,7 +55,7 @@
  * the run's falling grains under the first record's item: "air" ([x, y, z, vx, vy, vz, grain index] per parcel, 30 a second while any fly).
  * Events: "<funnel> starts pouring: about 25 g a second", "<hourglass> starts running: about 1.1 g a second through its 3 mm neck", "<funnel> clogs", "<funnel> runs empty", "<hourglass> runs out after 60.0 s" ("lesson seconds" under a time-lapse), "<hourglass> jams: its
  *   grains arch over the 3 mm neck", "<heap> does not fit on <plank>: 412 g of its grains spill off the edge" (at the start), "<castle> collapses",
- *   "sand spills off the edge",
+ *   "sand spills off the edge", "<cup> spills sugar outside <jar>" (a cup's or a funnel's, once a gram lies outside its container),
  *   "only 163 g of the 200 g of grains fits in <hourglass>'s top bulb" (at the start: more grains than it holds), "a crater opens in <tray>"
  *   (10 mm across), "the water starts carrying sand down <stream table>" (20 g gone), "the washed-off sand builds a delta in <stream table>'s pool" (1 cm).
  */
@@ -199,6 +200,12 @@ interface Region {
 	holderCells: Int32Array
 	holderFloor: Int32Array
 	holderEdge: Int32Array
+	/** With a container: 1 on the bed's columns whose grains outside it are this region's to read (its own cells, and the bed's margin grown
+	 *  round its containers that no region's rectangle covers); and whether its grains landing outside it have been said. */
+	mine: Uint8Array | null
+	spillTold: boolean
+	/** The bed's lowest floor (m; its edges' left out): a cup's grains falling below it have missed it. */
+	low: number
 }
 
 /** A cup of grains a hand tips (a "sand-pour" record): its grains, what it lets out, what has been said. */
@@ -409,6 +416,9 @@ class Grains {
 			if (hs.length) this.holders.set(bed, hs)
 			this.floorSolid.set(bed, sids)
 			this.shown.push({ bed, item: first.item as string, cls: -2, last: new Float64Array(bed.n), lastT: -1, lastW: undefined, lastWT: -1 })
+			let low = Number.POSITIVE_INFINITY
+			for (let c = 0; c < bed.n; c++) if ((kind[c] as number) !== 2 && (floor[c] as number) < low) low = floor[c] as number
+			if (!Number.isFinite(low)) low = base
 			for (const r of gr) {
 				const cells: number[] = []
 				// (a pile's own cells: every column reaching into its rectangle, the grid's ragged last row too, so what spills to its edge is still
@@ -445,8 +455,23 @@ class Grains {
 				}
 				this.regions.push({
 					record: r, item: r.item as string, bed, cells: Int32Array.from(cells), baseline: new Float64Array(cells.length), startTop: 0, collapsed: false, support: null,
-					holder: H, holderCells: Int32Array.from(inside), holderFloor: Int32Array.from(flat), holderEdge: Int32Array.from(edge)
+					holder: H, holderCells: Int32Array.from(inside), holderFloor: Int32Array.from(flat), holderEdge: Int32Array.from(edge), mine: null, spillTold: false, low
 				})
+			}
+			// (what a region in a container reads outside it: its own cells and the margin the bed grew round its containers beyond every region's
+			// rectangle, where grains glancing off a container's rim or thrown past its wall come down: once only its own cells were read, and
+			// what lay in that margin was in neither heap_g nor outside_g)
+			const ours = this.regions.filter((q) => q.bed === bed)
+			if (ours.some((q) => q.holder !== null)) {
+				const claimed = new Uint8Array(nx * nz)
+				for (const q of ours) for (const c of q.cells) claimed[c] = 1
+				for (const q of ours) {
+					if (q.holder === null) continue
+					const m = new Uint8Array(nx * nz)
+					for (let c = 0; c < m.length; c++) if (claimed[c] === 0) m[c] = 1
+					for (const c of q.cells) m[c] = 1
+					q.mine = m
+				}
 			}
 		})
 		// the deposits, in document order (each region's baseline is the surface before its own)
@@ -522,6 +547,9 @@ class Grains {
 			const cup = new TipCup(r.inside as { x: number; y: number }[], r.depth as number, Math.max(0, r.volume as number), ci.tanRepose, ci.grain.d)
 			const a0 = ctx.solid(r.solid as string)?.pose().angle ?? 0
 			this.pours.push({ record: r, item: r.item as string, cup, cls: k, a0, pending: 0, pouredKg: 0, rate: 0, lastEmit: -1, startTold: false, emptyTold: false, lastKey: -1, lastRow: "" })
+			// (its landing bed: what of its stream comes down on another bed is counted there, outside its container)
+			const home = this.regions.find((q) => q.item === r.item && q.record.role === "landing")
+			if (home !== undefined) this.world.homeOf.set(r.item as string, home.bed.id)
 			if (finite(r.asked) && (r.asked as number) > cup.volume() * 1e6 + 0.5)
 				ctx.event(`only ${Math.round(cup.volume() * 1e6)} mL of ${ci.grain.name} fits in ${r.item} (not ${Math.round(r.asked as number)} mL): it is filled to the brim`, [r.item as string], "brim", 0)
 		}
@@ -625,6 +653,9 @@ class Grains {
 			}
 		}
 		const barrier = new Set<number>()
+		// (a container's inside holds grains up to its rim, even where the region's top (just under a pourer: a cup held low, its bottom below a
+		// bowl's rim) is lower: a tapered cup's or a bowl's leaning wall over that top was a wall, and grains landing on it rolled out of it)
+		const inner = new Set<number>()
 		// the containers: inside one, its floor (and a tapered cup's leaning wall) unless something stands higher in it; its ring of wall, round or
 		// square, all the way round (front and back too), as high as its rim
 		for (const H of holders) {
@@ -638,6 +669,7 @@ class Grains {
 						if (f >= (floor[c] as number)) {
 							floor[c] = f
 							by[c] = H.item
+							inner.add(c)
 						}
 					} else if (q <= H.rt + ring) {
 						floor[c] = Math.max(floor[c] as number, H.rim)
@@ -668,7 +700,7 @@ class Grains {
 			if (f === NONE) {
 				kind[c] = 2
 				floor[c] = low - 0.5
-			} else if (f > top || barrier.has(c)) kind[c] = 1
+			} else if ((f > top && !inner.has(c)) || barrier.has(c)) kind[c] = 1
 		}
 	}
 
@@ -921,14 +953,26 @@ class Grains {
 		for (const reg of this.regions) {
 			const role = reg.record.role
 			if ((role === "pile" || role === "landing") && reg.holder !== null) {
-				// (in a container: the heap inside it, a cone on the bed that fills it once its foot reaches the wall; what lies outside it, spilled)
-				const p = heapIn(reg.bed, reg.holderCells, reg.holderEdge, reg.holderFloor)
+				// (in a container: the heap inside it, a cone on the bed that fills it once its foot reaches the wall; what lies outside it, spilled:
+				// on its columns of the bed outside the container, gone off the bed's edges, and, of a cup's stream, what came down on another bed,
+				// fell past every bed or is falling below this one's floor, so heap_g + outside_g is everything poured that is not still in the air
+				// over it (a stream thrown past its landing bed was once in neither: 56 g of a cup's 160 g of sugar))
+				const b = reg.bed
+				const p = heapIn(b, reg.holderCells, reg.holderEdge, reg.holderFloor)
 				let out = 0
 				const inside = new Set(reg.holderCells)
-				const A = reg.bed.dx * reg.bed.dx
-				for (const c of reg.cells) {
-					if (inside.has(c) || (reg.bed.kind[c] as number) !== 0) continue
-					for (let k = 0; k < reg.bed.classes.length; k++) out += ((reg.bed.hk[k] as Float64Array)[c] as number) * A * (reg.bed.classes[k] as ClassInfo).rhoB
+				const A = b.dx * b.dx
+				const mine = reg.mine
+				for (let c = 0; c < b.n; c++) {
+					if ((b.kind[c] as number) !== 0 || inside.has(c) || (mine !== null && mine[c] !== 1)) continue
+					for (let k = 0; k < b.classes.length; k++) out += ((b.hk[k] as Float64Array)[c] as number) * A * (b.classes[k] as ClassInfo).rhoB
+				}
+				out += b.droppedMass
+				if (role === "landing" && this.pours.some((q) => q.item === reg.item)) {
+					const rho = (this.classes[this.classIndex(reg.record)] as ClassInfo).rhoB
+					let gone = (this.world.lostOf.get(reg.item) ?? 0) + (this.world.strayOf.get(reg.item) ?? 0)
+					for (const q of this.world.parcels) if (q.src === reg.item && q.y < reg.low - 0.01) gone += q.vol
+					out += gone * rho
 				}
 				if (role === "pile") {
 					ctx.set(reg.item, "height_mm", p.top * 1000)
@@ -941,6 +985,12 @@ class Grains {
 					ctx.set(reg.item, "heap_deg", p.slope)
 					ctx.set(reg.item, "heap_g", p.mass * 1000)
 					ctx.set(reg.item, "outside_g", out * 1000)
+					// (a gram outside it is said once, so a card's "in the run" and a director's shots tell the spill, never only the heap inside)
+					if (!reg.spillTold && out >= 0.001) {
+						reg.spillTold = true
+						const name = (this.classes[this.classIndex(reg.record)] as ClassInfo).grain.name
+						ctx.event(`${reg.item} spills ${name} outside ${reg.holder.item}`, [reg.item, reg.holder.item], "spilled")
+					}
 				}
 			} else if (role === "pile") {
 				const p = this.pileOf(reg)
