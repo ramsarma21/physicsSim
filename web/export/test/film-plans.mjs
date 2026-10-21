@@ -5,6 +5,8 @@
 // band). A plan of one run per lane is filmed as the lesson compositor will: the other lane's run and model boxes are handed to the plan, the plan
 // is compiled once (exportPlan), each lane's run is filmed with that same film ({film, lane}), and the bands are put together.
 //   node web/export/test/film-plans.mjs --server http://127.0.0.1:<port> --out <dir> [--size 1280x720] [--fps 30] [--blur 8] [--only 01,05]
+//   node web/export/test/film-plans.mjs --focus ...   the automatic plan instead (camera "focus") on the 12 scenarios, the 10 gallery scenes
+//                                                     and the plans' scenes (one run each)
 //   LESSON_SCENES=<lesson-regen/compositor/build2/scenes>   the lesson compositor's lane scenes (plans 02, 03, 04; skipped without it)
 // The server is this repository's own (python3 web/server.py <port>); only GET and POST /api/... are asked. Headless Chromium only.
 import { createRequire } from "node:module"
@@ -24,11 +26,26 @@ const [W, H] = opt("--size", "1280x720").split("x").map(Number)
 const FPS = Number(opt("--fps", 30))
 const BLUR = Number(opt("--blur", 8))
 const ONLY = opt("--only", "") ? opt("--only", "").split(",") : null
+const FOCUS = argv.includes("--focus")
 const LESSON = process.env.LESSON_SCENES ?? null
 const { chromium } = require(process.env.PLAYWRIGHT_CORE || path.join(os.homedir(), ".bun/install/cache/playwright-core@1.60.0@@@1"))
 const CHROME = [path.join(os.homedir(), "Library/Caches/ms-playwright/chromium-1248/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"), path.join(os.homedir(), "Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell")].find((p) => existsSync(p))
 
-const index = JSON.parse(readFileSync(path.join(HERE, "plans", "index.json"), "utf8")).plans
+const planIndex = JSON.parse(readFileSync(path.join(HERE, "plans", "index.json"), "utf8")).plans
+// the jobs: each design plan with its runs, or (--focus) each scene with the automatic plan
+const index = {}
+if (!FOCUS) Object.assign(index, planIndex)
+else {
+	const seen = new Set()
+	const add = (p) => {
+		if (seen.has(p)) return
+		seen.add(p)
+		index[`focus-${path.basename(p).replace(/\.(scene\.)?json$/, "")}`] = { "": p }
+	}
+	for (const s of JSON.parse(readFileSync(path.join(ROOT, "web", "scenario-list.json"), "utf8"))) if (s.id !== "empty") add(`web/scenarios/${s.id}.json`)
+	for (const g of JSON.parse(readFileSync(path.join(ROOT, "web", "gallery", "index.json"), "utf8"))) add(`web/${g.scene}`)
+	for (const runs of Object.values(planIndex)) for (const p of Object.values(runs)) add(p)
+}
 const sceneOf = (p) => {
 	if (p.startsWith("$LESSON_SCENES/")) return LESSON ? path.join(LESSON, p.slice("$LESSON_SCENES/".length)) : null
 	return path.join(ROOT, p)
@@ -91,7 +108,7 @@ for (const [name, runs] of Object.entries(index)) {
 		summary.push({ plan: name, skipped: true })
 		continue
 	}
-	const plan = JSON.parse(readFileSync(path.join(HERE, "plans", `${name}.json`), "utf8"))
+	const plan = FOCUS ? null : JSON.parse(readFileSync(path.join(HERE, "plans", `${name}.json`), "utf8"))
 	const scenes = Object.fromEntries(Object.entries(files).map(([lane, f]) => [lane, JSON.parse(readFileSync(f, "utf8"))]))
 	const dir = path.join(OUT, name)
 	mkdirSync(dir, { recursive: true })
@@ -102,11 +119,14 @@ for (const [name, runs] of Object.entries(index)) {
 			const S = window.sandbox
 			const lanes = Object.keys(scenes)
 			const perLane = !(lanes.length === 1 && lanes[0] === "")
-			const base = { camera: "director-plan", width: W, height: H, fps: FPS }
+			const base = { camera: plan ? "director-plan" : "focus", width: W, height: H, fps: FPS }
 			const out = { pics: [], report: null, ms: [], checks: {} }
 			// ---- the film: one run, or the first lane's run with the others' runs and model boxes handed in
 			let opts
-			if (!perLane) {
+			if (!plan) {
+				await F.open(scenes[""])
+				opts = { ...base, focus: { scene: scenes[""] } }
+			} else if (!perLane) {
 				await F.open(scenes[""])
 				opts = { ...base, plan }
 			} else {
@@ -123,6 +143,7 @@ for (const [name, runs] of Object.entries(index)) {
 			const info = S.view.exportInfo(perLane ? { ...opts, lane: lanes[0] } : opts)
 			if (!info.plan) return { error: info.planError ?? "no plan" }
 			out.report ??= info.plan.report
+			out.notes = info.plan.plan?.notes ?? null
 			out.duration = info.plan.duration
 			out.shots = info.plan.shots
 			// ---- which frames: each shot's first, middle and last (each stop of a travel that dwells), and today's Wide at the middle one's moment
@@ -233,7 +254,7 @@ for (const [name, runs] of Object.entries(index)) {
 	for (const p of res.pics) writeFileSync(path.join(dir, p.file), Buffer.from(p.b64, "base64"))
 	writeFileSync(path.join(OUT, `sheet-${name}.jpg`), Buffer.from(res.sheet, "base64"))
 	const ms = res.ms.slice().sort((a, b) => a - b)
-	const row = { plan: name, duration: res.duration, shots: res.shots.length, stills: res.pics.length, ok: res.report?.ok ?? null, failed: res.report?.failed ?? [], deterministic: res.checks.deterministic, projectionError: res.checks.projectionError, frameMs: { median: ms[ms.length >> 1], max: ms[ms.length - 1] }, seconds: (Date.now() - t0) / 1000 }
+	const row = { plan: name, duration: res.duration, shots: res.shots.length, stills: res.pics.length, ok: res.report?.ok ?? null, failed: res.report?.failed ?? [], deterministic: res.checks.deterministic, projectionError: res.checks.projectionError, frameMs: { median: ms[ms.length >> 1], max: ms[ms.length - 1] }, seconds: (Date.now() - t0) / 1000, ...(FOCUS ? { notes: res.notes } : {}) }
 	writeFileSync(path.join(dir, "report.json"), JSON.stringify({ ...row, report: res.report, shots: res.shots }, null, 1))
 	summary.push(row)
 	console.log(`${name}: ${res.duration.toFixed(2)} s video, ${res.shots.length} shots, ${res.pics.length} stills; net ${row.ok ? "ALL CHECKS PASS" : `FAIL (${row.failed.length})`}; deterministic ${row.deterministic}; projection ${row.projectionError?.toExponential(2)}; frame ${row.frameMs.median.toFixed(0)} ms median (blur ${BLUR}); ${row.seconds.toFixed(0)} s`)
@@ -242,6 +263,8 @@ for (const [name, runs] of Object.entries(index)) {
 writeFileSync(path.join(OUT, "summary.json"), JSON.stringify({ size: [W, H], fps: FPS, blur: BLUR, errors, plans: summary }, null, 1))
 if (errors.length) console.log(`page errors: ${errors.slice(0, 5).join(" | ")}`)
 await browser.close()
-const bad = summary.filter((s) => !s.skipped && (s.error || s.ok === false || s.deterministic === false || !(s.projectionError < 1e-6)))
-console.log(bad.length ? `${bad.length} plan(s) with problems: ${bad.map((b) => b.plan).join(", ")}` : "every plan filmed: all checks pass, deterministic, projection exact")
+// (the automatic plan may leave a hero under its floor where no framing reaches it at real time: its notes say so; motion and comfort always hold)
+const MOTION = /^(\S+) (keep-in|speed|zoom-rate|turn-rate|no-jump|cut|still|settled|shot-length|hold-length|label):/
+const bad = summary.filter((s) => !s.skipped && (s.error || (FOCUS ? s.failed.some((f) => MOTION.test(f)) : s.ok === false) || s.deterministic === false || !(s.projectionError < 1e-6)))
+console.log(bad.length ? `${bad.length} with problems: ${bad.map((b) => b.plan).join(", ")}` : FOCUS ? "every scene filmed with the automatic plan: every motion and comfort check passes, deterministic, projection exact" : "every plan filmed: all checks pass, deterministic, projection exact")
 process.exit(bad.length ? 1 : 0)

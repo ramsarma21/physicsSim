@@ -2426,11 +2426,17 @@ function autoLanes(R, rec, primary) {
 		}
 		if (per.every(Boolean)) roles.push({ name: idSafe(ty, used), per })
 	}
-	// rows for horizontal action (what moves sweeps wider than tall), columns otherwise
-	const P = []
-	for (const r of roles) for (const id of r.per.filter(Boolean)) for (let k = 0; k <= 10; k++) P.push(...R.itemPts(id, null, (R.dur * k) / 10))
-	const [lo, hi] = boundsOf(P)
-	const arrange = hi[0] - lo[0] >= (hi[1] - lo[1]) * 1.2 ? "rows" : "columns"
+	// rows for horizontal action (a lane's things sweep wider than tall over the run: cars, boats), columns otherwise (falls, compact pairs):
+	// measured within each lane, never across them (lanes side by side would look wide)
+	let wide = 0
+	for (let i = 0; i < lanes.length; i++) {
+		const P = []
+		for (const r of roles) if (r.per[i]) for (let k = 0; k <= 10; k++) P.push(...R.itemPts(r.per[i], null, (R.dur * k) / 10))
+		if (!P.length) continue
+		const [lo, hi] = boundsOf(P)
+		wide += hi[0] - lo[0] >= (hi[1] - lo[1]) * 1.2 ? 1 : -1
+	}
+	const arrange = wide > 0 ? "rows" : "columns"
 	const nameOf = (id) => R.scene?.items?.find((i) => i.id === id)?.name || id
 	const usedL = new Set()
 	return {

@@ -202,6 +202,51 @@ test("lanes: one camera for every band, shifted by its lane's offset; each band 
 	assert.deepEqual(m.map((prims) => prims.map((q) => q.text)), [["fast"], ["slow"]])
 })
 
+test("an arc turns round its subject; an inset is its own still picture in a corner; together frames every lane in one picture", () => {
+	const w = worldOf(roll())
+	const f = film(plan1([{ run: { freeze: "start", seconds: 6 }, move: "arc", subject: { item: "block" }, frame: { size: 0.4 }, view: { yaw: -20, pitch: 10 }, end: { view: { yaw: 20, pitch: 10 } }, inset: { subject: { item: "ball" }, corner: "bottom-left", size: 0.25 } }]), w)
+	const yaw = f.frames.map((fr) => (fr.b[0][4] * 180) / Math.PI)
+	assert.ok(Math.abs(yaw[0] + 20) < 1e-9 && Math.abs(yaw[yaw.length - 1] - 20) < 0.05, `the arc turns from -20 to 20 degrees (${yaw[0]} .. ${yaw[yaw.length - 1]})`)
+	for (let i = 1; i < yaw.length; i++) assert.ok(yaw[i] >= yaw[i - 1] - 1e-12)
+	const sh = f.shots[0]
+	assert.equal(sh.bands.length, 2)
+	assert.ok(sh.bands[1].inset)
+	const [x, y, iw, ih] = sh.bands[1].rect
+	assert.ok(x > 0 && x < W / 4 && y + ih < H && y > H / 2 && Math.abs(ih - 0.25 * H) <= 1, `bottom-left, a quarter of the height (${sh.bands[1].rect})`)
+	assert.deepEqual(f.frames[0].b[1], f.frames[f.frameCount - 1].b[1], "the inset's camera is still")
+	const rep = X.measure(f)
+	assert.ok(check(rep, "turn-rate")[0].ok, check(rep, "turn-rate")[0].why)
+	// together: one picture of every lane's copies
+	const s2 = synth({
+		solids: [slab("table/top", "table", 1.3, -0.075, 3.7, 0.15, 1.6), ball("b1/b", "b1", 0.4, 0.05, 0.03), ball("b2/b", "b2", 0.9, 0.05, 0.03)],
+		moves: {},
+		recog: recogOf(["b1", "b2"], []),
+	})
+	const w2 = X.makeWorld({ run: s2.run, recog: s2.recog })
+	const lanes = { list: [{ id: "one", cast: { ball: "b1" } }, { id: "two", cast: { ball: "b2" } }] }
+	const g = film(plan1([{ layout: "together", run: { freeze: "start", seconds: 1.5 }, move: "hold", subject: { role: "ball" }, frame: { fit: "snug" } }], { lanes }), w2)
+	assert.equal(g.shots[0].bands.length, 1)
+	const z = X.measure(g).shots[0].size[0]
+	assert.ok(Math.abs(z.margin - 0.1) < 0.005, `both balls in one snug picture (${z.margin})`)
+})
+
+test("per_lane: each band follows its own lane's copy at one distance", () => {
+	const s = synth({
+		solids: [slab("table/top", "table", 1.3, -0.075, 3.7, 0.15, 1.6), ball("b1/b", "b1", 0.2, 0.05, 0.03), ball("b2/b", "b2", 0.2, 0.55, 0.03)],
+		moves: { "b1/b": (t) => ({ x: 0.2 + 0.3 * Math.max(0, t - 0.5), y: 0.05 }), "b2/b": (t) => ({ x: 0.2 + 0.15 * Math.max(0, t - 0.5), y: 0.55 }) },
+		recog: recogOf(["b1", "b2"], []),
+	})
+	const w = X.makeWorld({ run: s.run, recog: s.recog })
+	const lanes = { list: [{ id: "one", cast: { ball: "b1" } }, { id: "two", cast: { ball: "b2" } }] }
+	const f = film(plan1([{ layout: "split", run: { from: "release", to: "t=4" }, move: "follow", subject: { role: "ball" }, frame: { width: 0.5 }, follow: { per_lane: true, lead: 0 } }], { lanes }), w)
+	const last = f.frames[f.frameCount - 1]
+	assert.equal(last.b[0][3], last.b[1][3], "one distance in both bands")
+	// at 4 s the balls are 0.525 m apart in x (0.3 against 0.15 m/s for 3.5 s): each band centred on its own
+	assert.ok(Math.abs(last.b[0][0] - last.b[1][0] - 0.525) < 0.03, `${last.b[0][0]} vs ${last.b[1][0]}`)
+	const rep = X.measure(f)
+	assert.ok(check(rep, "keep-in").every((c) => c.ok), check(rep, "keep-in").map((c) => c.why).join("; "))
+})
+
 test("a film is a pure function of plan, run and picture: the same bytes again, in another process too", () => {
 	const plan = plan1([
 		{ run: { freeze: "start", seconds: 1 }, move: "hold", subject: { item: "block" }, frame: { size: 0.4 } },

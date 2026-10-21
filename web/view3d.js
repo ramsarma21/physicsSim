@@ -6509,7 +6509,11 @@ ${GRADE}
 			softwareGL,
 			lastFrameMs: xstats.lastMs,
 			fixed: ok ? (run.doc.view?.camera ?? null) : null, // the scene's fixed camera {x0, x1, y, pitch, hfov} (the wide and fixed cameras), or null
-			directed: ok ? directedFacts() : null, // {goals, comparison, lanes}: a scene with goals or a comparison is filmed "focus" by default (the export dialog's Directed)
+			// {goals, comparison, lanes}: a scene with goals or a comparison is filmed "focus" by default (the export dialog's Directed); worked out
+			// when read (the subject recognizer, once per run), so a caller that only wants the runId (a library thumbnail) does not pay for it
+			get directed() {
+				return ok ? directedFacts() : null
+			},
 		}
 	}
 
@@ -8480,7 +8484,9 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			const pad = 0.5 * th
 			const bw = m.width + 2 * pad
 			const bh = th + 1.2 * pad
-			const bx = W - bw - 0.025 * H
+			// (top right, or top left when an inset sits in the top right corner)
+			const topRight = sh.bands.some((b) => b.inset && b.rect[0] + b.rect[2] > W - bw - 0.05 * H && b.rect[1] < bh + 0.05 * H)
+			const bx = topRight ? 0.025 * H : W - bw - 0.025 * H
 			const by = 0.025 * H
 			ctx.fillStyle = "rgba(12,14,18,0.72)"
 			ctx.beginPath()
