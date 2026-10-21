@@ -296,9 +296,9 @@ function _types() {
 			new Prop("height", "Castle height", 0.12, 0.01, 0.6, 0.005, "m", "A castle's height"),
 			..._grain_props(), _tint()
 		],
-		tags: ["sand", "pile", "heap", "mound", "sandcastle", "castle", "gravel", "soil", "dirt", "flour", "angle of repose", "landslide", "dune", "beach"],
-		description: "A heap of sand, gravel, soil or flour on whatever it rests on, or a packed sandcastle. Dry grains stand at their " +
-			"angle of repose (sand 34°, gravel 38°, flour 45°) and slide down when piled steeper; damp sand sticks and stands in " +
+		tags: ["sand", "pile", "heap", "mound", "sandcastle", "castle", "gravel", "soil", "dirt", "flour", "angle of repose", "landslide", "dune", "beach", "pile of sugar", "heap of sugar", "pile of rice", "heap of rice", "pile of salt", "heap of salt"],
+		description: "A heap of sand, gravel, soil, flour, sugar, salt or rice on whatever it rests on, or a packed sandcastle. Dry grains stand at their " +
+			"angle of repose (sand 34°, gravel 38°, flour 45°, sugar 35°, salt and rice 32°) and slide down when piled steeper; damp sand sticks and stands in " +
 			"walls; soaked sand slumps. Balls and blocks sink into it and are slowed by it. A heap wider than the shelf or plank it is on spills off its edge.",
 		source: "Grains [WENTWORTH22] [CRC] [FREEZE79]; angles of repose [ETB-REPOSE]; bulk densities [ETB-BULK]; damp cohesion about " +
 			"1 kPa (capillary bridges: a free damp tower stands to about 23 cm, provisional).",
@@ -340,10 +340,10 @@ function _types() {
 			new Prop("delay", "Opens after", 0.0, 0.0, 20.0, 0.1, "s", "Seconds after the release that its spout opens"),
 			..._grain_props("sand"), _tint()
 		],
-		tags: ["funnel", "pour", "pouring", "sand", "pile", "heap", "angle of repose", "clog", "jam", "flow rate", "gravel", "flour"],
+		tags: ["funnel", "pour", "pouring", "sand", "pile", "heap", "angle of repose", "clog", "jam", "flow rate", "gravel", "flour", "pour sugar", "pour salt", "pour rice", "sugar pile", "rice pile", "salt pile"],
 		description: "A funnel of grains on a ring stand. At the release its spout opens and the grains pour out at a steady rate " +
 			"(Beverloo: it does not slow as the funnel empties) and heap up below at their angle of repose. Too narrow a spout " +
-			"for the grains (gravel, or sticky flour or damp sand) and it clogs.",
+			"for the grains (gravel, or sticky flour or damp sand) and it clogs. Over a jar, glass, cup, bowl or box the grains stay inside it and heap up within its walls.",
 		source: "Discharge [BEVERLOO61] (25 g/s of sand through 1 cm); jamming [ZURIGUEL05]; cohesive arching (Jenike 1964).",
 		anchor: "under its spout, on what its stand's foot stands on (the foot is beside the heap)",
 		facts: "1 cm spout: about 25 g of sand a second",
@@ -688,13 +688,14 @@ export const plugin = {
 	howto: [
 		"Granular items are FIXED in place (static) and stand on what is under them (the table, a ramp, a tray): sand-pile (a heap of `sand_kg` kg at its angle of repose, or shape \"castle\": a packed tower `width` × `height`), sand-tray (a wooden box filled level with `sand_depth` of grains: drop balls into it for craters, roll things into it), sand-funnel (a funnel of `sand_kg` kg on a ring stand, its spout `height` m over its base; at the release it pours at Beverloo's steady rate and heaps up below), hourglass (a sand timer: `sand_kg` kg through a `neck_mm` neck; 66 g of fine sand through 3 mm = 60 s; its top bulb holds about 0.75·bulb_cm³ g of fine sand: 5 cm 94 g, 6 cm 160 g, 8 cm 380 g) and stream-table (a tray tipped `tilt_deg`, damp sand over `sand_share` of it from the high end, a hose of `flow_lpm` at the high end from the release, a pool `lake_cm` deep at the low end). Anchors: a pile's at the middle of its base on the surface; a funnel's under its spout, on the surface its stand stands on (the stand's foot is drawn beside the heap, about 6 cm past the funnel's rim); a tray's and an hourglass's at the middle of their base; a stream table's at the middle of its tipped floor.",
 		"A heap must fit on what it stands on: a plank or a shelf is only 12 cm deep, so a heap wider than it (over about 300 g of sand) runs off its edge before the run, falls to what is below and reads spilled_g (the run says \"<heap> does not fit on <plank>\"); for a big heap use the table or a sand-tray (grains rest only on FIXED things: never on a ball, a car or a board that can move).",
-		"Grains (`grain`): sand 0.4 mm (dry repose 34°), fine sand 0.18 mm (32°), coarse sand 1 mm (35°), gravel 6 mm (38°), pebbles 2 cm (40°), soil (35°, sticky), flour (45°: the crater medium). `wetness`: dry (flows, heaps at its angle of repose), damp (sticks: a castle up to about 23 cm stands with straight walls; taller, it crushes and slumps), soaked (slumps to 20-28°). A dry castle collapses into a cone in a fraction of a second; a damp one stands.",
+		"Grains (`grain`): sand 0.4 mm (dry repose 34°), fine sand 0.18 mm (32°), coarse sand 1 mm (35°), gravel 6 mm (38°), pebbles 2 cm (40°), soil (35°, sticky), flour (45°: the crater medium); the kitchen's: sugar 0.5 mm (35°, 800 kg/m³ poured: 200 mL is 160 g), salt 0.4 mm (32°, 1200 kg/m³), rice (long grains, 32°, 770 kg/m³; a spout or neck must be over 14 mm for it). `wetness`: dry (flows, heaps at its angle of repose), damp (sticks: a castle up to about 23 cm stands with straight walls; taller, it crushes and slumps), soaked (slumps to 20-28°). A dry castle collapses into a cone in a fraction of a second; a damp one stands.",
 		"Pouring: a funnel's flow is Beverloo's W = 0.58·ρ_b·√g·(D − 1.4d)^2.5: sand through a 10 mm spout 25 g/s, 20 mm 140 g/s. A spout or neck jams (clogs) under about 5 grains: dry fine sand needs over 0.9 mm, sand 2 mm, coarse sand 5 mm, gravel 30 mm, pebbles 10 cm; flour arches over anything under 20 mm and soil under 15 mm; damp sand jams in any funnel. A heap's height grows with the cube root of its mass; its slope stays the angle of repose.",
 		"Poured heaps: to show the heap a funnel pours, use the funnel ALONE: never put a sand-pile under a funnel (a ready-made cone is not what was poured). The funnel itself reads its heap (heap_mm, heap_deg, heap_g), and piles {item: the funnel}, steeper {a: funnel, b: funnel} judge that poured heap. Which grains heap steepest: one funnel per grain side by side (about 0.6 m apart), each with a spout wide enough for its grains (sand 10-15 mm, gravel 40 mm, flour 25 mm), sand_kg 0.2-0.3, and seconds enough for each to empty.",
 		"Sand timers: an hourglass runs only dry fine sand (neck over 0.9 mm), sand (over 2 mm) or coarse sand (over 5 mm); gravel, pebbles, soil and flour jam in any neck it has (12 mm at most). A jammed timer reads clogged 1 (\"jammed\"), its clock (run_s) stops and the run says \"<timer> jams: its grains arch over the 3 mm neck\": widen the neck past 5 grains or use finer grains. The hourglass is its own clock: time it by its run_s and the timer goal (lesson seconds, with the scene's time-lapse), never with a stopwatch (a stopwatch watches things that move; an hourglass stands still, so its stopwatch stops at once).",
 		"Craters: hold a ball above a sand-tray (place it in the air over the tray, held, released at the scene's release): it strikes, throws sand out and is buried; the crater follows Uehara et al.'s law, D ≈ 0.9·(ρ_ball/ρ_sand)^¼·D_ball^¾·H^¼/√(tan repose): a 2.5 cm steel ball from 0.6 m about 9 cm, from 1 m about 10 cm; a ping-pong ball only about its own size (4-4.5 cm), whatever the height: a heavier ball, or a higher drop, makes a wider crater. In sand thinner than the ball goes (a 1 cm layer), it hits the floor and the crater is smaller. Compare two trays side by side. A ball or a toy car rolled into sand ploughs and stops.",
 		"Erosion: a stream-table needs time: set the scene's settings.time_lapse (10-30) so seconds of the run are minutes of the lesson (the sand changes that much faster; the water runs as it does). More slope, more water or finer grains erode more; gravel hardly moves; plants (\"lower half\", \"all\") protect the sand they cover. Two tables side by side differing in ONE prop make a fair test.",
 		"Readings each run: a pile's height_mm, width_mm, angle_deg, mass_g (on what it stands on), spilled_g; a tray's crater_mm (rim to rim), crater_depth_mm; a funnel's left_g, poured_g, flow_gs, clogged, heap_mm, heap_deg, heap_g (the heap it poured); an hourglass's top_g, bottom_g, flow_gs, run_s (lesson seconds), empty, clogged; a stream table's eroded_g (sand carried off the slope), delta_cm, channel_mm.",
+		"Containers keep grains: a glass-jar (made wider and lower it is a dish, narrower and taller a glass; set its depth to its width), cup, plastic-cup, bucket, basket, box, beaker, graduated-cylinder, measuring-jug, coffee-mug or bowl that grains pour into (from a funnel, or a pitcher of grains: the flow module's pitcher with contents \"grains\") or that a sand-pile is laid in (its anchor on the container's floor) holds every grain inside its round or square walls: they pile up in it at their angle of repose, a bed that fills it topped by a cone once the heap reaches its wall (400 g of sand in a 6.5 cm glass: a 10.5 cm bed and cone, nothing outside). The pourer's heap_mm, heap_deg and heap_g are read inside the container; outside_g is what missed it (a pile's spilled_g). A funnel's spout or a cup's lip goes over the opening's middle (grains fall nearly straight down).",
 		"Known limits: a kitchen-scale does not weigh grains (sand on its platform reads 0 g): weigh sand by a pile's mass_g, a funnel's poured_g and heap_g, or an hourglass's top_g and bottom_g instead. Sieving (separating sand from gravel or pebbles by grain size) is the matter module's mixture-dish and sieve, not these items."
 	].join(" "),
 	prompt: {
@@ -707,6 +708,7 @@ export const plugin = {
 	},
 	examples: [
 		{ ask: "Pour sand from a funnel onto the table to see it make a cone-shaped pile.", how: "a sand-funnel (sand_kg 0.3, outlet_mm 10, height 0.25) on the table, nothing under it; seconds ≥ mass ÷ 25 g/s + 2; goals sand_runs_out {funnel}, piles {funnel} (its poured heap)", plan: { seconds: 15, items: [{ id: "funnel", type: "sand-funnel", props: { sand_kg: 0.3, outlet_mm: 10, height: 0.25 }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "sand_runs_out", item: "funnel" }, { kind: "piles", item: "funnel" }] } },
+		{ ask: "Pour sugar into a glass jar and see it pile up.", how: "a glass-jar on the table and a sand-funnel of sugar (grain sugar, sand_kg 0.15, outlet_mm 12, height 0.25) at the jar's x, its spout over the jar's middle; seconds ≥ 150 g ÷ 20 g/s + 2; the jar keeps every grain; goal piles {funnel} (its heap in the jar)", plan: { seconds: 10, items: [{ id: "jar", type: "glass-jar", place: { on: "table", x: 1.2 } }, { id: "funnel", type: "sand-funnel", props: { grain: "sugar", sand_kg: 0.15, outlet_mm: 12, height: 0.25 }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "piles", item: "funnel" }] } },
 		{ ask: "Pour dry sand from one funnel and gravel from another: which makes the steeper pile?", how: "two sand-funnels side by side (sand: outlet_mm 12; gravel: outlet_mm 40), sand_kg 0.25 each, NO sand-pile under them; goal steeper {a: gravel funnel, b: sand funnel} on their poured heaps", plan: { seconds: 9, items: [{ id: "sandF", type: "sand-funnel", props: { grain: "sand", sand_kg: 0.25, outlet_mm: 12, height: 0.25 }, place: { on: "table", x: 0.9 } }, { id: "gravelF", type: "sand-funnel", props: { grain: "gravel", sand_kg: 0.25, outlet_mm: 40, height: 0.25 }, place: { on: "table", x: 1.6 } }], goals: [{ kind: "steeper", a: "gravelF", b: "sandF" }] } },
 		{ ask: "Drop a steel ball into sand from a low and a high height: which makes the bigger crater?", how: "two sand-trays side by side, a steel-ball held over each (place on air, x = the tray's x, y_m 0.6 and 0.2); goal crater_bigger {a: high tray, b: low tray}", plan: { seconds: 3, items: [{ id: "trayA", type: "sand-tray", place: { on: "table", x: 0.8 } }, { id: "trayB", type: "sand-tray", place: { on: "table", x: 1.6 } }, { id: "high", type: "steel-ball", props: { diameter: 0.025 }, held: true, place: { on: "air", x: 0.8, y_m: 0.6 } }, { id: "low", type: "steel-ball", props: { diameter: 0.025 }, held: true, place: { on: "air", x: 1.6, y_m: 0.2 } }], goals: [{ kind: "crater_bigger", a: "trayA", b: "trayB" }] } },
 		{ ask: "Make a sand timer that runs out in about 30 seconds.", how: "an hourglass of fine sand (sand_kg 0.033 with the 3 mm neck: 1.1 g/s), settings.time_lapse 4 and seconds 12; goal timer {item, seconds: 30} (5 % by default; tol_s is in seconds)", plan: { seconds: 12, settings: { time_lapse: 4 }, items: [{ id: "timer", type: "hourglass", props: { sand_kg: 0.033 }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "timer", item: "timer", seconds: 30 }] } },
@@ -816,7 +818,7 @@ export const plugin = {
 			const left = endOf(run, item.id, "left_g")
 			if (left !== null) out.push(`poured ${n0(endOf(run, item.id, "poured_g"))} g (${n0(left)} g left)${endOf(run, item.id, "clogged") === 1 ? `; it CLOGGED: the ${n0(P.outlet_mm ?? 10, 1)} mm spout is too narrow for ${P.grain ?? "sand"} (it needs over ${n0(JAM_MM[P.grain ?? "sand"] ?? 2, 1)} mm${(P.wetness ?? "dry") !== "dry" ? ", and dry grains" : ""})` : ""}`)
 			const hm = endOf(run, item.id, "heap_mm")
-			if (hm !== null && hm > 0) out.push(`its poured heap: ${n0(hm)} mm tall, sides at ${n0(endOf(run, item.id, "heap_deg"), 1)}°, ${n0(endOf(run, item.id, "heap_g"))} g (what piles/steeper on this funnel judge)`)
+			if (hm !== null && hm > 0) out.push(`its poured heap: ${n0(hm)} mm tall, sides at ${n0(endOf(run, item.id, "heap_deg"), 1)}°, ${n0(endOf(run, item.id, "heap_g"))} g (what piles/steeper on this funnel judge)${(endOf(run, item.id, "outside_g") ?? 0) > 0.5 ? `; ${n0(endOf(run, item.id, "outside_g"))} g landed OUTSIDE the container under it: put the spout over its opening's middle` : ""}`)
 		} else if (item.type === "hourglass") {
 			out.push(`${n0((P.sand_kg ?? 0.066) * 1000)} g of ${P.grain ?? "fine sand"} through a ${n0(P.neck_mm ?? 3, 1)} mm neck`)
 			const s = endOf(run, item.id, "run_s")
@@ -837,16 +839,16 @@ export const plugin = {
 		keys: {
 			"sand-funnel.outlet_mm": "spout\\w*|hole\\w*|outlet\\w*|opening\\w*|neck\\w*",
 			"sand-funnel.sand_kg": "more sand|less sand|more grains|fewer grains|grams?|kg|kilo\\w*|how much",
-			"sand-funnel.grain": "sand|fine sand|coarse sand|gravel|pebbles?|soil|dirt|flour|grains?|powder",
+			"sand-funnel.grain": "sand|fine sand|coarse sand|gravel|pebbles?|soil|dirt|flour|grains?|powder|sugar|salt|rice",
 			"sand-funnel.wetness": "damp|wet|dry|drier|soaked|moist\\w*|water\\w*",
 			"hourglass.neck_mm": "neck\\w*|hole\\w*|opening\\w*",
 			"hourglass.sand_kg": "more sand|less sand|grams?|kg|how much",
 			"hourglass.bulb_cm": "bulbs?|glass",
-			"hourglass.grain": "sand|fine sand|coarse sand|gravel|pebbles?|soil|dirt|flour|grains?|powder",
+			"hourglass.grain": "sand|fine sand|coarse sand|gravel|pebbles?|soil|dirt|flour|grains?|powder|sugar|salt|rice",
 			"sand-pile.sand_kg": "more sand|less sand|grams?|kg|kilo\\w*|how much",
 			"sand-pile.wetness": "damp|wet|dry|drier|soaked|moist\\w*|water\\w*",
 			"sand-pile.shape": "castle|heap|pile|cone|tower",
-			"sand-pile.grain": "sand|fine sand|coarse sand|gravel|pebbles?|soil|dirt|flour|grains?|powder",
+			"sand-pile.grain": "sand|fine sand|coarse sand|gravel|pebbles?|soil|dirt|flour|grains?|powder|sugar|salt|rice",
 			"sand-tray.sand_depth": "deep\\w*|depth|shallow\\w*",
 			"sand-tray.grain": "sand|fine sand|coarse sand|gravel|pebbles?|soil|dirt|flour|grains?|powder",
 			"sand-tray.wetness": "damp|wet|dry|drier|soaked|moist\\w*|water\\w*",
@@ -860,7 +862,7 @@ export const plugin = {
 		// (a change of grains, of their wetness, or of a spout or a neck changes what a goal must expect: fine sand pours where gravel jammed,
 		// coarse sand jams a neck fine sand ran through; an edit asking for it may rewrite such a goal (web/sim/plugins.js moduleRegoals; verify-fga
 		// G6: "fill the funnel with fine sand instead" kept "the gravel jams in the 10 mm spout", failing))
-		regoals: "fine sand|coarse sand|gravel|pebbles?|flour|soil|dirt|damp|soaked|spout\\w*|neck\\w*|outlet\\w*",
+		regoals: "fine sand|coarse sand|gravel|pebbles?|flour|soil|dirt|sugar|salt|rice|damp|soaked|spout\\w*|neck\\w*|outlet\\w*",
 		change(type, key, a, b) {
 			const num = (v, d = 1) => (typeof v === "number" ? _fmt(v, d) : String(v))
 			if (type === "stream-table" && key === "tilt_deg") return `slope ${num(a)} → ${num(b)}°`

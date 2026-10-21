@@ -300,9 +300,9 @@ def _types():
                              Prop("height", "Castle height", 0.12, 0.01, 0.6, 0.005, "m", "A castle's height"),
                              *_grain_props(), _tint()],
                       tags=["sand", "pile", "heap", "mound", "sandcastle", "castle", "gravel", "soil", "dirt", "flour", "angle of repose", "landslide",
-                            "dune", "beach"],
-                      description="A heap of sand, gravel, soil or flour on whatever it rests on, or a packed sandcastle. Dry grains stand at their "
-                                  "angle of repose (sand 34°, gravel 38°, flour 45°) and slide down when piled steeper; damp sand sticks and stands in "
+                            "dune", "beach", "pile of sugar", "heap of sugar", "pile of rice", "heap of rice", "pile of salt", "heap of salt"],
+                      description="A heap of sand, gravel, soil, flour, sugar, salt or rice on whatever it rests on, or a packed sandcastle. Dry grains stand at their "
+                                  "angle of repose (sand 34°, gravel 38°, flour 45°, sugar 35°, salt and rice 32°) and slide down when piled steeper; damp sand sticks and stands in "
                                   "walls; soaked sand slumps. Balls and blocks sink into it and are slowed by it. A heap wider than the shelf or plank it is on spills off its edge.",
                       source="Grains [WENTWORTH22] [CRC] [FREEZE79]; angles of repose [ETB-REPOSE]; bulk densities [ETB-BULK]; damp cohesion about "
                              "1 kPa (capillary bridges: a free damp tower stands to about 23 cm, provisional).",
@@ -332,10 +332,10 @@ def _types():
                              Prop("height", "Spout height", 0.2, 0.03, 1.5, 0.01, "m", "Its spout over its base"),
                              Prop("delay", "Opens after", 0.0, 0.0, 20.0, 0.1, "s", "Seconds after the release that its spout opens"),
                              *_grain_props("sand"), _tint()],
-                      tags=["funnel", "pour", "pouring", "sand", "pile", "heap", "angle of repose", "clog", "jam", "flow rate", "gravel", "flour"],
+                      tags=["funnel", "pour", "pouring", "sand", "pile", "heap", "angle of repose", "clog", "jam", "flow rate", "gravel", "flour", "pour sugar", "pour salt", "pour rice", "sugar pile", "rice pile", "salt pile"],
                       description="A funnel of grains on a ring stand. At the release its spout opens and the grains pour out at a steady rate "
                                   "(Beverloo: it does not slow as the funnel empties) and heap up below at their angle of repose. Too narrow a spout "
-                                  "for the grains (gravel, or sticky flour or damp sand) and it clogs.",
+                                  "for the grains (gravel, or sticky flour or damp sand) and it clogs. Over a jar, glass, cup, bowl or box the grains stay inside it and heap up within its walls.",
                       source="Discharge [BEVERLOO61] (25 g/s of sand through 1 cm); jamming [ZURIGUEL05]; cohesive arching (Jenike 1964).",
                       anchor="under its spout, on what its stand's foot stands on (the foot is beside the heap)",
                       facts="1 cm spout: about 25 g of sand a second",
