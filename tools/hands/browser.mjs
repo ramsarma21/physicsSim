@@ -6,6 +6,7 @@
 //   setOptions({hands: "off"}) gives the pins back and draws no hand; "all" puts a hand on a held thing whose scene asks for none
 //   a scene with no hands (the starter) draws the very same pixels with the hands on and off
 //   the live canvas shows the hand; the library card's photo (web/account/thumb.js) and an MP4 made by the export's encoder (web/export/encoder.js) too
+//   every hand drawn with web/models/hand.glb (skinned meshes); with that file unreachable the capsule hand is drawn instead
 //   node tools/hands/browser.mjs [--port 8799] [--out dir]
 import { execFileSync, spawn } from "node:child_process"
 import { createRequire } from "node:module"
@@ -39,7 +40,9 @@ const WANT = {
 	ma25_s8_grape: [{ item: "grape", grip: "pinch", from: "above" }],
 	ma25_s9_grape: [{ item: "grape", grip: "pinch", from: "above" }],
 	fo13_s1_clip_drop: [{ item: "clip", grip: "pinch", from: "right" }],
-	fo13_s2_clip_magnet: [{ item: "clip", grip: "pinch", from: "right" }, { item: "magnet", grip: "grip", from: "above" }],
+	// (hand.glb's index is a child's real finger, thicker than the capsule hand's: a pinch of the clip 1.5 cm under the drawn magnet would lie on
+	// the magnet, so the auto hold keeps the cleanest, the clip on the open palm, which drops from under it as it jumps up)
+	fo13_s2_clip_magnet: [{ item: "clip", grip: "palm", from: "right" }, { item: "magnet", grip: "grip", from: "above" }],
 	mo19_s1_ball_drop: [{ item: "ball", grip: "palm", from: "left" }],
 	mo19_s2_ball_throw: [{ item: "ball", grip: "palm", from: "left", thrown: true }],
 	fo36_finger: [{ item: "pusher", skin: "finger" }],
@@ -71,7 +74,7 @@ try {
 				}
 				await S.view.whenSettled()
 				const run = S.view._debug.run
-				const rigs = (run.hands?.rigs ?? []).map((g) => ({ item: g.item, grip: g.grip, from: g.from, skin: g.skin, thrown: !!g.thrown, n: (g.rigs ?? [g.rig]).length }))
+				const rigs = (run.hands?.rigs ?? []).map((g) => ({ item: g.item, grip: g.grip, from: g.from, skin: g.skin, thrown: !!g.thrown, n: (g.rigs ?? [g.rig]).length, mesh: (g.rigs ?? [g.rig]).every((x) => x.mesh && x.meshes.every((m) => m.isSkinnedMesh)) }))
 				const solidsDrawn = new Set()
 				run.group.traverse((o) => o.userData?.solidId && o.isMesh && o.visible && !o.userData.hand && solidsDrawn.add(o.userData.solidId))
 				return { rigs, pins: run.pins.length, gates: run.gates.length, mounts: (run.mounts ?? []).length, drawn: [...solidsDrawn], held: run.doc.release?.parts ?? [], tRelease: run.tRelease, duration: S.view.exportInfo().duration, runId: S.view.exportInfo().runId, ...window.__h.holders() }
@@ -140,6 +143,7 @@ try {
 		const want = WANT[name] ?? []
 		const got = want.map((w) => r.rigs.find((g) => g.item === w.item))
 		ok(r.rigs.length === want.length && want.every((w, i) => got[i] && Object.entries(w).every(([k, v]) => k === "item" || got[i][k] === v)), `${name}: its hands`, JSON.stringify(r.rigs))
+		ok(r.rigs.every((g) => g.mesh), `${name}: drawn with hand.glb (skinned meshes)`)
 		const heldItems = new Set(r.held.map((id) => id.split("/")[0]))
 		if (heldItems.size) ok(r.pins === 0 && r.gates === 0, `${name}: no pull pin or gate where a hand holds`, `pins ${r.pins}`)
 		if (name.startsWith("fo36")) ok(!r.drawn.some((id) => id.startsWith("pusher/")), `${name}: the pusher's housing, rod and paddle are not drawn`)
@@ -351,6 +355,33 @@ try {
 	ok(sweep.types > 400 && sweep.bad.length === 0, `every dynamic type held (auto) and fixed (grip), every pusher skin, every pitcher: hands made, finite through the release (${sweep.made} of ${sweep.types} scenes with a hand)`, sweep.bad.slice(0, 5).join(" | "))
 	ok(sweep.max < 400, `making a scene's hands takes ${sweep.median?.toFixed(1)} ms (median), ${sweep.max?.toFixed(0)} ms at most`, JSON.stringify(sweep.grips))
 	ok(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "))
+
+	// ---- hand.glb unreachable (an old deploy, a blocked file): the procedural capsule hand is drawn, and nothing else changes
+	{
+		const p2 = await browser.newPage({ viewport: { width: 1280, height: 800 } })
+		const warnings = []
+		p2.on("console", (m) => m.type() === "warning" && warnings.push(m.text()))
+		await p2.route("**/models/hand.glb", (route) => route.abort())
+		await p2.goto(`http://127.0.0.1:${PORT}/web/index.html?engine=browser&profile=handstest2&quality=high`)
+		await p2.waitForFunction(() => window.sandbox?.view && window.sandboxApp && window.sandbox.sim && !window.sandbox.layout, null, { timeout: 240000 })
+		const fb = await p2.evaluate(async (scene) => {
+			const S = window.sandbox
+			S.playing = false
+			window.sandboxApp.open(scene)
+			const t0 = performance.now()
+			while (!(S.sim?.doc?.id === scene.id && !S.layout && S.view._debug.run?.sim === S.sim)) {
+				if (performance.now() - t0 > 120000) throw new Error("no run")
+				await new Promise((r) => setTimeout(r, 50))
+			}
+			await S.view.whenSettled()
+			const rigs = S.view._debug.run.hands?.rigs ?? []
+			const cv = await S.view.renderFrame(0.3, { width: 480, height: 270, camera: "wide", runId: S.view.exportInfo().runId, samples: 4 })
+			return { n: rigs.length, mesh: rigs.some((g) => (g.rigs ?? [g.rig]).some((x) => x.mesh)), meshes: rigs.reduce((a, g) => a + (g.rigs ?? [g.rig]).reduce((b, x) => b + x.meshes.length, 0), 0), w: cv.width }
+		}, scenes.mo19_s1_ball_drop)
+		ok(fb.n === 1 && !fb.mesh && fb.meshes > 10 && fb.w === 480, "hand.glb unreachable: the capsule hand holds the ball and the export draws it", JSON.stringify(fb))
+		ok(warnings.some((w) => /hand\.glb could not be loaded/.test(w)), "... and the page says why, once", warnings.filter((w) => /hand/.test(w)).slice(0, 2).join(" | "))
+		await p2.close()
+	}
 } finally {
 	await browser.close()
 	server.kill()

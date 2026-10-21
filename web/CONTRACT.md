@@ -4142,16 +4142,17 @@ scenarios, the 10 gallery scenes and the catalog are identical byte for byte (no
 
 Render only: nothing here changes a body, a contact or a track. The engine already holds a held thing exactly still until the release, a pusher
 pushes with its own force and time, a pitcher is tipped by the flow module's own process; the hand shows who does it. Files: `machines/mod_hands.py`
-and its port `web/sim/modules/hands.js` (the catalog's props and the AI plug-in), `web/hands.js` (the hands: geometry, poses, grips, motion),
-small hooks in `web/view3d.js`, a dev sheet `web/dev/hands.html`, tests `tools/hands/test.mjs` and `tools/hands/browser.mjs`, proof scenes
-`tools/hands/scenes/` (the five benchmark lessons' screens with hands). Where a hand holds a held thing, this replaces the pull pin of `doc.release`
+and its port `web/sim/modules/hands.js` (the catalog's props and the AI plug-in), `web/hands.js` (the hands: rig, poses, grips, motion),
+`web/hand-model.js` (loads the mesh, `web/models/hand.glb`, built by `tools/hands/build_hand.py`), small hooks in `web/view3d.js`, a dev sheet
+`web/dev/hands.html`, tests `tools/hands/test.mjs`, `tools/hands/rules.test.mjs` and `tools/hands/browser.mjs`, proof scenes `tools/hands/scenes/`
+(the five benchmark lessons' screens with hands). Where a hand holds a held thing, this replaces the pull pin of `doc.release`
 above (and a starting gate: the hand wins when an item sets both).
 - **Props** (common props, so only the catalog lists them: `ItemType.defaults()` and every document and resolved entry are as they were until an item
   sets one; nothing is built: they stay in the item's resolved props, which the view reads):
   - `hand` on every dynamic type but the pusher (207 types): `none` (default: the pull pin) | `auto` | `pinch` (thumb and index on either side) |
-    `palm` (it rests on the open palm, the fingers cupped round it) | `press` (the palm holds it down from above, the fingers flat and together,
-    a little bent at the knuckles, never into it or what is under it: a cork on a tank's floor; the catalog's help and the AI's change words still
-    say "a fingertip" until they are changed with it) | `grip` (the whole hand round it). It acts while the item is held (`held: true`, until the scene's release) or fixed (`fixed: true`: held for
+    `palm` (it rests on the open palm, the fingers cupped round it) | `press` (held down from above: a thing up to 6.5 cm, a cork on a tank's
+    floor, by the pointing finger's tip, as the catalog's help says; a bigger one by the palm on its top, the fingers flat and together, a little
+    bent at the knuckles, the thumb out flat beside them, never into it or what is under it) | `grip` (the whole hand round it). It acts while the item is held (`held: true`, until the scene's release) or fixed (`fixed: true`: held for
     the whole run, in place of its stand: a magnet in a fist).
   - `hand_from` on the same types: `auto` (default) | `left` | `right` | `above`: where the arm comes from (a press is always from above; a palm from
     a side). `auto`: from above for a press or a grip; from a side away from where the thing goes, else from the picture's nearer edge (a
@@ -4165,22 +4166,42 @@ above (and a starting gate: the hand wins when an item sets both).
   library card's photo, `web/account/thumb.js`) draws what the view draws; to export without hands, `setOptions({hands: "off"})` first. A scene with
   no hands builds and draws exactly as before (no group, no hook does anything). `view._debug.run.hands` = `{rigs: [{item, grip, from, skin, thrown,
   rig}], plans, held, hidden, unmounted, at(t), busy(t), fit(pf, track)}` for tests.
-- **The hand**: a child's of about nine, 14.5 cm from the wrist crease to the middle fingertip (Snyder et al. 1977, UM-HSRI-77-17), its bones in
-  proportion (Buchholz, Armstrong & Goldstein 1992: an adult's 17.5 cm modelled, drawn at 0.83): a smooth palm, three-jointed fingers and thumb,
-  nails; a neutral mid skin (#c69273) and a plain blue-grey sleeve (#7187a5) with a cuff, graded as the view's own looks (gradeShader). Real size
-  whatever it does: a harder push is the pusher's force and time, never a bigger hand. The arm is a short forearm to its sleeve's cuff and a
-  hand's breadth of sleeve (`ARM`: at most 9 cm from the wrist; hand.glb's sleeve ends at 7.75 cm): never a sleeve out of the picture, no elbow,
-  no person. It leaves the hand from the picture's nearer edge (or the side the hold or the push says) rising 15 to 35 degrees over the level, or
-  from above 15 to 35 degrees off the upright (a hand with a thing on its open palm may slope down to the elbow as much instead, a tray held out,
-  with room under it), never along the floor or a table; its line (a capsule 1.9 cm round by the wrist to 2.8 cm at the sleeve's end) 3 mm clear
-  of everything drawn; the wrist bent no further than a child's goes easily (`WRIST`: the back of the hand toward the forearm up to 75 degrees,
-  the palm 60, toward the thumb 22, away from it 32; `wristOf`); the forearm takes the hand's roll (`armTurns`: the contract's forearm bone's
-  turn, pointing -x, and the wrist bone's bend under it). **The rig contract** (web/models/hand.glb, tools/hands/build_hand.py): one left hand in
+- **The hand**: a child's of about nine, 14.5 cm from the wrist crease to the middle fingertip (Snyder et al. 1977, UM-HSRI-77-17), 6.56 cm across
+  the palm: `web/models/hand.glb` (191 KB, built by `tools/hands/build_hand.py` in Blender, headless and deterministic, from a distance field written
+  in the script: tapered oval phalanges with soft pads, nails, an arched palm with its thenar, hypothenar and finger-root pads, finger webs, a
+  thumb set at its real angle; a short forearm in a soft knit cuff that closes 7.75 cm from the wrist; skinned to the rig contract's bones;
+  `tools/hands/README.md`). `web/hand-model.js` starts its fetch as the page's modules load and `web/hands.js` waits for it (a top-level await),
+  so it is in before the first picture or export frame; each hand is a SkeletonUtils clone of it (its own bones, the geometry shared; the right
+  hand the left mirrored by its root), drawn with the hands' own materials (a neutral mid skin #c69273 with a soft sheen, the nails, a plain
+  blue-grey sleeve #7187a5), graded as the view's own looks (gradeShader), casting and taking shadows; its forearm bone is turned along the arm
+  and its wrist bone back by as much (`placeArm`, `armTurns`), so the skin bends at the wrist as the wrist does. Should the file not load (an old
+  deploy, a blocked file), the procedural capsule hand of release 2 is drawn instead, a warning says why once, and nothing else changes
+  (`meshHand()`; `useCapsules(on)` for the tests). `npm run build:static` ships `.glb` files (tools/build-static.mjs: `ASSET_EXT`, its preview
+  server's `model/gltf-binary`), and `npm run vendor:three` vendors the GLTFLoader and SkeletonUtils addons it imports. Real size whatever it
+  does: a harder push is the pusher's force and time, never a bigger hand. The arm is a short forearm to its sleeve's cuff and a hand's breadth
+  of sleeve, never a sleeve out of the picture, no elbow, no person. It leaves the hand from the picture's nearer edge (or the side the hold or
+  the push says) rising 15 to 35 degrees over the level (a pushing palm's from 5: `ARM.level`), or from above 15 to 35 degrees off the upright (a
+  hand with a thing on its open palm may slope down to the elbow as much instead, a tray held out, with room under it), never along the floor or
+  a table; its line (`ARM`: a capsule 2.45 cm round 2 cm from the wrist to 3.15 cm at 7.5 cm, round the oval forearm and sleeve of the mesh) 3 mm
+  clear of everything drawn; the wrist bent no further than a child's goes easily (`WRIST`: the back of the hand toward the forearm up to 75
+  degrees, 88 for a palm pushing a thing, which the push bends back; the palm 60, toward the thumb 22, away from it 32; `wristOf`); the forearm
+  takes the hand's roll (`armTurns`: the contract's forearm bone's turn, pointing -x, and the wrist bone's bend under it). **The rig contract** (web/models/hand.glb, tools/hands/build_hand.py): one left hand in
   metres, the palm toward -y, the fingers along +x, the thumb toward +z, the wrist at the origin; bones forearm > wrist > palm > thumb_1..3,
   index_1..3, middle_1..3, ring_1..3, pinky_1..3, each with x along it, y its back (the nail's side) and its bend about z; the right hand is the
-  left mirrored. `POSES` (flat, relaxed, fist, point, press, pinch, cup) are each pose bone's turn from hand.glb's rest, put on as
-  `bone.quaternion = rest × Euler(x, y, z, "YZX")` (x the twist, y = -spread, z = -flex, as the README says); the procedural hand drawn until
-  the mesh is wired in carries the same rest and the same collision spheres on its bones (`fitProxies`). It casts and takes shadows and shows in the table's mirror; it is in no shot's framing (every camera frames as it did; a directed camera's
+  left mirrored. `POSES` (flat, relaxed, fist, point, press, pinch, pinchOpen, cup) are each pose bone's turn from hand.glb's rest, put on as
+  `bone.quaternion = rest × Euler(x, y, z, "YZX")` (x the twist, y = -spread, z = -flex, as the README says); the pinch (its tips meeting pad to
+  pad), the opened pinch (4.5 cm), the fist's thumb and the press's flat thumb are fitted on the mesh's own skin, and no digit's skin lies in
+  another's in any pose. **Contact**: the collision spheres every rule reads (`fitProxies`) are fitted to the mesh's skin once, at load
+  (`meshProxies`: each digit's cross-sections every 6.5 mm cut through its triangles, one circle round each or two where it is wider than thick,
+  the last reaching the fingertip; rows across the palm, the ball of the thumb and the wrist from the skin's front to its back, the outermost
+  reaching its sides; a small one wherever the skin was still left out; about 170, each skinned as the skin round it is, in bounded groups a bone
+  so a clearance looks only where it must); they are the search's model. Where a chosen hand finally touches is fitted on the drawn skin
+  itself, skinned on the CPU exactly as the GPU skins it (`skinClearance`): the hand seated along the thing's normal at its nearest skin point
+  until that is 0.4 mm off (`seatOnSkin`: a hold set down onto it, a push along the push or down onto a low thing's top edge; never nearer to
+  anything else than it was, nor within 1 mm), each digit that closed onto it turned the last little way until its skin is 0.4 mm off and the
+  skin it carries (the ball of the thumb, the palm by a knuckle) never into it (`closeOnSkin`); a hand's nearness to anything else drawn is
+  judged by its skin too where the spheres say it is within 3 mm. What `touched` lists is what the skin is within 1 mm of. The procedural capsule
+  hand keeps its own spheres and none of this. It shows in the table's mirror; it is in no shot's framing (every camera frames as it did; a directed camera's
   model boxes leave it out: "Directed exports with the lesson look and hands"). Its meshes pick as
   the item (a held thing's only while it is held, as the pin's; never as the surface under the cursor).
 - **Grips** (every way the grip allows is tried: the hand turned about what holds it, either hand, its palm slid onto the thing until its
@@ -4197,18 +4218,24 @@ above (and a starting gate: the hand wins when an item sets both).
   3 mm within 0.6 s of the release); a thing let go only after the run ends (a still) is guessed from its density against its liquid's (else it
   falls). `pinch`: the thumb's and the index's tips on either side of it across the way it will go, so it slides out from between them (the fingers
   front and back when it is thin that way), at its end on the hand's side (7 mm in) or from above at its middle (nearer its top where the curled
-  fingers would meet its top). `press`: the palm on its top (its heel a little up), the fingers along the picture away from its nearer edge. `grip` from above: the hand on top, the fingers
+  fingers would meet its top); the pinch opened to the thing's width across that axis there (`pinchFor`: the pinch opened toward pinchOpen until
+  its tips are that far apart, and a little more), its tips set on either side of its middle line, then closed along that same path until each
+  pad's skin is 0.4 mm off (`closePinch`), the thumb in front or, the hand the other way up, behind; the fingers it does not use curled further
+  out of it, or opened after the index (`tuck`). `press`: a thing up to 6.5 cm, the pointing finger's tip on its top from above (every heading
+  round the upright, how steeply it points down and how the hand is rolled about it tried; only the tip on it, the rest of the hand 3 mm off); a
+  bigger one, the palm on its top (its heel a little up, rolled a little either way so the palm itself, not only the ball of the thumb, lies on
+  it), the fingers along the picture away from its nearer edge. `grip` from above: the hand on top, the fingers
   draped down one side (a little toward the camera) and the thumb round its back, so its front shows; a bar (longer than 5 cm and twice its depth, at
   most 4 cm high and deep) lies across the base of the fingers in a fist. `palm` under a ball is tangent to it 20 degrees off its bottom toward the camera.
 - **Letting go**: at the release the fingers open (0.08 s, as `doc.release.holder`'s opening) and the hand leaves along its way out (the arm's line;
   a palm drops straight down from under the thing, up to 5 cm and never into what is under it, then goes out to its side, and down only with 40 cm
   of room), starting at 30 m/s² up to 1.4 m/s (a palm 40 m/s² and
-  2.5 m/s: a thing falls at g, and a hand left under it would be seen to carry it). A press lifts just off it (1.2 cm), slides off it level
+  2.5 m/s: a thing falls at g, and a hand left under it would be seen to carry it). A press (a fingertip or a palm) lifts just off it (1.2 cm), slides off it level
   across the picture (away from where the thing goes, else toward more room to a wall beside it, else toward the picture's nearer edge; else the
   other way, else away from the camera, never toward it while another way is clear) as far as clears the column over the thing for the hand and its
   forearm, meeting nothing, at 60 m/s² up to 1.6 m/s, then rises calmly along its arm out of the picture (0.3 m/s, faster only to be out within
   0.9 s): a cork shoots up beside the hand, so the hand is seen to leave it, never to lift it or ride on it, and is still seen going a few tenths of
-  a second later. The fingers open toward the relaxed hand, never bent further than they held. Frame by frame the hand is also kept 0.8 mm clear of the thing it let go, from the track (the hand is pushed further along its
+  a second later. The fingers open toward the relaxed hand, never bent further than they held (a pressing palm's thumb stays out flat). Frame by frame the hand is also kept as clear of the thing it let go as it held it, 0.8 mm at the most, from the track (the hand is pushed further along its
   way when the thing would reach it: it never passes through it and never comes back); it is hidden once out of the picture. A thing that leaves at
   more than 0.35 m/s (a throw: `start_speed`) is followed through first: the hand moves along its throw at 0.6 of its speed, slowing to rest in 0.1 s,
   then leaves. The export's motion blur takes sub-frames while a hand moves (`busy`).
@@ -4219,28 +4246,37 @@ above (and a starting gate: the hand wins when an item sets both).
   with (up to 5 cm; the thing does not move before the paddle reaches it), so a hand is on the thing before the push, never short of it; on every
   frame it is kept as clear of the thing as it rests on it (pushed back along the push where the thing would come nearer: never in it). Every way a
   skin allows is tried (which hand, its tilt, turn and roll, the height and depth on the thing's back, slid along the push until its nearest part
-  is 0.4 mm from it), each with its arm from behind the push (rising 15 to 35 degrees, a little away from the camera), and the cleanest kept.
+  is 0.4 mm from it), each with its arm from behind the push (rising 15 to 35 degrees, a pushing palm's from 5, a little away from the camera),
+  and the cleanest kept; then each hand is seated on the thing by its drawn skin (`seatOnSkin`: a fist's bent knuckles lie a few millimetres
+  inside their spheres).
   `finger`: only the index's tip touches (pointing a little down and toward the camera as the floor and the thing leave room), the rest of the
-  hand 3 mm clear of the thing and of the floor; `fist`: its knuckles (the first and middle bones' backs) on it; `hand`: the heel of the palm on it
-  and the fingers laid on it (bent at the knuckles to meet it, never curled round it): on a ball the heel a little above its middle on its back,
-  turned about 25 degrees round it toward the camera, the fingers turned away from the camera across it, so the back of the hand shows and never
-  a hand over its top; on a box flat on its back, or over its back edge when it is low; `two hands`: a left and a right, one above the other on
-  its back, or side by side across it when it is clearly wider than tall (1.5 times), the left hand on the pusher's left, never one in the other
-  nor in the other's arm (3 mm apart at the least, hands and arms), the arms parallel (one way for both) and apart, both moving as one; on a thing
-  too small for both the right hand lies palm down on the left one, touching it, never in it.
+  hand 3 mm clear of the thing and of the floor; `fist`: its knuckles (the first and middle bones' backs) on it; `hand`: the hand standing flat on
+  its back, the fingers up (as FO-36 asks: "one open hand, flat on its back, fingers up"), the wrist bent well back (up to `WRIST.push`, 88
+  degrees) and the forearm nearly level, the heel of the palm on it and the fingers laid on it where there is something to meet (bent at the
+  knuckles to meet it, never curled round it; over a low thing's top they stay straight): on a ball the heel a little above its middle on its
+  back (about 14 degrees up), turned round it toward the camera, so the back of the hand shows, never a hand over its top; on a box upright on its
+  back (turned toward facing down only as far as the wrist needs); `two hands`: a left and a right, side by side on its back (one above the other
+  only where its back is as tall as two hands, 26 cm), the left hand on the pusher's left, never one in the other nor in the other's arm (3 mm
+  apart at the least, hands and arms), each arm its own way out of its hand (round a ball the hands turn from each other, and so do their
+  forearms; at most 45 degrees apart, never crossed: the left arm runs out on the left), both moving as one; on a thing too small for both the
+  right hand lies palm down on the left one, touching it, never in it.
 - **A pitcher** with a hand: a right hand for `pour_to: right` (a left for left) round its handle's outer side (a cup: round its body, the thumb by
-  the rim), the fingers curved round it to 0.5 mm, turning with the flow module's `tilt_deg` reading exactly as the model does; the forearm leaves
-  it by the rules (from the side away from the pour, rising, behind; clear of the vessel and of everything about it) and turns half as far.
+  the rim), the fingers curved round it to 0.5 mm (the drawn skin 0.4 mm), the thumb starting open and closing round the handle from outside
+  (a 5.8 cm handle: the little finger curls under its end), turning with the flow module's `tilt_deg` reading exactly as the model does; the
+  forearm leaves it by the rules (from the side away from the pour, rising, behind; clear of the vessel and of everything about it) and turns
+  half as far.
 - **AI** (`web/sim/modules/hands.js` `plugin`): the catalog digest's paragraph (props.hand and hand_from on held, fixed, pusher and pitcher items),
   carried by a request that names a hand, a finger, a fingertip, a fist, a palm or a thumb (`words.picks`), plan and edit prompt lines ("a person holds, drops, throws, pushes or pours: held: true + props.hand ..."), change words ("a fingertip holds it
   down", "two hands push it", "a hand holds and tips it", "no hand (the pull pin holds it)").
 - **Known limits**: a hand is not a body (nothing lands on it: a toss cannot be caught on the palm); once it lets go it is kept clear only of the
   thing it let go (a press's slide-off and the way out are tried against everything else drawn when it is placed); one hand per held or fixed thing
   (the pusher's two hands aside); the grip is chosen from the thing's outline and drawn box, not from what it is (an apple and an orange of one size
-  are held alike); a held part of a machine that hangs inside what holds it may have no clean hold (the least at fault is drawn). The empty pinch's
-  tips meet on the procedural hand; on hand.glb's skeleton (its thumb's two phalanges 4.15 cm long, the contract-scaled 5.1) they stay 33 mm apart
-  until its thumb is lengthened or the pinch's thumb row refit on it (closing onto what it holds is unaffected); the collision spheres are the
-  procedural hand's measures on the contract's bones (`fitProxies`: hand.glb's bones carry their skin's sections to fit them by).
+  are held alike); a held part of a machine that hangs inside what holds it may have no clean hold (the least at fault is drawn). The collision
+  spheres are the search's model: in some poses a bent knuckle's skin or the web of a thumb spread wide stands up to 6.5 mm out of them, so a
+  placement is judged by the drawn skin only for the thing it holds or pushes and where the spheres come within 3 mm of anything else; the
+  forearm and sleeve are a round capsule, a little taller than they are. hand.glb's thumb is short for its fingers (its two phalanges 4.15 cm), so
+  a pad-to-pad pinch curls the index into a ring; under a thing close above (the clip a finger's width under FO-13's magnet) an `auto` pinch
+  would lie on it, and the clip is held on the palm instead.
 - **Checked** (2026-10-20, on this branch): `node --no-warnings tools/hands/test.mjs`: 126 of 126 (all 326 catalog entries items.py == web/sim;
   the props on every dynamic type but the pusher, the pusher's and the pitcher's; the 14 proof scenes build the same documents in Python and JS
   with and without their hand props, resolved differing only by them, and run to the same tracks on the browser bundle; the 12 scenarios and 10
@@ -4264,6 +4300,19 @@ above (and a starting gate: the hand wins when an item sets both).
   scenes, every one clean but two machines whose hanging part the sweep starts inside the table. The 22 built-in scenes byte for byte as on the
   base (origin/dev 3b0b2d7): each one's document, resolved props, warnings and track hashed in both trees. Pictures: the FO-36 lesson's pushes
   (a fingertip, a hand, two hands on the soccer ball and the toy car) at its own camera and close, every proof scene before and after its release.
+- **Checked, hands v2 mesh** (2026-10-21, branch feat/hands-v2: hand.glb drawn, its spheres fitted to its skin, contact fitted on the drawn skin,
+  the press's fingertip, the pinch opened to the thing and closed along its own path, pushing palms upright, two hands side by side, each arm
+  its own way): `node --test tools/hands/rules.test.mjs` 26 of 26 (now on the drawn skin: the mesh loaded with the contract's bones, its spheres
+  within 6.5 mm of its skin in every pose, no digit's skin in another's, the pinch's tips meeting, every hold, press, push and pour 0-1 mm from
+  what it touches and never in it, nothing else within 1 mm; the capsule hand still holds and pushes); `node --no-warnings tools/hands/test.mjs`
+  126 of 126; `node tools/hands/browser.mjs` 130 of 130 (every proof scene drawn with hand.glb's skinned meshes; with hand.glb blocked the
+  capsule hand drawn and a warning given; the export, the library card's photo and an MP4 show the hand; every catalog type held, fixed, pushed
+  and poured: 416 of 426 scenes with a hand, 9.3 ms median and 310 ms at most to make a scene's hands). Every hold and push on boxes and a
+  ball: the drawn skin of what touches 0.29-0.44 mm from the thing. `npm run build:static:nogen`: dist/ ships models/hand.glb and every
+  reference resolves; `npm run vendor:three:check` up to date. The 22 built-in scenes byte for byte as on origin/dev 3b0b2d7. Pictures (the
+  export renderer, the lesson look on): every role old against new (hold pinch, palm, press, grip and their let-go; push finger, hand, two hands
+  and fist on a soccer ball and a toy car; pour from a pitcher and a cup; drop; throw; a cork pressed under water) and FO-36's screens 1, 3, 6
+  and 10 re-exported through their own shot plans.
 
 ## Readable subjects (2026-10-20): thin steel face-on, cork sizes, a slow-foam ball, a ride-on car, sails and fans that read; clear water with rings and splashes; frosty ice, satin bowls, a lamp's gold light, clay lumps, gates without ghosts
 What a lesson picture needs to read at lesson size, found by the five-lesson benchmark (lesson-regen/bench: MA-25, FO-13, MO-19, FO-36, MA-50) and

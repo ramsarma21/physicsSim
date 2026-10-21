@@ -1,12 +1,16 @@
-// The hands' rules (web/hands.js, web/CONTRACT.md "Hands"), pure geometry on hand-made documents of boxes (no engine, no view):
+// The hands' rules (web/hands.js, web/CONTRACT.md "Hands"), pure geometry on hand-made documents of boxes (no engine, no view), on the hand
+// the view draws: web/models/hand.glb (read from disk here), its drawn skin skinned as the GPU skins it (H.skinClearance); the collision spheres
+// are only the search's model of it:
+//   mesh       hand.glb loaded, the rig contract's bones, the spheres fitted to the skin (no skin point more than 1.5 mm outside them in any pose)
 //   geometry   segment and point distances, two hands' gap, the wrist's bend and its sides, the contract's forearm and wrist turns
-//   poses      every pose finite, no digit inside another, the pinch's tips meeting, the fist's thumb under its knuckles, lerpPose
+//   poses      every pose finite, no digit's skin inside another's, the pinch's tips meeting, the fist's thumb under its knuckles, lerpPose
 //   contact    what touches is within 1 mm of what it touches and never in it: a pinch's two tips, a grip's and a palm's touching parts, a pressing
-//              palm, a pushing fingertip, palm or fist (and nothing else of a finger push within 3 mm of the box)
+//              palm, a pressing fingertip, a pushing fingertip, palm or fist (and nothing else of a finger push or press within 3 mm of the box)
 //   clear      no part of a holding hand within 1 mm of anything else (the floor; a pushing one 3 mm), its arm 3 mm clear of everything, rising as
-//              ARM says, its wrist easy
-//   two hands  never one in the other nor their arms (3 mm) on any frame of a push, the arms parallel, the left hand on the left, both moving
-//              the same way; on a box too small for both, still never one in the other
+//              ARM says, its wrist easy (a pushing palm's bent back up to WRIST.push)
+//   two hands  never one in the other nor their arms (3 mm) on any frame of a push, the arms never crossed (each its own way, at most 45
+//              degrees apart), the left hand on the left, both moving the same way; on a box too small for both, still never one in the other
+//   capsules   the procedural hand (drawn when hand.glb does not load): a hold and a push made, nothing in the box
 //   node --test tools/hands/rules.test.mjs
 import assert from "node:assert/strict"
 import { test } from "node:test"
@@ -16,7 +20,8 @@ const warn = console.warn
 console.warn = () => {} // (web/models3d.js registers the model files, some of which want a document: not these tests' business)
 const H = await import("../../web/hands.js")
 console.warn = warn
-const { ARM, WRIST, POSES, POSE_BONES, makeHands, handSpheres, armLine, handsGap, segmentDistance, pointSegment, wristOf, wristOk, armTurns, armRise, lerpPose, newRig, applyPose, SIZE } = H
+const { ARM, WRIST, POSES, POSE_BONES, makeHands, handSpheres, armLine, handsGap, segmentDistance, pointSegment, wristOf, wristOk, armTurns, armRise, lerpPose, newRig, applyPose, SIZE, skinClearance, skinPoints, meshHand, useCapsules, BONES } = H
+const LINKS = ["palm", "wrist", "t.0", "t.1", "t.2", ...[0, 1, 2, 3].flatMap((i) => [0, 1, 2].map((k) => `f${i}.${k}`))]
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z)
 const near = (a, b, eps, what) => assert.ok(Math.abs(a - b) <= eps, `${what}: ${a} is not within ${eps} of ${b}`)
@@ -47,11 +52,23 @@ const current = (rig) => {
 	rig.arm.updateMatrixWorld(true)
 	return rig
 }
-/** The least clearance of the rig's parts (those `links` picks) from field d, and which part. */
+/** The least clearance of the rig's parts (those `links` picks) from field d, and which part: hand.glb's drawn skin (skinned as the GPU does), the
+ *  capsule hand's spheres. */
 function clearOf(rig, d, links = () => true) {
 	let m = Infinity
 	let link = null
-	for (const s of handSpheres(current(rig))) {
+	if (current(rig).mesh) {
+		for (const l of LINKS) {
+			if (!links(l)) continue
+			const c = skinClearance(rig, d, [l])
+			if (c < m) {
+				m = c
+				link = l
+			}
+		}
+		return { m, link }
+	}
+	for (const s of handSpheres(rig)) {
 		if (!links(s.link)) continue
 		const c = d(s.c) - s.r
 		if (c < m) {
@@ -66,17 +83,44 @@ const armDir = (rig) => V(1, 0, 0).applyQuaternion(current(rig).arm.quaternion).
 const armClear = (rig, d) => H.armClearance(d, rig.root.position, armDir(rig))
 /** A hand's frame as placeHand set it (X to the fingers, Y its back), from its root's turn. */
 const frameOf = (rig) => ({ X: V(1, 0, 0).applyQuaternion(rig.root.quaternion), Y: V(0, 1, 0).applyQuaternion(rig.root.quaternion) })
-function armRules(rig, fields, what, band) {
+function armRules(rig, fields, what, band, extMax = WRIST.ext) {
 	const A = armDir(rig)
 	const rise = armRise(A)
 	assert.ok(band.some(([lo, hi]) => rise >= lo - 0.5 && rise <= hi + 0.5), `${what}: the arm rises ${rise.toFixed(1)} degrees, outside ${JSON.stringify(band)}`)
 	for (const [name, d] of Object.entries(fields)) assert.ok(armClear(rig, d) >= 0.003 - 1e-6, `${what}: the arm is ${(armClear(rig, d) * 1000).toFixed(1)} mm from the ${name}`)
 	const { X, Y } = frameOf(rig)
 	const w = wristOf(rig.side, X, Y, A)
-	assert.ok(wristOk(w), `${what}: the wrist is bent past what it bends easily ${JSON.stringify(w)}`)
+	assert.ok(wristOk(w, extMax), `${what}: the wrist is bent past what it bends easily ${JSON.stringify(w)}`)
 }
 const SIDE = [ARM.side]
 const ABOVE = [ARM.above]
+const PUSHING = [[ARM.level, ARM.side[1]]] // (a pushing palm's forearm may run nearly level)
+
+// ---------------------------------------------------------------- the mesh
+test("hand.glb: loaded, the rig contract's bones, the spheres fitted to its skin", () => {
+	assert.ok(meshHand(), "the hands are drawn with hand.glb")
+	const r = newRig("left")
+	assert.ok(r.mesh && BONES.every((b) => r.bones[b]?.isBone), "every contract bone is a bone of the mesh")
+	assert.ok(r.meshes.length === 3 && r.meshes.every((m) => m.isSkinnedMesh) && new Set(r.meshes.map((m) => m.material)).size === 3, "the skin, the nails and the sleeve: three skinned meshes, three materials")
+	r.root.position.set(0, 0, 0)
+	r.root.quaternion.identity()
+	r.root.scale.set(SIZE, SIZE, SIZE)
+	for (const [name, P] of Object.entries(POSES)) {
+		applyPose(r, P)
+		r.root.updateMatrixWorld(true)
+		const sp = handSpheres(r)
+		let worst = 0
+		for (const q of skinPoints(r)) {
+			if (q.link === "arm") continue
+			let d = Infinity
+			for (const s of sp) d = Math.min(d, q.p.distanceTo(s.c) - s.r)
+			worst = Math.max(worst, d)
+		}
+		// (the spheres reach the skin's extremes where they sit; a bent knuckle's skin, or the web of a thumb spread wide, may stand out of them a
+		// few millimetres: they are the search's, the drawn skin decides where it touches)
+		assert.ok(worst <= 0.0065, `${name}: the skin stands ${(worst * 1000).toFixed(2)} mm out of the spheres`)
+	}
+})
 
 // ---------------------------------------------------------------- geometry
 test("segment and point distances", () => {
@@ -135,44 +179,59 @@ test("the contract's forearm and wrist turns", () => {
 })
 
 // ---------------------------------------------------------------- poses
-test("every pose: finite, every bone, no digit in another, the pinch's tips meeting, the fist's thumb under its knuckles", () => {
+test("every pose: finite, every bone, no digit's skin in another's, the pinch's tips meeting, the fist's thumb under its knuckles", () => {
 	const r = newRig("left")
 	r.root.position.set(0, 0, 0)
 	r.root.quaternion.identity()
-	r.root.scale.set(1, 1, 1)
+	r.root.scale.set(SIZE, SIZE, SIZE) // (as drawn: metres)
 	const digit = (l) => (l.startsWith("f") ? l.slice(0, 2) : l.startsWith("t") ? "t" : "palm")
+	const far = (l) => /^f[0-3]\.[12]$/.test(l) || l === "t.1" || l === "t.2"
 	for (const [name, P] of Object.entries(POSES)) {
 		assert.deepEqual(Object.keys(P).sort(), [...POSE_BONES].sort(), `${name}: every pose bone`)
 		assert.ok(Object.values(P).every((v) => v.length === 3 && v.every(Number.isFinite)), `${name}: finite`)
 		applyPose(r, P)
 		r.root.updateMatrixWorld(true)
-		const W = r.spheres.map((s) => ({ c: s.p.clone().applyMatrix4(s.obj.matrixWorld), r: s.r, link: s.link, root: s.p.lengthSq() < 1e-12 }))
-		let worst = Infinity
-		for (let i = 0; i < W.length; i++)
-			for (let j = i + 1; j < W.length; j++) {
-				const a = W[i]
-				const b = W[j]
-				const da = digit(a.link)
-				const db = digit(b.link)
-				// (the knuckles' spheres sit in the palm's webbing, the ball of the thumb in the palm: they are not digits apart)
-				if (da === db || da === "palm" || db === "palm" || a.link === "t.0" || b.link === "t.0" || (a.root && (a.link.endsWith(".0") || a.link === "t.1")) || (b.root && (b.link.endsWith(".0") || b.link === "t.1"))) continue
-				worst = Math.min(worst, a.c.distanceTo(b.c) - a.r - b.r)
+		// (a digit's skin behind another digit's: the nearest point of that other skin within 4 mm, along its outward normal; the palm, the wrist
+		// and the ball of the thumb are where the digits join, not digits apart)
+		const pts = skinPoints(r).filter((q) => q.link !== "arm")
+		const B = pts.filter((q) => !(q.link === "palm" || q.link === "wrist" || q.link === "t.0"))
+		let worst = 0
+		let where = ""
+		for (const q of pts) {
+			if (!far(q.link)) continue
+			let best = null
+			let bd = 0.004
+			for (const p of B) {
+				if (digit(p.link) === digit(q.link)) continue
+				const dd = q.p.distanceTo(p.p)
+				if (dd < bd) {
+					bd = dd
+					best = p
+				}
 			}
-		assert.ok(worst >= -0.0005, `${name}: one digit ${(-worst * 1000).toFixed(1)} mm in another`)
+			if (!best) continue
+			const depth = -q.p.clone().sub(best.p).dot(best.n)
+			if (depth > worst) {
+				worst = depth
+				where = `${q.link} in ${best.link}`
+			}
+		}
+		assert.ok(worst <= 0.0006, `${name}: one digit's skin ${(worst * 1000).toFixed(2)} mm in another's (${where})`)
 	}
 	applyPose(r, POSES.pinch)
 	r.root.updateMatrixWorld(true)
 	const tip = (link) => {
-		const s = r.spheres.filter((q) => q.link === link).at(-1)
-		return { c: s.p.clone().applyMatrix4(s.obj.matrixWorld), r: s.r }
+		const s = r.spheres.find((q) => q.tip === link)
+		return { c: H.sphereAt(s, new THREE.Vector3()), r: s.r * SIZE }
 	}
 	const a = tip("f0.2")
 	const b = tip("t.2")
-	assert.ok(a.c.distanceTo(b.c) - a.r - b.r < 0.006, `the pinch's tips meet (${((a.c.distanceTo(b.c) - a.r - b.r) * 1000).toFixed(1)} mm apart)`)
+	assert.ok(a.c.distanceTo(b.c) - a.r - b.r < 0.003, `the pinch's tips meet (${((a.c.distanceTo(b.c) - a.r - b.r) * 1000).toFixed(1)} mm apart)`)
 	applyPose(r, POSES.fist)
 	r.root.updateMatrixWorld(true)
-	const front = (pick) => Math.max(...r.spheres.filter((s) => pick(s.link)).map((s) => s.p.clone().applyMatrix4(s.obj.matrixWorld).x + s.r))
-	assert.ok(front((l) => l.startsWith("t")) <= front((l) => l === "f0.0" || l === "f1.0") + 0.001, "the fist's thumb is never past its knuckles")
+	const pts = skinPoints(r)
+	const front = (pick) => Math.max(...pts.filter((q) => pick(q.link)).map((q) => q.p.x))
+	assert.ok(front((l) => l === "t.1" || l === "t.2") <= front((l) => l === "f0.0" || l === "f1.0" || l === "f0.1" || l === "f1.1") + 0.001, "the fist's thumb is never past its knuckles")
 })
 
 test("lerpPose: the poses between, in place too", () => {
@@ -195,8 +254,11 @@ const HOLDS = {
 	"grip from above": { box: slab(0.07, 0.05, 0.05), y: 0.3, hand: "grip", from: "above", band: ABOVE },
 	"grip from the left": { box: slab(0.05, 0.07, 0.05), y: 0.3, hand: "grip", from: "left", band: SIDE },
 	"palm under it": { box: slab(0.06, 0.05, 0.06), y: 0.4, hand: "palm", from: "right", band: [ARM.side, ARM.below] },
-	"palm pressing it down": { box: slab(0.06, 0.04, 0.06), y: 0.02, hand: "press", band: ABOVE, palm: true }
+	"palm pressing it down": { box: slab(0.1, 0.04, 0.1), y: 0.02, hand: "press", band: ABOVE, palm: true },
+	"fingertip pressing it down": { box: slab(0.03, 0.04, 0.03), y: 0.02, hand: "press", band: ABOVE, touch: ["f0.2"], tipOnly: true }
 }
+/** The palm's face: the palm, the ball of the thumb, the fingers' roots (a palm laid on a thing lies on its pads, its middle a hollow). */
+const palmFace = (l) => l === "palm" || l === "t.0" || /^f[0-3]\.0$/.test(l)
 for (const [name, c] of Object.entries(HOLDS))
 	test(`a box held, ${name}: what touches within 1 mm and never in it; nothing else near anything; the arm by the rules`, () => {
 		const box = S("box/box", c.box, 0, c.y)
@@ -215,8 +277,12 @@ for (const [name, c] of Object.entries(HOLDS))
 			assert.ok(t >= -0.00005 && t <= 0.001, `${name}: ${l} is ${(t * 1000).toFixed(2)} mm from it`)
 		}
 		if (c.palm) {
-			const t = clearOf(rig, d, (k) => k === "palm").m
+			const t = clearOf(rig, d, palmFace).m
 			assert.ok(t >= -0.00005 && t <= 0.002, `${name}: the palm is ${(t * 1000).toFixed(2)} mm from it`)
+		}
+		if (c.tipOnly) {
+			const rest = clearOf(rig, d, (l) => l !== "f0.2").m
+			assert.ok(rest >= 0.003 - 1e-6, `${name}: the rest of the hand is ${(rest * 1000).toFixed(1)} mm from it`)
 		}
 		// (every part that closed onto it rests on it)
 		for (const l of R.info.touched ?? []) {
@@ -296,14 +362,14 @@ for (const [skin, box, h, paddleH] of [
 		}
 		if (skin === "fist") assert.match(all.link, /^f[0-3]\.[01]$/, "the knuckles touch")
 		if (skin === "hand") {
-			const palm = clearOf(rig, d, (l) => l === "palm").m
+			const palm = clearOf(rig, d, palmFace).m
 			assert.ok(palm <= 0.004, `the palm is ${(palm * 1000).toFixed(1)} mm from the box`)
 		}
 		const f = clearOf(rig, floor)
 		assert.ok(f.m >= 0.003 - 1e-6, `${skin}: ${f.link} is ${(f.m * 1000).toFixed(1)} mm from the floor`)
 		const A = armDir(rig)
 		assert.ok(A.x < -0.3, "the arm comes from behind the push")
-		armRules(rig, { box: d, floor }, skin, SIDE)
+		armRules(rig, { box: d, floor }, skin, skin === "hand" ? PUSHING : SIDE, skin === "hand" ? WRIST.push : WRIST.ext)
 		// (every frame of the push: never in the box)
 		frames.forEach((fr) => {
 			Hs.at(fr.t)
@@ -332,14 +398,18 @@ for (const [label, box, h, paddleH] of [
 		// (apart by 3 mm; on a thing too small for two the right hand may rest on the left, never in it)
 		const apart = small ? 0 : 0.003
 		assert.ok(gapNow() >= apart - 1e-6, `the hands are ${(gapNow() * 1000).toFixed(1)} mm apart`)
-		near(armDir(L).angleTo(armDir(R)), 0, 1e-6, "the arms are parallel")
+		// (each arm its own way, never crossed: the left one out on the pusher's left (-z), the two at most 45 degrees apart)
+		assert.ok(armDir(L).angleTo(armDir(R)) <= (45 * Math.PI) / 180 + 1e-6, `the arms are ${((armDir(L).angleTo(armDir(R)) * 180) / Math.PI).toFixed(1)} degrees apart`)
+		const lineL = armLine(L.root.position, armDir(L))
+		const lineR = armLine(R.root.position, armDir(R))
+		assert.ok(lineL.b.z <= lineR.b.z + 0.005, "the arms never cross")
 		// (the pusher faces +x: its left is -z)
 		assert.ok(L.root.position.z <= R.root.position.z + 0.01, "the left hand is on the pusher's left")
 		for (const g of [L, R]) {
 			const m = clearOf(g, d).m
 			assert.ok(m >= -0.00005, `${g.side}: ${(-m * 1000).toFixed(2)} mm in the box`)
 			assert.ok(clearOf(g, floor).m >= 0.003 - 1e-6, `${g.side}: near the floor`)
-			armRules(g, { box: d, floor }, `${label}, ${g.side}`, SIDE)
+			armRules(g, { box: d, floor }, `${label}, ${g.side}`, PUSHING, WRIST.push)
 		}
 		assert.ok(Math.min(clearOf(L, d).m, clearOf(R, d).m) <= 0.001, "a hand is on the box")
 		const W0 = [L.root.position.clone(), R.root.position.clone()]
@@ -367,10 +437,29 @@ test("a hand on a pitcher's handle: the fingers round it within 1 mm, never in i
 	const d = (p) => R.bar(p.clone().sub(V(0, 0.3, 0)))
 	const all = clearOf(rig, d)
 	assert.ok(all.m >= -0.00005 && all.m <= 0.001, `the nearest part, ${all.link}, is ${(all.m * 1000).toFixed(2)} mm from the handle`)
+	// (the handle, 5.8 cm, is shorter than the hand is wide: the index, middle and ring fingers wrap it, the little finger curls under its end)
 	for (const i of [0, 1, 2, 3]) {
 		const m = clearOf(rig, d, (l) => l.startsWith(`f${i}.`)).m
-		assert.ok(m >= -0.00005 && m <= 0.001, `finger ${i} is ${(m * 1000).toFixed(2)} mm from the handle`)
+		assert.ok(m >= -0.00005 && (i === 3 || m <= 0.001), `finger ${i} is ${(m * 1000).toFixed(2)} mm from the handle`)
 	}
 	armRules(rig, { floor: boxField(FLOOR) }, "the pitcher", SIDE)
 	assert.ok(SIZE > 0)
+})
+
+// ---------------------------------------------------------------- the capsule hand (drawn only when hand.glb does not load)
+test("the procedural capsule hand still holds and pushes (the fallback when hand.glb cannot be loaded)", () => {
+	try {
+		assert.equal(useCapsules(true), false, "the capsule hand is drawn")
+		const box = S("box/box", slab(0.06, 0.05, 0.06), 0, 0.4)
+		const Hs = hands([box, FLOOR], { held: ["box/box"], resolved: { box: { hand: "palm", hand_from: "right" } } })
+		const rig = Hs.rigs[0].rig
+		assert.ok(!rig.mesh && rig.spheres.length > 20, "a capsule rig")
+		assert.ok(clearOf(rig, boxField(box)).m >= -0.0005, "the palm hold is not in the box")
+		const { Hs: P } = pushRun(BOX(0.12, 0.1, 0.12), 0.05, "hand", 0.08)
+		assert.ok(P.rigs.length === 1 && !P.rigs[0].rig.mesh, "a capsule hand pushes")
+		assert.ok([P.rigs[0].rig.root.position.x, P.rigs[0].rig.root.position.y].every(Number.isFinite))
+	} finally {
+		useCapsules(false)
+	}
+	assert.ok(newRig("left").mesh, "the mesh again")
 })

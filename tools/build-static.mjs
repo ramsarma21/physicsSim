@@ -25,7 +25,7 @@
 //
 // What ships (dist/ mirrors web/, index.html at its root):
 //   web/*.html, *.js, *.css, scenario-list.json and top-level images/fonts; web/{account,ai,export,models,scenarios,sim,ui,vendor}/ (code, styles, data,
-//   images, fonts, licences); never a test/, dev/, __pycache__ or dot folder, a .py/.md/.log/.ts file, a source map over the budget, or a
+//   images, fonts, licences, the hands' mesh web/models/hand.glb); never a test/, dev/, __pycache__ or dot folder, a .py/.md/.log/.ts file, a source map over the budget, or a
 //   development-only file (DEV_ONLY below: web/ai/dev-mock.js, which ?aimock=1 loads; the code may name it only in a dynamic import()).
 //   Not web/dev (dev pages: CDN three, GBs of shots), web/out, web/sample, web/saved, web/presets, nor anything outside web/ (research/, machines/,
 //   snapshots/, tooling/, ai/: the server side). A NEW folder in web/ fails the build until it is added to SHIP_DIRS or SKIP_DIRS below.
@@ -98,7 +98,7 @@ const markerOf = (dir) => path.join(path.dirname(dir), `.${path.basename(dir)}${
 const SHIP_DIRS = new Set(["account", "ai", "export", "gallery", "models", "scenarios", "sim", "ui", "vendor"])
 const SKIP_DIRS = new Set(["dev", "out", "sample", "saved", "presets", "__pycache__", "node_modules"]) // dev pages and shots, renders, test data, the server's saves
 const ASSET_EXT = new Set([".html", ".js", ".mjs", ".css", ".json", ".map", ".svg", ".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif", ".ico",
-	".woff", ".woff2", ".ttf", ".otf", ".wav", ".mp3", ".ogg", ".m4a", ".mp4", ".webm", ".wasm", ".txt"])
+	".woff", ".woff2", ".ttf", ".otf", ".wav", ".mp3", ".ogg", ".m4a", ".mp4", ".webm", ".wasm", ".txt", ".glb"]) // (.glb: web/models/hand.glb, the hands' mesh)
 const LICENCE = /^(licen[cs]e|notice|copying)(\.(txt|md))?$/i
 const NEVER_DIR = (name) => name.startsWith(".") || ["test", "tests", "__pycache__", "node_modules", "dev"].includes(name)
 const NEVER_FILE = (name) => name.startsWith(".") || /\.(test|spec)\.m?js$/.test(name) || /\.(py|pyc|log|ts|tsx|md|sh|command|env|pem|key|p12)$/i.test(name) && !LICENCE.test(name)
@@ -1107,7 +1107,8 @@ if (opt.serve !== null) {
 	const TYPES = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8",
 		".json": "application/json; charset=utf-8", ".map": "application/json; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg",
 		".jpeg": "image/jpeg", ".webp": "image/webp", ".gif": "image/gif", ".ico": "image/x-icon", ".woff2": "font/woff2", ".woff": "font/woff", ".wasm": "application/wasm",
-		".mp4": "video/mp4", ".webm": "video/webm", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".txt": "text/plain; charset=utf-8" }
+		".mp4": "video/mp4", ".webm": "video/webm", ".mp3": "audio/mpeg", ".wav": "audio/wav", ".ogg": "audio/ogg", ".txt": "text/plain; charset=utf-8",
+		".glb": "model/gltf-binary" }
 	const server = http.createServer((req, res) => {
 		const url = new URL(req.url, "http://x")
 		let p = url.pathname

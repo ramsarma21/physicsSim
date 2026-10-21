@@ -13,5 +13,12 @@
   -spread, -flex, 'YZX')`: positive flex bends toward the palm, positive spread turns toward the thumb. The right hand is this one with
   z scaled by -1. The materials are `skin`, `nail` and `sleeve`. Each bone's `userData` holds its length, skin sections and fingertip and
   pad points; the root's `userData` holds the measures (14.5 cm long, 6.5 cm across the palm, cuff at 2.85 cm, sleeve end at 7.75 cm).
+- The view loads the file once (`web/hand-model.js`, waited for by `web/hands.js`) and gives each hand a clone of it. `web/hands.js` fits its
+  collision spheres to this skin when it loads (`meshProxies`), and fits where a hand finally touches on the skin itself, skinned on the CPU as
+  the GPU skins it (`skinClearance`, `seatOnSkin`, `closeOnSkin`, `closePinch`). If the file does not load, the old procedural capsule hand
+  is drawn. After rebuilding the file, run `node --test tools/hands/rules.test.mjs`: it checks the spheres against the skin in every pose,
+  that no digit's skin lies in another's, and every hold and push on the drawn skin.
 - `test.mjs` checks the hands module: catalog props, documents and tracks in Python and JS. `py_hands.py` is its Python side.
-  `browser.mjs` checks the drawn hands (`web/hands.js`) in the app, headless. `scenes/` holds the proof scenes.
+  `rules.test.mjs` checks the hands' rules on boxes on the drawn mesh (and that the capsule hand still works).
+  `browser.mjs` checks the drawn hands (`web/hands.js`) in the app, headless, including the capsule hand when hand.glb is blocked.
+  `scenes/` holds the proof scenes.
