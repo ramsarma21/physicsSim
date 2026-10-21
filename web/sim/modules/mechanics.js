@@ -103,6 +103,7 @@ function _catalog_wide() {
 	register_build_hook(_links)
 	register_build_hook(_fragile)
 	register_build_hook(_shows)
+	register_build_hook(_holds)
 }
 
 /** The kinds an `arrows` prop asks for (FORCE_KINDS order): "all" every kind but net, "none" nothing, else the kinds named (joined by "," "+" or spaces). */
@@ -202,6 +203,19 @@ function _paint(v) {
 
 const _num = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d)
 const has = (o, k) => o !== null && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k)
+
+/** A held thing that starts in a liquid is held from above: its moving solids carry holdFrom "above" (render only): machines/mod_mechanics.py. */
+function _holds(sb, scene) {
+	const liquids = sb.processes.filter((p) => p.kind === "liquid" && Array.isArray(p.layers) && p.layers.length)
+	if (!liquids.length) return
+	const tops = liquids.map((p) => [p.x0, p.x1, p.floor, p.floor + py.pySum(p.layers.map((l) => l.height))])
+	for (const item of scene.items ?? []) {
+		if (item === null || typeof item !== "object" || !py.truthy(item.held) || !has(TYPES, item.type)) continue
+		const mine = sb.solids.filter((s) => s.item === item.id && s.kind === "dynamic")
+		const roots = mine.filter((s) => !("parent" in s) || "pivot" in s)
+		if (roots.some((s) => tops.some(([x0, x1, floor, top]) => x0 < s.at.x && s.at.x < x1 && floor < s.at.y && s.at.y < top))) for (const s of mine) s.holdFrom = "above"
+	}
+}
 
 function _common(sb, scene) {
 	for (const item of scene.items ?? []) {

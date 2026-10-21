@@ -4340,6 +4340,8 @@ ${GRADE}
 		const gated = new Set(doc.view?.gates ?? [])
 		const gateStatics = gated.size ? solids.filter((o) => o.kind === "static" && !o.hidden_3d) : []
 		for (const list of heldByItem.values()) {
+			// (a thing held from above, one held in a liquid: its clamp on a rod over it is web/models/mod-mechanics.js's "mechanics:holders")
+			if (list.some((o) => o.holdFrom === "above")) continue
 			const s = postPart(list)
 			if (!s) continue
 			const id = s.id

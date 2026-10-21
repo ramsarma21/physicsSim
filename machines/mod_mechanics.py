@@ -117,6 +117,7 @@ def _catalog_wide():
     register_build_hook(_links)
     register_build_hook(_fragile)
     register_build_hook(_shows)
+    register_build_hook(_holds)
 
 
 # ---------------------------------------------------------------- materials
@@ -1299,6 +1300,27 @@ EGG = dict(k=1.5e4, force=35.0)
 PIN_MU, PIN_R = 0.25, 0.0015   # a lever's pivot: steel pin on wood (friction, provisional) and the pin's radius (m)
 # soft surfaces: their crush stiffness E·A/t over a 2 x 2 cm patch, E in Pa (open-cell foam 30-100 kPa; a pillow far softer; a sponge; a rubber mat 1-5 MPa)
 SOFT = {"foam": 5e4, "sponge": 1e5, "pillow": 1e4, "rubber mat": 2e6, "carpet": 5e5, "trampoline mat": 2e5, "felt": 3e5}
+
+
+def _holds(sb, scene):
+    """A held thing that starts in a liquid (a cork held down on a tank's floor, a grape held under the water) is held from above: its moving
+    solids carry `holdFrom: "above"` (render only: the 3D view draws a clamp on a clear rod from an arm over the tank, lifted clear at the
+    release, instead of its pull pin on a post from the table, which under a cork reads as a peg it rests on). Whether a root body's middle
+    starts between a liquid's walls (x0..x1), over its floor and under its surface (the floor plus its layers' heights). A scene without a
+    liquid gets nothing; the engine never reads it."""
+    liquids = [p for p in sb.processes if p.get("kind") == "liquid" and p.get("layers")]
+    if not liquids:
+        return
+    tops = [(p["x0"], p["x1"], p["floor"], p["floor"] + sum(layer["height"] for layer in p["layers"])) for p in liquids]
+    for item in scene.get("items", []):
+        if not isinstance(item, dict) or not item.get("held") or item.get("type") not in TYPES:
+            continue
+        mine = [s for s in sb.solids if s.get("item") == item["id"] and s["kind"] == "dynamic"]
+        # (a welded part's `at` is in its parent's frame: only bodies' roots, and hinged parts, are where they say in the world)
+        roots = [s for s in mine if "parent" not in s or "pivot" in s]
+        if any(x0 < s["at"]["x"] < x1 and floor < s["at"]["y"] < top for s in roots for x0, x1, floor, top in tops):
+            for s in mine:
+                s["holdFrom"] = "above"
 
 
 def _fragile(sb, scene):
