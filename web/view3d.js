@@ -8447,6 +8447,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			ctx.rect(x, y, w, h)
 			ctx.clip()
 			posePlanCam(cam, b.pose, w / h)
+			let screenDy = 0
 			const P = (X) => {
 				v.set(X[0], X[1], X[2] ?? 0).applyMatrix4(cam.matrixWorldInverse)
 				if (v.z >= -cam.near) return null
@@ -8471,8 +8472,26 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 						text(q.text, p[0], p[1], q.anchor, !!q.key)
 					}
 				} else if (q.type === "screen") {
+					// (a corner readout: a measured number the answer hangs on is big, 6 % of the picture's height, on a dark plate; words 4 %; two
+					// readouts in one band stack downward)
 					ctx.setLineDash([])
-					text(q.text, x + 0.03 * h + 0, y + 0.03 * h + 0.04 * H, "right", true)
+					const k2 = q.big ? 0.06 : 0.04
+					ctx.font = font(k2)
+					const tw = ctx.measureText(q.text).width
+					const th = k2 * H
+					const px = x + 0.03 * h
+					const py = y + 0.03 * h + screenDy
+					ctx.fillStyle = "rgba(12,14,18,0.62)"
+					ctx.beginPath()
+					ctx.roundRect?.(px - 0.3 * th, py, tw + 0.6 * th, 1.45 * th, 0.25 * th)
+					if (ctx.roundRect) ctx.fill()
+					else ctx.fillRect(px - 0.3 * th, py, tw + 0.6 * th, 1.45 * th)
+					ctx.lineWidth = Math.max(2, 0.12 * th)
+					ctx.strokeStyle = "rgba(10,12,16,0.85)"
+					ctx.strokeText(q.text, px, py + 1.08 * th)
+					ctx.fillStyle = "#ffffff"
+					ctx.fillText(q.text, px, py + 1.08 * th)
+					screenDy += 1.6 * th
 				}
 			}
 			ctx.restore()

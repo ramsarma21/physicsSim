@@ -10,6 +10,8 @@
 // measured checks of the plan the step returned), video.mp4, sheet.jpg, film.json (the shots as filmed), stills/. The server is this
 // repository's own (python3 web/server.py <port>, whose AI steps source ~/.config/truefoundry/env themselves). Headless Chromium only.
 import { createRequire } from "node:module"
+import { request as httpRequest } from "node:http"
+import { request as httpsRequest } from "node:https"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import os from "node:os"
@@ -17,6 +19,26 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 const require = createRequire(import.meta.url)
+
+/** POST a JSON body and wait as long as the step takes (fetch gives up after 300 s without response headers: a director step that queues for a
+ *  slot, then repairs its plan, takes longer). -> {status, json()} */
+function postLong(url, body, timeoutMs) {
+	return new Promise((resolve, reject) => {
+		const u = new URL(url)
+		const req = (u.protocol === "https:" ? httpsRequest : httpRequest)(u, { method: "POST", headers: { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) } }, (res) => {
+			const chunks = []
+			res.on("data", (c) => chunks.push(c))
+			res.on("end", () => {
+				const text = Buffer.concat(chunks).toString("utf8")
+				resolve({ status: res.statusCode, json: async () => JSON.parse(text) })
+			})
+			res.on("error", reject)
+		})
+		req.setTimeout(timeoutMs, () => req.destroy(new Error(`no answer in ${Math.round(timeoutMs / 1000)} s`)))
+		req.on("error", reject)
+		req.end(body)
+	})
+}
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(HERE, "..", "..", "..")
 const argv = process.argv.slice(2)
@@ -71,7 +93,7 @@ async function askOne(name, boxes) {
 	}, 5000)
 	let res
 	try {
-		const r = await fetch(`${SERVER}/api/ai/direct`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload, client: { requestId } }), signal: AbortSignal.timeout(900000) })
+		const r = await postLong(`${SERVER}/api/ai/direct`, JSON.stringify({ payload, client: { requestId } }), 1500000)
 		res = await r.json()
 		res.status = r.status
 	} catch (e) {

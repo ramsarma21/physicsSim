@@ -51,7 +51,7 @@ export const NET = Object.freeze({
 	waitS: 1.5, // ... and before it first comes in (a cut ahead that waits for a fast thing to arrive)
 	stopBackdrop: 0.6, // a lesson's stop (a pause beat's last shot): at most this share of each band shows nothing of the scene (a low setup under one floor line with a tall one leaves its band about half empty, as the drawn originals do)
 	cutScale: 2.5, // a cut out to a wider picture while things move widens it at most this much (the movers shrink to specks in a bigger jump)
-	pathFill: 0.85, // a still whose subject is a path (an orbit, a trip): the path spans at least this share of the picture's longer side
+	pathFill: 0.8, // a still whose subject is a path (an orbit, a trip): its drawn path (the mover's centre) spans at least this share of the picture's longer side, the mover kept whole
 })
 /** The named views: yaw and pitch in degrees, and the lens a view takes when the shot names none (mm on a full-frame camera). */
 export const VIEWS = Object.freeze({
@@ -1583,6 +1583,12 @@ export function measure(film) {
 		const F = film.frames.slice(fs.i0, fs.i0 + fs.n)
 		const thing = (tg) => tg && (tg.item !== undefined || tg.items || tg.role !== undefined)
 		const kept = [...(sh.keep ?? []), ...((sh.move === "hold" || sh.move === "follow") && thing(sh.subject) ? [sh.subject] : [])]
+		// (a push, pull or arc keeps its own keep at its start and its end's keep at its end, and in between what both keep: a push from a whole
+		// setup in to a detail of it lets the rest leave the picture as it goes, as the compiler frames it)
+		const endKeep = sh.end?.keep ?? sh.keep ?? []
+		const sameTg = (a, b) => JSON.stringify(a) === JSON.stringify(b)
+		const travelling = sh.move === "push" || sh.move === "pull" || sh.move === "arc"
+		const keptAt = (i, n) => (!travelling ? kept : i === 0 ? (sh.keep ?? []) : i === n - 1 ? endKeep : (sh.keep ?? []).filter((a) => endKeep.some((b) => sameTg(a, b))))
 		let minKeep = Infinity
 		let minKeepAt = null
 		let peakPan = 0
@@ -1595,7 +1601,7 @@ export function measure(film) {
 			const fr = F[i]
 			for (let bi = 0; bi < nb; bi++) {
 				const pose = arrPose(fr.b[bi])
-				for (const tg of kept) {
+				for (const tg of keptAt(i, F.length)) {
 					if (tg.lane && fs.bands[bi].lane && tg.lane !== fs.bands[bi].lane) continue
 					const P = tgPts(tg, bi, fr.t)
 					if (!P.length) continue
@@ -2118,9 +2124,22 @@ export function measure(film) {
 		// the middle of it
 		if (sh.move === "hold" && subjAtKey?.trail !== undefined) {
 			const fr = []
+			// (the path as the child sees it drawn: the mover's centre over the trail's window, not the boxes it sweeps)
 			for (let bi = 0; bi < nb; bi++) {
-				const P = tgPts(subjAtKey, bi, KF.t)
-				if (!P.length) continue
+				let ta
+				let tb
+				try {
+					ta = S.momentT(subjAtKey.from, fs.bands[bi].lane)
+					tb = S.momentT(subjAtKey.to, fs.bands[bi].lane)
+				} catch {
+					continue
+				}
+				const P = []
+				for (let j = 0; j <= 40; j++) {
+					const Q = tgPts({ item: subjAtKey.trail, ...(subjAtKey.part ? { part: subjAtKey.part } : {}), ...(subjAtKey.lane ? { lane: subjAtKey.lane } : {}) }, bi, ta + ((tb - ta) * j) / 40)
+					if (Q.length) P.push(centre3(Q))
+				}
+				if (P.length < 2) continue
 				const b = projBox(arrPose(KF.b[bi]), aspOf(bi), P)
 				fr.push({ lane: fs.bands[bi].lane, span: r3(Math.max((Math.min(1, b.x1) - Math.max(-1, b.x0)) / 2, (Math.min(1, b.y1) - Math.max(-1, b.y0)) / 2)) })
 			}
@@ -2236,11 +2255,12 @@ function marksOf(film) {
 					}
 					if (a.kind === "clock") {
 						const ts = a.from !== undefined ? S.momentT(a.from, null) : fs.t0
-						prims.push({ type: "screen", corner: "top-left", text: fill(a.text ?? "{s} s", { s: Math.max(0, fr.t - ts).toFixed(1) }) })
+						prims.push({ type: "screen", corner: "top-left", text: fill(a.text ?? "{s} s", { s: Math.max(0, fr.t - ts).toFixed(1) }), big: true })
 						continue
 					}
 					if (a.kind === "count") {
-						if (a.text) prims.push({ type: "screen", corner: "top-left", text: fill(a.text, { label: labelOf(lane) }) })
+						// (a readout: words in the corner, with a measured number when it names one: "one swing: {dt} s" from each turn, big)
+						if (a.text) prims.push({ type: "screen", corner: "top-left", text: fill(a.text, { label: labelOf(lane), dt }), ...(/\{(dt|s)\}/.test(a.text) ? { big: true } : {}) })
 						continue
 					}
 					if (a.kind === "trail" && tg.trail !== undefined) {

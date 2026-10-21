@@ -1173,7 +1173,7 @@
 				},
 				"keep": {
 					"$ref": "#/$defs/targets",
-					"description": "Targets that must stay whole in the picture at every frame of the shot (a hold's or a follow's subject is always kept too)."
+					"description": "Targets that must stay whole in the picture at every frame of the shot (a hold's or a follow's subject is always kept too); a push, pull or arc keeps them at its start, its end.keep at its end, and what both keep all the way."
 				},
 				"context": {
 					"$ref": "#/$defs/targets",

@@ -1526,11 +1526,12 @@ export default function register({ addModel, kit, THREE }) {
 			g.putImageData(img, 0, 0)
 		}, { data: true, wrap: false }))
 	}
-	/** The shell of an ice (or glass) piece: the transmissive shell that casts a light shadow. A catalog photo is taken over an opaque card colour, so the real shell has something to refract there too. */
+	/** The shell of an ice (or glass) piece: the transmissive shell that casts a light shadow. A catalog photo is taken over an opaque card colour, so the real shell has something to refract there too.
+	 *  Ice is frosted and faintly blue-white (freezer ice, a few centimetres tinted through): it reads as ice on a white plate, not as a glass block. */
 	function iceShell(glass, geo, F = frostTex()) {
 		const shell = M(`ice-shell3|${glass}`, glass
 			? { color: new THREE.Color("#ffffff"), roughness: 0.02, metalness: 0, transmission: 1, thickness: 0.02, ior: 1.5, attenuationColor: new THREE.Color("#cfeee6"), attenuationDistance: 0.12, envMapIntensity: 0.9 }
-			: { color: new THREE.Color("#ffffff"), roughness: 1, roughnessMap: F.roughMap, metalness: 0, transmission: 1, thickness: 0.03, ior: 1.31, attenuationColor: new THREE.Color("#a9d6f0"), attenuationDistance: 0.25, envMapIntensity: 0.9 }, true)
+			: { color: new THREE.Color("#ffffff"), roughness: 1, roughnessMap: F.roughMap, metalness: 0, transmission: 0.82, thickness: 0.03, ior: 1.31, attenuationColor: new THREE.Color("#8cc3e8"), attenuationDistance: 0.07, envMapIntensity: 0.9 }, true)
 		shell.depthWrite = false // so the translucent cloud and fractures inside still draw over it
 		const shellMesh = kit.mesh(geo, shell, { cast: true })
 		shellMesh.customDepthMaterial = iceDepth()
