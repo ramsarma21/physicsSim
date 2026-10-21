@@ -18,6 +18,7 @@ import { frameIndex, placementsAt } from "./track.js"
 import { animates, collectHooks, framePlugins, startPlugins, stopPlugins } from "./view-plugins.js"
 import { buildModel, beginRun, endRun, modelFor, modelKey, isModelCached, pinModel, gradeShader, gradeKeyFor, gradeSat, isPlainPaint, prebake, stealPrebake, prebakeReady, stopPrebake } from "./models3d.js"
 import { makeGate } from "./start-gate.js"
+import { HAND_MODES, makeHands } from "./hands.js"
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Constants (all lengths in meters)
@@ -1664,6 +1665,16 @@ export function createView3D(container) {
 	// ----- looks and materials (cached; the app hands over the catalog's looks with setOptions({looks})) -------------------
 	let looks = { ...DEFAULT_LOOKS }
 	let looksJson = JSON.stringify(looks)
+	// whose hands are drawn (web/hands.js): "scene" the items that ask for one (their `hand` prop), "all" every held thing, pusher and pitcher too, "off" none
+	// (the pins, paddles and stands as before); setOptions({hands}) or ?hands= on the page
+	let handsMode = (() => {
+		try {
+			const q = new URLSearchParams(location.search).get("hands")
+			return HAND_MODES.includes(q) ? q : "scene"
+		} catch {
+			return "scene"
+		}
+	})()
 	let buildNo = 0
 	const matCache = new Map() // key -> {mat, tex: [owned textures], used}
 	const geoCache = new Map() // key -> {geo, used}
@@ -3371,7 +3382,10 @@ ${GRADE}
 		const blobs = new THREE.Group() // contact shading on the tabletop (hidden in the table's reflection)
 		group.add(blobs)
 		const frame0 = track.frames[0].placements
-		const solids = doc.solids.filter((s) => !s.hidden_3d)
+		// a person's hands (web/hands.js): which held things a hand holds (no pin, post or gate), which pusher parts a hand skin replaces (not drawn) and which fixed
+		// things a hand holds up (no stand); the hands themselves are posed with the posts (fitPosts), on what is drawn
+		const hands = makeHands({ doc, track, resolved: sim.resolved, mode: handsMode, holdPart: (list) => postPart(list), boxOf: (id) => handBox(id), bounds: () => sceneBounds(solids, track, doc.joints) })
+		const solids = doc.solids.filter((s) => !s.hidden_3d && !hands.hides(s.id))
 		// Progressive: when the models still to be built are estimated to cost more than DEFER_MS (kept ones are only cloned), those parts are drawn as plain stand-ins now
 		// and built in idle slices afterwards (see runJobs). The rest is built at once, as ever.
 		const jobs = []
@@ -3821,7 +3835,7 @@ ${GRADE}
 		// frame of a progressive load). A post whose foot would hang past the tabletop's end is a wall bracket there; every support stands behind the deepest mover that passes by
 		// (moversDepth), and an arm that lands on a drawn panel is carried by it.
 		const mountPose = new Map() // static solid id -> its pose now (kept by a placer)
-		const supporters = solids.filter((o) => o.kind === "static")
+		const supporters = solids.filter((o) => o.kind === "static" && !hands.noMount(o.id)) // (a fixed thing a hand holds up needs no stand)
 		for (const o of supporters) {
 			mountPose.set(o.id, poseOf(o))
 			if (o !== table && placers.has(o.id)) addPlacer(o.id, (p) => mountPose.set(o.id, p))
@@ -4340,6 +4354,7 @@ ${GRADE}
 		const gated = new Set(doc.view?.gates ?? [])
 		const gateStatics = gated.size ? solids.filter((o) => o.kind === "static" && !o.hidden_3d) : []
 		for (const list of heldByItem.values()) {
+			if (hands.holds(list[0].item)) continue // (a hand holds it: web/hands.js)
 			const s = postPart(list)
 			if (!s) continue
 			const id = s.id
@@ -4550,8 +4565,21 @@ ${GRADE}
 			const sn = Math.sin(q.angle ?? 0)
 			return { x: q.x + a.x * c - a.y * sn, y: q.y + a.x * sn + a.y * c }
 		}
+		/** A solid's drawn box in its own frame (its model, stand-in or mesh), for the hands' grips (web/hands.js: a cork is drawn longer than its outline). */
+		const handBox = (id) => {
+			const root = group.children.find((c) => c.name === id || c.userData.solidId === id)
+			return root ? drawnBox(root) : null
+		}
+		if (hands.plans?.length) group.add(hands.group) // (a scene without hands draws as it did)
 		/** Place every post and pin again (after a load, a move, the mounts, the models coming in): pf = the pose of a solid at the start, trk = the run's track. */
 		const fitPosts = (pf = poseOf, trk = track) => {
+			if (hands.plans?.length) {
+				// the hands are posed again on what is drawn now (and picked as their items: userData.hand)
+				hands.fit(pf, trk)
+				for (let i = pickables.length - 1; i >= 0; i--) if (pickables[i].userData.hand) pickables.splice(i, 1)
+				pickables.push(...hands.pickables)
+				shadowKey = ""
+			}
 			if (!postFits.length) return
 			postTrack = trk
 			group.updateMatrixWorld(true)
@@ -4619,7 +4647,7 @@ ${GRADE}
 			depParts: new Array(parts.filter((p) => p.rest).length),
 			postFits,
 			fitPosts, // (pf, track): place the posts again
-			postsFinal: !progressive || !postFits.length, // the posts were placed with every model and mount in (see postsLate)
+			postsFinal: !progressive || (!postFits.length && !hands.plans?.length), // the posts (and hands) were placed with every model and mount in (see postsLate)
 			staticRest,
 			staticRound,
 			aoRecs,
@@ -4635,6 +4663,7 @@ ${GRADE}
 			pickables,
 			pins,
 			gates,
+			hands, // (web/hands.js: posed in updateParts)
 			table,
 			tableMesh,
 			lens, // how many lens parts it has (markLens): the table's mirror draws them in a pass of their own
@@ -5772,6 +5801,7 @@ ${GRADE}
 			for (const pin of run.pins) pin.position.z = -(0.02 + pin.userData.extra / 2 + (0.13 - 0.02) * u2) // slides out backwards, away from the camera
 		}
 		for (const g of run.gates) g.at(t, run.tRelease) // (the starting gates swing up at the release)
+		run.hands?.at(t) // (a person's hands: holding, letting go, pushing, pouring)
 	}
 
 	/** A part that stands on no static support but on another mover is drawn with that mover's offset (the gap between the two stays the physics' own;
@@ -6133,6 +6163,19 @@ ${GRADE}
 			}
 		}
 		if (opts.camera) setMode(opts.camera)
+		if (HAND_MODES.includes(opts.hands) && opts.hands !== handsMode) {
+			// whose hands are drawn (web/hands.js): the run is built again with them (a new runId)
+			handsMode = opts.hands
+			endExport()
+			if (run) {
+				const sim = run.sim
+				disposeRun()
+				run = buildRun(sim)
+				fitCabinet(run.table)
+				applyEnvironment(run)
+				fitShadow()
+			}
+		}
 		if (typeof opts.reflections === "boolean") refl.enabled = opts.reflections
 		if (typeof opts.exposure === "number") renderer.toneMappingExposure = opts.exposure
 		if (run && width > 0 && height > 0) draw(lastT)
@@ -6851,7 +6894,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			move(x, y, 0, x, y, 0)
 		}
 		// what moves without being a body: a turning fan or rotor, a running belt, the pull pins sliding out at the release (no shortcut to one sub-frame then)
-		const busy = run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(t - run.tRelease) < 0.1) || (run.gates.length > 0 && t > run.tRelease - 0.02 && t < run.tRelease + 0.2)
+		const busy = run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(t - run.tRelease) < 0.1) || (run.gates.length > 0 && t > run.tRelease - 0.02 && t < run.tRelease + 0.2) || !!run.hands?.busy(t)
 		if (px < 0.5 && !busy) return 1
 		return Math.min(o.most, Math.max(o.blur, Math.ceil(px / BLUR_STEP_PX)))
 	}

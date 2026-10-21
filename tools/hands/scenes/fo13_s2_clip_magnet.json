@@ -1,0 +1,56 @@
+{
+ "version": 2,
+ "id": "fo13-s2-clip-magnet",
+ "name": "Hands: FO-13 s2, the clip let go under a magnet held in a fist",
+ "seconds": 1.5,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.3,
+  "x1": 0.6,
+  "y0": -0.1,
+  "y1": 0.5
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 0.15,
+   "y": 0,
+   "props": {
+    "width": 1.0
+   }
+  },
+  {
+   "id": "magnet",
+   "type": "bar-magnet",
+   "x": 0.15,
+   "y": 0.085,
+   "fixed": true,
+   "props": {
+    "flip": true,
+    "hand": "grip"
+   }
+  },
+  {
+   "id": "clip",
+   "type": "paper-clip",
+   "x": 0.21,
+   "y": 0.06,
+   "angle": 3,
+   "held": true,
+   "props": {
+    "hand": "auto",
+    "hand_from": "right"
+   }
+  }
+ ],
+ "settings": {
+  "camera": {
+   "x0": 0.02,
+   "x1": 0.34,
+   "y": 0.08,
+   "pitch": 14.0,
+   "hfov": 26.0
+  }
+ }
+}

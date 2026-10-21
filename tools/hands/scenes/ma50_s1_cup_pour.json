@@ -1,0 +1,57 @@
+{
+ "version": 2,
+ "id": "ma50-s1-cup-pour",
+ "name": "Hands: MA-50 s1, a hand tips a cup into the jar",
+ "stage": {
+  "x0": -0.3,
+  "x1": 0.8,
+  "y0": -0.1,
+  "y1": 0.6
+ },
+ "seconds": 6.0,
+ "release": 0.5,
+ "settings": {
+  "camera": {
+   "x0": -0.05,
+   "x1": 0.55,
+   "y": 0.12,
+   "pitch": 12.0,
+   "hfov": 40.0
+  }
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 0.25,
+   "y": 0,
+   "props": {
+    "width": 1.5
+   }
+  },
+  {
+   "id": "holder",
+   "type": "glass-jar",
+   "x": 0.25,
+   "y": 0,
+   "props": {}
+  },
+  {
+   "id": "cup",
+   "type": "pitcher",
+   "x": 0.215,
+   "y": 0.152,
+   "props": {
+    "vessel": "cup",
+    "fill_ml": 250,
+    "liquid": "water",
+    "dye": "orange",
+    "pour_to": "right",
+    "tilt": 115,
+    "pour_at": 0.5,
+    "tip_s": 3.0,
+    "hand": "hand"
+   }
+  }
+ ]
+}
