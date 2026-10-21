@@ -1,0 +1,68 @@
+{
+ "version": 2,
+ "id": "fo36-hand",
+ "name": "Hands: FO-36, the ball pushed by hand",
+ "seconds": 4.0,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.6,
+  "x1": 3.0,
+  "y0": -0.1,
+  "y1": 1.0
+ },
+ "items": [
+  {
+   "id": "floor",
+   "type": "floor",
+   "x": 1.2,
+   "y": 0.0,
+   "props": {
+    "length": 3.4,
+    "material": "carpet",
+    "depth": 1.2,
+    "color": "#b89a72"
+   }
+  },
+  {
+   "id": "start",
+   "type": "start-line",
+   "x": 0.11,
+   "y": 0.0015,
+   "props": {
+    "sign": false
+   }
+  },
+  {
+   "id": "pusher",
+   "type": "pusher",
+   "x": -0.145,
+   "y": 0.048,
+   "props": {
+    "mode": "force",
+    "height": 0.062,
+    "force": 10.0,
+    "push_time": 0.15,
+    "paddle": 0.1,
+    "hand": "hand"
+   }
+  },
+  {
+   "id": "ball",
+   "type": "soccer-ball",
+   "x": 0.0,
+   "y": 0.11,
+   "props": {
+    "color": "red"
+   }
+  }
+ ],
+ "settings": {
+  "camera": {
+   "x0": -0.33207,
+   "x1": 1.12207,
+   "y": 0.10518,
+   "pitch": 8.0,
+   "hfov": 30.0
+  }
+ }
+}

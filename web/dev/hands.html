@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hands: poses and grips</title>
+<style>
+	html, body { margin: 0; height: 100%; background: #e9e7e3; font: 13px system-ui, sans-serif; }
+	#c { display: block; width: 100vw; height: 100vh; }
+	#tip { position: fixed; left: 10px; top: 8px; color: #333; background: rgba(255, 255, 255, 0.8); padding: 4px 8px; border-radius: 6px; }
+</style>
+<script type="importmap">
+	{ "imports": { "three": "../vendor/three/build/three.module.js", "three/addons/": "../vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="tip">web/hands.js: the poses (back row) and the grips on plain shapes (front rows). ?sheet=poses|grips|push|pour, ?az=, ?el=, ?dist=</div>
+<script type="module">
+// A dev sheet for web/hands.js (not part of the app): the hand's poses, and makeHands on hand-made documents (a grape, a cork in "water", an apple,
+// a ball on a palm, a bar held fixed, the pusher's skins, a pitcher), each on a plain stand-in of the thing it holds. Orbit with the mouse.
+import * as THREE from "three"
+import { OrbitControls } from "three/addons/controls/OrbitControls.js"
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
+import { POSES, applyPose, makeHands, makeRig, placeArm, placeHand } from "../hands.js"
+
+const Q = new URLSearchParams(location.search)
+const sheet = Q.get("sheet") ?? "grips"
+const canvas = document.getElementById("c")
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true })
+renderer.setPixelRatio(Math.min(2, devicePixelRatio))
+renderer.toneMapping = THREE.AgXToneMapping
+renderer.outputColorSpace = THREE.SRGBColorSpace
+renderer.shadowMap.enabled = true
+renderer.shadowMap.type = THREE.PCFSoftShadowMap
+const scene = new THREE.Scene()
+scene.background = new THREE.Color("#d9d6d0")
+const pm = new THREE.PMREMGenerator(renderer)
+scene.environment = pm.fromScene(new RoomEnvironment(), 0.04).texture
+scene.environmentIntensity = 0.5
+const key = new THREE.DirectionalLight("#fff4e6", 2.6)
+key.position.set(-1.2, 2.2, 1.6)
+key.castShadow = true
+key.shadow.mapSize.set(2048, 2048)
+Object.assign(key.shadow.camera, { left: -1.2, right: 1.2, top: 1.2, bottom: -1.2, near: 0.1, far: 6 })
+key.shadow.bias = -0.0004
+scene.add(key)
+scene.add(new THREE.HemisphereLight("#ffffff", "#8a7f70", 0.35))
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshPhysicalMaterial({ color: "#bfb3a2", roughness: 0.8 }))
+floor.rotation.x = -Math.PI / 2
+floor.receiveShadow = true
+scene.add(floor)
+const thing = (g, color = "#a8a29a", opts = {}) => {
+	const m = new THREE.Mesh(g, new THREE.MeshPhysicalMaterial({ color, roughness: 0.55, ...opts }))
+	m.castShadow = m.receiveShadow = true
+	return m
+}
+const solidMesh = (s) => {
+	const b = s.body
+	if (b.kind === "ball") return s.shape === "cylinder" ? thing(new THREE.CylinderGeometry(b.radius, b.radius, s.length ?? 0.044, 40).rotateX(Math.PI / 2), s.color) : thing(new THREE.SphereGeometry(b.radius, 40, 28), s.color)
+	return thing(new THREE.BoxGeometry(b.width, b.height, b.depth), s.color)
+}
+
+// ---------------------------------------------------------------- one case: a document of a few solids, a one-frame track, the item's props
+let fixedCam = null // (?case=N: that case alone, filmed through a lesson's fixed camera round it: settings.camera's math, web/CONTRACT.md "Filming")
+function place(cases, x0, z0, dx) {
+	const pick = Q.get("case")
+	if (pick !== null) {
+		const c = cases[+pick]
+		const xs = c.solids.flatMap((s) => [s.at.x - (s.body.radius ?? s.body.width / 2), s.at.x + (s.body.radius ?? s.body.width / 2)])
+		const ys = c.solids.flatMap((s) => [s.at.y - (s.body.radius ?? s.body.height / 2), s.at.y + (s.body.radius ?? s.body.height / 2)])
+		const cx = (Math.min(...xs) + Math.max(...xs)) / 2 + +(Q.get("dx") ?? 0)
+		const span = +(Q.get("span") ?? 0.36)
+		c.view = { camera: { x0: cx - span / 2, x1: cx + span / 2, y: (Math.min(...ys) + Math.max(...ys)) / 2 + +(Q.get("dy") ?? 0), pitch: +(Q.get("pitch") ?? 12), hfov: +(Q.get("hfov") ?? 30) } }
+		fixedCam = c.view.camera
+		cases = [c]
+		x0 = 0
+	}
+	cases.forEach((c, i) => {
+		const g = new THREE.Group()
+		g.position.set(x0 + i * dx, 0, z0)
+		scene.add(g)
+		const placements = {}
+		for (const s of c.solids) placements[s.id] = { x: s.at.x, y: s.at.y, angle: s.angle ?? 0 }
+		const doc = { solids: c.solids, release: { parts: c.held ?? [], at: 0.5 }, processes: c.processes ?? [], view: c.view }
+		const track = { fps: 1, frames: [{ t: 0, placements }], state: c.state }
+		const H = makeHands({ doc, track, resolved: c.resolved, mode: c.mode ?? "scene" })
+		H.fit((s) => ({ x: s.at.x, y: s.at.y, angle: s.angle ?? 0 }), track)
+		H.at(c.t ?? 0)
+		g.add(H.group)
+		if (c.vessel) {
+			// a stand-in of the pitcher's model (web/models/mod-flow.js): its body half its width behind the lip, the handle's loop on its back
+			const [w, h, t] = c.vessel
+			const v = new THREE.Group()
+			const body = thing(new THREE.CylinderGeometry(w / 2 + t, w / 2 + t, h, 40, 1, true), "#cfe3e6", { transparent: true, opacity: 0.45, side: THREE.DoubleSide })
+			body.position.set(-w / 2, -h / 2, 0)
+			v.add(body)
+			if (c.handle) {
+				const loop = thing(new THREE.TorusGeometry(0.3 * h, 0.0055, 12, 32, Math.PI), "#cfe3e6")
+				loop.rotation.z = Math.PI / 2
+				loop.position.set(-(w + t), -0.45 * h, 0)
+				v.add(loop)
+			}
+			v.position.set(c.solids[0].at.x, c.solids[0].at.y, 0)
+			v.rotation.z = (-(c.state[c.solids[0].item].tilt_deg[0] ?? 0) * Math.PI) / 180
+			g.add(v)
+		}
+		for (const s of c.solids) {
+			if (s.noDraw || H.hides(s.id)) continue
+			const m = solidMesh(s)
+			m.position.set(s.at.x, s.at.y, 0)
+			m.rotation.z = s.angle ?? 0
+			g.add(m)
+		}
+		window.hands = window.hands ?? []
+		window.hands.push({ name: c.name, rigs: H.rigs.map((r) => ({ grip: r.grip, from: r.from, skin: r.skin })) })
+	})
+}
+
+const S = (id, item, body, x, y, more = {}) => ({ id, item, itemType: more.type ?? item, part: id.split("/")[1], kind: more.kind ?? "dynamic", body, at: { x, y }, angle: more.angle ?? 0, ...more })
+if (sheet === "poses") {
+	const names = Object.keys(POSES)
+	names.forEach((n, i) => {
+		const r = makeRig(i % 2 ? "right" : "left")
+		applyPose(r, POSES[n])
+		placeHand(r, new THREE.Vector3(-0.6 + i * 0.24, 0.15, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0))
+		placeArm(r, new THREE.Vector3(0, 0.3, -1))
+		scene.add(r.root, r.arm)
+	})
+} else if (sheet === "grips") {
+	const grape = { kind: "ball", radius: 0.0125 }
+	place([
+		{ name: "grape pinched from above", solids: [{ ...S("grape/grape", "grape", grape, 0, 0.25), color: "#5e2f6e" }], held: ["grape/grape"], resolved: { grape: { hand: "pinch", hand_from: "above" } } },
+		{ name: "cork pressed down", solids: [{ ...S("cork/cork", "cork", { kind: "ball", radius: 0.012 }, 0, 0.03, { shape: "cylinder", length: 0.044 }), color: "#c89a62" }, S("floor/f", "floor", { kind: "slab", width: 0.3, height: 0.006, depth: 0.16 }, 0, 0.015, { kind: "static", color: "#9fb7c4" })], held: ["cork/cork"], resolved: { cork: { hand: "press" } } },
+		{ name: "apple gripped from above", solids: [{ ...S("apple/apple", "apple", { kind: "ball", radius: 0.038 }, 0, 0.3), color: "#b8262b" }], held: ["apple/apple"], resolved: { apple: { hand: "grip" } } },
+		{ name: "ball on the palm", solids: [{ ...S("ball/ball", "ball", { kind: "ball", radius: 0.08 }, 0, 0.5), color: "#d33b2c" }], held: ["ball/ball"], resolved: { ball: { hand: "palm" } } },
+		{ name: "clip pinched from the left", solids: [{ ...S("clip/clip1", "clip", { kind: "slab", width: 0.033, height: 0.001, depth: 0.008 }, 0, 0.2, { angle: 0.05 }), color: "#b9bcc2" }], held: ["clip/clip1"], resolved: { clip: { hand: "pinch", hand_from: "left" } } },
+		{ name: "bar magnet in a fist", solids: [{ ...S("magnet/magnet", "magnet", { kind: "slab", width: 0.15, height: 0.019, depth: 0.0095 }, 0, 0.3, { kind: "static", type: "bar-magnet" }), color: "#3557a8" }], held: [], resolved: { magnet: { hand: "grip" } } }
+	], -0.8, 0, 0.32)
+} else if (sheet === "push") {
+	const pusher = (item, skin, paddleH) => {
+		const h = 0.11
+		return {
+			name: `pusher ${skin}`,
+			solids: [
+				S(`${item}/housing`, item, { kind: "slab", width: 0.1, height: 0.05, depth: 0.08 }, -0.195, 0.073, { kind: "static", type: "pusher" }),
+				S(`${item}/rod`, item, { kind: "slab", width: 0.12, height: 0.012, depth: 0.012 }, -0.185, h, { type: "pusher" }),
+				S(`${item}/paddle`, item, { kind: "slab", width: 0.012, height: paddleH, depth: 0.08 }, -0.119, h, { type: "pusher" }),
+				{ ...S(`ball${item}/ball`, `ball${item}`, { kind: "ball", radius: 0.11 }, 0, h), color: "#d33b2c" }
+			],
+			resolved: { [item]: { hand: skin, stroke: 0.15 } }
+		}
+	}
+	place([pusher("p1", "finger", 0.02), pusher("p2", "hand", 0.1), pusher("p3", "two hands", 0.15), pusher("p4", "fist", 0.06)], -0.9, 0, 0.6)
+} else if (sheet === "pour") {
+	const vessel = (item, kind, tilt) => ({
+		name: `${kind} tipped ${tilt}`,
+		solids: [{ ...S(`${item}/lip`, item, { kind: "slab", width: 0.01, height: 0.003, depth: 0.035 }, 0, 0.3, { kind: "static", type: "pitcher" }), noDraw: true }],
+		resolved: { [item]: { hand: "hand", vessel: kind, pour_to: "right" } },
+		state: { [item]: { tilt_deg: [tilt] } },
+		vessel: kind === "cup" ? [0.07, 0.095, 0.002] : [0.1, 0.17, 0.003],
+		handle: kind !== "cup"
+	})
+	place([vessel("v1", "pitcher", 0), vessel("v2", "pitcher", 60), vessel("v3", "cup", 0), vessel("v4", "cup", 100)], -0.6, 0, 0.4)
+}
+
+const camera = new THREE.PerspectiveCamera(30, innerWidth / innerHeight, 0.01, 50)
+if (fixedCam) {
+	const C = fixedCam
+	const hf = (C.hfov * Math.PI) / 180
+	const d = (C.x1 - C.x0) / 2 / Math.tan(hf / 2)
+	camera.fov = (2 * Math.atan(Math.tan(hf / 2) / (innerWidth / innerHeight)) * 180) / Math.PI
+	camera.position.set((C.x0 + C.x1) / 2, C.y + d * Math.tan((C.pitch * Math.PI) / 180), d)
+	camera.lookAt((C.x0 + C.x1) / 2, C.y, 0)
+}
+const az = (+(Q.get("az") ?? 0) * Math.PI) / 180
+const el = (+(Q.get("el") ?? 12) * Math.PI) / 180
+const dist = +(Q.get("dist") ?? 2.6)
+const target = new THREE.Vector3(+(Q.get("tx") ?? 0), +(Q.get("ty") ?? 0.25), 0)
+if (!fixedCam) {
+	camera.position.set(target.x + dist * Math.sin(az) * Math.cos(el), target.y + dist * Math.sin(el), dist * Math.cos(az) * Math.cos(el))
+	camera.lookAt(target)
+}
+const controls = fixedCam ? null : new OrbitControls(camera, canvas)
+controls?.target.copy(target)
+function frame() {
+	renderer.setSize(innerWidth, innerHeight, false)
+	camera.aspect = innerWidth / innerHeight
+	camera.updateProjectionMatrix()
+	controls?.update()
+	renderer.render(scene, camera)
+	requestAnimationFrame(frame)
+}
+frame()
+window.devReady = true
+</script>
+</body>
+</html>

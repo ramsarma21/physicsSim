@@ -24,7 +24,8 @@
  *   [ZURIGUEL05], and cohesive grains (damp sand, flour) arch over an outlet narrower than Jenike's B_c = 2.2·f_c/γ, f_c = 2c·tan(45° + φ/2)
  *   [JENIKE64].
  * - Falling grains are parcels (a few grams each) in free fall (a dense stream of grains falls nearly freely); they land on the first bed
- *   surface they cross.
+ *   surface they cross and settle there a layer at a time, running down the heap they strike to where its face stands no steeper than a
+ *   fresh heap's face can (Bed.rain).
  * - Bodies in sand (a ball dropped into a tray, a car on a beach): what a body's outline pushes below the surface is moved to the ring of
  *   columns around it (a crater's rim; a bulldozed heap in front), and the sand holds it up and brakes it with what it can bear: Terzaghi-
  *   Vesić bearing pressure N_q·γ·z + ½·N_γ·γ·B [VESIC73] (z its depth under the surrounding surface, B its width) plus an inertial drag
@@ -73,12 +74,25 @@
  *   [WP06] Wong M. & Parker G., Reanalysis and correction of bed-load relation of Meyer-Peter and Müller, J. Hydraul. Eng. 132, 1159 (2006).
  *   [FC04] Ferguson R.I. & Church M., A simple universal equation for grain settling velocity, J. Sediment. Res. 74, 933-937 (2004).
  *   [ROELVINK06] Roelvink J.A., Coastal morphodynamic evolution techniques, Coastal Eng. 53, 277-287 (2006).
+ *   [JNB96] Jaeger H.M., Nagel S.R., Behringer R.P., Granular solids, liquids, and gases, Rev. Mod. Phys. 68, 1259-1273 (1996): a heap's
+ *           surface stands up to its angle of maximum stability, a few degrees over the angle of repose it relaxes to after an avalanche.
  *   [JOP06] Jop P., Forterre Y., Pouliquen O., A constitutive law for dense granular flows, Nature 441, 727-730 (2006): μ(I) = μ_s +
  *           (μ_2 − μ_s)/(I₀/I + 1), μ_2 − μ_s ≈ 0.26, I₀ ≈ 0.279; depth-averaged I = 5ud/(2h√(gh)) (GDR MiDi, Eur. Phys. J. E 14, 341 (2004)).
  *   [FISCHENICH01] Fischenich C., Stability thresholds for stream restoration materials, ERDC TN-EMRRP-SR-29 (2001): bare fine soils
  *                  0.1-2.5 Pa; grass-covered banks 15-170 Pa.
  *   [WU79] Wu T.H., McKinnell W.P., Swanston D.N., Soil strength and root reinforcement, Can. Geotech. J. 16, 19-33 (1979): roots add
  *          cohesion to the soil they grow in (a planted bank does not slump when wet).
+ *   The kitchen grains (sugar, salt, rice; 2026-10-20):
+ *   [SANTOS17] Santos D. et al., J. Food Process Eng. 40 (2017): granulated sugar D50 537 µm. [ETB-BULK] also: granulated sugar 800 kg/m³,
+ *              clean rice 770 kg/m³ (Engineering ToolBox, "Foods and materials: bulk density"). [ETB-REPOSE] also: sugar (granulated), salt
+ *              (fine and coarse) and rice 30-45°. [SALT-SPEC] a fine table salt's specification: bulk density 1100-1300 kg/m³ (EN 1236).
+ *              [SALT-PAT] US patent 8,770,500: cubic common salt's angle of repose 24.8° (a free-flowing grade). [USDA] rice kernel density
+ *              about 1.45 g/cm³. [SCIAM-REPOSE] Scientific American, "Slippery slopes, and the angle of repose": rice about 25-30°, salt
+ *              steeper, powdered sugar over 40° in classroom piles.
+ * CONTAINERS (2026-10-20): a jar, a cup, a beaker or a box that grains are poured into holds them (a `holder` of a sand region: its inside as
+ * the floor, its walls a ring of wall columns front and back as well as left and right, so the 2.5-D bed has the round or square walls the
+ * side view's solids lack); a cup a hand tips pours its grains over its lip once their surface stands steeper than their angle of repose
+ * (TipCup, below).
  */
 
 // ---------------------------------------------------------------- grains
@@ -214,6 +228,52 @@ export const GRAINS: Readonly<Record<string, Grain>> = {
 		arch: 0.02,
 		color: "#f3eee2",
 		source: "Wheat flour: particles 10-100 µm (50), about 1450 kg/m³; poured bulk 593 kg/m³ [ETB-BULK] (porosity 0.59); repose 45° [ETB-REPOSE]; a cohesive powder: it arches over a spout narrower than about 2 cm [JENIKE64] (provisional). The classroom crater medium."
+	},
+	// (the kitchen grains, after the others: the keyframes' grain indices of the first seven stay as they were)
+	sugar: {
+		key: "sugar",
+		name: "sugar",
+		d: 0.0005,
+		rhoS: 1587,
+		porosity: 0.4959,
+		repose: 35,
+		cohesionDry: 0,
+		cohesionDamp: 800,
+		reposeSoaked: 25,
+		tauCohesive: 0,
+		arch: 0,
+		color: "#f7f5ee",
+		source: "Granulated white sugar: crystals about 0.5 mm (D50 0.54 mm [SANTOS17]), sucrose 1587 kg/m³ [CRC]; poured bulk 800 kg/m³ [ETB-BULK] (porosity 0.50); angle of repose 30-45° [ETB-REPOSE] (35° used, provisional within it); damp it cakes (cohesion as damp sand's, ∝ 1/d [RUMPF58], provisional); soaked it would dissolve (not modelled: it slumps as soaked sand does)."
+	},
+	salt: {
+		key: "salt",
+		name: "salt",
+		d: 0.0004,
+		rhoS: 2165,
+		porosity: 0.4457,
+		repose: 32,
+		cohesionDry: 0,
+		cohesionDamp: 1000,
+		reposeSoaked: 25,
+		tauCohesive: 0,
+		arch: 0,
+		color: "#f4f4f2",
+		source: "Table salt: sodium chloride cubes about 0.3-0.5 mm (0.4 mm), 2165 kg/m³ [CRC]; fine table salt's bulk 1100-1300 kg/m³ [SALT-SPEC] (1200 used: porosity 0.45); angle of repose 30-45° for fine salt [ETB-REPOSE], 25° for free-flowing cubic salt [SALT-PAT] (32° used, provisional); damp it cakes (provisional); soaked it would dissolve (not modelled)."
+	},
+	rice: {
+		key: "rice",
+		name: "rice",
+		d: 0.0028,
+		rhoS: 1450,
+		porosity: 0.469,
+		repose: 32,
+		cohesionDry: 0,
+		cohesionDamp: 140,
+		reposeSoaked: 28,
+		tauCohesive: 0,
+		arch: 0,
+		color: "#f1ebdc",
+		source: "Long-grain white rice: kernels about 6.6 × 2.0 × 1.6 mm (their equal-volume sphere 2.8 mm, the size Beverloo's rate and the 5-grain jam use: provisional for long grains, whose shape changes how they arch [ZURIGUEL05]), kernel density 1450 kg/m³ [USDA]; clean rice's bulk 770 kg/m³ [ETB-BULK] (porosity 0.47); angle of repose 30-45° [ETB-REPOSE], 25-35° in classroom piles [SCIAM-REPOSE] (32° used, provisional)."
 	}
 }
 export const GRAIN_KEYS = Object.keys(GRAINS)
@@ -426,7 +486,22 @@ export interface Parcel {
 	age: number
 	/** The bed it must not land in (an outlet's own vessel: it starts below that floor). */
 	skip?: string
+	/** The item that poured it (a tipped cup's: where its stream comes down is that item's lands_x). */
+	src?: string
 }
+
+/** Columns that a layer of landing grains runs down at most (Bed.rain): more than a heap's flank has. */
+const ROLL = 64
+/** tan 3°: a freshly landed heap's face stands up to its angle of maximum stability, a few degrees over its angle of repose, before it
+ *  slides [JNB96] (Bed.rain); the bed's avalanches then bring it back to repose. */
+const TAN_STABLE = 0.052407779283041196
+/** The four steps from a column to its neighbours (Bed.rain goes round them in turn). */
+const STEPS4 = [
+	[1, 0],
+	[0, 1],
+	[-1, 0],
+	[0, -1]
+] as const
 
 /** An outlet in a bed's floor (a spout, a neck): its cells, its diameter, where its grains leave, and when it opens. */
 export interface Outlet {
@@ -629,6 +704,60 @@ export class Bed {
 		this.wakeCell(c)
 		return taken
 	}
+	/**
+	 * Lays `vol` m³ of class k on column c as grains landing there settle: a layer at a time (a quarter of the drop its grains stand at across
+	 * one column, or a 64th of what lands, whichever is thicker), each resting where it lands unless that would stand it steeper over a
+	 * neighbouring column (not a wall or an edge) than a fresh heap's face stands (its grains' standing slope + 3°, TAN_STABLE): then it runs
+	 * on down to the lowest such neighbour, and on, until it rests (ROLL columns at most). Grains landing on a heap run down its faces in a few
+	 * hundredths of a second; the bed's own avalanches (a column sinks no faster than √(g·h)) are slower than a fast pour feeds one spot,
+	 * which then stood up as a pillar of grains under the stream: a cup of sugar tipped into a jar (whose bed has 4 mm columns) at about 180 g
+	 * a second stood a pillar 0.6 m tall in the 11 cm jar, 1.4 m when the cup was tipped past where it empties. Ties go round the four ways in
+	 * turn, so a heap fed at a point grows round. A share that rests where it lands in one layer is laid exactly as before; damp grains, whose
+	 * faces stand steep, rest where they land.
+	 */
+	rain(c: number, k: number, vol: number) {
+		if (!(vol > 0) || c < 0 || c >= this.n) return
+		const A = this.dx * this.dx
+		this.limits(c)
+		const layer = Math.max(0.25 * Math.min(this.lStand, StandTable.STEEP) * this.dx * A, vol / 64)
+		let left = vol
+		while (left > 0) {
+			const v = left <= layer ? left : layer
+			const dh = v / A
+			let cur = c
+			for (let step = 0; step < ROLL; step++) {
+				this.limits(cur)
+				// (the steepest the landed layer may stand at over a neighbour: its grains' standing slope + 3°, tan(a + b) = (tan a + tan b) /
+				// (1 − tan a tan b); a face that stands vertical, damp grains', is vertical still)
+				const L = Math.min(this.lStand, StandTable.STEEP)
+				const allow = (L * TAN_STABLE < 1 ? Math.min((L + TAN_STABLE) / (1 - L * TAN_STABLE), StandTable.STEEP) : StandTable.STEEP) * this.dx
+				const top = this.surface(cur) + dh
+				const i = cur % this.nx
+				const j = (cur - i) / this.nx
+				let next = -1
+				let low = Number.POSITIVE_INFINITY
+				this.rainTurn = (this.rainTurn + 1) & 3
+				for (let s = 0; s < 4; s++) {
+					const st = STEPS4[(this.rainTurn + s) & 3] as readonly [number, number]
+					const ii = i + st[0]
+					const jj = j + st[1]
+					if (ii < 0 || jj < 0 || ii >= this.nx || jj >= this.nz) continue
+					const nc = jj * this.nx + ii
+					if ((this.kind[nc] as number) !== 0) continue
+					const sn = this.surface(nc)
+					if (top - sn > allow + 1e-12 && sn < low) {
+						low = sn
+						next = nc
+					}
+				}
+				if (next < 0) break
+				cur = next
+			}
+			this.add(cur, k, v)
+			left = left <= layer ? 0 : left - layer
+		}
+	}
+	private rainTurn = 0
 	/** The class index of a grain (and wetness) in this bed, or -1. */
 	classOf(grain: string, wet: Wetness) {
 		let best = -1
@@ -1696,8 +1825,15 @@ export class World {
 		this.bins.clear()
 	}
 
-	/** A parcel's grains land round where it struck: half in its column, the rest in the eight round it that hold grains (a stream's spot). */
+	/** Where each pourer's stream comes down (x, m: a running mean over its last parcels, as the flow module's lands_x), by its item. */
+	readonly lands = new Map<string, number>()
+	/** A parcel's grains land round where it struck: half in its column, the rest in the eight round it that hold grains (a stream's spot); each
+	 *  share settles there as landing grains do, running down the heap it struck to where its slope holds it (Bed.rain). */
 	private land(b: Bed, c: number, p: Parcel) {
+		if (p.src !== undefined) {
+			const was = this.lands.get(p.src)
+			this.lands.set(p.src, was === undefined ? p.x : was + (p.x - was) / 30)
+		}
 		let k = b.classOf(p.grain, p.wet)
 		if (k < 0) k = 0
 		const i = c % b.nx
@@ -1716,7 +1852,7 @@ export class World {
 				const jj = j + dj
 				if (ii < 0 || jj < 0 || ii >= b.nx || jj >= b.nz || (b.kind[jj * b.nx + ii] as number) !== 0) continue
 				const wgt = di === 0 && dj === 0 ? 4 : di === 0 || dj === 0 ? 1 : 0.5
-				b.add(jj * b.nx + ii, k, (p.vol * wgt) / wsum)
+				b.rain(jj * b.nx + ii, k, (p.vol * wgt) / wsum)
 			}
 		b.landed += p.vol
 	}
@@ -2359,4 +2495,413 @@ export const heapCone = (b: Bed, k: number, vol: number, x: number, z: number, t
 	const s = shape(H, false)
 	if (s > vol * (1 + 1e-9)) scale = vol / s
 	return shape(H, true) * scale
+}
+
+// ---------------------------------------------------------------- containers that hold grains: a jar, a cup, a beaker, a bucket, a box (2026-10-20)
+
+type Pt = { readonly x: number; readonly y: number }
+/** A solid's outline as the engine gives it (world m): a circle, or a convex polygon. */
+export type Outline = { readonly circle?: { readonly x: number; readonly y: number; readonly r: number }; readonly points?: readonly Pt[] }
+
+/**
+ * A container's inside as a bed sees it (world m). In plan its inside is round (a circle, or an ellipse when it is deeper or shallower front to
+ * back than it is wide: `k`, its inner half-depth over its inner half-width) or a box, about its axis at (x, z = 0). Its floor stands at
+ * `floor`; its walls' inner faces run straight from half-width `r0` at the floor through (rb, ylo) to (rt, yhi), so a tapered cup's lean out;
+ * `t` its wall's thickness, `rim` the height of its highest solid (a jar's neck), what a bed's wall columns stand to.
+ */
+export interface Holder {
+	readonly item: string
+	readonly round: boolean
+	readonly x: number
+	readonly floor: number
+	readonly r0: number
+	readonly rb: number
+	readonly ylo: number
+	readonly rt: number
+	readonly yhi: number
+	readonly t: number
+	readonly rim: number
+	readonly k: number
+}
+
+/** A point's plan distance from a holder's axis, measured as along its width (x): round, the ellipse's; a box, the larger of x and z. */
+export const holderQ = (H: Holder, x: number, z: number) => {
+	const ex = Math.abs(x - H.x)
+	const ez = Math.abs(z) / H.k
+	return H.round ? Math.sqrt(ex * ex + ez * ez) : Math.max(ex, ez)
+}
+
+/** The height of a holder's inside at plan distance q (≤ rt): its floor out to r0, then its leaning wall's inner face (a tapered cup's). */
+export const holderFloor = (H: Holder, q: number) => {
+	if (q <= H.r0 || !(H.rt > H.rb + 1e-9)) return H.floor
+	return H.ylo + ((Math.min(q, H.rt) - H.rb) * (H.yhi - H.ylo)) / (H.rt - H.rb)
+}
+
+/** The width of the ring of wall columns round a holder's inside, in plan units along x: its wall, but never thinner than a column (or the
+ *  grains of an inside column could reach an outside one through a face): along z a column is dx/k of those units. */
+export const holderRing = (H: Holder, dx: number) => Math.max(H.t, 1.01 * dx * Math.max(1, 1 / H.k))
+
+/** A convex outline's span along x at height y: [lo, hi], or [NaN, NaN] when the line misses it. */
+export const spanAtY = (o: Outline, y: number): [number, number] => {
+	if (o.circle !== undefined) {
+		const dy = y - o.circle.y
+		if (Math.abs(dy) >= o.circle.r) return [Number.NaN, Number.NaN]
+		const dx = Math.sqrt(o.circle.r * o.circle.r - dy * dy)
+		return [o.circle.x - dx, o.circle.x + dx]
+	}
+	const pts = o.points ?? []
+	let lo = Number.POSITIVE_INFINITY
+	let hi = Number.NEGATIVE_INFINITY
+	for (let k = 0; k < pts.length; k++) {
+		const a = pts[k] as Pt
+		const b = pts[(k + 1) % pts.length] as Pt
+		if ((y < a.y && y < b.y) || (y > a.y && y > b.y)) continue
+		if (a.y === b.y) {
+			lo = Math.min(lo, a.x, b.x)
+			hi = Math.max(hi, a.x, b.x)
+			continue
+		}
+		const x = a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x)
+		if (x < lo) lo = x
+		if (x > hi) hi = x
+	}
+	return lo <= hi ? [lo, hi] : [Number.NaN, Number.NaN]
+}
+
+const topOf = (o: Outline) => (o.circle !== undefined ? o.circle.y + o.circle.r : Math.max(...(o.points ?? []).map((p) => p.y)))
+
+/**
+ * A container's inside from its solids' outlines as the run starts: its floor's top (it must stand level: a tipped container holds nothing
+ * of a bed), its left walls' inner (right) faces and its right walls' inner (left) faces just above the floor and just below their tops, the
+ * left wall's thickness, the highest of all its solids (`all`), and its front-to-back size (`depth`, its walls' depth). Null when they do not
+ * make an inside (walls missing, crossed, or the floor tipped more than 2°).
+ */
+export const holderOf = (spec: {
+	readonly item: string
+	readonly round: boolean
+	readonly floor: Outline
+	readonly left: readonly Outline[]
+	readonly right: readonly Outline[]
+	readonly all: readonly Outline[]
+	readonly depth: number
+}): Holder | null => {
+	const f = spec.floor
+	if (f.points === undefined || f.points.length < 3 || spec.left.length === 0 || spec.right.length === 0) return null
+	// its top edge: the edge whose middle stands highest; level within 2° (tan 2° = 0.0349)
+	let best = -1
+	let bestY = Number.NEGATIVE_INFINITY
+	const n = f.points.length
+	for (let k = 0; k < n; k++) {
+		const a = f.points[k] as Pt
+		const b = f.points[(k + 1) % n] as Pt
+		const my = 0.5 * (a.y + b.y)
+		if (my > bestY) {
+			bestY = my
+			best = k
+		}
+	}
+	const a = f.points[best] as Pt
+	const b = f.points[(best + 1) % n] as Pt
+	if (!(Math.abs(b.x - a.x) > 1e-6) || Math.abs(b.y - a.y) > 0.0349 * Math.abs(b.x - a.x)) return null
+	const floor = Math.max(a.y, b.y)
+	const wallTop = Math.min(Math.max(...spec.left.map(topOf)), Math.max(...spec.right.map(topOf)))
+	const H = wallTop - floor
+	if (!(H > 0.004)) return null
+	const e = Math.min(0.002, 0.1 * H)
+	const ylo = floor + e
+	const yhi = wallTop - e
+	// a left wall's inner face is its right side, a right wall's its left side (the highest/lowest of the walls that reach that height)
+	const innerL = (y: number) => {
+		let v = Number.NaN
+		for (const o of spec.left) {
+			const s = spanAtY(o, y)
+			if (Number.isFinite(s[1]) && !(v >= s[1])) v = s[1]
+		}
+		return v
+	}
+	const innerR = (y: number) => {
+		let v = Number.NaN
+		for (const o of spec.right) {
+			const s = spanAtY(o, y)
+			if (Number.isFinite(s[0]) && !(v <= s[0])) v = s[0]
+		}
+		return v
+	}
+	const aL = innerL(ylo)
+	const aR = innerR(ylo)
+	const bL = innerL(yhi)
+	const bR = innerR(yhi)
+	if (![aL, aR, bL, bR].every(Number.isFinite) || !(aR - aL > 0.004) || !(bR - bL > 0.004)) return null
+	const rb = 0.5 * (aR - aL)
+	const rt = 0.5 * (bR - bL)
+	// (the floor's edge, where the wall's inner face meets the floor: back down the face's line from (rb, ylo))
+	const r0 = rt > rb + 1e-9 ? Math.max(0, rb - ((ylo - floor) * (rt - rb)) / (yhi - ylo)) : rb
+	const mid = 0.5 * (floor + wallTop)
+	let t = Number.NaN
+	for (const o of spec.left) {
+		const s = spanAtY(o, mid)
+		if (Number.isFinite(s[0]) && Number.isFinite(s[1])) t = Number.isFinite(t) ? Math.max(t, s[1] - s[0]) : s[1] - s[0]
+	}
+	if (!(t > 0)) t = 0.003
+	let rim = wallTop
+	for (const o of spec.all) rim = Math.max(rim, topOf(o))
+	const depth = spec.depth > 0 ? spec.depth : 2 * (rt + t)
+	const k = spec.round ? depth / (2 * (rt + t)) : Math.max(0.05, (0.5 * depth - t) / rt)
+	return { item: spec.item, round: spec.round, x: 0.5 * (aL + aR), floor, r0, rb, ylo, rt, yhi, t, rim, k: Math.max(0.05, k) }
+}
+
+/**
+ * The heap in a holder: its top over the holder's floor (m), its slope (deg) and its mass (kg), over the bed's cells `inside`. Its slope is its
+ * surface's own steepness, the upper quartile of the slope of the surface over the columns of the floor (`floorCells`: out to where a tapered
+ * cup's wall leans) that hold grains (central differences between those columns: a cone's or a slope's faces, not its top or a flat), not
+ * atan(height ÷ footprint radius) as for a free heap: in a jar the footprint is the whole floor (the lesson's "the grains pile up in the
+ * glass"), in a box it is cut by its walls; fewer than 8 such columns, that free heap's formula. `confined`: its foot reaches the floor's
+ * edge (half or more of the columns `edge`, the floor's outermost ring, hold grains).
+ */
+export const heapIn = (b: Bed, inside: readonly number[], edge: readonly number[], floorCells: readonly number[], min = 0.001) => {
+	let top = 0
+	let peak = -1
+	let cells = 0
+	let mass = 0
+	const A = b.dx * b.dx
+	for (const c of inside) {
+		const h = b.h[c] as number
+		if (h > top) {
+			top = h
+			peak = c
+		}
+		if (h > min) cells++
+		for (let k = 0; k < b.classes.length; k++) mass += ((b.hk[k] as Float64Array)[c] as number) * A * (b.classes[k] as ClassInfo).rhoB
+	}
+	const radius = Math.sqrt((cells * A) / Math.PI)
+	const free = radius > 0 && top > min ? (Math.atan2(top - min, radius) * 180) / Math.PI : 0
+	if (peak < 0) return { top, radius, slope: 0, mass, confined: false }
+	// the columns of its floor's edge that hold grains: is its foot there?
+	const nx = b.nx
+	const nz = b.nz
+	const held = new Uint8Array(b.n)
+	for (const c of floorCells) if ((b.h[c] as number) > min) held[c] = 1
+	let wetEdge = 0
+	for (const c of edge) if (held[c] === 1) wetEdge++
+	const confined = edge.length > 0 && wetEdge >= 0.5 * edge.length
+	// the surface's slope at each column of the floor that holds grains (central differences; one-sided beside a column that does not)
+	const slopes: number[] = []
+	for (const c of floorCells) {
+		if (held[c] !== 1) continue
+		const i = c % nx
+		const j = (c - i) / nx
+		const s0 = b.surface(c)
+		const at = (cc: number, ok: boolean) => (ok && held[cc] === 1 ? b.surface(cc) : Number.NaN)
+		const e = at(c + 1, i < nx - 1)
+		const w = at(c - 1, i > 0)
+		const n = at(c + nx, j < nz - 1)
+		const sth = at(c - nx, j > 0)
+		const gx = Number.isFinite(e) && Number.isFinite(w) ? (e - w) / (2 * b.dx) : Number.isFinite(e) ? (e - s0) / b.dx : Number.isFinite(w) ? (s0 - w) / b.dx : Number.NaN
+		const gz = Number.isFinite(n) && Number.isFinite(sth) ? (n - sth) / (2 * b.dx) : Number.isFinite(n) ? (n - s0) / b.dx : Number.isFinite(sth) ? (s0 - sth) / b.dx : Number.NaN
+		if (!Number.isFinite(gx) || !Number.isFinite(gz)) continue
+		slopes.push(Math.sqrt(gx * gx + gz * gz))
+	}
+	if (slopes.length < 8) return { top, radius, slope: free, mass, confined }
+	slopes.sort((p, q) => p - q)
+	const q3 = slopes[Math.min(slopes.length - 1, Math.floor(0.75 * slopes.length))] as number
+	return { top, radius, slope: (Math.atan2(q3, 1) * 180) / Math.PI, mass, confined }
+}
+
+// ---------------------------------------------------------------- a cup of grains a hand tips (a pitcher, a jug, a measuring cup)
+
+/** The area of a convex polygon (counter-clockwise or not) on the side n·p ≤ c of a line (Sutherland-Hodgman's one clip). */
+export const clipArea = (poly: readonly Pt[], nx: number, ny: number, c: number) => {
+	const out: Pt[] = []
+	const n = poly.length
+	for (let k = 0; k < n; k++) {
+		const p = poly[k] as Pt
+		const q = poly[(k + 1) % n] as Pt
+		const dp = nx * p.x + ny * p.y - c
+		const dq = nx * q.x + ny * q.y - c
+		if (dp <= 0) out.push(p)
+		if ((dp < 0 && dq > 0) || (dp > 0 && dq < 0)) {
+			const u = dp / (dp - dq)
+			out.push({ x: p.x + u * (q.x - p.x), y: p.y + u * (q.y - p.y) })
+		}
+	}
+	let a2 = 0
+	for (let k = 0; k < out.length; k++) {
+		const p = out[k] as Pt
+		const q = out[(k + 1) % out.length] as Pt
+		a2 += p.x * q.y - q.x * p.y
+	}
+	return Math.abs(a2) / 2
+}
+
+/** The length of the line n·p = c inside a convex polygon (0 when it misses it). */
+export const chordLength = (poly: readonly Pt[], nx: number, ny: number, c: number) => {
+	const hits: Pt[] = []
+	const n = poly.length
+	for (let k = 0; k < n; k++) {
+		const p = poly[k] as Pt
+		const q = poly[(k + 1) % n] as Pt
+		const dp = nx * p.x + ny * p.y - c
+		const dq = nx * q.x + ny * q.y - c
+		if ((dp <= 0 && dq > 0) || (dp > 0 && dq <= 0)) {
+			const u = dp / (dp - dq)
+			hits.push({ x: p.x + u * (q.x - p.x), y: p.y + u * (q.y - p.y) })
+		}
+	}
+	if (hits.length < 2) return 0
+	const a = hits[0] as Pt
+	const b = hits[1] as Pt
+	return Math.sqrt((b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y))
+}
+
+/** The offset c of the line with normal n that leaves `area` of the polygon on its side n·p ≤ c (bisection, 60 halvings). */
+export const levelFor = (poly: readonly Pt[], nx: number, ny: number, area: number) => {
+	let lo = Number.POSITIVE_INFINITY
+	let hi = Number.NEGATIVE_INFINITY
+	for (const p of poly) {
+		const d = nx * p.x + ny * p.y
+		if (d < lo) lo = d
+		if (d > hi) hi = d
+	}
+	if (!(area > 0)) return lo
+	for (let it = 0; it < 60; it++) {
+		const mid = 0.5 * (lo + hi)
+		if (clipArea(poly, nx, ny, mid) < area) lo = mid
+		else hi = mid
+	}
+	return 0.5 * (lo + hi)
+}
+
+/**
+ * A cup of grains that a hand tips (TipCup): its grains are one section of its inside (a box in the cup's own frame, its opening from the top
+ * left corner to the top right) times its depth (the horizontal area over its width), under a flat surface.
+ *  - While the cup turns, its grains turn with it (a heap at rest in a cup is a solid), until their surface stands steeper than their angle of
+ *    repose: then it slumps to that angle (an avalanche inside the cup), keeping its area.
+ *  - They hold up to the line at that slope through the lowest corner of the opening (the lip, once the cup is tipped toward it); what lies above
+ *    it slides out over that corner as a surface avalanche: its flowing layer, the excess spread along the surface (δ = excess ÷ the surface's
+ *    length), leaves at the speed of a granular slump, √(g·δ) [LUBE04] (provisional), as δ·√(g·δ) of section a second; it starts as soon as
+ *    anything lies over that line, and stops once the layer is thinner than two grains (an avalanche stops where its slope is back to repose, as
+ *    a bed's face does: a static angle a little over the moving one, the hysteresis of a real heap). So a full cup starts to pour as its
+ *    tilt passes the angle of repose, a cup filled to a share f of its height h and w wide at φ + atan(2h(1 − f)/w) (while that line leaves by
+ *    the cup's back wall), and the grains go out as fast as the hand tips it, no faster than they can slide. Tipped past 90° + φ its spout
+ *    wall is steeper than repose too and it empties; short of that, what rests on that wall stays (a cup of sugar tipped to 115° keeps a
+ *    little in its corner).
+ * Lengths m, areas m², angles rad; poses are the cup's root solid's (its origin the lip, as the flow module's pitcher).
+ */
+export class TipCup {
+	readonly inside: readonly Pt[]
+	readonly depth: number
+	readonly tanPhi: number
+	/** the grains' size (m): a flowing layer thinner than two of them stops */
+	readonly grain: number
+	/** m² of the section holding grains now, and at the start (what fitted) */
+	area: number
+	readonly start: number
+	/** the surface: its unit normal in the cup's frame (out of the grains) and its offset (n·p = c on it) */
+	nx = 0
+	ny = 1
+	c = 0
+	/** m² poured so far; m² that left this step; the flowing layer's speed (m/s) and the world direction it leaves the corner (unit) */
+	poured = 0
+	out = 0
+	speed = 0
+	ux = 0
+	uy = -1
+	/** the corner of the opening it pours over (0: the top left, 1: the top right), in the cup's frame */
+	corner = 1
+	/** whether its grains are sliding out (from when anything lies over the repose line through the lip until the layer is under two grains),
+	 *  and the excess (m²) left lying when they last stopped: they start again only once the hand tips them past it */
+	flowing = false
+	private rest = 0
+	private lastAngle = Number.NaN
+	constructor(inside: readonly Pt[], depth: number, volume: number, tanPhi: number, grain = 0.0005) {
+		this.inside = inside
+		this.depth = depth
+		this.tanPhi = tanPhi
+		this.grain = grain
+		const full = clipArea(inside, 0, 1, Number.POSITIVE_INFINITY)
+		this.area = Math.min(Math.max(0, volume / depth), full)
+		this.start = this.area
+		this.c = levelFor(inside, 0, 1, this.area)
+	}
+	/** The volume (m³ packed) in it now. */
+	volume() {
+		return this.area * this.depth
+	}
+	/**
+	 * One step of dt s with the cup at world angle `angle` (rad): its grains turn with it or slump; what is over the opening's lowest corner
+	 * slides out. Returns the volume (m³ packed) that left; `speed`, `ux`, `uy` and `corner` say how it leaves.
+	 */
+	step(angle: number, dt: number, gravity: number) {
+		this.out = 0
+		this.speed = 0
+		this.lastAngle = angle
+		if (!(this.area > 0)) return 0
+		const ca = Math.cos(angle)
+		const sa = Math.sin(angle)
+		// the surface's normal in the world (it turned with the cup: the same in the cup's frame)
+		let wx = ca * this.nx - sa * this.ny
+		let wy = sa * this.nx + ca * this.ny
+		// steeper than repose (or past vertical): it slumps to the angle of repose, downhill the way it leans
+		if (!(wy > 0) || Math.abs(wx) > this.tanPhi * wy) {
+			const s = wx >= 0 ? 1 : -1
+			const L = Math.sqrt(1 + this.tanPhi * this.tanPhi)
+			wx = (s * this.tanPhi) / L
+			wy = 1 / L
+			this.nx = ca * wx + sa * wy
+			this.ny = -sa * wx + ca * wy
+			this.c = levelFor(this.inside, this.nx, this.ny, this.area)
+		}
+		// what it can hold: up to the line through the opening's lowest corner (relative to the surface)
+		const tl = this.inside[3] as Pt
+		const tr = this.inside[2] as Pt
+		const dl = this.nx * tl.x + this.ny * tl.y
+		const dr = this.nx * tr.x + this.ny * tr.y
+		this.corner = dr <= dl ? 1 : 0
+		const cMax = Math.min(dl, dr)
+		const hold = clipArea(this.inside, this.nx, this.ny, cMax)
+		const excess = this.area - hold
+		const len = Math.max(chordLength(this.inside, this.nx, this.ny, cMax), 0.005)
+		const delta = excess / len
+		if (!(excess > 1e-12)) {
+			this.flowing = false
+			this.rest = 0
+		} else if (!this.flowing) {
+			if (excess > this.rest + 1e-12 || hold <= 0) this.flowing = true
+			else this.rest = Math.min(this.rest, excess)
+		} else if (delta < 2 * this.grain && hold > 0) {
+			this.flowing = false
+			this.rest = excess
+		}
+		if (this.flowing) {
+			const v = Math.sqrt(gravity * Math.max(delta, 2 * this.grain))
+			const out = Math.min(excess, Math.max(delta, 2 * this.grain) * v * dt)
+			this.area -= out
+			if (this.area < 1e-12) this.area = 0
+			this.poured += out
+			this.out = out * this.depth
+			this.speed = v
+			// (downhill along the surface, in the world: perpendicular to its normal, pointing down)
+			let tx = wy
+			let ty = -wx
+			if (ty > 0) {
+				tx = -tx
+				ty = -ty
+			}
+			this.ux = tx
+			this.uy = ty
+			this.c = levelFor(this.inside, this.nx, this.ny, this.area)
+		}
+		return this.out
+	}
+	/** The world position of the corner it pours over, for a cup whose root is at (x, y) turned `angle`. */
+	cornerAt(x: number, y: number, angle: number) {
+		const p = this.inside[this.corner === 1 ? 2 : 3] as Pt
+		const ca = Math.cos(angle)
+		const sa = Math.sin(angle)
+		return { x: x + p.x * ca - p.y * sa, y: y + p.x * sa + p.y * ca }
+	}
+	/** The angle it was last stepped at (NaN before its first step). */
+	get angle() {
+		return this.lastAngle
+	}
 }

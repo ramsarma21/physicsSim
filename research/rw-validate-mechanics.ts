@@ -7,10 +7,15 @@
 //              K2 the same scene twice gives the same track, byte for byte (determinism); K3 a 60 g lump of clay on the car's roof rides
 //              down with it and changes the roll by under 10 % (rolling resistance ∝ weight)
 //   start      K4 a motor car at 10/3 m/s given start_speed 10/3 crosses 10 m at 3.000 ± 0.005 s; a bowling ball given 2 m/s on concrete
-//              still has ≥ 1.95 m/s after 1 m (rolling resistance 0.01 [WHITE-RR]: v² = v0² − 2·C_rr·g·d)
+//              still has ≥ 1.95 m/s after 1 m (rolling resistance 0.01 [WHITE-RR]: v² = v0² − 2·C_rr·g·d); an Atwood machine started the
+//              rope's way: equal weights go on at their start speed (± 1 %), unequal ones speed up at g·(m₁ − m₂)/(m₁ + m₂) (± 1 %)
 //   forces     K5 a 1 kg cart pulled 5 N one way and 3 N the other: a = (2 − C_rr·m·g)/(m + wheels' I/r²) toward the 5 N side ± 1.5 %;
 //              equal pulls: it stays (≤ 1 mm); K9 F = ma: a 0.5 kg cart and 50 g over an edge pulley: a = m·g/(M + m) = 0.892 m/s²
 //              [SERWAY] within 5 %, and with the cart's rolling resistance (0.003 [PASCO]) and wheels counted, within 1 %
+//   pusher     a push of F for t: a toy car pushed 3-9 N for 0.15 s (0.25 N steps, rigid and 8 Hz axles, carpet and hardwood) starts faster
+//              with every step, sprung as rigid (± 2 %), at (F·t − C_rr·m·g·t)/(car + wheels + the pusher's rod and paddle) (± 2 %); the same F·t,
+//              the same start; 2.5, 7 and 14 cm paddles push alike; pushing nothing, its moving parts reach F·t/0.199 kg; a raised rod is
+//              mounted in its housing on a riser, and stays in it over its whole stroke
 //   falling    K6 1, 2 and 4 nested coffee filters: terminal speeds 1 : √2 : 2 within 5 % [Takahashi & Thompson, Am. J. Phys. 67, 709
 //              (1999): drag ∝ v²], one filter about 1 m/s (spec 1.0-1.2), terminal speed reached within 0.3 m; a 50 g load under a
 //              30 cm canopy falls at √(2mg/(ρ·C_d·A)) ≈ 2.9 m/s (spec, [KNACKE]) ± 10 %; a crumpled sheet lands before a flat one;
@@ -44,7 +49,7 @@
 //              gains m·g·h of kinetic energy exactly (the step's mean height, ½(y₀ + y₁), is what planck's Euler step keeps); a mass bouncing
 //              on an undamped spring keeps KE + PE + ½kx² within 0.5 %; a block sliding to a stop turns all its kinetic energy to heat, and
 //              the leftover (start − energies) is never below −1e-6 J; the bookkeeping start + added = energies + heat holds every frame
-//   node --no-warnings research/rw-validate-mechanics.ts [ramps|start|forces|sensors|falling|carts|machines|coaster|balloon|egg|screw|arrows|energy|all]
+//   node --no-warnings research/rw-validate-mechanics.ts [ramps|start|forces|pusher|sensors|falling|carts|machines|coaster|balloon|egg|screw|arrows|energy|all]
 import "../tools/engine-math-node.mjs"
 
 const PG = "/Users/ramsarma/Downloads/science-map-share/blender-playground"
@@ -232,6 +237,20 @@ if (which === "start" || which === "all") {
 	const kb = b.track.frames.findIndex((f, i) => pose(b, bid, i).x >= bx0 + 1)
 	const vb = (pose(b, bid, kb + 2).x - pose(b, bid, kb - 2).x) / (b.track.frames[kb + 2].t - b.track.frames[kb - 2].t)
 	truth("K4 a bowling ball given 2 m/s on concrete still rolls at ≥ 1.95 m/s after 1 m", vb >= 1.95, `${vb.toFixed(4)} m/s (rolling, C_rr 0.01: ${Math.sqrt(4 - 2 * 0.01 * G * (5 / 7)).toFixed(4)})`)
+	// engine6: two bodies on one rope over a pulley start the rope's way (start_dir −90: its left weight down, the other up as fast): an Atwood
+	// machine with equal weights given 0.3 m/s goes on at 0.3 m/s (balanced forces, Newton's first law: lowered steadily); unequal weights start
+	// at 0.3 m/s and speed up at g·(m₁ − m₂)/(m₁ + m₂) [ATWOOD]. (It gave both weights the same start, which the rope could not take: equal
+	// weights did not move at all)
+	const atwood = (left: number, right: number) =>
+		run([{ id: "aw", type: "atwood-machine", x: 1.3, y: 1.4, props: { left_mass: left, right_mass: right, drop: 0.5, start_speed: 0.3, start_dir: -90 } }], { seconds: 1.4, release: 0.3, fps: 240 })
+	const eq = atwood(0.3, 0.3)
+	const v0 = vel(eq, "aw/left", 0.31, 0.36).y
+	const v1 = vel(eq, "aw/left", 1.25, 1.3).y
+	check("an equal-weight Atwood machine given 0.3 m/s down: its left weight still falls at 0.3 m/s 1 s later (balanced)", v1, -0.3, 0.01, " m/s")
+	check("and its right weight rises as fast as the left falls", vel(eq, "aw/right", 1.25, 1.3).y, -v1, 0.001, " m/s")
+	truth("it starts at its start speed", Math.abs(v0 + 0.3) < 0.003, `${v0.toFixed(4)} m/s`)
+	const un = atwood(0.35, 0.25)
+	check("an unequal Atwood machine (0.35 vs 0.25 kg) given 0.3 m/s: it speeds up at g·(m₁ − m₂)/(m₁ + m₂)", -accel({ track: { frames: un.track.frames.map((f) => ({ t: f.t, placements: { x: { x: f.placements["aw/left"]?.y ?? un.track.frames[0].placements["aw/left"].y, y: 0, angle: 0 } } })) } } as unknown as Run, "x", 0.32, 0.7), (G * 0.1) / 0.6, 0.01, " m/s²")
 }
 
 // ================================================================ K5, K9: forces
@@ -265,6 +284,111 @@ if (which === "forces" || which === "all") {
 	const af = accel(f, "cart/chassis", 0.3, 1.2)
 	check("K9 F = ma: a = m·g/(M + m) = 0.892 m/s² (ideal, frictionless) within 5 %", af, (0.05 * G) / (M + 0.05), 0.05, " m/s²")
 	check("K9 with the cart's rolling resistance and its wheels counted", af, (0.05 * G - C_CART * M * G) / (M + 0.05 + WHEELS), 0.01, " m/s²")
+}
+
+// ================================================================ the pusher: a push of F for t (engine6, 2026-10-20)
+if (which === "pusher" || which === "all") {
+	// What its push moves with the thing: its rod and paddle (machines/mod_mechanics.py PUSH_ROD_KG, PUSH_PADDLE_KG), whatever their sizes
+	const M_PUSH = 0.135648 + 0.06336
+	type Contact = { between: string[]; rollingResistance?: number }
+	const rolling = (r: Run, a: string, b: string) => {
+		// (a material made for one item carries its own tag: "tyre rubber [17ba5f]")
+		const base = (m: string) => m.replace(/\s*\[[0-9a-f]+\]$/, "")
+		const c = ((r.doc as unknown as { contacts?: Contact[] }).contacts ?? []).find((x) => x.between.map(base).includes(a) && x.between.map(base).includes(b))
+		return c?.rollingResistance ?? NaN
+	}
+	const carPush = (f: number, susp: number, floor: string, t = 0.15) =>
+		run(
+			[
+				{ id: "lane", type: "floor", x: 2.7, y: 0, props: { length: 6.4, material: floor } },
+				{ id: "push", type: "pusher", x: -0.035, y: 0, props: { mode: "force", force: f, push_time: t, paddle: 0.07, height: 0.045 } },
+				{ id: "car", type: "toy-car", x: 0.1, y: 0, props: { color: "red", suspension: susp } }
+			],
+			{ seconds: 0.35 + t + 0.15, release: 0.3, table: false }
+		)
+	/** The car's start: the chassis's highest speed along the lane by 0.05 s after the push ends (centred differences over 2 frames). */
+	const startOf = (r: Run, t: number) => {
+		let best = 0
+		for (let k = 2; k < r.track.frames.length - 2 && r.track.frames[k].t <= r.release + t + 0.05; k++)
+			best = Math.max(best, (pose(r, "car/chassis", k + 2).x - pose(r, "car/chassis", k - 2).x) / (r.track.frames[k + 2].t - r.track.frames[k - 2].t))
+		return best
+	}
+	// the bench's sweep (lesson-regen/bench COVERAGE.md FO-36 row 7): 3-9 N in 0.25 N steps, rigid and 8 Hz axles, carpet and hardwood
+	const forces = Array.from({ length: 25 }, (_, k) => 3 + 0.25 * k)
+	const starts: Record<string, number[]> = {}
+	let probe: Run | null = null
+	for (const floor of ["carpet", "varnished hardwood"])
+		for (const susp of [0, 8]) {
+			starts[`${floor} ${susp}`] = forces.map((f) => {
+				const r = carPush(f, susp, floor)
+				if (f === 5 && susp === 0 && floor === "carpet") probe = r
+				return startOf(r, 0.15)
+			})
+		}
+	for (const [k, vs] of Object.entries(starts)) {
+		let dips = 0
+		for (let i = 1; i < vs.length; i++) if (!(vs[i] > vs[i - 1])) dips++
+		truth(`a toy car (${k} Hz axles) pushed 3-9 N for 0.15 s: its start speed rises with every 0.25 N`, dips === 0, `${vs[0].toFixed(3)} … ${vs.at(-1)?.toFixed(3)} m/s, ${dips} dips (it was 0.93 m/s at 5 N, 0.49 at 5.25 on 8 Hz axles)`)
+	}
+	for (const floor of ["carpet", "varnished hardwood"]) {
+		let worst = 0
+		starts[`${floor} 0`].forEach((v, i) => (worst = Math.max(worst, Math.abs(starts[`${floor} 8`][i] / v - 1))))
+		check(`on ${floor} a sprung toy car starts as a rigid one does, the same push (the worst of 25 forces)`, worst, 0, 0.02, "", false)
+	}
+	// 5 N for 0.15 s on the carpet against F·t less the rolling resistance, over the car, its wheels' turning and the pusher's moving parts
+	const r5 = probe as unknown as Run
+	const crr = rolling(r5, "tyre rubber", "carpet")
+	const mCar = resolvedNum(r5, "car", "body_mass") + 2 * 0.011
+	const mEff = mCar + 0.5 * 2 * 0.011 + M_PUSH
+	const want = (5 * 0.15 - crr * mCar * G * 0.15) / mEff
+	check(`a toy car pushed 5 N for 0.15 s: (F·t − C_rr·m·g·t)/(car + wheels' I/r² + the pusher's rod and paddle) (C_rr ${crr})`, starts["carpet 0"][8], want, 0.02, " m/s")
+	// the same impulse, the same start (less what the rolling resistance takes over the push's time): 3 N for 0.2 s and 6 N for 0.1 s, both
+	// within the stroke
+	const a = startOf(carPush(3, 8, "carpet", 0.2), 0.2) + (crr * mCar * G * 0.2) / mEff
+	const b = startOf(carPush(6, 8, "carpet", 0.1), 0.1) + (crr * mCar * G * 0.1) / mEff
+	check("the same impulse, the same start: 3 N × 0.2 s and 6 N × 0.1 s (0.6 N·s) on a sprung toy car, the rolling resistance's share given back", a, b, 0.01, " m/s")
+	// a paddle's size is its reach, not its push: 2.5, 7 and 14 cm paddles push a soccer ball alike
+	const ball = (pad: number) => {
+		const r = run(
+			[
+				{ id: "lane", type: "floor", x: 1.2, y: 0, props: { length: 3.4, material: "carpet" } },
+				{ id: "push", type: "pusher", x: -0.145, y: 0, props: { mode: "force", force: 5, push_time: 0.15, paddle: pad, height: 0.11 } },
+				{ id: "ball", type: "soccer-ball", x: 0, y: 0.11, props: {} }
+			],
+			{ seconds: 0.8, release: 0.3, table: false }
+		)
+		const id = main(r, "ball")
+		let best = 0
+		for (let k = 2; k < r.track.frames.length - 2; k++) best = Math.max(best, (pose(r, id, k + 2).x - pose(r, id, k - 2).x) / (r.track.frames[k + 2].t - r.track.frames[k - 2].t))
+		return { best, r }
+	}
+	const p25 = ball(0.025)
+	const p14 = ball(0.14)
+	const p7 = ball(0.07)
+	check("a 2.5 cm and a 14 cm paddle push a soccer ball alike (5 N for 0.15 s)", p25.best, p14.best, 0.005, " m/s")
+	check("a 7 cm paddle too", p7.best, p14.best, 0.005, " m/s")
+	// pushing nothing: its moving parts alone reach F·t/(rod + paddle) (its rod never rubs its housing)
+	// (by how far they go while it pushes, ½·(F/m)·t²: its brake stops them within a few mm after)
+	const free = run([{ id: "push", type: "pusher", x: 0.5, y: 0, props: { mode: "force", force: 5, push_time: 0.05 } }], { seconds: 0.6, release: 0.3 })
+	const went = at(free, "push/rod", 0.35).x - pose(free, "push/rod", 0).x
+	// (the engine's 480 Hz semi-implicit Euler step: n = 24 steps of h take it a·h²·n(n + 1)/2, ½·a·t² × (n + 1)/n)
+	check("pushing nothing, 5 N for 0.05 s: its rod and paddle go ½·(F/0.199 kg)·t² while it pushes (× 25/24, the 480 Hz step's own sum)", went, (0.5 * 5 * 0.05 * 0.05 * (25 / 24)) / M_PUSH, 0.01, " m")
+	// mounted at any height: the soccer ball's pusher (rod 11 cm up) holds its rod in its housing, on a wooden riser down to the floor, and the
+	// rod's back end is still inside the housing at the end of its stroke
+	const sol = (r: Run, part: string) => r.doc.solids.find((s) => s.id === `push/${part}`) as unknown as { at: { x: number; y: number }; body: { width: number; height: number } }
+	const H = sol(p14.r, "housing")
+	const R = sol(p14.r, "riser")
+	const rod = sol(p14.r, "rod")
+	truth("a raised rod is mounted in its housing, the housing on a riser that stands on the floor",
+		Math.abs(rod.at.y - H.at.y) < H.body.height / 2 - 0.006 && R !== undefined && Math.abs(R.at.y - R.body.height / 2) < 1e-9 && Math.abs(R.at.y + R.body.height / 2 - (H.at.y - H.body.height / 2)) < 1e-9,
+		`rod ${(rod.at.y * 100).toFixed(1)} cm up, housing ${((H.at.y - H.body.height / 2) * 100).toFixed(1)}-${((H.at.y + H.body.height / 2) * 100).toFixed(1)} cm, ${R === undefined ? "no riser" : `riser 0-${(R.body.height * 100).toFixed(1)} cm`}`)
+	const full = run([{ id: "push", type: "pusher", x: 0.5, y: 0, props: { mode: "force", force: 20, push_time: 0.5, height: 0.2 } }], { seconds: 1.0, release: 0.3 })
+	const end = pose(full, "push/rod", full.track.frames.length - 1)
+	const Hf = sol(full, "housing")
+	const rodF = sol(full, "rod")
+	const moved = end.x - rodF.at.x
+	truth("at the end of its whole stroke the rod's back end is still inside its housing", end.x - rodF.body.width / 2 < Hf.at.x + Hf.body.width / 2 && Math.abs(moved - 0.15) < 0.002,
+		`moved ${(moved * 100).toFixed(1)} cm (stroke 15 cm), back end ${((Hf.at.x + Hf.body.width / 2 - (end.x - rodF.body.width / 2)) * 100).toFixed(1)} cm inside the front`)
 }
 
 // ================================================================ sensors: force meters and a smart cart

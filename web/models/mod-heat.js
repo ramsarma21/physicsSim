@@ -34,6 +34,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 
 	// ------------------------------------------------------------- materials
 	const glazed = (hex) => M(`heat-glaze|${hex}`, { color: hex, roughness: 0.12, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05, envMapIntensity: 1.1 })
+	/** A bowl's glaze: satin, its clear coat softened. A mirror glaze on a bowl's curved far wall drew the room's light as one sharp upright
+	 *  streak, right above what sat in the bowl, that read as steam; a satin glaze spreads it into a soft sheen. */
+	const satinGlazed = (hex) => M(`heat-glaze-satin|${hex}`, { color: hex, roughness: 0.38, metalness: 0, clearcoat: 0.45, clearcoatRoughness: 0.42, envMapIntensity: 0.9 })
 	const stainless = () => M("heat-stainless", { color: "#dfe3e8", metalness: 1, roughness: 0.17, envMapIntensity: 1.3 })
 	const brushedAlu = () => M("heat-alu", { color: "#d4d8dd", metalness: 1, roughness: 0.32, envMapIntensity: 1.1 })
 	const copperMat = () => M("heat-copper", { color: "#c9774a", metalness: 1, roughness: 0.28, envMapIntensity: 1.2 })
@@ -69,14 +72,14 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	})
 
 	// ------------------------------------------------------------- plates and bowls: one lathe on the base part (the rims and walls draw nothing)
-	const dishLook = (P) => {
+	const dishLook = (P, bowl = false) => {
 		const mat = P.material ?? "ceramic"
 		if (mat === "aluminium") return brushedAlu()
 		if (mat === "glass") return L.glassMat("#ffffff", { thickness: 0.005, attenuation: "#dcefe8", dist: 0.5 })
 		if (mat === "foam") return L.foamMat(COLORS[P.color] ?? COLORS.white)
 		if (mat === "paperboard") return paperMat(COLORS[P.color] ?? COLORS.white)
 		if (mat === "melamine") return plastic(COLORS[P.color] ?? COLORS.white, 0.6)
-		return glazed(COLORS[P.color] ?? COLORS.white)
+		return bowl ? satinGlazed(COLORS[P.color] ?? COLORS.white) : glazed(COLORS[P.color] ?? COLORS.white)
 	}
 	const THICK = { ceramic: 0.005, glass: 0.005, melamine: 0.003, aluminium: 0.001, foam: 0.002, paperboard: 0.0012 }
 	addModel("plate", "base", (ctx) => {
@@ -98,7 +101,7 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 		const b = 0.55 * D
 		const y = (v) => v - t / 2
 		const prof = [[0, y(0)], [b / 2, y(0)], [b / 2 + (D / 2 - b / 2) * 0.35, y(H * 0.3)], [D / 2, y(H)], [D / 2 - t * 0.5, y(H + t * 0.4)], [D / 2 - t, y(H)], [b / 2 - t + (D / 2 - b / 2) * 0.35, y(H * 0.3 + t * 0.4)], [b / 2 - t, y(t)], [0, y(t)]]
-		const dish = mesh(L.lathe(`heat-bowl|${f5(D)}|${f5(H)}|${f5(t)}`, prof, { seg: 96, tile: 0.2, crease: 1.2 }), dishLook(P))
+		const dish = mesh(L.lathe(`heat-bowl|${f5(D)}|${f5(H)}|${f5(t)}`, prof, { seg: 96, tile: 0.2, crease: 1.2 }), dishLook(P, true))
 		// (water in it when it holds some: its level follows the run's "level"; liquid a pitcher pours in is drawn by the flow module)
 		if (P.contents !== "water") return dish
 		return group(dish, waterBody(b / 2 - t - 0.0004, D / 2 - t - 0.0006, H - t, y(t), "level"))
@@ -687,7 +690,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				// a 60 W incandescent gives about 800 lm, an LED about as much from 9 W: its brightness in the picture follows its light, not its heat
 				const lumens = bulb === "led" ? (P.power_w ?? 9) * 90 : (P.power_w ?? 60) * (bulb === "halogen" ? 16 : 13.5)
 				const spread = rec.spread ?? 0.87
-				const light = new THREE.SpotLight(color, (lumens / 800) * 18, 4, spread, 0.35, 2)
+				// (its pool: a little firmer at its edge and short of white on a white plate, so the plate, the cube and the salt on it read and the
+				// glow past the plate's rim stays a glow: penumbra 0.2, 0.6 of the brightness that blew a white plate out to pure white)
+				const light = new THREE.SpotLight(color, (lumens / 800) * 18 * 0.6, 4, spread, 0.2, 2)
 				light.castShadow = true
 				light.shadow.mapSize.set(512, 512)
 				light.shadow.bias = -0.0005

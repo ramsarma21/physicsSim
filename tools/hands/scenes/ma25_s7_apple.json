@@ -1,0 +1,56 @@
+{
+ "version": 2,
+ "id": "ma25-s7-apple",
+ "name": "Hands: MA-25 s7, apple held from above",
+ "stage": {
+  "x0": -0.4,
+  "x1": 0.9,
+  "y0": -0.1,
+  "y1": 0.7
+ },
+ "seconds": 2.5,
+ "release": 20.0,
+ "settings": {
+  "camera": {
+   "x0": -0.06,
+   "x1": 0.56,
+   "y": 0.2,
+   "pitch": 18.0,
+   "hfov": 40.0
+  }
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 0.25,
+   "y": 0,
+   "props": {
+    "width": 1.5
+   }
+  },
+  {
+   "id": "tank",
+   "type": "water-tank",
+   "x": 0.25,
+   "y": 0,
+   "props": {
+    "style": "aquarium",
+    "length": 0.5,
+    "height": 0.4,
+    "depth": 0.25
+   }
+  },
+  {
+   "id": "apple",
+   "type": "apple",
+   "x": 0.25,
+   "y": 0.2676,
+   "held": true,
+   "props": {
+    "color": "red",
+    "hand": "auto"
+   }
+  }
+ ]
+}

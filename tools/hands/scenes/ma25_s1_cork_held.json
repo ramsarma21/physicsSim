@@ -1,0 +1,56 @@
+{
+ "version": 2,
+ "id": "ma25-s1-cork-held",
+ "name": "Hands: MA-25 s1, a finger holds the cork down",
+ "seconds": 1.0,
+ "release": 20.0,
+ "stage": {
+  "x0": -0.4,
+  "x1": 0.9,
+  "y0": -0.1,
+  "y1": 0.6
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 0.25,
+   "y": 0,
+   "props": {
+    "width": 1.5
+   }
+  },
+  {
+   "id": "tank",
+   "type": "water-tank",
+   "x": 0.25,
+   "y": 0,
+   "props": {
+    "style": "aquarium",
+    "length": 0.24,
+    "height": 0.24,
+    "depth": 0.16,
+    "fill": 0.14
+   }
+  },
+  {
+   "id": "cork",
+   "type": "cork",
+   "x": 0.25,
+   "y": 0.018,
+   "held": true,
+   "props": {
+    "hand": "auto"
+   }
+  }
+ ],
+ "settings": {
+  "camera": {
+   "x0": 0.11528,
+   "x1": 0.38472,
+   "y": 0.09308,
+   "pitch": 12.0,
+   "hfov": 26.0
+  }
+ }
+}

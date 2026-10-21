@@ -17,6 +17,15 @@
  *       release.
  *   {kind: "sand-water", id, item, region (a sand-region's id), sources: [{x, z, rate (m³/s)}], drainX, lake, plants: [{x0, x1, tau}] | null}
  *       running water on that region's bed from the release (a stream table's hose), standing to `lake` at the low end, out at drainX.
+ *   (2026-10-20) a sand-region's `holders: [{item, floor, left: [ids], right: [ids], round, depth}]`: the containers (a jar, a cup, a beaker, a
+ *       bucket, a box) its grains may land or lie in (machines/mod_granular.py's build hook names every one in the scene near it); the engine
+ *       works out each one's inside from its solids' outlines at the start (granular.ts holderOf) and, where the bed reaches it, makes its inside
+ *       the floor and a ring of wall columns round it (front and back too), the bed grown to hold it whole with columns no wider than a tenth of
+ *       its inside; a pile or landing region whose middle is over its inside is read inside it (heap_* / height_mm..., and outside_g /
+ *       spilled_g: what lies outside it).
+ *   {kind: "sand-pour", id, item, solid, inside: [4 {x, y}], depth, wall, grain, wet, volume (m³ packed), asked? (mL)}
+ *       a cup of grains a hand tips (the flow module's pitcher with contents "grains": that module's flow-pour record tips its root `solid`
+ *       about the lip): granular.ts TipCup in that solid's frame; what leaves over the lip falls as parcels (lands on its landing region).
  * All of a run's records are worked by ONE process (the first in the document), every 480 Hz step: the outlets (Beverloo × the time-lapse),
  * the avalanches, the falling grains, the water (15 times a second; the bed's change × the time-lapse), and, after the release, bodies in
  * the sand (a force each (sub-)step).
@@ -30,6 +39,10 @@
  *              clogged (1 while its grains jam in the neck)
  *   stream:    eroded_g (the sand gone from where it lay: what the water carried away), delta_cm (how far the deposit reaches past the sand's
  *              toe), channel_mm (the deepest cut), water_lpm
+ *   a cup of grains (its item, the pitcher): left_g, poured_g, flow_gs, lands_x (where its stream comes down), and its landing region's heap_mm,
+ *              heap_deg, heap_g (+ outside_g in a container); keyframe "cup" (its grains' surface in the cup's frame: nx, ny, c (m), area (m²),
+ *              and the cup's world angle (rad), up to 30 a second while they change)
+ *   a bed with containers: keyframe "holders:<bed>" once ([n, (round, x, floor, r0, rb, ylo, rt, yhi, wall, rim, k, ring) ×n])
  * Keyframes (track.keyframes, for the view): each bed under its first item: "grid" once ([x0, z0, dx, nx, nz, K, grain index ×K (GRAIN_KEYS),
  * wetness index ×K (WETNESS), base (m), the floor as N runs [N, (step, count) ×N] of its column-to-column steps in tenths of a mm over the
  * base, the kinds as M runs [M, (kind, count) ×M]]); values below in tenths of a millimetre, a rectangle [i0, j0, ni, nj, 0, ...values], as
@@ -57,9 +70,16 @@ import {
 	GRAIN_KEYS,
 	GRAINS,
 	heapCone,
+	heapIn,
+	type Holder,
+	holderFloor,
+	holderOf,
+	holderQ,
+	holderRing,
 	manningN,
 	type Outlet,
 	pileStats,
+	TipCup,
 	vesselBed,
 	Water,
 	WETNESS,
@@ -70,7 +90,7 @@ import type { SimScene } from "#sim/part.ts"
 import type { ProcessContext, ProcessKind, ProcessRecord, SolidHandle } from "#sim/plugins.ts"
 
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v)
-const KINDS = ["sand-region", "sand-vessel", "sand-water"] as const
+const KINDS = ["sand-region", "sand-vessel", "sand-water", "sand-pour"] as const
 /** The most columns one bed may have (performance: a bigger region gets coarser columns). */
 const MAX_CELLS = 24000
 const READ_EVERY = 16
@@ -93,6 +113,27 @@ const regionProblem = (r: ProcessRecord): string | undefined => {
 	if (typeof d !== "object" || d === null || typeof d.shape !== "string") return "deposit must be {shape, ...}"
 	if (!["cone", "castle", "layer", "slope", "none"].includes(d.shape)) return `deposit.shape ${d.shape} is not cone, castle, layer, slope or none`
 	if ((r.x1 as number) - (r.x0 as number) > 20 || (r.z1 as number) - (r.z0 as number) > 5) return "a region is at most 20 m long and 5 m deep"
+	if (r.holders !== undefined) {
+		if (!Array.isArray(r.holders) || r.holders.length > 32) return "holders must list up to 32 containers"
+		for (const h of r.holders as Record<string, unknown>[]) {
+			if (typeof h !== "object" || h === null || typeof h.item !== "string" || typeof h.floor !== "string") return "each holder needs its item and its floor's solid id"
+			if (!Array.isArray(h.left) || !Array.isArray(h.right) || ![...(h.left as unknown[]), ...(h.right as unknown[])].every((x) => typeof x === "string"))
+				return "a holder's left and right must list its walls' solid ids"
+			if (typeof h.round !== "boolean" || !finite(h.depth) || !((h.depth as number) > 0)) return "a holder needs round (true or false) and its depth (m)"
+		}
+	}
+	return undefined
+}
+
+const pourProblem = (r: ProcessRecord): string | undefined => {
+	if (typeof r.solid !== "string") return "solid must name the cup's root solid"
+	const p = r.inside as { x: unknown; y: unknown }[] | undefined
+	if (!Array.isArray(p) || p.length !== 4 || !p.every((q) => finite(q?.x) && finite(q?.y))) return "inside must be 4 {x, y}: bottom-left, bottom-right, top-right, top-left"
+	const [bl, br, tr, tl] = p as { x: number; y: number }[]
+	if (!(br!.x > bl!.x && tr!.x > tl!.x && tl!.y > bl!.y && tr!.y > br!.y)) return "inside must be a box-like outline, wider than 0 and taller than 0"
+	if (!finite(r.depth) || !((r.depth as number) > 0) || !finite(r.volume) || (r.volume as number) < 0) return "depth (m, more than 0) and volume (m³, at least 0) must be numbers"
+	if (typeof r.grain !== "string" || GRAINS[r.grain] === undefined) return `grain must be one of ${GRAIN_KEYS.join(", ")}`
+	if (!WETNESS.includes(r.wet as Wetness)) return `wet must be one of ${WETNESS.join(", ")}`
 	return undefined
 }
 
@@ -151,6 +192,33 @@ interface Region {
 	/** A heap laid on a raised support narrower than itself (a shelf, a plank, a tipped board): the bed's cells of that support (1), what its
 	 *  readings are taken over; the rest of its grains spilled off it (null: it fits, every cell of the region counts). */
 	support: Uint8Array | null
+	/** The container its grains land or lie in (its middle is over that container's inside): its readings are taken inside it (null: none). */
+	holder: Holder | null
+	/** That container's inside columns in the bed; those of its floor (out to where a tapered cup's wall begins to lean), and its floor's
+	 *  outermost ring (where a heap's foot meets the wall). */
+	holderCells: Int32Array
+	holderFloor: Int32Array
+	holderEdge: Int32Array
+}
+
+/** A cup of grains a hand tips (a "sand-pour" record): its grains, what it lets out, what has been said. */
+interface Pour {
+	readonly record: ProcessRecord
+	readonly item: string
+	readonly cup: TipCup
+	readonly cls: number
+	/** its root solid's angle as the run starts (rad): how far it is tipped is from there */
+	readonly a0: number
+	/** m³ (packed) let out and not yet launched as a parcel; kg poured; kg/s now (smoothed) */
+	pending: number
+	pouredKg: number
+	rate: number
+	lastEmit: number
+	startTold: boolean
+	emptyTold: boolean
+	/** when the view's keyframe of its grains was last written, and what it said */
+	lastKey: number
+	lastRow: string
 }
 
 interface Vessel {
@@ -187,6 +255,9 @@ class Grains {
 	readonly regions: Region[] = []
 	readonly vessels: Vessel[] = []
 	readonly waters: { record: ProcessRecord; water: Water; region: Region; toe: number }[] = []
+	readonly pours: Pour[] = []
+	/** Each bed's containers (the holders its regions name that it covers), for the readings and the view. */
+	readonly holders = new Map<Bed, Holder[]>()
 	readonly shown: Shown[] = []
 	readonly classes: ClassInfo[]
 	readonly spilledTold = new Set<string>()
@@ -194,6 +265,13 @@ class Grains {
 	readonly told = new Set<string>()
 	/** Each bed's columns' floor: the item of the fixed solid it is the top of ("" where none: an edge, a tray's wall). */
 	readonly floorItem = new Map<Bed, string[]>()
+	/** The same, the fixed solid's own id (a kitchen scale's platform, not its base); and, per solid asked for, its columns (grainsOn: floors
+	 *  never move, so they are found once) */
+	readonly floorSolid = new Map<Bed, string[]>()
+	readonly cellsOn = new Map<string, { bed: Bed; cells: Int32Array }[]>()
+	/** The containers among the holders that stand by their own weight (a bowl or a mug: dynamic, not fixed): what lies in one lies on what
+	 *  it stands on (a kitchen scale's platform weighs it, grainsOn); a fixed cup or jar holds its grains itself. */
+	readonly loose = new Set<string>()
 	private airShown = false
 	private lastAir = -1
 	private steps = 0
@@ -251,6 +329,21 @@ class Grains {
 		const exclude = new Set<string>()
 		for (const r of this.records) for (const e of (r.exclude as string[] | undefined) ?? []) exclude.add(e)
 		const statics = ctx.all().filter((h) => !h.dynamic && h.part.ghost !== true && !exclude.has(h.id))
+		// the containers the regions name (a jar, a cup, a beaker, a box: their insides from their solids' outlines as the run starts)
+		const holderCache = new Map<string, Holder | null>()
+		const holderFor = (spec: Record<string, unknown>): Holder | null => {
+			const item = spec.item as string
+			if (holderCache.has(item)) return holderCache.get(item) ?? null
+			const out = (id: unknown) => (typeof id === "string" ? ctx.solid(id)?.outline() : undefined)
+			const fl = out(spec.floor)
+			const left = ((spec.left as string[]) ?? []).map(out).filter((o) => o !== undefined)
+			const right = ((spec.right as string[]) ?? []).map(out).filter((o) => o !== undefined)
+			const all = ctx.all().filter((h) => h.item === item && h.part.ghost !== true).map((h) => h.outline())
+			const H = fl === undefined ? null : holderOf({ item, round: spec.round === true, floor: fl, left, right, all, depth: spec.depth as number })
+			holderCache.set(item, H)
+			if (H !== null && ctx.all().some((h) => h.item === item && h.dynamic)) this.loose.add(item)
+			return H
+		}
 		groups.forEach((gr, gi) => {
 			let x0 = Number.POSITIVE_INFINITY
 			let x1 = Number.NEGATIVE_INFINITY
@@ -268,18 +361,53 @@ class Grains {
 				top = Math.max(top, r.top as number)
 				cell = Math.min(cell, r.cell as number)
 			}
-			// (no more than MAX_CELLS columns)
-			while (Math.ceil((x1 - x0) / cell) * Math.ceil((z1 - z0) / cell) > MAX_CELLS) cell *= 1.25
+			// the containers its regions name that it reaches (in plan, and its floor between the regions' base and top): the bed grows to hold
+			// each whole with its ring of wall, its columns no wider than a tenth of the narrowest's inside
+			const hs: Holder[] = []
+			for (const r of gr)
+				for (const spec of (r.holders as Record<string, unknown>[] | undefined) ?? []) {
+					const H = holderFor(spec)
+					if (H === null || hs.some((q) => q.item === H.item)) continue
+					const rx = H.rt + H.t
+					const rz = (H.round ? H.k * (H.rt + H.t) : H.k * H.rt + H.t)
+					if (H.x + rx < x0 || H.x - rx > x1 || rz < z0 || -rz > z1 || !(H.floor >= base && H.floor <= top)) continue
+					hs.push(H)
+				}
+			for (const H of hs) cell = Math.min(cell, Math.max(0.002, H.rt / 10))
+			const bx0 = x0
+			const bx1 = x1
+			const bz0 = z0
+			const bz1 = z1
+			// (no more than MAX_CELLS columns, the containers' rings counted)
+			for (;;) {
+				x0 = bx0
+				x1 = bx1
+				z0 = bz0
+				z1 = bz1
+				for (const H of hs) {
+					const ring = holderRing(H, cell)
+					x0 = Math.min(x0, H.x - (H.rt + ring) - cell)
+					x1 = Math.max(x1, H.x + (H.rt + ring) + cell)
+					const ez = H.k * (H.rt + ring) + cell
+					z0 = Math.min(z0, -ez)
+					z1 = Math.max(z1, ez)
+				}
+				if (Math.ceil((x1 - x0) / cell) * Math.ceil((z1 - z0) / cell) <= MAX_CELLS) break
+				cell *= 1.25
+			}
 			const nx = Math.max(2, Math.ceil((x1 - x0) / cell))
 			const nz = Math.max(2, Math.ceil((z1 - z0) / cell))
 			const floor = new Float64Array(nx * nz)
 			const kind = new Uint8Array(nx * nz)
 			const by: string[] = new Array(nx * nz).fill("")
-			this.scanFloor(statics, gr, x0, z0, cell, nx, nz, base, top, floor, kind, by)
+			const sids: string[] = new Array(nx * nz).fill("")
+			this.scanFloor(statics, gr, x0, z0, cell, nx, nz, base, top, floor, kind, by, sids, hs)
 			const first = gr[0] as ProcessRecord
 			const bed = new Bed({ id: `bed${gi}`, owner: first.item as string, x0, z0, dx: cell, nx, nz, floor, kind, classes: this.classes, ceiling: top, gravity: g })
 			this.world.addBed(bed)
 			this.floorItem.set(bed, by)
+			if (hs.length) this.holders.set(bed, hs)
+			this.floorSolid.set(bed, sids)
 			this.shown.push({ bed, item: first.item as string, cls: -2, last: new Float64Array(bed.n), lastT: -1, lastW: undefined, lastWT: -1 })
 			for (const r of gr) {
 				const cells: number[] = []
@@ -292,7 +420,33 @@ class Grains {
 						const z = bed.cz(j)
 						if (x + e >= (r.x0 as number) && x - e <= (r.x1 as number) && z + e >= (r.z0 as number) && z - e <= (r.z1 as number)) cells.push(j * nx + i)
 					}
-				this.regions.push({ record: r, item: r.item as string, bed, cells: Int32Array.from(cells), baseline: new Float64Array(cells.length), startTop: 0, collapsed: false, support: null })
+				// (its container: the one whose inside holds its middle, where its grains land or lie)
+				const mx = 0.5 * ((r.x0 as number) + (r.x1 as number))
+				const mz = 0.5 * ((r.z0 as number) + (r.z1 as number))
+				const H = hs.find((q) => holderQ(q, mx, mz) <= q.rt) ?? null
+				const inside: number[] = []
+				const flat: number[] = []
+				const edge: number[] = []
+				if (H !== null) {
+					// (its floor proper: out to r0, at least a column in; its edge: the floor's last column and a half)
+					const r0 = Math.max(H.r0, 1.5 * cell)
+					for (let j = 0; j < nz; j++)
+						for (let i = 0; i < nx; i++) {
+							const c = j * nx + i
+							if ((kind[c] as number) !== 0) continue
+							const q = holderQ(H, bed.cx(i), bed.cz(j))
+							if (q > H.rt) continue
+							inside.push(c)
+							if (q <= r0) {
+								flat.push(c)
+								if (q > r0 - 1.5 * cell) edge.push(c)
+							}
+						}
+				}
+				this.regions.push({
+					record: r, item: r.item as string, bed, cells: Int32Array.from(cells), baseline: new Float64Array(cells.length), startTop: 0, collapsed: false, support: null,
+					holder: H, holderCells: Int32Array.from(inside), holderFloor: Int32Array.from(flat), holderEdge: Int32Array.from(edge)
+				})
 			}
 		})
 		// the deposits, in document order (each region's baseline is the surface before its own)
@@ -361,6 +515,16 @@ class Grains {
 			}
 			this.vessels.push({ record: r, item: r.item as string, bed, outlet, startMass: bed.mass(), emptied: false, emptyAt: -1, openedAt: -1, clogTold: false, startTold: false, jammedFor: 0 })
 		}
+		// cups of grains a hand tips (a pitcher of sugar: the flow module tips it, these grains pour from it)
+		for (const r of this.records.filter((q) => q.kind === "sand-pour")) {
+			const k = this.classIndex(r)
+			const ci = this.classes[k] as ClassInfo
+			const cup = new TipCup(r.inside as { x: number; y: number }[], r.depth as number, Math.max(0, r.volume as number), ci.tanRepose, ci.grain.d)
+			const a0 = ctx.solid(r.solid as string)?.pose().angle ?? 0
+			this.pours.push({ record: r, item: r.item as string, cup, cls: k, a0, pending: 0, pouredKg: 0, rate: 0, lastEmit: -1, startTold: false, emptyTold: false, lastKey: -1, lastRow: "" })
+			if (finite(r.asked) && (r.asked as number) > cup.volume() * 1e6 + 0.5)
+				ctx.event(`only ${Math.round(cup.volume() * 1e6)} mL of ${ci.grain.name} fits in ${r.item} (not ${Math.round(r.asked as number)} mL): it is filled to the brim`, [r.item as string], "brim", 0)
+		}
 		// water
 		for (const r of this.records.filter((q) => q.kind === "sand-water")) {
 			const region = this.regions.find((q) => q.record.id === r.region)
@@ -401,26 +565,33 @@ class Grains {
 		top: number,
 		floor: Float64Array,
 		kind: Uint8Array,
-		by: string[]
+		by: string[],
+		sids: string[],
+		holders: readonly Holder[] = []
 	) {
 		const NONE = Number.NEGATIVE_INFINITY
 		floor.fill(NONE)
-		const shapes = statics.map((h) => {
-			const o = h.outline()
-			const depth = h.part.body.kind === "ball" ? 2 * (o.circle?.r ?? 0) : (h.part.body as { depth: number }).depth
-			return { o, half: depth / 2, item: h.item }
-		})
+		// (a container's own solids are not its floor: its inside is (holders, below); in a side view its walls are slabs as deep as it is,
+		// which a round jar's are not, front and back)
+		const own = new Set(holders.map((H) => H.item))
+		const shapes = statics
+			.filter((h) => !own.has(h.item))
+			.map((h) => {
+				const o = h.outline()
+				const depth = h.part.body.kind === "ball" ? 2 * (o.circle?.r ?? 0) : (h.part.body as { depth: number }).depth
+				return { o, half: depth / 2, item: h.item, id: h.id }
+			})
 		for (let i = 0; i < nx; i++) {
 			const x = x0 + (i + 0.5) * dx
 			// each solid's span at this x: [lo, hi]
-			const spans: { lo: number; hi: number; half: number; item: string }[] = []
+			const spans: { lo: number; hi: number; half: number; item: string; id: string }[] = []
 			for (const s of shapes) {
 				if (s.o.circle !== undefined) {
 					const c = s.o.circle
 					const ex = x - c.x
 					if (Math.abs(ex) >= c.r) continue
 					const dy = Math.sqrt(c.r * c.r - ex * ex)
-					spans.push({ lo: c.y - dy, hi: c.y + dy, half: s.half, item: s.item })
+					spans.push({ lo: c.y - dy, hi: c.y + dy, half: s.half, item: s.item, id: s.id })
 					continue
 				}
 				const pts = s.o.points ?? []
@@ -435,22 +606,46 @@ class Grains {
 					if (y > hi) hi = y
 					if (y2 < lo) lo = y2
 				}
-				if (hi > lo) spans.push({ lo, hi, half: s.half, item: s.item })
+				if (hi > lo) spans.push({ lo, hi, half: s.half, item: s.item, id: s.id })
 			}
 			for (let j = 0; j < nz; j++) {
 				const z = z0 + (j + 0.5) * dx
 				let f = NONE
 				let who = ""
+				let sid = ""
 				for (const s of spans)
 					if (Math.abs(z) <= s.half && s.lo <= top && s.hi > f) {
 						f = s.hi
 						who = s.item
+						sid = s.id
 					}
 				floor[j * nx + i] = f
 				by[j * nx + i] = who
+				sids[j * nx + i] = sid
 			}
 		}
 		const barrier = new Set<number>()
+		// the containers: inside one, its floor (and a tapered cup's leaning wall) unless something stands higher in it; its ring of wall, round or
+		// square, all the way round (front and back too), as high as its rim
+		for (const H of holders) {
+			const ring = holderRing(H, dx)
+			for (let j = 0; j < nz; j++)
+				for (let i = 0; i < nx; i++) {
+					const c = j * nx + i
+					const q = holderQ(H, x0 + (i + 0.5) * dx, z0 + (j + 0.5) * dx)
+					if (q <= H.rt) {
+						const f = holderFloor(H, q)
+						if (f >= (floor[c] as number)) {
+							floor[c] = f
+							by[c] = H.item
+						}
+					} else if (q <= H.rt + ring) {
+						floor[c] = Math.max(floor[c] as number, H.rim)
+						by[c] = H.item
+						barrier.add(c)
+					}
+				}
+		}
 		for (const r of gr)
 			for (const w of (r.walls as { x0: number; x1: number; z0: number; z1: number; top: number }[] | undefined) ?? []) {
 				for (let j = 0; j < nz; j++)
@@ -629,12 +824,52 @@ class Grains {
 			for (const v of this.vessels) if (v.outlet !== undefined && v.outlet.jammed && !v.emptied && v.openedAt >= 0 && t >= v.openedAt) v.jammedFor += h
 			// (the grains' avalanches 240 times a second, sub-stepped as fast as they flow; falling grains and bodies every step)
 			if (this.steps % FLOW_EVERY === 0) this.world.flow(FLOW_EVERY * h)
+			this.tipCups(ctx, t, h)
 			this.world.fly(h)
 			if (this.steps % WATER_EVERY === 0) for (const w of this.waters) w.water.step(WATER_EVERY * h, t, ctx.settings.timeLapse)
 		}
 		if (this.steps % READ_EVERY === 0) this.read(ctx)
 		this.show(ctx)
 		this.steps++
+	}
+
+	/** The cups of grains: each turns with the hand that tips it (its root solid's pose now) and lets out what is over its lip, launched from
+	 *  the lip as parcels (a parcel of up to about 2 g, at least one every 1/60 s while it pours) along the way its grains slide. */
+	tipCups(ctx: ProcessContext, t: number, h: number) {
+		const g = ctx.settings.gravity
+		for (const p of this.pours) {
+			const sh = ctx.solid(p.record.solid as string)
+			if (sh === undefined) continue
+			const pose = sh.pose()
+			const ci = this.classes[p.cls] as ClassInfo
+			const out = p.cup.step(pose.angle, h, g)
+			if (out > 0) {
+				p.pending += out
+				p.pouredKg += out * ci.rhoB
+				if (!p.startTold) {
+					p.startTold = true
+					const deg = Math.round((Math.abs(pose.angle - p.a0) * 180) / Math.PI)
+					ctx.event(`${p.item} starts pouring its ${ci.grain.name}: tipped ${deg}°, past what its grains stand at`, [p.item], "pours")
+				}
+			}
+			const a = Math.min(1, h / 0.1)
+			p.rate += ((h > 0 ? (out * ci.rhoB) / h : 0) - p.rate) * a
+			if (p.pending > 0 && (p.pending >= 1.2e-6 || t - p.lastEmit >= 1 / 60 || !(p.cup.area > 0))) {
+				const c = p.cup.cornerAt(pose.x, pose.y, pose.angle)
+				const off = ((p.record.wall as number | undefined) ?? 0.002) + 0.001
+				const v = Math.max(p.cup.speed, 0.05)
+				this.world.parcels.push({
+					x: c.x + p.cup.ux * off, y: c.y + p.cup.uy * off, z: 0, vx: v * p.cup.ux, vy: v * p.cup.uy, vz: 0, vol: p.pending, grain: ci.grain.key, wet: ci.wet, age: 0, src: p.item
+				})
+				this.world.thrown++
+				p.pending = 0
+				p.lastEmit = t
+			}
+			if (p.startTold && !p.emptyTold && p.cup.area <= 0.002 * p.cup.start) {
+				p.emptyTold = true
+				ctx.event(`${p.item} is empty: all its ${ci.grain.name} has poured out`, [p.item], "emptied")
+			}
+		}
 	}
 
 	/** Bodies in the sand (after the release, every (sub-)step). */
@@ -685,7 +920,29 @@ class Grains {
 		const lapse = ctx.settings.timeLapse
 		for (const reg of this.regions) {
 			const role = reg.record.role
-			if (role === "pile") {
+			if ((role === "pile" || role === "landing") && reg.holder !== null) {
+				// (in a container: the heap inside it, a cone on the bed that fills it once its foot reaches the wall; what lies outside it, spilled)
+				const p = heapIn(reg.bed, reg.holderCells, reg.holderEdge, reg.holderFloor)
+				let out = 0
+				const inside = new Set(reg.holderCells)
+				const A = reg.bed.dx * reg.bed.dx
+				for (const c of reg.cells) {
+					if (inside.has(c) || (reg.bed.kind[c] as number) !== 0) continue
+					for (let k = 0; k < reg.bed.classes.length; k++) out += ((reg.bed.hk[k] as Float64Array)[c] as number) * A * (reg.bed.classes[k] as ClassInfo).rhoB
+				}
+				if (role === "pile") {
+					ctx.set(reg.item, "height_mm", p.top * 1000)
+					ctx.set(reg.item, "width_mm", 2 * p.radius * 1000)
+					ctx.set(reg.item, "angle_deg", p.slope)
+					ctx.set(reg.item, "mass_g", p.mass * 1000)
+					ctx.set(reg.item, "spilled_g", out * 1000)
+				} else {
+					ctx.set(reg.item, "heap_mm", p.top * 1000)
+					ctx.set(reg.item, "heap_deg", p.slope)
+					ctx.set(reg.item, "heap_g", p.mass * 1000)
+					ctx.set(reg.item, "outside_g", out * 1000)
+				}
+			} else if (role === "pile") {
 				const p = this.pileOf(reg)
 				ctx.set(reg.item, "height_mm", p.top * 1000)
 				ctx.set(reg.item, "width_mm", 2 * p.radius * 1000)
@@ -778,6 +1035,14 @@ class Grains {
 				ctx.set(v.item, "empty", v.emptied ? 1 : 0)
 			}
 		}
+		for (const p of this.pours) {
+			const ci = this.classes[p.cls] as ClassInfo
+			ctx.set(p.item, "left_g", p.cup.volume() * ci.rhoB * 1000)
+			ctx.set(p.item, "poured_g", p.pouredKg * 1000)
+			ctx.set(p.item, "flow_gs", p.rate * 1000)
+			const lx = this.world.lands.get(p.item)
+			if (lx !== undefined) ctx.set(p.item, "lands_x", lx)
+		}
 		for (const w of this.waters) {
 			const reg = w.region
 			const b = reg.bed
@@ -818,9 +1083,27 @@ class Grains {
 	/** Keyframes for the view: grids once, heights where they changed (up to 20 a second), water (10 a second), the falling grains (30). */
 	show(ctx: ProcessContext) {
 		const t = ctx.time()
+		// the cups of grains: the surface of what is in each (its normal and offset in the cup's frame), 30 a second while it changes
+		for (const p of this.pours) {
+			if (p.lastKey >= 0 && t - p.lastKey < 1 / 30 - 1e-9) continue
+			const ang = Number.isFinite(p.cup.angle) ? p.cup.angle : p.a0
+			const row = [Math.round(p.cup.nx * 1e5) / 1e5, Math.round(p.cup.ny * 1e5) / 1e5, Math.round(p.cup.c * 1e5) / 1e5, Math.round(p.cup.area * 1e7) / 1e7, Math.round(ang * 1e5) / 1e5]
+			const key = row.join(",")
+			if (key === p.lastRow) continue
+			ctx.keyframe(p.item, "cup", row)
+			p.lastRow = key
+			p.lastKey = t
+		}
 		for (const s of this.shown) {
 			const b = s.bed
 			if (s.lastT < 0) {
+				// (its containers, once: for each, round 1 or a box 0, its axis x, floor, r0, rb, ylo, rt, yhi, wall, rim, k, ring)
+				const hs = this.holders.get(b)
+				if (hs !== undefined && hs.length > 0) {
+					const row: number[] = [hs.length]
+					for (const H of hs) row.push(H.round ? 1 : 0, H.x, H.floor, H.r0, H.rb, H.ylo, H.rt, H.yhi, H.t, H.rim, H.k, holderRing(H, b.dx))
+					ctx.keyframe(s.item, `holders:${b.id}`, row)
+				}
 				const gi = this.classes.map((c) => GRAIN_KEYS.indexOf(c.grain.key))
 				const wi = this.classes.map((c) => WETNESS.indexOf(c.wet))
 				// (the floor in tenths of a millimetre over its lowest point, as runs of equal steps from column to column; the kinds as runs)
@@ -963,12 +1246,38 @@ export const grainsIn = (scene: SimScene<string>) => runs.get(scene)
 
 /**
  * The grains (kg) resting on an item's fixed solids now: every column whose floor is one of its solids' tops (a kitchen scale's platform: what a
- * measuring module adds to its reading, ×g, for sand poured or heaped on it). 0 in a scene without grains. Falling grains are not counted.
+ * measuring module adds to its reading, ×g, for sand poured or heaped on it); with `solid`, only that solid's (the platform, not the scale's
+ * base). 0 in a scene without grains. Falling grains are not counted.
  */
-export const grainsOn = (scene: SimScene<string>, item: string) => {
+export const grainsOn = (scene: SimScene<string>, item: string, solid?: string) => {
 	const g = runs.get(scene)
 	if (g === undefined) return 0
 	let m = 0
+	if (solid !== undefined) {
+		// (the solid's columns, found once: a floor never moves)
+		let list = g.cellsOn.get(solid)
+		if (list === undefined) {
+			list = []
+			for (const [b, ids] of g.floorSolid) {
+				const cells: number[] = []
+				for (let c = 0; c < b.n; c++) {
+					// (on the solid itself, or in a container standing on it by its own weight)
+					const on = g.floorItem.get(b)?.[c] ?? ""
+					if (ids[c] === solid && (on === item || g.loose.has(on))) cells.push(c)
+				}
+				if (cells.length > 0) list.push({ bed: b, cells: Int32Array.from(cells) })
+			}
+			g.cellsOn.set(solid, list)
+		}
+		for (const { bed: b, cells } of list) {
+			const A = b.dx * b.dx
+			for (const c of cells) {
+				if ((b.kind[c] as number) !== 0) continue
+				for (let k = 0; k < b.classes.length; k++) m += ((b.hk[k] as Float64Array)[c] as number) * A * (b.classes[k] as ClassInfo).rhoB
+			}
+		}
+		return m
+	}
 	for (const [b, by] of g.floorItem) {
 		const A = b.dx * b.dx
 		for (let c = 0; c < b.n; c++) {
@@ -1003,7 +1312,8 @@ const create = (record: ProcessRecord, ctx: ProcessContext) => {
 const kinds: ProcessKind[] = [
 	{ kind: "sand-region", check: (r) => regionProblem(r), create },
 	{ kind: "sand-vessel", check: (r) => vesselProblem(r), create },
-	{ kind: "sand-water", check: (r) => waterProblem(r, undefined), create }
+	{ kind: "sand-water", check: (r) => waterProblem(r, undefined), create },
+	{ kind: "sand-pour", check: (r) => pourProblem(r), create }
 ]
 
 export default kinds

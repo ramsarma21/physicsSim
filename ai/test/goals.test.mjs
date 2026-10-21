@@ -103,3 +103,19 @@ test("off: a thing past the table's end, or fallen below its top, has left the t
 	assert.deepEqual(own, [["blown off", true], ["stays", false]])
 	assert.deepEqual(checkGoals(goals, { summary: r.summary }).map((g) => g.ok), [true, false])
 })
+
+test("moves: an Atwood machine's two weights go opposite ways: the weight that moved most is measured (the mean of all its parts stayed put); a pulley lift's pail and weight alike; the engine's own summary agrees", async () => {
+	const atwood = JSON.parse(readFileSync(new URL("web/scenarios/atwood.json", PG), "utf8"))
+	const goals = [{ kind: "moves", label: "the weights move", item: "atwood", min_m: 0.1 }]
+	const r = await runScene({ ...atwood, goals })
+	const [g] = checkGoals(goals, r)
+	assert.equal(g.ok, true, g.detail)
+	assert.ok(g.moved_m > 0.25 && g.moved_m < 0.4, g.detail)
+	// (machines/items.py = web/sim/items.js summarize reports the same distance)
+	const own = r.summary.goals.find((x) => x.kind === "moves")
+	assert.deepEqual([own.ok, own.moved_m], [true, g.moved_m])
+	const lift = JSON.parse(readFileSync(new URL("web/gallery/pulley-lift.json", PG), "utf8"))
+	const lg = [{ kind: "moves", label: "the lift moves", item: "lift", min_m: 0.3 }]
+	const [l] = checkGoals(lg, await runScene({ ...lift, goals: lg }))
+	assert.equal(l.ok, true, l.detail)
+})

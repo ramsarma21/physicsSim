@@ -28,7 +28,7 @@ const DIGEST_VERSION = 10 // bump when the digest's format or notes change (inva
 /** Container types whose "in" goal the engine's summary can check (machines/items.py inside()). */
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
 /** Containers whose "in" goal is judged by their own walls in the run (ai/goals.mjs wallsInside), not by the engine's summary. */
-export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug"]
+export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug", "pulley-lift"]
 /** Prop keys every type has: the surface material and its tunable contact numbers. */
 export const MATERIAL_KEYS = ["material", "bounce", "friction", "rolling", "side"]
 /** The default stage and table (web/scenarios/empty.json). */
@@ -317,8 +317,8 @@ const TYPE_NOTES = {
 	"pinball-flipper": "The flipper points right from its hinge, resting at rest_angle; at the release it swings counter-clockwise through sweep, flicking up whatever rests on it.",
 	"spring-bumper": "Mounted on a wall at its left; the plate faces right.",
 	"motor-spinner": "Turns on a gear motor's shaft at its middle (a fixed hub, drawn on a stand behind it) and is driven: positive rpm turns counter-clockwise.",
-	"atwood-machine": "The pulley is fixed at the anchor; the two weights hang below it.",
-	"pulley-lift": "The pulley is fixed at the anchor; the weight and the pail hang below it; things put in the pail ride up.",
+	"atwood-machine": "The pulley is fixed at the anchor; the two weights hang below it. Hang it in the air (on \"air\", y_m about 2 × drop + 0.1: its weights clear of the table); put on the table, it is hung with its weights `drop` (at most 1 m) over it, never resting on it. start_speed with start_dir -90 starts its left weight down and its right one up at that speed (equal weights then go on steadily: balanced forces).",
+	"pulley-lift": "The pulley is fixed at the anchor; the weight and the pail hang below it; things put in the pail ride up (place them inside it: {inside: <its id>}; an \"in\" goal with it as the container checks they stay in the pail). Hang it in the air, or on the table: it is hung with its pail `drop` (at most 1 m) over it.",
 	"hanging-spring": "Hangs below its anchor (the top of the spring).",
 	"hanging-chain": "Two fixed posts at the anchor's height, span apart; the chain sags between them.",
 	trampoline: "Stands on the surface below it (the anchor is the floor under its middle); drop things onto the mat from above.",

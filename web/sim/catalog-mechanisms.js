@@ -1100,8 +1100,15 @@ function _pulleys() {
 // every other part shares one density, chosen so the whole body weighs exactly `body_mass` (the volume is split by area x depth).
 /** A body on two sprung (or rigid, hz = 0) wheels. Its anchor is the ground under the middle, where the wheels touch.
  *  The wheels' 3D track is the body's depth less `tuck` each side plus `wheel_w` (x the wheel radius) each side (web/models/vehicles.js reads the same numbers). */
+// A motor car typed past its toy sizes grows to a ride-on toy car (catalog_mechanisms.py BIG_CAR): typed values up to these, the sliders at the toy's own most
+const BIG_CAR = {
+	length: 1.2, wheel_diameter: 0.2, body_mass: 30.0, push: 150.0,
+	_help: { length: "type up to 1.2 m: a ride-on toy car", wheel_diameter: "type up to 0.2 m (a ride-on toy's)", body_mass: "type up to 30 kg (a ride-on toy car is 15-25 kg)", push: "type up to 150 N (a ride-on toy's two motors)" }
+}
+
 function _vehicle(key, name, o) {
 	const { L, h, d, mass, r, wheel_mass, axle, clear, hz, wheel_mat, wheel_mats, body_mat, body_look, hull, wheel_w, tuck, drive = null, tags, description, source, facts } = o
+	const big = o.big ?? {}
 	function build(c, P) {
 		const Lc = P.length
 		const r_ = P.wheel_diameter / 2
@@ -1163,15 +1170,21 @@ function _vehicle(key, name, o) {
 			_joint(c, "wheel", `axle-${part}`, f)
 		}
 	}
+	/** [max, slider_max, help]: the toy's own most, or the big one for a typed value with the slider still at the toy's (catalog_mechanisms.py most). */
+	const most = (k, toy, help = "") => (hasOwn(big, k) ? [big[k], toy, (help ? help + "; " : "") + big._help[k]] : [toy, null, help])
+	const [lm, ls, lh] = most("length", pyRound(L * 2.5, 3))
+	const [wm, ws, wh] = most("wheel_diameter", pyRound(4 * r, 3))
+	const [mm, ms, mh] = most("body_mass", pyRound(mass * 6, 3), "The body with its cabin, without the wheels")
 	const props = [
-		new Prop("length", "Body length", L, pyRound(L / 2, 3), pyRound(L * 2.5, 3), 0.005, "m"), new Prop("wheel_diameter", "Wheel diameter", 2 * r, pyRound(r, 3), pyRound(4 * r, 3), 0.002, "m"),
-		new Prop("body_mass", "Body weight", mass, pyRound(mass / 5, 4), pyRound(mass * 6, 3), 0.005, "kg", "The body with its cabin, without the wheels"),
+		new Prop("length", "Body length", L, pyRound(L / 2, 3), lm, 0.005, "m", lh, { slider_max: ls }), new Prop("wheel_diameter", "Wheel diameter", 2 * r, pyRound(r, 3), wm, 0.002, "m", wh, { slider_max: ws }),
+		new Prop("body_mass", "Body weight", mass, pyRound(mass / 5, 4), mm, 0.005, "kg", mh, { slider_max: ms }),
 		new Prop("suspension", "Suspension", hz, 0.0, 20.0, 0.5, "Hz", "How fast the body bounces on its springs (2 or more); 0 is rigid axles")
 	]
 	if (truthy(drive)) {
+		const [pm, ps, ph] = most("push", 50.0, "The most force the wheels give; it spins its wheels if the ground can't hold it")
 		props.push(
 			new Prop("speed", "Top speed", drive[0], 0.1, 10.0, 0.1, "m/s", "The speed the wheels drive up to"),
-			new Prop("push", "Push", drive[1], 0.1, 50.0, 0.1, "N", "The most force the wheels give; it spins its wheels if the ground can't hold it")
+			new Prop("push", "Push", drive[1], 0.1, pm, 0.1, "N", ph, { slider_max: ps })
 		)
 	}
 	register(new ItemType(key, name, "Wheels & vehicles", build, {
@@ -1287,8 +1300,9 @@ function _vehicles() {
 		body_mat: "hollow plastic", body_look: "plastic", hull: coupe, wheel_w: 0.53, tuck: null, drive: [1.5, 2.0],
 		tags: ["car", "motor", "electric", "drive", "powered", "rc", "engine", "robot", "vehicle", "self propelled", "wheel motor"],
 		description: "A toy sports car with motors on both axles. It speeds up to its top speed (to the right when level) and pushes with up to its set force.",
-		source: "Motors drive each wheel toward a set turning speed within a torque limit (wheel torque = push × radius / 2); the car's size and weight are provisional (a 20 cm, 6 cm tall coupe on 32 mm wheels). It can't push harder than the ground's grip, friction × its weight.",
-		facts: "1.5 m/s top speed · pushes 2 N · 3.2 cm wheels"
+		source: "Motors drive each wheel toward a set turning speed within a torque limit (wheel torque = push × radius / 2); the car's size and weight are provisional (a 20 cm, 6 cm tall coupe on 32 mm wheels). It can't push harder than the ground's grip, friction × its weight. " +
+			"Typed, it grows to a ride-on toy car (a 12 V one: about 1.1 m, 15-25 kg, 20-25 cm wheels, 1-2.5 m/s; approximate).",
+		facts: "1.5 m/s top speed · pushes 2 N · 3.2 cm wheels", big: BIG_CAR
 	})
 	// a wooden wagon: a thin plank bed (12 mm) 2 mm over the wheels' tops, on axle-trees; the wheels stand outside the bed (8 mm clear of its sides, a hub's length)
 	_vehicle("cart", "Cart", {

@@ -31,6 +31,9 @@ import { aimContainer } from "./aim.js"
 import { kindNoun, aKindOf, weightOf, imperative, solidMass, clipLabel, changesLabel, tidyBrackets } from "./words.js"
 import { statesNewOutcome, orderKey, overriddenBy } from "./outcome-goals.js"
 import { refreshPlanned } from "./planned-words.js"
+import { AMOUNT, EXPLICIT as EXPLICIT_AMOUNT, unitAmount, bareAmount, propWords } from "./amounts.js"
+import { unrealIn, unrealWords, realKnob, realPatches, materialSaid } from "./realism.js"
+import { storyLines, lessonSpan } from "./run-story.js"
 import { holdTargets, targetLines, targetChanges, changeWords as targetChangeWords, heldOffer, heldWords, heldSentence, targetValue } from "./goal-targets.js"
 import { addedWords as moduleAddedWords, changeWords as moduleChangeWords, howWords as moduleHowWords, keyWords as moduleKeyWords, outcomeWords as moduleOutcomeWords, moduleRegoals, settingWords as moduleSettingWords, properName as moduleProperName, knobTunable, moduleMass, moduleMoves, ownHitsTold } from "../sim/plugins.js"
 export { isChainRequest, conceptPlan, conceptRoute, CONCEPT_NOTE, CONCEPT_LABEL, IMAGINE_MODES, imagineMode } from "./imagine.js"
@@ -726,7 +729,12 @@ export function safeKnobs(plan, scene = null) {
 			notes.push(`${name(it)}'s ${String(propSpec(it.type, p)?.label ?? p).toLowerCase()} was left as planned: it is what the lesson compares, not a dial to tune`)
 			continue
 		}
-		knobs.push(k)
+		// (a material's friction, rolling resistance, bounce or kick: tuned only within what a real one has, never into a soda can that grips like
+		// rubber (./realism.js realKnob))
+		const real = realKnob(k, it)
+		if (real.note) notes.push(`${name(it)}'s ${real.note}`)
+		if (!real.knob) continue
+		knobs.push(real.knob)
 	}
 	return { knobs, notes }
 }
@@ -2332,15 +2340,34 @@ export function describeRun(sim, scene = null, goals = null) {
 			return kept.some(([a, b]) => s0 < b && a < s1) ? m : pre + nameOf.get(id)
 		})
 	}
-	if (!moved.length && !all.length && !inner.length)
-		return happ.length ? `In the run: ${happ.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${happ.length > 4 ? ` → ${happ.length - 4} more` : ""}.` : "In the run nothing moves: everything stays where it was put."
+	const happWords = (list) => `${list.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${list.length > 4 ? ` → ${list.length - 4} more` : ""}`
+	// (what the readings show of the things no event tells about, an ice cube melting on a hot plate, a pan of water warming (./run-story.js), so a
+	// run where only heat, light or liquid changes never reads "nothing moves"; none in a run without readings: every scene without modules)
+	const toldIds = new Set(happ.flatMap((e) => (Array.isArray(e.items) ? e.items.map(String) : [])))
+	const story = () => {
+		try {
+			return storyLines(sim, scene, { max: happ.length || moved.length || all.length ? 2 : 3, skip: toldIds })
+		} catch {
+			return []
+		}
+	}
+	if (!moved.length && !all.length && !inner.length) {
+		const told = story()
+		if (happ.length) return `In the run: ${happWords(happ)}.${told.length ? ` ${told.join("; ")}.` : ""}`
+		const span = lessonSpan(sim)
+		return told.length ? `In the run${span ? `, over ${span}` : ""}: ${told.join("; ")}.` : "In the run nothing moves: everything stays where it was put."
+	}
 	const parts = []
 	if (shown.length) parts.push(`In the run: ${shown.map((e) => `${e.text} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${more > 0 ? ` → ${more} more hit${more === 1 ? "" : "s"}` : ""}.`)
 	else if (inner.length) parts.push(`In the run: ${innerWords.join("; ")}.`)
-	else if (happ.length) parts.push(`In the run: ${happ.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${happ.length > 4 ? ` → ${happ.length - 4} more` : ""}.`)
+	else if (happ.length) parts.push(`In the run: ${happWords(happ)}.`)
 	else parts.push(`In the run: ${andList(moved.slice(0, 3).map((st) => st.name))} ${moved.length === 1 ? "moves but hits" : "move but hit"} nothing.`)
+	// (the modules' happenings beside the hits: a pour, a melt, a bulb that lights is never left out because something also moved or struck)
+	if ((shown.length || inner.length) && happ.length) parts.push(`Also: ${happWords(happ)}.`)
 	const extra = [...(shown.length ? innerWords : []), ...stories.filter((st) => /^\d+ of \d+ fall$/.test(st.text ?? "")).map((st) => `${st.name}: ${fallText(sim, st)}`), ...stories.filter((st) => /^turns /.test(st.text ?? "") && st.ok).map((st) => `${st.name} ${st.text}`)]
 	if (extra.length) parts.push(`${extra.slice(0, 4).join("; ")}.`)
+	const told = story()
+	if (told.length) parts.push(`${told.join("; ")}.`)
 	return parts.join(" ")
 }
 /** An item's own parts striking each other in a run (a Newton's cradle's balls; the engine's summary leaves these out): Map item -> {n, t (the first)}. */
@@ -3029,10 +3056,11 @@ export function anchorsOf(text, a, b) {
 }
 /** Words of a change of its own in a "make it work" request (it is then not the container alone that answers it). */
 const OWN_CHANGE_RE = /\b(add|adds|remove|delete|replace|swap|change|instead|heavier|lighter|bigger|smaller|larger|taller|shorter|wider|narrower|longer|thicker|thinner|steeper|flatter)\b/i
-/** A request that gives a number with a unit ("10 cm", "5°", "200 g"): what it set is exactly what was asked. */
-const EXPLICIT_RE = /\d+(\.\d+)?\s*(mm|cm|m|meters?|metres?|°|deg(rees?)?|g|grams?|kg|%|percent|times|x)\b/i
-/** An amount said in words or numbers: "5 cm", "30°", "twice", "five times", "double". */
-const AMT = String.raw`(?:\d+(?:\.\d+)?\s*(?:mm|cm|m|meters?|metres?|°|deg(?:rees?)?|g|grams?|kg|%|percent|x|times|inch(?:es)?|in|ft|feet)|twice|double|triple|half|(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+times)`
+/** A request that gives a number with a unit ("10 cm", "5°", "200 g", "200 mL", "80 °C", "9 V"): what it set is exactly what was asked. */
+const EXPLICIT_RE = EXPLICIT_AMOUNT
+/** An amount said in words or numbers: "5 cm", "30°", "200 mL", "20 mL/s", "80 °C", "9 V", "440 Hz", "300 rpm", "5 s", "twice", "five times",
+ *  "double" (./amounts.js: a unit matched whole). */
+const AMT = AMOUNT
 /** An amount said for a place: "10 cm left", "5 cm higher", "20 cm further along". */
 const PLACE_AMOUNT_RE = new RegExp(`${AMT}\\s+(?:(?:further|farther|more)\\s+)?(?:to\\s+the\\s+)?(?:left|right|up|down|higher|lower|along|back|forward|closer|nearer|further|farther|away|over|across)\\b|\\b(?:to|at)\\s+(?:x\\s*=?\\s*)?\\d`, "i")
 /** A setting's key -> the words a person uses for it ("wide" for a width, "heavier" for a weight). */
@@ -3061,6 +3089,8 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 	const hard = new Map()
 	const forward = new Map()
 	const add = (m, id, k) => (m.get(id) ?? m.set(id, new Set()).get(id)).add(k)
+	// (the words of a thing's own name and kind: they name the thing, never one of its settings)
+	const ownWords = (it) => `${it?.name ?? ""} ${typeName(it?.type) ?? ""} ${String(it?.type ?? "").replace(/-/g, " ")}`.toLowerCase().split(/[^\p{L}]+/u).filter((w) => w.length >= 3)
 	// (the clauses, and the things each names: what rides on a named thing is named with it)
 	let R = new Map()
 	try {
@@ -3077,6 +3107,9 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 	}
 	const mineAll = new Set([...(named ?? []), ...said.flatMap((x) => x.ids)])
 	const per = clauses.map((c) => ({ c, ids: namesOf(c) }))
+	// (a clause that names nothing goes on about what the clause before it names: "use a thinner hose, only 6 mm wide inside", "make the tap pour
+	// faster: 30 mL/s", "make the ball heavier, then move it 10 cm left")
+	for (let i = 1; i < per.length; i++) if (!per[i].ids.size) per[i].ids = per[i - 1].ids
 	const clausesOf = (id) => per.filter((x) => x.ids.has(id)).map((x) => x.c)
 	for (const [id, keys0] of protect ?? []) {
 		const it = scene?.items?.find((i) => i.id === id)
@@ -3093,20 +3126,32 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 			const label = `${k} ${propSpec(it.type, k)?.label ?? ""}`
 			if (/\bcount\b|how many/i.test(label)) add(hard, id, k)
 			else if (k === "full") mine && anyC(/\b(full|empty|emptied|filled|fill)\b/i) && add(hard, id, k)
-			else if (k === "material") mine && anyC(/\b(wood\w*|metal|steel|glass|plastic|rubber|material|made of|paper|cardboard|foam|alumin\w*|ceramic|china|melamine|copper|brass|iron|stone)\b/i) && add(hard, id, k)
-			else {
-				// (a physics module's setting: the words its module says name it, web/sim/plugins.js keyWords)
+			else if (k === "material") {
+				// (its own choices too: a charged rod of PVC, a barrier sheet of felt)
+				const pw = propWords(propSpec(it.type, k), k, ownWords(it))
+				if (mine && (anyC(/\b(wood\w*|metal|steel|glass|plastic|rubber|material|made of|paper|cardboard|foam|alumin\w*|ceramic|china|melamine|copper|brass|iron|stone)\b/i) || (pw && anyC(new RegExp(`\\b(?:${pw})\\b`, "i"))))) add(hard, id, k)
+			} else {
+				// (a physics module's setting: the words its module says name it, web/sim/plugins.js keyWords; a setting no word of the core's or a
+				// module's names, by its own label, its choices and an on/off's usual verbs (./amounts.js propWords): "light the candle", "close the
+				// switch", "fold the plane as a dart", "set the friction to 0.5")
+				const spec = propSpec(it.type, k)
 				const core = KEY_WORDS.find(([kr]) => kr.test(k))
-				const kw = core ?? (moduleKeyWords(it.type, k) ? [null, moduleKeyWords(it.type, k)] : null)
-				if (!kw || !mine) continue
-				const said = cs.filter((c) => new RegExp(`\\b(?:${kw[1]})\\b`, "i").test(c))
+				const words = core ? null : [moduleKeyWords(it.type, k), propWords(spec, k, ownWords(it))].filter(Boolean).join("|")
+				const kw = core ?? (words ? [null, words] : null)
+				if (!mine) continue
+				// (an amount in the setting's own unit, said where the thing is named, that no other setting the edit set shares: "fill the pitcher
+				// with 200 mL", "make the tap pour 20 mL/s", "heat the water to 80 °C", "make the buzzer 9 V" (./amounts.js unitAmount))
+				const others = keys.filter((x) => x !== k && !/^place/.test(x)).map((x) => propSpec(it.type, x))
+				const byUnit = !!spec && cs.some((c) => unitAmount(c, spec, others))
+				if (!kw && !byUnit) continue
+				const said = kw ? cs.filter((c) => new RegExp(`\\b(?:${kw[1]})\\b`, "i").test(c)) : []
 				// (a module's switch the words name, "flip the held magnet", "put the cap on", or its choice said by the very value it now has, "pour
 				// honey instead", is the whole choice: there is no further that way, only back, so it is held (a fix offered "Turn the held magnet
 				// around…" back: verify-fga X2, 20 Oct))
-				const sp = core ? null : propSpec(it.type, k)
+				const sp = core ? null : spec
 				const v = typeof it.props?.[k] === "string" ? it.props[k].trim().replace(/[_\s]+/g, " ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : ""
 				const sw = sp?.kind === "bool" || (sp?.kind === "choice" && v.length > 1 && said.some((c) => new RegExp(`\\b${v.replace(/ /g, "\\s+")}\\b`, "i").test(c)))
-				if (said.length) add(sw || said.some((c) => keyAmount(c, kw[1])) ? hard : forward, id, k)
+				if (said.length || byUnit) add(sw || byUnit || said.some((c) => keyAmount(c, kw[1]) || bareAmount(c, kw[1], spec)) ? hard : forward, id, k)
 			}
 		}
 	}
@@ -3845,6 +3890,19 @@ export function createOrchestrator(deps) {
 		if (!isObj(plan) || !Array.isArray(plan.items)) throw new AiError("invalid", "The plan that came back has no items", { step: mode === "edit" ? "edit" : "plan", retryable: true })
 		check()
 		report.initialPlan = clone(plan)
+		// (a new scene's things are what they are made of (./realism.js): a friction, rolling resistance, bounce or kick no real one of its
+		// material has, that the words don't ask for, is left at its material's own, and the assumptions say so)
+		const realNotes = []
+		if (mode === "new")
+			for (const u of unrealIn({ items: [] }, plan)) {
+				if (materialSaid(u.key, personText)) continue
+				const it = plan.items.find((x) => isObj(x) && x.id === u.id)
+				if (!it || !isObj(it.props)) continue
+				const props = { ...it.props }
+				delete props[u.key]
+				plan = { ...plan, items: plan.items.map((x) => (x === it ? { ...x, props } : x)) }
+				realNotes.push(`${nameOfItem(it) ?? u.id}${/s$/.test(nameOfItem(it) ?? u.id) ? "’" : "’s"} ${u.label} is a real one’s, not the ${sig(u.to)} planned (a real one has ${sig(u.lo)}–${sig(u.hi)})`)
+			}
 
 		// ---- 3. solve, 4. simulate (each version of the scene: {id, plan, solved, scene, sim, score, judged, fromRound, parent, tuned})
 		// An edit or a check of the scene on the table changes what was asked and nothing else: what the change did not touch is solved at its
@@ -4437,6 +4495,22 @@ export function createOrchestrator(deps) {
 					}
 				}
 			}
+			// (5) a thing made of what no real one of it is (./realism.js: a soda can's friction 0.3 → 1.6, ten times a carpet's rolling resistance),
+			// when the words don't ask for that setting: put back as it was, so the run shows what the asked change really does (the fix search and
+			// the AI's reworks keep to real materials too); what the person chose in earlier turns stays theirs
+			if (mode === "edit")
+				for (const u of unrealIn({ items: [...was.values()] }, plan, { keep: Array.isArray(request.hard) ? request.hard : null })) {
+					if (materialSaid(u.key, personText)) continue
+					const it = plan.items.find((x) => isObj(x) && x.id === u.id)
+					if (!it) continue
+					const a = was.get(u.id)
+					const props = { ...(isObj(it.props) ? it.props : {}) }
+					if (a && a.type === it.type && isObj(a.props) && a.props[u.key] !== undefined) props[u.key] = a.props[u.key]
+					else delete props[u.key]
+					plan = { ...plan, items: plan.items.map((x) => (x === it ? { ...clone(x), props } : x)) }
+					const nm = theName(request.scene.items.find((i) => i.id === u.id) ?? it)
+					leftAlone.push({ id: u.id, name: `${nm}${/s$/.test(nm) ? "’" : "’s"} ${u.label} (a real one has ${sig(u.lo)}–${sig(u.hi)}, not ${sig(u.to)})` })
+				}
 			return { plan, leftAlone, madeRoom, seated }
 		}
 		// ---- the n7 edit turns (ai/DESIGN.md §14.2 (4), (6); ./edit-turns.js, ./aim.js): every version is placed exactly (adjustEdit), solved and
@@ -5695,8 +5769,14 @@ export function createOrchestrator(deps) {
 		})
 		/** Refine patches that would leave something floating which was held up before (a ramp's legs switched off in the air, a cup lowered off
 		 *  its stand into the air) are not applied; the rest are. -> applyPatches' {plan, changes, skipped} */
-		const guardPatches = (v, patches) => {
+		const guardPatches = (v, patches0) => {
+			// (and a value no real thing of its kind has, the critic's "friction 1.6" for a soda can or ten times a carpet's rolling resistance, is
+			// never set: the other way to make it work is its to find (./realism.js realPatches))
+			const real = realPatches(v.plan, patches0)
+			const patches = real.patches
+			const unrealSkip = real.dropped.map((u) => `${nameOfItem(v.plan.items.find((i) => i.id === u.id)) ?? u.id}: its ${u.label} was not set to ${sig(u.to)}, which no real one has (${sig(u.lo)}–${sig(u.hi)})`)
 			const r = applyPatches(v.plan, patches, v.scene)
+			r.skipped.push(...unrealSkip)
 			if (!r.changes.length) return r
 			let s
 			// (judged as planned, without the stands the solver would add: a patch that takes away what held something up is refused)
@@ -5712,6 +5792,7 @@ export function createOrchestrator(deps) {
 			if (!bad.size) return r
 			const target = (p) => (isObj(p) ? p.id ?? p.item?.id : undefined)
 			const r2 = applyPatches(v.plan, patches.filter((p) => !bad.has(target(p))), v.scene)
+			r2.skipped.push(...unrealSkip)
 			for (const id of bad) {
 				const it = r.plan.items.find((i) => i.id === id)
 				r2.skipped.push(`${nameOfItem(it) ?? id}: not changed, the change would have left it floating with nothing under it`)
@@ -6041,7 +6122,7 @@ export function createOrchestrator(deps) {
 		const ownDiff = (mode === "new" && !concept) || (mode === "edit" && (editOut?.differences !== undefined || ownPlan))
 		const asm = !ownAsm ? [] : Array.isArray(finalPlan.assumptions) ? finalPlan.assumptions : typeof finalPlan.assumptions === "string" ? [finalPlan.assumptions] : []
 		const notesArr = ownNotes && Array.isArray(finalPlan.notes) ? finalPlan.notes : []
-		let assumptions = [...asm, ...notesArr].map(String).filter(Boolean)
+		let assumptions = [...asm, ...notesArr, ...realNotes].map(String).filter(Boolean)
 		// what differs from the request or the picture, up front: the plan's own list, a mirrored layout (the plan says so in its notes),
 		// the stands added so nothing floats, and what of the picture is still not built
 		const differences = []
@@ -7047,6 +7128,12 @@ export function createOrchestrator(deps) {
 		{
 			const ch = characterBreak(ctx.scene, sc, ctx.before?.scene ?? null, ctx.hard instanceof Map ? ctx.hard : hard) ?? helperSizeBreak(ctx.scene, sc)
 			if (ch) return { ok: false, why: ch }
+		}
+		// (nothing made of what no real one of it is: a soda can given a friction of 1.6, a carpet ten times as draggy as carpet (./realism.js);
+		// what the person chose is theirs)
+		{
+			const u = unrealIn(ctx.scene, sc, { keep: ctx.hard instanceof Map ? ctx.hard : hard })
+			if (u.length) return { ok: false, why: `it gave ${unrealWords(u[0], (id) => theName(sc.items.find((i) => i.id === id) ?? { id }))}` }
 		}
 		// (what the person added stays where they put it, give or take 10 cm: c02's books parked 1.46 m away past the bucket were no fix; a row of
 		// them may be spaced anew within its own stretch, in its order, as the search's own stand-in does: V8817 s3, "it moved Soda can 5 14 cm")

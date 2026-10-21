@@ -21,6 +21,13 @@ Sources (every liquid's numbers are at 20 °C; the same table as machines/mod_fl
   [PET] A 2 L PET soda bottle is about 105 mm across outside (102 mm inside) and its straight body about 23 cm tall.
   Provisional (approximate, said so in the source texts): corn syrup, dish soap, rubbing alcohol viscosities; the dyes' strengths (a few
   drops of food colouring in a glass); a spout's or a rim's pouring width.
+  [MILK-RHO] whole milk at 20 °C: 1.0305 g/cm³ (University College Cork, the temperature dependence of raw whole milk's density; 1.0300 in
+  J. Dairy Sci. abstracts). [MILK-MU] whole milk at 20 °C: 2.1 mPa·s (dairy engineering tables), 2.0 at 150 1/s on a rheometer [DRINKS-RHEO].
+  [DRINKS-RHEO] milk drinks at 20 °C on a rheometer: a chocolate drink 13.2 mPa·s at 10 1/s and 7.1 at 150 1/s (it thins as it flows).
+  Chocolate milk's density: about 1065 kg/m³ from its make-up (USDA's reduced-fat chocolate milk: 82 % water, 12 % sugars and other
+  carbohydrate, 3 % protein, 1-2 % fat) by Choi & Okos (1986)'s component densities (provisional). Milk and chocolate milk are opaque: the
+  engine's colour of a liquid that scatters light (white food colouring too) is what it looks like, Kubelka-Munk (tooling/src/sim/flow.ts
+  seenOf). (2026-10-20.)
 """
 import math
 
@@ -57,6 +64,9 @@ LIQUIDS = {
     "corn syrup": (1380.0, 2.5, "Light corn syrup: about 1380 kg/m³, about 2.5 Pa·s (approximate: brands differ)."),
     "dish soap": (1050.0, 0.5, "Liquid dish soap: about 1050 kg/m³, about 0.5 Pa·s (manufacturers' data; approximate)."),
     "rubbing alcohol": (880.0, 0.0025, "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."),
+    "milk": (1030.5, 0.0021, "Whole milk at 20 °C: 1030.5 kg/m³ [MILK-RHO], 2.1 mPa·s [MILK-MU]; white and opaque (its fat droplets and casein scatter light)."),
+    "chocolate milk": (1065.0, 0.008, "Chocolate milk at 20 °C: about 1065 kg/m³ (provisional); about 8 mPa·s as it pours (7.1 at 150 1/s, 13.2 at "
+                                      "10 1/s: it thins as it flows [DRINKS-RHEO]); brown and opaque."),
 }
 LIQUID_NAMES = list(LIQUIDS)
 SALT = [(0.0, 998.2, 1.002), (1.0, 1005.3, 1.020), (2.0, 1012.5, 1.036), (4.0, 1026.8, 1.070), (6.0, 1041.3, 1.108), (8.0, 1055.9, 1.149),
@@ -91,20 +101,25 @@ def liquid_of(P):
 
 
 # Food colouring, as absorbance per centimetre of light path (red, green, blue): what shows through is exp(−a·path). A few drops in a glass
-# (provisional strengths). Mixed by volume: blue and yellow make green, red and blue purple, red and yellow orange.
+# (provisional strengths). Mixed by volume: blue and yellow make green, red and blue purple, red and yellow orange. White colouring (titanium
+# dioxide) scatters light instead: its fourth number, scattering per cm (milk's own is about 25): water with it looks like milk; brown absorbs
+# all three, most of all blue (2026-10-20, provisional strengths).
 DYES = {"none": [0.0, 0.0, 0.0], "red": [0.0, 0.5, 0.25], "orange": [0.0, 0.18, 0.5], "yellow": [0.0, 0.02, 0.5], "green": [0.45, 0.02, 0.4],
-        "blue": [0.5, 0.08, 0.005], "purple": [0.2, 0.5, 0.05]}
+        "blue": [0.5, 0.08, 0.005], "purple": [0.2, 0.5, 0.05], "white": [0.0, 0.0, 0.0, 20.0], "brown": [0.22, 0.38, 0.6]}
 DYE_NAMES = list(DYES)
 # The named colours a mixture is told by (goal "mixes_to"): each dye's colour seen through 5 cm of water, as shares of its brightness
 # (r, g, b over their sum); "clear" when every channel shows 85 % or more, "brown" when none shows 40 %.
 COLOR_REF = {"red": (0.7275, 0.0605, 0.212), "orange": (0.6688, 0.2753, 0.0558), "yellow": (0.5001, 0.4582, 0.0418),
              "green": (0.0909, 0.7903, 0.1187), "blue": (0.0468, 0.3872, 0.5659), "purple": (0.2959, 0.0669, 0.6372)}
-COLOR_NAMES = ["clear", "brown"] + list(COLOR_REF)
+COLOR_NAMES = ["clear", "brown"] + list(COLOR_REF) + ["white"]
 
 
-def color_name(r, g, b):
-    """The name of a transmitted colour (each 0…1)."""
-    if min(r, g, b) >= 0.85:
+def color_name(r, g, b, o=0.0):
+    """The name of a liquid's colour (each 0…1): what shows through it, or, for one that scatters back half the light or more (o, its tint_o
+    reading: milk, white colouring), what it looks like: "white" when every channel is 0.7 or more."""
+    if o >= 0.5 and min(r, g, b) >= 0.7:
+        return "white"
+    if o < 0.5 and min(r, g, b) >= 0.85:
         return "clear"
     if max(r, g, b) < 0.4:
         return "brown"
@@ -122,10 +137,10 @@ def color_name(r, g, b):
 
 def _liquid_props(default="water"):
     return [Prop("liquid", "Liquid", default, kind="choice", choices=LIQUID_NAMES,
-                 help="What is in it (each at 20 °C): honey and syrup pour slowly, water and alcohol fast"),
+                 help="What is in it (each at 20 °C): honey and syrup pour slowly, water, milk and alcohol fast"),
             Prop("salt_pct", "Salt", 10.0, 0.0, SALT_MAX, 0.5, "%", "Salt water only: grams of salt in 100 g of it"),
             Prop("dye", "Food colouring", "none", kind="choice", choices=DYE_NAMES,
-                 help="A few drops of food colouring: liquids of two colours mix (blue and yellow make green)")]
+                 help="A few drops of food colouring: liquids of two colours mix (blue and yellow make green); white makes water look like milk")]
 
 
 def _looks():
@@ -165,7 +180,16 @@ def _box(x0, y0, x1, y1):
 def _pour_readouts():
     return [Readout("left_ml", "Left in it", "mL", 1), Readout("poured_ml", "Poured out", "mL", 1),
             Readout("flow_ml_s", "Pouring", "mL/s", 1, "How fast it pours now"), Readout("tilt_deg", "Tipped", "°", 0),
-            Readout("lands_x", "Stream lands at", "m", 3, "Where along the table its stream comes down (x)")]
+            Readout("lands_x", "Stream lands at", "m", 3, "Where along the table its stream comes down (x)"),
+            Readout("left_g", "Grains left in it", "g", 0, "A cup of grains (sugar, salt, rice, sand): what is still in it"),
+            Readout("poured_g", "Grains poured", "g", 0, "A cup of grains: what has poured out over its lip"),
+            Readout("heap_mm", "Heap height", "mm", 0, "A cup of grains: the heap its grains make where they land (in a jar or glass, over its floor)"),
+            Readout("heap_deg", "Heap slope", "°", 1, "A cup of grains: the heap's sides (in a jar or glass it fills, from its top down to the wall)"),
+            Readout("outside_g", "Grains outside", "g", 0, "A cup of grains: what landed outside the jar, glass or box it pours into")]
+
+
+# the grains a pitcher, jug or cup can hold (machines/mod_granular.py GRAINS: the granular module pours them; its names)
+POUR_GRAINS = ["sugar", "salt", "rice", "sand", "fine sand", "coarse sand", "gravel", "soil", "flour"]
 
 
 # ---------------------------------------------------------------- pitchers, jugs and cups that a hand tips to pour
@@ -187,6 +211,7 @@ def _pourers():
         D = math.pi / 4 * w
         cap = w * h * D * 1e6
         fill = min(P["fill_ml"], 0.97 * cap)
+        grains = P["contents"] == "grains"
         side = 1.0 if P["pour_to"] == "right" else -1.0
         m = c.mat(base=mat, overrides={})
         # the root is the pour lip at the item's anchor (the hand turns the whole pitcher about it); the rest welded to it
@@ -199,9 +224,16 @@ def _pourers():
         inside = _box(-w, -h, 0.0, 0.0) if side > 0 else _box(0.0, -h, w, 0.0)
         # (more than fits: filled to the brim, and the record keeps what was asked, so the run says "only 355 mL fits in it")
         asked = {"asked": round(P["fill_ml"], 1)} if P["fill_ml"] > 0.97 * cap + 1e-9 else {}
+        # (a cup of grains: this module tips it and pours no liquid; machines/mod_granular.py's build hook pours its grains: `grains` m³ packed)
+        extra = {}
+        if grains:
+            extra = {"contents": "grains", "grain": P["grain"], "grains": round(fill / 1e6, 9)}
+            if asked:
+                extra["grains_asked"] = asked["asked"]
+            asked = {}
         c.process("flow-pour", "pour", solid=root, inside=inside, depth=round(D, 6), lip=lip, wall=t, liquid=liquid_of(P), dye=list(DYES[P["dye"]]),
-                  volume=round(fill / 1e6, 9), tilt=round(-side * P["tilt"] * D2R, 6), at=P["pour_at"], turn=P["tip_s"],
-                  back=P["back_at"] if P["back_at"] > 0 else None, **asked)
+                  volume=0.0 if grains else round(fill / 1e6, 9), tilt=round(-side * P["tilt"] * D2R, 6), at=P["pour_at"], turn=P["tip_s"],
+                  back=P["back_at"] if P["back_at"] > 0 else None, **asked, **extra)
         P["capacity_ml"] = round(cap, 1)
         P["inner_width"] = w
         P["inner_height"] = h
@@ -209,8 +241,14 @@ def _pourers():
     register(ItemType("pitcher", "Pitcher", CATEGORY, build_pitcher, dynamic=False, material="glass", materials=["glass"],
                       props=[Prop("vessel", "Kind", "pitcher", kind="choice", choices=list(VESSELS),
                                   help="pitcher: a 1.3 L glass pitcher; jug: a 2.9 L plastic jug; measuring cup: 0.85 L; cup: a 0.37 L plastic cup"),
-                             Prop("fill_ml", "Liquid in it", 750.0, 0.0, 2900.0, 5.0, "mL", "How much it holds at the start (follows the kind until you set it)",
-                                  auto=("vessel",)),
+                             Prop("contents", "Holds", "liquid", kind="choice", choices=["liquid", "grains"],
+                                  help="liquid (its Liquid below) or grains (its Grains: sugar, salt, rice, sand...), which pour out once it is tipped past "
+                                       "their angle of repose and heap up where they land"),
+                             Prop("grain", "Grains", "sugar", kind="choice", choices=POUR_GRAINS,
+                                  help="What grains it holds when it holds grains: sugar 0.5 mm, salt 0.4 mm, rice (long grains), sand, fine sand, coarse sand, "
+                                       "gravel, soil, flour"),
+                             Prop("fill_ml", "Amount in it", 750.0, 0.0, 2900.0, 5.0, "mL", "How much it holds at the start, liquid or grains (200 mL of "
+                                  "sugar is about 160 g; follows the kind until you set it)", auto=("vessel",)),
                              *_liquid_props(),
                              Prop("pour_to", "Pours to the", "right", kind="choice", choices=["right", "left"], help="The side its spout faces and it tips toward"),
                              Prop("pour_at", "Starts tipping at", 1.0, 0.0, 20.0, 0.1, "s"),
@@ -218,11 +256,13 @@ def _pourers():
                              Prop("tip_s", "Tipping takes", 1.5, 0.1, 10.0, 0.1, "s"),
                              Prop("back_at", "Tips back at", 0.0, 0.0, 30.0, 0.1, "s", "When the hand stands it up again (0: never)")],
                       links=[], readouts=_pour_readouts(),
-                      tags=["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill"],
+                      tags=["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill",
+                            "chocolate milk", "cup of sugar", "pour sugar", "cup of rice", "pour rice", "pour salt", "pour sand", "cup of sand"],
                       description="A pitcher, jug or cup of liquid that a hand tips to pour, from the moment you set and as far as you set. Its item position is "
                                   "its pour lip, where the stream starts: put the lip above the container to fill (a few cm to its side the stream lands a "
                                   "little further). The level inside stays flat as it tips; it pours over the lip like water over a weir, so honey pours far "
-                                  "slower than water.",
+                                  "slower than water. Set it to hold grains (sugar, salt, rice, sand) and they stay put until it is tipped past their angle "
+                                  "of repose, then slide out over the lip and heap up where they land.",
                       source="Pouring over a lip: a sharp-crested weir, q = 0.62·⅔·√(2g)·H^1.5 per metre of lip, and a viscous film's g·H³/(3ν) for thick "
                              "liquids (Henderson 1966; Nusselt 1916). A glass pitcher 10 cm across, 17 cm deep inside; spout widths approximate.",
                       anchor="its pour lip (the spout's top edge): the stream starts there", facts="1.3 L glass pitcher, 750 mL of water, tips at 1 s",
@@ -476,11 +516,13 @@ def _goals():
         if not ctx.known(g.get("item")):
             return None
         by = ctx.num(g.get("before_s"))
-        v = ctx.state(g["item"], "left_ml")
+        # (a pitcher of grains reads grams: its left_g)
+        key = "left_ml" if ctx.state(g["item"], "left_ml") else "left_g"
+        v = ctx.state(g["item"], key)
         t = None
         if v:
             lim = max(1.0, 0.01 * v[0])
-            t = ctx.first_time(g["item"], "left_ml", lambda x: x <= lim)
+            t = ctx.first_time(g["item"], key, lambda x: x <= lim)
         return {"label": g.get("label") or f"{ctx.name(g['item'])} empties{when_text(by)}", "ok": t is not None and (by is None or t <= by),
                 "kind": "empties", "item": g["item"], "t": None if t is None else round(t, 3)}
 
@@ -654,7 +696,8 @@ def _goals():
             return None
         want = g.get("color") if isinstance(g.get("color"), str) else "green"
         r, gg, b = last(ctx, cid, "tint_r"), last(ctx, cid, "tint_g"), last(ctx, cid, "tint_b")
-        got = None if r is None or gg is None or b is None else color_name(r, gg, b)
+        o = last(ctx, cid, "tint_o")
+        got = None if r is None or gg is None or b is None else color_name(r, gg, b, 0.0 if o is None else o)
         return {"label": g.get("label") or f"the liquid in {ctx.name(cid)} ends {want}", "ok": got == want, "kind": "mixes_to", "container": cid, "color": got}
 
     def delivers(ctx, g):

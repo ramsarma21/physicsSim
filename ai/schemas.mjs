@@ -24,7 +24,7 @@ import { clashText, goalClash, statesNewOutcome } from "./edit-outcome.mjs"
 export const RESERVED_IDS = ["table", "air"]
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
 /** Containers an "in" goal is judged by their own walls in the run (ai/goals.mjs wallsInside): the engine's summary does not check them. */
-export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug"]
+export const WALL_CONTAINERS = ["plastic-cup", "glass-jar", "coffee-mug", "pulley-lift"]
 export const LIMITS = { items: 150, idLength: 40, goals: 10, tune: 12, patches: 150, missing: 30, observedObjects: 60, relations: 120, covers: 60, differences: 20, stages: 12, stageKnobs: 6 }
 /** Types that count as several things (a domino row's dominoes): the prop that says how many. */
 export const MULTI_UNIT = { "domino-row": "count", "newtons-cradle": "count" }
@@ -170,7 +170,11 @@ const settingsSchema = {
 		room_temp: num(-60, 60), // °C
 		time_lapse: num(1, 100000), // seconds of slow processes (heat, melting) in each second of the run
 		// a fixed side camera (render only; machines/mod_staging.py): x0..x1 m across the picture at height y m, pitch° down, hfov° across
-		camera: { type: "object", required: ["x0", "x1"], additionalProperties: false, properties: { x0: num(-1000, 1000), x1: num(-1000, 1000), y: num(-10, 100), pitch: num(-20, 80), hfov: num(5, 120) } }
+		camera: { type: "object", required: ["x0", "x1"], additionalProperties: false, properties: { x0: num(-1000, 1000), x1: num(-1000, 1000), y: num(-10, 100), pitch: num(-20, 80), hfov: num(5, 120) } },
+		// the lesson look (render only; machines/mod_staging.py, web/lesson-look.js): a scene that has one keeps it through an edit
+		style: { enum: ["lesson", "real"] },
+		backdrop: { type: "string", maxLength: 7 }, // "auto" or #rrggbb
+		release_stand: { enum: ["post", "hidden", "hanger", "auto"] }
 	}
 }
 

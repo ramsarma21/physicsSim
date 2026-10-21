@@ -103,6 +103,7 @@ function _catalog_wide() {
 	register_build_hook(_links)
 	register_build_hook(_fragile)
 	register_build_hook(_shows)
+	register_build_hook(_holds)
 }
 
 /** The kinds an `arrows` prop asks for (FORCE_KINDS order): "all" every kind but net, "none" nothing, else the kinds named (joined by "," "+" or spaces). */
@@ -203,6 +204,19 @@ function _paint(v) {
 const _num = (v, d) => (typeof v === "number" && Number.isFinite(v) ? v : d)
 const has = (o, k) => o !== null && typeof o === "object" && Object.prototype.hasOwnProperty.call(o, k)
 
+/** A held thing that starts in a liquid is held from above: its moving solids carry holdFrom "above" (render only): machines/mod_mechanics.py. */
+function _holds(sb, scene) {
+	const liquids = sb.processes.filter((p) => p.kind === "liquid" && Array.isArray(p.layers) && p.layers.length)
+	if (!liquids.length) return
+	const tops = liquids.map((p) => [p.x0, p.x1, p.floor, p.floor + py.pySum(p.layers.map((l) => l.height))])
+	for (const item of scene.items ?? []) {
+		if (item === null || typeof item !== "object" || !py.truthy(item.held) || !has(TYPES, item.type)) continue
+		const mine = sb.solids.filter((s) => s.item === item.id && s.kind === "dynamic")
+		const roots = mine.filter((s) => !("parent" in s) || "pivot" in s)
+		if (roots.some((s) => tops.some(([x0, x1, floor, top]) => x0 < s.at.x && s.at.x < x1 && floor < s.at.y && s.at.y < top))) for (const s of mine) s.holdFrom = "above"
+	}
+}
+
 function _common(sb, scene) {
 	for (const item of scene.items ?? []) {
 		if (item === null || typeof item !== "object" || !has(TYPES, item.type)) continue
@@ -239,9 +253,11 @@ function _common(sb, scene) {
 			const vy = py.pyRound(v * py.sin(a), 6)
 			const along = v * py.cos(a - heading)
 			const roll = (has(props, "start_spin") ? props.start_spin : "roll") !== "none"
+			// (two bodies on one rope over a pulley: its other end moves the rope's way, machines/mod_mechanics.py)
+			const ropeB = new Map(sb.joints.filter((j) => j.kind === "pulley" && j.item === iid && typeof j.a === "string" && typeof j.b === "string").map((j) => [j.b, py.truthy(j.ratio) ? j.ratio : 1.0]))
 			for (const s of mine) {
 				if (s.kind !== "dynamic" || (has(s, "parent") && !has(s, "pivot"))) continue
-				const rec = { kind: "mechanics", id: `${s.id}#start`, item: iid, role: "start", solid: s.id, vx, vy }
+				const rec = { kind: "mechanics", id: `${s.id}#start`, item: iid, role: "start", solid: s.id, vx, vy: ropeB.has(s.id) ? py.pyRound(-vy / ropeB.get(s.id), 6) : vy }
 				if (roll && s.body.kind === "ball" && s.body.radius > 0) rec.w = py.pyRound(-along / s.body.radius, 6) // (a ball too small to have a radius in the doc does not spin)
 				sb.processes.push(rec)
 			}
@@ -527,21 +543,29 @@ function _puller() {
 	}))
 }
 
+const PUSH_ROD_KG = 0.135648
+const PUSH_PADDLE_KG = 0.06336
+
 function _pusher() {
 	const build_pusher = (c, P) => {
 		const stroke = P.stroke
 		const h = P.height
-		const steel = c.mat({ base: "steel", overrides: {} })
-		c.slab("housing", 0.1, 0.05, 0.08, -0.05, 0.025, { kind: "static", material: c.mat({ base: "cart plastic", overrides: {} }), look: "cart blue", words: "the pusher's housing" })
-		const rod = c.slab("rod", 0.12, 0.012, 0.012, -0.04, h, { material: steel, look: "steel", words: "the pusher's rod" })
-		c.slab("paddle", 0.012, P.paddle, 0.08, 0.026, h, { material: c.mat({ base: "rubber mat", overrides: {} }), look: "rubber mat", words: "the pusher's flat paddle" })
+		// (the housing as long as the rod's travel and 2 cm more, its rod 5 mm over its middle, raised on a wooden block; the rod slides on the
+		// housing's own rail and never touches it: machines/mod_mechanics.py)
+		const Lh = Math.max(0.1, stroke + 0.02)
+		const yh = Math.max(0.025, h - 0.005)
+		const housing = c.slab("housing", Lh, 0.05, 0.08, -Lh / 2, yh, { kind: "static", material: c.mat({ base: "cart plastic", overrides: {} }), look: "cart blue", words: "the pusher's housing" })
+		if (yh - 0.025 > 0.001)
+			c.slab("riser", Lh, yh - 0.025, 0.08, -Lh / 2, (yh - 0.025) / 2, { kind: "static", material: c.mat({ base: "varnished hardwood", overrides: {} }), look: "wood", words: "the wooden block the pusher stands on" })
+		const L = Lh + 0.02
+		const rod = c.slab("rod", L, 0.012, 0.012, 0.02 - L / 2, h, { material: c.mat({ base: "steel", density: _r(PUSH_ROD_KG / (L * 0.012 * 0.012), 3), overrides: {} }), look: "steel", words: "the pusher's rod" })
+		c.slab("paddle", 0.012, P.paddle, 0.08, 0.026, h, { material: c.mat({ base: "rubber mat", density: _r(PUSH_PADDLE_KG / (0.012 * P.paddle * 0.08), 3), overrides: {} }), look: "rubber mat", words: "the pusher's flat paddle" })
 		const s = c.sb.solids[c.sb.solids.length - 1]
 		s.parent = rod
-		s.at = { x: 0.066, y: 0.0 }
+		s.at = { x: _r(0.006 + L / 2), y: 0.0 }
 		delete s.angle
 		const t0 = P.delay
-		const [wx, wy] = c.world(-0.04, h)
-		const base = { role: "slider", a: null, b: rod, anchorA: { x: _r(wx), y: _r(wy) }, anchorB: { x: 0.0, y: 0.0 }, axis: { x: _r(py.cos(c.a), 6), y: _r(py.sin(c.a), 6) }, lower: 0.0, upper: _r(stroke) }
+		const base = { role: "slider", a: housing, b: rod, anchorA: { x: 0.01, y: _r(h - yh) }, anchorB: { x: 0.0, y: 0.0 }, axis: { x: 1.0, y: 0.0 }, lower: 0.0, upper: _r(stroke) }
 		if (P.mode === "force") c.process("mechanics", "drive", { ...base, speed: 10.0, force: _r(P.force, 4), friction: 50.0, ...(t0 > 0 ? { from: t0 } : {}), until: _r(P.push_time + t0, 4) })
 		else c.process("mechanics", "drive", { ...base, speed: _r(P.speed, 4), force: 200.0, friction: 50.0, ...(t0 > 0 ? { from: t0 } : {}) })
 	}
@@ -553,15 +577,19 @@ function _pusher() {
 			new Prop("push_time", "Push time", 0.2, 0.02, 5.0, 0.01, "s", "How long it pushes (force mode)"),
 			new Prop("speed", "Speed", 0.5, 0.05, 3.0, 0.01, "m/s", "The paddle's speed (speed mode)"),
 			new Prop("stroke", "Stroke", 0.15, 0.03, 0.5, 0.005, "m", "How far its paddle can go"),
-			new Prop("height", "Height", 0.03, 0.015, 0.5, 0.005, "m", "The rod's height: set it to the pushed thing's middle"),
-			new Prop("paddle", "Paddle height", 0.06, 0.02, 0.3, 0.005, "m"),
+			new Prop("height", "Height", 0.03, 0.015, 0.5, 0.005, "m", "The rod's height: set it to the pushed thing's middle (a raised housing stands on a wooden block)"),
+			new Prop("paddle", "Paddle height", 0.06, 0.02, 0.3, 0.005, "m", "How tall its paddle is (its reach; it weighs 63 g whatever its size)"),
 			new Prop("delay", "Starts after", 0.0, 0.0, 10.0, 0.05, "s", "Seconds after the scene lets go")
 		],
 		tags: ["pusher", "push", "force", "piston", "plunger", "applied force", "kick", "shove", "paddle", "net force", "harder push"],
-		anchor: "the floor under its paddle's starting face",
+		anchor: "the floor under its housing's front end (its paddle's face starts 3.2 cm ahead of it)",
 		description:
 			"A driven paddle on a rod from a fixed housing: it pushes what is in front of it (to its right; turn it to push another way) with a set force for a set time, or moves at a set speed: a harder push, a bigger change in motion.",
-		source: "A linear actuator held at its set force (or speed) along its stroke; no people needed.", facts: "5 N for 0.2 s", edit: [{ kind: "rotate" }]
+		source:
+			"A linear actuator held at its set force (or speed) along its stroke; no people needed. Its rod (136 g) and paddle (63 g), " +
+			"whatever their sizes, move with what it pushes: a push of F for t gives a thing of mass m that slides about " +
+			"F·t / (m + 0.2 kg) (provisional weights).",
+		facts: "5 N for 0.2 s", edit: [{ kind: "rotate" }]
 	}))
 }
 
@@ -1813,7 +1841,7 @@ function changeWords(type, key, a, b) {
 const HOWTO = [
 	"ANY ITEM (catalog-wide props): color (none, red, blue, green, yellow, orange, purple, pink, white, black, gray, brown: the look only; a car's or truck's body, not its tyres), glow (true: a soft halo to point it out), and for every moving item start_speed (m/s it already has at the release, a push, kick or launch), start_dir (degrees from the way it faces, counter-clockwise: 0 forward, 180 back, 90 up) and start_spin (\"roll\": balls and wheels already turning as if rolling). Cars and trucks face right (+x) at angle 0. An egg with props {fragile: true} cracks if it lands hard (peak force over 35 N: about 7 cm or more onto a table breaks it, 80 cm onto a 10 cm foam block does not); goals breaks / survives.",
 	"FLOORS, RAMPS, SURFACES: floor (a long ground slab, length up to 60 m, its anchor the middle of its top; material varnished hardwood (gym), concrete, carpet, rubber mat, grass, ice: friction lessons race the same car over different floors). ramp: a plank on `blocks` stacked wooden blocks (5 cm each: blocks 1 vs 3 = rise 5 vs 15 cm), `length` (m), rises \"left\" (default: the top is length·cos(slope) to the LEFT of its anchor, the foot at the anchor) or \"right\"; lip true keeps a small stop at the top. A car or cart on a ramp: place {on: <ramp id>, x: the top end + half the car's length + 0.03} (the top end is at the ramp's x − length when it rises left, x + length when it rises right; a 20 cm toy car on a ramp at x 1.0 rising left: x 0.13); it is turned to lie along the slope and rolls down at the release. Put the ramp on the floor item or the table (place {on: <floor id>}); give a floor item an id other than \"floor\", \"ground\" or \"table\" (e.g. \"gym-floor\"): place.on \"floor\" means the table. A FAIR TEST of ramp height (1 block vs 3 blocks, the Grade 3 'is this a valid experiment?'): one long carpet floor (length 8: the table alone is too short, its end walls stop the cars), both ramps rising left (the default) so both cars roll right, the 3-block ramp's foot 2.4 m right of the 1-block ramp's (on carpet a toy car rolls about 1 m past a 1-block ramp and 2.5 m past a 3-block one, so the first stops before the second ramp; on wood 3 m and 11 m), the same car (same colour, same clay) on each, only the blocks differ; goal farther {a: the 3-block car, b: the 1-block car} (farther measures the distance along +x).",
-	"FORCES AND MOTION: dynamics-cart (a 250 g lab cart: load = kg of bars added, plunger 0-3 = a cocked spring that fires at the release, bumper plain/spring/magnet/velcro/clay: magnet carts bounce apart, velcro and clay stick). puller (a winch on the floor, link pulls = the thing its cord is tied to; mode force: a steady force in N (balanced pulls: two pullers facing each other, equal forces, the cart stays put); faces left/right = the way its cord leaves it; height (3 cm up) = the cord's height: near the pulled thing's middle, the default for a cart; set it 1-2 m away). pusher (a paddle: force N for push_time s, or a speed over a stroke). edge-pulley: clamp it at the table's right end (its anchor = the pulley's axle, place {on: \"air\", x: the table's right end + 0.04, y_m: 0.016}: the wheel's top level with a dynamics cart's string), link pulls = the cart on the table, hanging_mass falls and pulls it: a = m·g/(M + m) (F = ma; double the cart's mass with load, the acceleration halves). Two carts pushing apart: a plunger cart and a second cart touching its front (left_of/right_of with align touching), the lighter one leaves faster: v_a/v_b = m_b/m_a (goal recoils {a, b, ratio}).",
+	"FORCES AND MOTION: dynamics-cart (a 250 g lab cart: load = kg of bars added, plunger 0-3 = a cocked spring that fires at the release, bumper plain/spring/magnet/velcro/clay: magnet carts bounce apart, velcro and clay stick). puller (a winch on the floor, link pulls = the thing its cord is tied to; mode force: a steady force in N (balanced pulls: two pullers facing each other, equal forces, the cart stays put); faces left/right = the way its cord leaves it; height (3 cm up) = the cord's height: near the pulled thing's middle, the default for a cart; set it 1-2 m away). pusher (a paddle on a rod from a fixed housing: force N for push_time s, a push of F·t that starts a thing of mass m sliding at about F·t/(m + 0.2 kg), or a speed over a stroke; height = the rod's height, the pushed thing's middle: a raised housing stands on its own wooden block; put it left_of the thing with align touching (its paddle's face is 3.2 cm right of its anchor) so the push starts at once; paddle = how tall the paddle is, not how hard it pushes). edge-pulley: clamp it at the table's right end (its anchor = the pulley's axle, place {on: \"air\", x: the table's right end + 0.04, y_m: 0.016}: the wheel's top level with a dynamics cart's string), link pulls = the cart on the table, hanging_mass falls and pulls it: a = m·g/(M + m) (F = ma; double the cart's mass with load, the acceleration halves). Two carts pushing apart: a plunger cart and a second cart touching its front (left_of/right_of with align touching), the lighter one leaves faster: v_a/v_b = m_b/m_a (goal recoils {a, b, ratio}).",
 	"FORCE METERS AND SENSORS (readings in the run, shown in the digest): a puller's `newtons` is the pull in its cord (a force meter); in mode speed it reels in at its set speed, so its reading is the force that takes: pulling a cart UP A RAMP at a steady 0.1 m/s reads m·g·sin(slope), less than lifting it straight up (m·g) (stand the puller on the floor just past the ramp's top end, faces right when the cart is down to its right, its height (the drum's, up to 1 m) on the slope's line there so the cord runs along it). An edge-pulley's `newtons` is the string's pull on the cart (a force sensor: T = M·a, less than the hanging weight). A dynamics-cart reads its own speed (m/s, + forward) and accel (m/s²): F = M·a with the string's pull. Goal pulls_with {item: the puller or edge pulley, newtons, tol?}: its steady reading; measure's reads {item, newtons} reads the end value.",
 	"SIMPLE MACHINES (the lever, wheel and axle, block and tackle and gears hang in the air: place {on: \"air\", y_m}; their stands are drawn; the screw jack stands on the table or floor): lever-kit (class 1, 2 or 3; load kg at load_at m from the fulcrum, effort kg at effort_at m; its masses hang 25 cm under the beam: y_m about 0.6; balances when load × load_at = effort × effort_at, resolved balanced_by says the effort that balances). wheel-and-axle (wheel_radius, axle_radius: MA = R/r; load on the axle's cord, effort on the wheel's; y_m about 1.4 with drop 0.4). block-and-tackle (strands 2-4 = MA; effort = (load + 0.05 kg block) / strands balances; y_m about 1.6). screw-jack (stands on the floor or table: a handle turning a screw lifts a heavy load on its cap a pitch a turn: load kg, effort N at the handle's end, handle m, pitch mm, turns a second, efficiency (0.3); it lifts when efficiency × effort × 2π·handle/pitch > the load's weight: 10 N on a 20 cm handle with a 5 mm thread lifts up to about 75 kg, at 5 mm/s: give the scene seconds 6-10; goal rises {item} (1 cm by default)). gear-train (teeth_a drives at rpm, teeth_b and teeth_c (0 = only two gears): the last gear turns rpm × teeth_a ÷ teeth_last, each pair turning opposite ways; place in the air at a visible height, y_m about 0.5). Goals: balanced {item} (it holds still), rises {item, min_m?} (its load goes up), gear_speed {item, rpm?, direction?} (a gear train's last gear).",
 	"ROLLER COASTER (coaster-track: layout curved ramp, valley, hill or loop; height = the start's height (m), size = the loop's radius; its anchor is the floor under the start and it runs to the right). Put the ball (steel-ball, glass-marble) at the start: place {on: <track id>, x: track x + 0.03}; it rolls at the release. Energy: a rolling ball needs a start about 2.7 × the loop radius above the loop's bottom to go round (height 0.45 m for a 15 cm loop just goes round; 0.35 m falls off). Goal loops {item, track}.",
@@ -1867,6 +1895,32 @@ export const EXAMPLES = [
 const _sample_item = (scene, pick, types) => {
 	const xs = scene.items.filter((i) => types.includes(i.type))
 	return xs.length ? pick(xs) : null
+}
+
+/** A pulley lift's pail's inside in the lift's own frame (m from its anchor, the middle between its pulleys): between its walls' inner faces,
+ *  from its floor's top to its rim (its walls' tops; the bail above it is left out), from the lift built alone at the origin
+ *  (web/sim/plugins.js place.interior: the solver puts what goes inside on the pail's floor). */
+function _pail_inside(props) {
+	const item = { id: "lift", type: "pulley-lift", x: 0.0, y: 0.0, props: props ?? {} }
+	if (!F?.TYPES?.["pulley-lift"]) return null
+	const sb = new F.SceneBuilder()
+	sb.scene_items = new Map([[item.id, item]])
+	const P = F.props_of(item)
+	F.TYPES["pulley-lift"].build_fn(new F.Ctx(sb, item, P), P)
+	const by = new Map(sb.solids.map((s) => [s.id, s]))
+	const at = (s) => {
+		if (!s.parent || !by.has(s.parent)) return { x: s.at.x, y: s.at.y, a: s.angle ?? 0 }
+		const q = at(by.get(s.parent))
+		const c = Math.cos(q.a)
+		const n = Math.sin(q.a)
+		return { x: q.x + s.at.x * c - s.at.y * n, y: q.y + s.at.x * n + s.at.y * c, a: q.a + (s.angle ?? 0) }
+	}
+	const [floor, w1, w2] = ["floor", "wall1", "wall2"].map((k) => by.get(`lift/${k}`))
+	if (!floor || !w1 || !w2) return null
+	const f = at(floor)
+	const a = at(w1)
+	const b = at(w2)
+	return { x0: a.x + w1.body.width / 2, x1: b.x - w2.body.width / 2, floor: f.y + floor.body.height / 2, rim: Math.min(a.y + w1.body.height / 2, b.y + w2.body.height / 2) }
 }
 
 export const plugin = {
@@ -2014,6 +2068,11 @@ export const plugin = {
 		}))
 	],
 	digest: (item, sim) => digestLines(item, sim),
+	place: {
+		// (a pulley lift's pail is a container: what is put inside it rides up with it; an "in" goal on it is judged by its walls, ai/goals.mjs)
+		containers: ["pulley-lift"],
+		interior: (type, props) => (type === "pulley-lift" ? _pail_inside(props) : null)
+	},
 	words: {
 		change: changeWords,
 		// (requests that need this module though their words are core ones: a balloon rocket on a string line, a cart (ai/catalog-digest.mjs))

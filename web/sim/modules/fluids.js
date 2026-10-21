@@ -38,7 +38,9 @@ export const LIQUIDS = {
 	"corn syrup": [1380.0, 2.5, "syrup", "Light corn syrup: about 1380 kg/m³; about 2.5 Pa·s at 20 °C (approximate: brands differ)."],
 	honey: [1420.0, 10.0, "honey", "Honey: about 1420 kg/m³; 2-20 Pa·s at 20 °C by its water, 10 used [YANNIOTIS] (approximate)."],
 	"dish soap": [1050.0, 0.5, "soap", "Liquid dish soap: about 1050 kg/m³, about 0.5 Pa·s (manufacturers' data; approximate)."],
-	"rubbing alcohol": [880.0, 0.0025, "alcohol", "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."]
+	"rubbing alcohol": [880.0, 0.0025, "alcohol", "Rubbing alcohol (70 % isopropyl): about 880 kg/m³, about 2.5 mPa·s (approximate)."],
+	milk: [1030.5, 0.0021, "milk", "Whole milk at 20 °C: 1030.5 kg/m³ [MILK-RHO], 2.1 mPa·s [MILK-MU]; white and opaque (its fat droplets and casein scatter light)."],
+	"chocolate milk": [1065.0, 0.008, "chocolate milk", "Chocolate milk at 20 °C: about 1065 kg/m³ (provisional); about 8 mPa·s as it pours (it thins " + "as it flows [DRINKS-RHEO]); brown and opaque."]
 }
 export const LIQUID_NAMES = Object.keys(LIQUIDS)
 // NaCl in water at 20 °C [CRC]: mass % -> [density kg/m³, viscosity mPa·s]; between the rows, a straight line
@@ -93,6 +95,8 @@ function _looks() {
 	add_look("honey", { fill: "#d08a12", shade: "#9c6208", roughness: 0.08, metalness: 0.0, clearcoat: 1.0, transmission: 0.55, ior: 1.5, thickness: 0.05 })
 	add_look("soap", { fill: "#4fb05a", shade: "#2f7f3a", roughness: 0.08, metalness: 0.0, clearcoat: 1.0, transmission: 0.6, ior: 1.4, thickness: 0.05 })
 	add_look("alcohol", { fill: "#e8eef2", shade: "#b9c4cc", roughness: 0.05, metalness: 0.0, clearcoat: 1.0, transmission: 0.9, ior: 1.38, thickness: 0.05 })
+	add_look("milk", { fill: "#f6f4ee", shade: "#d9d4c8", roughness: 0.25, metalness: 0.0, clearcoat: 0.6 })
+	add_look("chocolate milk", { fill: "#7a4e33", shade: "#563622", roughness: 0.25, metalness: 0.0, clearcoat: 0.6 })
 	add_look("tub plastic", { fill: "#4f8fd8", shade: "#2f6bb0", roughness: 0.45, metalness: 0.0, clearcoat: 0.2 })
 	add_look("vinyl", { fill: "#eef0ec", shade: "#c4c8c0", roughness: 0.4, metalness: 0.0, clearcoat: 0.2 })
 	add_look("sail", { fill: "#f6f3ea", shade: "#cfc9b8", roughness: 0.85, metalness: 0.0, clearcoat: 0.0 })
@@ -379,6 +383,7 @@ export const SAIL_TRIM = 45.0 // degrees between the sail and the boat's line (l
 export const SAIL_PUSH = 0.8 // push along the wind / (½ρv²·A) for a square plate at 45° [ORTIZ] (a plate square to the wind: 1.17 [HOE])
 const AIR_SIDE_DRAG = 1.05 // the engine's flat-side drag coefficient (tooling/src/sim/physics.ts BOX_DRAG)
 const SAIL_THICK = 0.001 // the sail's slab in the side view (m)
+export const SAIL_SHAPES = ["square", "triangle"] // how the sail is drawn (render only: web/models/mod-fluids.js; its push is its area's either way)
 
 function _boat_readouts(hull = true) {
 	const out = [
@@ -457,7 +462,13 @@ function _floaters() {
 			new Prop("sail_area_cm2", "Sail area", 120.0, 20.0, 600.0, 5.0, "cm²", "Follows the sail's size until you set it (height 1.25 × width)", { auto: ["sail"] }),
 			new Prop("sail_material", "Sail made of", "paper", { kind: "choice", choices: Object.keys(SAIL_STUFF) }),
 			new Prop("color", "Hull colour", "red", { kind: "choice", choices: COLOR_NAMES.slice(0, -1) }),
-			new Prop("sail_color", "Sail colour", "white", { kind: "choice", choices: COLOR_NAMES.slice(0, -1) })
+			new Prop("sail_color", "Sail colour", "white", { kind: "choice", choices: COLOR_NAMES.slice(0, -1) }),
+			new Prop("sail_shape", "Sail shape", "square", { kind: "choice", choices: SAIL_SHAPES,
+				help: "Drawing only: triangle draws a triangular sail of the same area (its luff up the mast 1.5 × the square's height, its foot " +
+					"on the boom, its middle where the square's is): the same area, the same push" }),
+			new Prop("sail_face_on", "Sail drawn facing you", false, { kind: "bool",
+				help: "Drawing only: the sail is drawn square to the camera instead of let out 45° (a sail square to the fan's wind would be " +
+					"edge-on to a side camera); its push is the 45° sail's all the same" })
 		],
 		tags: ["boat", "sailboat", "sail", "toy boat", "regatta", "ship", "yacht", "float", "wind", "fan", "raft"],
 		description: "A toy sailboat: a pine hull with a keel fin, a dowel mast and a square sail let out at 45°. Put it in water (a trough or tub) and " +
@@ -573,16 +584,26 @@ function _things() {
 	}))
 
 	function build_cork(c, P) {
-		const r = 0.012
-		const L = 0.044
+		const r = P.diameter / 2
+		const L = P.length
 		const rho = MATERIALS.cork.density
+		if (P.lying === "across") {
+			// its length across the picture (mod_fluids.py): a slab L × D, π/4 × D deep (outline × depth = its true volume), drawn round
+			c.slab("cork", L, 2 * r, pyRound((Math.PI / 4) * 2 * r, 5), 0.0, 0.0, { material: c.mat(), look: "cork", words: "a cork" })
+			return
+		}
 		c.ball("cork", r, 0.0, 0.0, { material: c.mat({ density: pyRound((rho * 3 * L) / (4 * r), 4) }), inertia: 0.5, shape: "cylinder", length: L, look: "cork", words: "a wine cork" })
 	}
 
 	register(new ItemType("cork", "Cork", "Liquids", build_cork, {
 		material: "cork", materials: ["cork"],
-		props: [], tags: ["cork", "stopper", "wine cork", "float", "light", "bobber"],
-		description: "A wine cork lying on its side: very light, it floats high on any liquid.",
+		props: [new Prop("diameter", "Diameter", 0.024, 0.015, 0.06, 0.001, "m", "A wine cork is 24 mm; a big jar's or a bobber's up to 6 cm"),
+			new Prop("length", "Length", 0.044, 0.02, 0.1, 0.001, "m", "A wine cork is 44 mm"),
+			new Prop("lying", "Its length runs", "front to back", { kind: "choice", choices: ["front to back", "across"],
+				help: "front to back: the side camera sees its round end (it rolls); across: left to right, the camera sees its side" })],
+		tags: ["cork", "stopper", "wine cork", "float", "light", "bobber"],
+		description: "A wine cork lying on its side: very light, it floats high on any liquid (a fifth of it under water). Set its size; " +
+			"lying across, the side camera sees its side instead of its round end.",
 		source: "A wine cork is 24 mm across and 44 mm long; cork is about 200 kg/m³.", anchor: "its centre", facts: "24 × 44 mm · 4 g",
 		module: MODULE
 	}))
@@ -654,7 +675,7 @@ function _air() {
 // liquid -> [surface tension N/m, the largest contact angle it makes on ordinary solids (degrees)], at 20 °C [IAPWS-ST] (the others approximate)
 export const TENSION = {
 	water: [0.0728, 180.0], "sea water": [0.0738, 180.0], "vegetable oil": [0.032, 15.0], "corn syrup": [0.075, 180.0], honey: [0.055, 90.0],
-	"dish soap": [0.03, 25.0], "rubbing alcohol": [0.025, 10.0]
+	"dish soap": [0.03, 25.0], "rubbing alcohol": [0.025, 10.0], milk: [0.047, 90.0], "chocolate milk": [0.046, 90.0]
 }
 export const SOAPY = [0.03, 25.0] // water with dish soap on it: 25-35 mN/m; it wets steel (provisional)
 export const SOAP_SPREAD = 0.12 // m at 1 s: the soap film's edge runs out as SOAP_SPREAD·t^(3/4) [JENSEN] (the magnitude provisional)
@@ -904,17 +925,18 @@ export const plugin = {
 		"Liquid containers are FIXED in place (static): water-tank (style aquarium: glass, 50 cm long inside, 30 cm walls, 20.6 cm of water; tub: plastic, 60 × 18 cm; trough: a 3.05 m white rain-gutter lane 12 cm front to back, 10 cm walls, 8.2 cm of water, for boat races), graduated-cylinder (100/250/1000 mL, read in mL), beaker, measuring-jug (1 L) and density-column (liquids stacked by density). Their anchor is the middle of the base where they stand; they hold `fill` m (tank) or `fill_ml` mL of `liquid` from the start.",
 		"Liquids at 20 °C: water 998 kg/m³; salt water by salt_pct (4 % 1027, 10 % 1071, 12 % 1086, 20 % 1148, 26 % 1197); sea water 1025; vegetable oil 920; corn syrup 1380; honey 1420; dish soap 1050; rubbing alcohol 880.",
 		"Put things INTO a container with place {inside: <container id>} (they start floating at their own depth if they float, on the bottom if they sink). ANY moving item floats when its average density (mass ÷ outer volume) is below the liquid's and sinks otherwise: wooden block (700) floats 70 % under; ice (917) 92 % under; apple, cork, foam, ping-pong and tennis balls, plastic ball float; steel ball, marble, coin, penny, pebble, brick, clay ball, golf ball sink; an egg (1030 in this catalog) sinks in water and floats in salt water of 6 % or more; a grape (1060) sinks in water, floats in 10 % salt water. A clay-boat floats on its hollow hull (a clay-ball of the same clay sinks); a foil-boat carries pennies (2.5 g each; a 7 × 7 × 1.5 cm one about 29) until water comes over its rim, then floods and sinks. The level rises by the volume pushed under: a graduated cylinder's reading measures an object's volume (60 mL + a 16 mm marble = 62.1 mL).",
-		"Open vessels (coffee-mug, bowl) put in a liquid float as hollow hulls on their outer volume up to the rim: a bowl (wide and shallow) floats upright; a mug floats tipped toward its handle (a light one on its side, as a real light cup does). What fills them adds to their weight: a hose (flow module) run from a raised beaker into a floating bowl fills it until its rim reaches the water, then it floods and sinks (melamine, ceramic, glass, aluminium, paperboard sink; foam stays up): goal floats_then_sinks {item}. A tap's or a pitcher's stream does NOT yet fill a vessel that floats in a tank (the flow module gives it to the tank's water once it is below the tank's surface): use the hose. The catalog's cup, plastic-cup, glass-jar, bucket and box are FIXED in place: they never float.",
+		"Open vessels (coffee-mug, bowl) put in a liquid float as hollow hulls on their outer volume up to the rim: a bowl (wide and shallow) floats upright; a mug floats tipped toward its handle (a light one on its side, as a real light cup does). What fills them adds to their weight: a tap or a pitcher (flow module) over a floating bowl, or a hose run from a raised beaker into it, fills it (the stream lands in the bowl, never in the tank's water round it) until its rim reaches the water, then it floods and sinks (melamine, ceramic, glass, aluminium, paperboard sink; foam stays up): goal floats_then_sinks {item}; put the tap's mouth straight over the bowl's middle, 10-25 cm above its rim. The catalog's cup, plastic-cup, glass-jar, bucket and box are FIXED in place: they never float.",
 		"Boats and sails: a sailboat floats in a tank (trough or tub) and is pushed by a fan BEHIND it (the fan faces +x, angle 0, its front face 5-90 cm behind the stern; nothing in between) or by a breeze (a steady wind over the whole scene from its wind sock: put it at the upwind edge). The fan's anchor is the middle of its FRONT face; put that at the height of the sail's middle (a default boat in a default trough standing on the table: y ≈ 0.18 for a small sail, 0.16 tiny, 0.22 big; add the trough's own y if it is raised; a sailboat's resolved sail_middle is that height over its anchor): a fan lower or higher than the sail misses it. Sails: tiny 48 cm², small 120, big 320 (or set sail_area_cm2, 20-600 cm²); push = 0.8 × ½·1.2·A·(air speed − boat speed)²: bigger sail, faster or nearer fan → more push. A fan's jet keeps its full speed for 5.6 fan diameters (6.2 diameters of its 0.9-wide stream), then weakens as 1/distance: with the default 0.30 m fan any distance under 1.67 m gives the SAME push, so to compare a near and a far fan use small fans (diameter 0.12 m: full speed to 0.67 m) and put the far one 0.9 m or more behind its sail. To compare two boats side by side, give each its own lane: two troughs (each with its boat and fan), one on the table (y 0) and one fixed above it (y 0.35), identical but for the one thing compared.",
 		"Surface tension (water 72.8 mN/m; soapy water about 30): a paper-clip (the magnetism module's, 0.45 g of steel) put INSIDE a water container with place {inside: <container>} is laid gently on the surface and floats, held in a little dent (the surface pulls up to γ·sinθ per metre of its wire's contact line: 13.9 mN for water, its weight is 4.4 mN); dropped from above (on: air) it breaks through and sinks. A soap-drop (a dropper held over the water, its anchor the dropper's tip: place on: air 5-10 cm over the surface; at_s: when the drop falls; a stand behind the container holds it) lowers the surface tension where it lands, and the soap film spreads out (about 12 cm in the first second, 0.12·t^0.75 m): a clip the surface held sinks once the soap reaches it; a light boat (foil-boat) with the drop 2-4 cm behind its stern is pulled forward by the clean surface ahead (a soap-powered boat: about 8 cm/s, 30-40 cm in 5 s); goals sinks/floats {clip}, moves {boat, min_m}. Capillary action: a capillary-tube (bore_mm 0.3-4) or a paper-strip (paper towel, filter paper, printer paper), each a FIXED item held by a stand the view draws: place it on: air with its anchor (its BOTTOM end) 1-3 cm under the liquid's surface (y_m = the surface's y − 0.02); the liquid climbs a 1 mm tube 29.7 mm above the outside surface in about half a second, a 4 mm tube 7.4 mm (Jurin: h = 2γ/(ρgr), thinner climbs higher; soapy water half as high); paper towel wicks about 1 cm in 3 s and 1.5 cm in 6 s (h² = D·t, D 4e-5 m²/s; filter paper 1.1e-5, printer paper hardly at all). Goals climbs {item, at_least_mm?} (rise_mm or wet_mm at the end) and climbs_higher {a, b}.",
-		"Readings each run: a container's level_mm, volume_ml (its scale's reading) and spilled_ml; an item in a liquid: submerged (0-1), afloat (1/0), sunk (1/0), draft_mm, buoyancy_n; a boat's freeboard_mm and flooded; a sailboat's air_ms (wind at its sail) and push_n."
+		"Readings each run: a container's level_mm, volume_ml (its scale's reading) and spilled_ml; an item in a liquid: submerged (0-1), afloat (1/0), sunk (1/0), draft_mm, buoyancy_n; a boat's freeboard_mm and flooded; a sailboat's air_ms (wind at its sail) and push_n.",
+		"For a lesson picture: a sailboat's sail_shape triangle (a triangular sail of the same area) and sail_face_on (the sail drawn square to the camera) are drawing only, the push the same; a cork's diameter and length are its size (a wine cork 24 × 44 mm; a bigger one floats as deep, a fifth under) and lying across shows the camera its side instead of its round end."
 	].join(" "),
 	prompt: {
 		plan: [
 			"Liquids: containers (water-tank, graduated-cylinder, beaker, measuring-jug, density-column) are fixed; set their `liquid` and `fill` / `fill_ml` / `salt_pct` props and put floating or sinking things in with place {inside: <container id>} (the solver starts a floater at its own floating depth and a sinker on the bottom). Never put a fixed item in a liquid to make it float.",
 			"Sailboat lessons: each boat in its own trough (style \"trough\"), a fan behind it facing +x with its front-face anchor at the sail's middle height (trough on the table: y 0.18 small sail, 0.16 tiny, 0.22 big). To compare fan distances use fan diameter 0.12 and distances 0.15 m vs 0.9 m (the jet is full strength for 5.6 fan diameters). Compare things in separate identical lanes (a second trough fixed above the first at y 0.35, its fan's y + 0.35). Goals: floats {item}, sinks {item}, level {container, at_least_ml?, at_most_ml?}, floats_then_sinks {item} (it floats first, then fills or is loaded and sinks: never met by a thing that sank at once), and to compare boats measure's farther {a, b} or moves {item, min_m}.",
 			"Surface tension and capillary action: a paper-clip put INSIDE a water container (place {inside: <container id>}) is laid gently and floats on the surface; a soap-drop held over the water (on: air, its anchor the dropper's tip 5-10 cm over the surface, at_s the time) sinks it once its film spreads to it, or pushes a foil-boat it lands 2-4 cm behind; capillary-tube and paper-strip are fixed, held by stands: put each on: air with its bottom end 1-3 cm under the surface. Goals climbs {item, at_least_mm?}, climbs_higher {a, b}.",
-			"A floating cup that fills until it sinks: a bowl (material melamine) put inside a water-tank, filled by a hose (flow module) from a beaker raised on a shelf (a plank with legs, on: air at y_m 0.3); the catalog's cup and plastic-cup are fixed and cannot float, and a tap's or pitcher's stream does not yet reach a vessel floating in a tank: if asked for that, say so plainly in the plan and build the hose version. A sailboat's sail_area_cm2, once set, is its sail's size whatever `sail` says."
+			"A floating cup that fills until it sinks: a bowl (material melamine) put inside a water-tank, filled by a tap (flow module: on: air, its mouth straight over the bowl's middle, 10-25 cm above its rim) or by a hose from a beaker raised on a shelf (a plank with legs, on: air at y_m 0.3); the catalog's cup and plastic-cup are fixed and cannot float. A sailboat's sail_area_cm2, once set, is its sail's size whatever `sail` says."
 		].join("\n"),
 		edit: "Liquids: change what is in a container with its props (liquid, salt_pct, fill / fill_ml); a sailboat's push with its sail (tiny/small/big, or sail_area_cm2: once sail_area_cm2 is set it is the size whatever `sail` says, so to change a sail's size set both: sail_area_cm2 48 tiny, 120 small, 320 big) or the fan's speed, diameter or distance (inside 5.6 fan diameters the jet is equally strong: moving a big fan nearer changes nothing). Things float or sink by density: to make a sinker float, raise the liquid's density (salt) or shape it as a boat; to sink a boat, load it (pennies) until it floods.",
 		refine: "Liquids: a floater should end floating (afloat 1, partly above the surface) and a sinker on the bottom (sunk 1); a sailboat's fan must face its sail at the sail's height (reading air_ms well above 0 at the start). Fix a failing float/sink goal with the liquid's density (salt_pct, liquid) or the item, never by fixing the item in place."
@@ -1078,7 +1100,7 @@ export const plugin = {
 				const held = endOf(run, item.id, "liquid_ml")
 				const pours = (doc.processes ?? []).filter((p) => p.kind === "flow-tap" || p.kind === "flow-pour")
 				out.push(`it floats as a hollow vessel (${trimNum(_shoelace(vessel.points) * vessel.depth * 1e6, 0)} mL to its rim)${held !== null ? `; ${trimNum(held, 0)} mL poured into it` : ""}`)
-				if (pours.length && !(held > 1)) out.push("NO water reaches it from the tap or pitcher while it floats in a tank (the stream joins the tank's water): fill it with a hose (flow module) from a raised beaker, to: this vessel")
+				if (pours.length && !(held > 1)) out.push("NO water from the tap or pitcher landed in it: put the stream's mouth straight over its opening (a stream lands where it falls), or fill it with a hose (flow module) from a raised beaker, to: this vessel")
 			}
 		}
 		if (item.type === "capillary-tube" || item.type === "paper-strip") {

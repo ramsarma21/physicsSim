@@ -724,3 +724,54 @@ test("the view's own stands: a peg's pole (from the table) up through a raised s
 	const r3 = solve({ title: "Peg", items: [{ ...shelf, place: { on: "air", x: 0.6, y_m: 0.5 } }, { id: "peg", type: "peg", place: { on: "air", x: 1.6, y_m: 0.6 } }] })
 	assert.deepEqual(r3.issues.filter((i) => i.code === "stand_through"), [])
 })
+
+test("an Atwood machine or a pulley lift put on the table hangs its weights clear of it by its rope's drop (at most 1 m): they move; set down, its two weights rested and nothing moved", () => {
+	for (const [type, props] of [["atwood-machine", {}], ["atwood-machine", { drop: 0.3, left_mass: 0.5 }], ["pulley-lift", {}]]) {
+		const r = solved({ title: "Hung", seconds: 2, items: [{ id: "m", type, props, place: { on: "table", x: 1.3 } }] })
+		const hung = r.placements.find((p) => p.id === "m")
+		const drop = props.drop ?? TYPES[type].props.find((q) => q.key === "drop").default
+		near(hung.hung, Math.min(1, drop), 1e-9, `${type} raised`)
+		assert.ok(r.issues.some((i) => i.code === "hung" && i.item === "m"), JSON.stringify(r.issues))
+		// its lowest part hangs that far over the table top, and the weights move
+		const g = itemGeometry(type, props)
+		const low = Math.min(...shapesAt(g, item(r, "m").x, item(r, "m").y, 0).map((q) => q.y0))
+		near(low, drop >= 1 ? 1 : drop, 0.003, `${type}'s lowest part over the table`)
+		const sim = simulate({ ...r.scene, seconds: 1.5 })
+		assert.ok(maxDrift(sim, ["m"]) > 0.1, `${type}: its weights move (${maxDrift(sim, ["m"])} m)`)
+	}
+	// the same machine put in the air keeps its height exactly
+	const air = solved({ title: "Air", seconds: 1, items: [{ id: "m", type: "atwood-machine", place: { on: "air", x: 1.3, y_m: 1.2 } }] }, { run: false })
+	near(item(air, "m").y, 1.2, 1e-9, "in the air as asked")
+	assert.equal(air.placements.find((p) => p.id === "m").hung, undefined)
+})
+
+test("inside a pulley lift's pail: a thing is set on the pail's floor between its walls, under its bail (the gallery's own apple spot), and an \"in\" goal on the pail is judged by its walls and met as the pail rises", () => {
+	const r = solved({
+		title: "Lift",
+		seconds: 3,
+		items: [
+			{ id: "lift", type: "pulley-lift", props: { weight: 1.2, cup_width: 0.14, cup_height: 0.1, drop: 0.6 }, place: { on: "air", x: 1.3, y_m: 1.25 } },
+			{ id: "apple", type: "apple", place: { inside: "lift" } }
+		],
+		goals: [{ kind: "in", item: "apple", container: "lift", label: "the apple rides up in the pail" }]
+	})
+	const gallery = JSON.parse(readFileSync(new URL("../../gallery/pulley-lift.json", import.meta.url))).items.find((i) => i.id === "golf")
+	near(item(r, "apple").x, gallery.x, 1e-4, "x")
+	near(item(r, "apple").y, gallery.y, 2e-4, "y")
+	assert.deepEqual(r.scene.goals.map((g) => [g.kind, g.container]), [["walls", "lift"]])
+	const sim = simulate(r.scene)
+	assert.deepEqual(sim.summary.goals.map((g) => g.ok), [true])
+	const sid = sim.doc.solids.find((x) => x.item === "apple" && x.kind === "dynamic").id
+	assert.ok(sim.track.frames.at(-1).placements[sid].y > sim.track.frames[0].placements[sid].y + 0.3, "it rode up")
+})
+
+test("planFromScene keeps a hanging machine exactly where the scene has it, even resting on the table: an edit's re-solve never hangs it unasked", () => {
+	const scene = { version: 2, id: "s", seconds: 2, release: 0.5, stage: DEFAULT_STAGE, items: [{ id: "table", type: "table", x: 1.3, y: 0, props: {} }, { id: "aw", type: "atwood-machine", x: 1.3, y: 0.484975, props: {} }], goals: [] }
+	const plan = planFromScene(scene)
+	const aw = plan.items.find((i) => i.id === "aw")
+	assert.equal(aw.place.on, "air")
+	assert.equal(aw.place.keep, true)
+	const r = solve(plan)
+	near(item(r, "aw").y, 0.484975, 1e-9, "kept")
+	assert.ok(!r.issues.some((i) => i.code === "hung"))
+})

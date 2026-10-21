@@ -4,14 +4,17 @@
  * set only once, when it becomes known (a stopwatch's start_s and stop_s, a gate's speed), reads that value in every frame of the track
  * (plugins.ts Readings.series gives earlier frames a column's first value), so the view draws a frozen time exactly from them.
  *
- *   measure-stopwatch {watch (item id | null), start: "release" | "moves" | "crosses", stop: "crosses" | "stops" | "hits" | "at" | "never",
- *                      start_x?, stop_x? (m), stop_at (s), reaction (s), lesson (bool)}
+ *   measure-stopwatch {watch (item id | null), start: "release" | "moves" | "crosses", stop: "crosses" | "stops" | "hits" | "at" | "reads" | "never",
+ *                      start_x?, stop_x? (m), stop_at (s), stop_key?, stop_value? (reads), reaction (s), lesson (bool)}
  *        start: release = the scene's release (doc.release.at); moves = the watched item has moved 1 mm (interpolated between steps);
  *        crosses = its FRONT (its outline's extreme toward the line, by where its middle starts) reaches x = start_x. stop: crosses = the
  *        front reaches stop_x; stops = it has stayed within 1 mm for 0.25 s (stopped where that stillness began); hits = one of its solids
  *        first touches a solid it did not touch when the watch started (timed where the gap between them closes to the 0.5 mm contact skin,
- *        from the last steps' outlines); at = stop_at s after the start; never. reaction (a person's
- *        hand, [HUMAN-RT] 0.2-0.25 s) delays the presses that answer something seen (moves, crosses, stops, hits), not a release.
+ *        from the last steps' outlines); at = stop_at s after the start; reads = the watched item's reading `stop_key` (another module's: a
+ *        sand timer's empty, an ice cube's melted, a thermometer's reading) reaches `stop_value` from the side it was on when the watch started
+ *        (one that starts on the value waits until it leaves it), timed where it crossed between the step before and now (a module's 0/1 reading
+ *        at the step it changed: within a step of it; engine6 crossmod); never. reaction (a person's
+ *        hand, [HUMAN-RT] 0.2-0.25 s) delays the presses that answer something seen (moves, crosses, stops, hits, reads), not a release.
  *        Readings: seconds (elapsed, frozen at the stop), meters (how far the item's centre of mass moved since the start), running (0/1),
  *        start_s and stop_s (set once each), lesson_s (seconds x the time-lapse, when lesson).
  *        With no watched item (none linked, or its link names nothing) a watch that starts at the release and stops `at` or `never` runs as a
@@ -28,7 +31,8 @@
  *        Earth: 1 kg on the Moon reads 165 g); stretch (m); over (1 past its range). `stop`: the hook's travel ends there (|AB| at most stop,
  *        a planck rope joint made at the start: the hook bottoms out at the end of the tube, about 5 % past full scale).
  *   measure-scale {platform (solid id), tare (bool), capacity (kg)}   what rests on the platform (moving solids touching it, or touching
- *        what touches it, and not touching another fixed solid; whole items): F = sum of m (g + a_y), smoothed over 0.05 s (a load cell's
+ *        what touches it, and not touching another fixed solid; whole items; and the granular module's grains heaped on the platform and the flow
+ *        module's puddles lying on it, at rest: grainsOn, puddlesOn): F = sum of m (g + a_y), smoothed over 0.05 s (a load cell's
  *        filter, which starts settled on what rests on it at the release); grams = F / g x 1000 (less, when tare, the weight Σ m·g of what
  *        rests on it at the release: the first step that sees contacts; never what lands on it later), newtons, over (1 past capacity);
  *        g here is 9.81, the Earth's, whatever the run's gravity: a load cell is calibrated on Earth and shows weight (a 1 kg mass on the Moon
@@ -46,6 +50,8 @@
  * Deterministic: + − × ÷, Math.sqrt / abs / min / max and the engine's sin, cos, atan2, hypot.
  */
 import { RopeJoint, Vec2 } from "planck"
+import { puddlesOn } from "#sim/modules/flow.ts"
+import { grainsOn } from "#sim/modules/granular.ts"
 import { type Point, type ProcessContext, type ProcessKind, type ProcessRecord, type SolidHandle, STANDARD } from "#sim/plugins.ts"
 
 const MOVE_M = 0.001
@@ -187,6 +193,8 @@ const stopwatch: ProcessKind = {
 		const startX = typeof r.start_x === "number" ? r.start_x : null
 		const stopX = typeof r.stop_x === "number" ? r.stop_x : null
 		const stopAt = num(r.stop_at, 3)
+		const stopKey = str(r.stop_key) ?? "empty"
+		const stopValue = num(r.stop_value, 1)
 		const reaction = Math.max(0, num(r.reaction, 0))
 		const lesson = r.lesson === true
 		// (nothing to watch: a watch started by the release and stopped after set seconds, or never, is a plain clock)
@@ -209,6 +217,11 @@ const stopwatch: ProcessKind = {
 		let restRef = new Map<string, Point>()
 		let restT = 0
 		let touched0 = new Set<string>()
+		// (stop = reads: which side of stop_value the reading was on when the watch started (0: on it, or not yet read), and its value and time
+		// the step before)
+		let readSide = 0
+		let readPrev: number | null = null
+		let readPrevT = 0
 		// the watched solids' outlines over the last few steps: a hit is timed where the gap to what it struck closed (the engine reports a contact a
 		// step or two after the step that made it)
 		const history: { t: number; outlines: Map<string, Outline> }[] = []
@@ -337,6 +350,21 @@ const stopwatch: ProcessKind = {
 							}
 						}
 					} else if (stop === "at") pending = t0 + stopAt
+					else if (stop === "reads" && watch !== null) {
+						// (another process's reading as it stands now: set by its step this step or the last; ctx.time() is the moment it holds for)
+						const v = ctx.get(watch, stopKey)
+						const now = ctx.time()
+						if (v !== undefined && Number.isFinite(v)) {
+							const d = v - stopValue
+							if (readSide === 0) readSide = d > 0 ? 1 : d < 0 ? -1 : 0
+							else if (d * readSide <= 0) {
+								const at = readPrev !== null && readPrev !== v ? between(readPrevT, readPrev, now, v, stopValue) : now
+								pending = Math.max(t0, Math.min(now, Math.max(readPrevT, at))) + reaction
+							}
+							readPrev = v
+							readPrevT = now
+						}
+					}
 				}
 				if (pending !== null && t >= pending) ev = pending
 				if (ev !== null) {
@@ -679,6 +707,13 @@ const scale: ProcessKind = {
 					}
 				}
 				prevVy = vy
+				// grains heaped and liquid lying as a puddle on the platform itself (the granular and flow modules' own: not bodies, so no contact
+				// names them), at rest on it: their weight (engine6 crossmod; nothing in a scene without them)
+				const loose = grainsOn(ctx.scene, item, platform) + puddlesOn(ctx.scene, platform)
+				if (loose > 0) {
+					F += loose * g
+					W += loose * g
+				}
 				// At the first step that sees contacts, what was SET on the platform (a bowl, a plate, masses stacked on it) rests on it. The load
 				// cell has carried that load since before the run began: its filter starts settled on its weight, and taring takes off exactly that
 				// weight (a person presses TARE with the bowl on it, then drops the egg), never anything that lands or bounces on it later.

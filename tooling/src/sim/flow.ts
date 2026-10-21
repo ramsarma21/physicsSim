@@ -32,6 +32,10 @@
  *           depth ⅔ H over the crest.
  *   [NUSSELT] W. Nusselt, Z. VDI 60 (1916) 541: a laminar film of thickness h on a vertical wall carries q = g·h³/(3ν) per metre of width.
  *   [LILLY] D. K. Lilly, IBM Sci. Comput. Symp. on Environmental Sciences (1967): Smagorinsky constant 0.17.
+ *   [KUBELKA31] P. Kubelka & F. Munk, Z. Tech. Phys. 12 (1931) 593: a deep scattering layer's diffuse reflectance R∞ = 1 + K/S − √((K/S)² + 2K/S)
+ *           (K ≈ 2 × the absorption coefficient for diffuse light). What a scattering liquid (milk, white food colouring) looks like (seenOf).
+ *   [MILK-SCAT] whole milk's reduced scattering coefficient about 2-3 mm⁻¹ in the visible (Aernouts et al., J. Dairy Sci. 98 (2015) 6727:
+ *           raw milk's bulk optical properties): 25 per cm used for milk (provisional).
  */
 import type { Point } from "#sim/plugins.ts"
 
@@ -42,8 +46,20 @@ export interface FlowLiquid {
 	readonly viscosity: number
 }
 
-/** Dye as absorbance per centimetre of light path, red, green and blue (Beer–Lambert: what shows through is exp(−a·path)). */
-export type Dye = readonly [number, number, number]
+/** Dye as absorbance per centimetre of light path, red, green and blue (Beer–Lambert: what shows through is exp(−a·path)), and, only for a
+ *  dye that scatters light (white food colouring; milk's fat droplets and casein: 2026-10-20), a fourth number: its scattering per cm
+ *  (seenOf below). Mixed by volume like the absorbances; a liquid without one is clear and keeps three numbers. */
+export type Dye = readonly [number, number, number] | readonly [number, number, number, number]
+
+/** A dye's scattering per cm: its fourth number (0 without one). */
+export const scatterOf = (a: Dye) => (a.length > 3 ? (a[3] as number) : 0)
+
+/** A liquid's colour with its own added (its own as a liquid: milk's whiteness, honey's amber): three numbers unless either scatters. */
+export const dyePlus = (a: Dye, own: Dye): Dye => {
+	const r: [number, number, number] = [(a[0] as number) + (own[0] as number), (a[1] as number) + (own[1] as number), (a[2] as number) + (own[2] as number)]
+	const s = scatterOf(a) + scatterOf(own)
+	return s !== 0 ? [r[0], r[1], r[2], s] : r
+}
 
 // ------------------------------------------------------------------------------------------------ flow laws (pure)
 /** A sharp-edged hole's discharge and velocity coefficients [WHITE]. */
@@ -399,6 +415,8 @@ export class FlowSim {
 	a0 = new Float64Array(0)
 	a1 = new Float64Array(0)
 	a2 = new Float64Array(0)
+	/** each particle's dye's scattering per cm (white food colouring, milk): 0 for a clear one */
+	a3 = new Float64Array(0)
 	lam = new Float64Array(0)
 	dx = new Float64Array(0)
 	dy = new Float64Array(0)
@@ -478,6 +496,7 @@ export class FlowSim {
 		this.a0 = f(this.a0)
 		this.a1 = f(this.a1)
 		this.a2 = f(this.a2)
+		this.a3 = f(this.a3)
 		this.lam = f(this.lam)
 		this.dx = f(this.dx)
 		this.dy = f(this.dy)
@@ -524,6 +543,7 @@ export class FlowSim {
 		this.a0[i] = dye[0]
 		this.a1[i] = dye[1]
 		this.a2[i] = dye[2]
+		this.a3[i] = scatterOf(dye)
 		this.liq[i] = liq
 		this.lane[i] = lane
 		this.pid[i] = this.nextId++
@@ -582,6 +602,7 @@ export class FlowSim {
 				this.a0[k] = this.a0[i] as number
 				this.a1[k] = this.a1[i] as number
 				this.a2[k] = this.a2[i] as number
+				this.a3[k] = this.a3[i] as number
 				this.liq[k] = this.liq[i] as number
 				this.lane[k] = this.lane[i] as number
 				this.pid[k] = this.pid[i] as number
@@ -1108,8 +1129,11 @@ export class FlowSim {
 		// (nothing to mix when every particle carries the same dye)
 		let differ = false
 		for (let i = 1; i < n && !differ; i++)
-			if (this.a0[i] !== this.a0[0] || this.a1[i] !== this.a1[0] || this.a2[i] !== this.a2[0]) differ = true
+			if (this.a0[i] !== this.a0[0] || this.a1[i] !== this.a1[0] || this.a2[i] !== this.a2[0] || this.a3[i] !== this.a3[0]) differ = true
 		if (!differ) return
+		// (a scattering dye's fourth number is mixed only when some particle has one: a run of clear dyes is worked as it always was)
+		let scatters = false
+		for (let i = 0; i < n && !scatters; i++) if ((this.a3[i] as number) !== 0) scatters = true
 		// each particle's |S|, kept in lam (free now)
 		let any = false
 		for (let i = 0; i < n; i++) {
@@ -1129,7 +1153,10 @@ export class FlowSim {
 				ss += (f * Math.sqrt(dvx * dvx + dvy * dvy)) / Math.max(Math.sqrt(r2), 0.25 * this.s)
 				if (
 					!any &&
-					((this.a0[i] as number) !== (this.a0[j] as number) || (this.a1[i] as number) !== (this.a1[j] as number) || (this.a2[i] as number) !== (this.a2[j] as number))
+					((this.a0[i] as number) !== (this.a0[j] as number) ||
+						(this.a1[i] as number) !== (this.a1[j] as number) ||
+						(this.a2[i] as number) !== (this.a2[j] as number) ||
+						(this.a3[i] as number) !== (this.a3[j] as number))
 				)
 					any = true
 			}
@@ -1141,6 +1168,7 @@ export class FlowSim {
 			this.ty[i] = this.a1[i] as number
 			this.tz[i] = this.a2[i] as number
 		}
+		const tw = scatters ? this.a3.slice(0, n) : null
 		for (let i = 0; i < n; i++) {
 			const xi = this.px[i] as number
 			const yi = this.py[i] as number
@@ -1148,6 +1176,7 @@ export class FlowSim {
 			let n0 = this.tx[i] as number
 			let n1 = this.ty[i] as number
 			let n2 = this.tz[i] as number
+			let n3 = tw !== null ? (tw[i] as number) : 0
 			let den = 1
 			for (let q = st[i] as number; q < (st[i + 1] as number); q++) {
 				const j = nb[q] as number
@@ -1159,11 +1188,13 @@ export class FlowSim {
 				n0 += b * (this.tx[j] as number)
 				n1 += b * (this.ty[j] as number)
 				n2 += b * (this.tz[j] as number)
+				if (tw !== null) n3 += b * (tw[j] as number)
 				den += b
 			}
 			this.a0[i] = n0 / den
 			this.a1[i] = n1 / den
 			this.a2[i] = n2 / den
+			if (tw !== null) this.a3[i] = n3 / den
 		}
 	}
 
@@ -1337,7 +1368,8 @@ export class Emitter {
 export interface BasinLayer {
 	liq: number
 	vol: number
-	a: [number, number, number]
+	/** its dye (three absorbances; a fourth number, its scattering, only once a scattering dye has been poured into it) */
+	a: [number, number, number] | [number, number, number, number]
 }
 
 /** The area of a convex polygon (flat x, y list, counter-clockwise) below the line y = Y, without making a new polygon. */
@@ -1579,7 +1611,10 @@ export class Basin {
 			this.layers.splice(at, 0, layer)
 		}
 		const t = layer.vol + vol
-		layer.a = [(layer.a[0] * layer.vol + dye[0] * vol) / t, (layer.a[1] * layer.vol + dye[1] * vol) / t, (layer.a[2] * layer.vol + dye[2] * vol) / t]
+		const s0 = scatterOf(layer.a)
+		const s1 = scatterOf(dye)
+		const a: [number, number, number] = [(layer.a[0] * layer.vol + dye[0] * vol) / t, (layer.a[1] * layer.vol + dye[1] * vol) / t, (layer.a[2] * layer.vol + dye[2] * vol) / t]
+		layer.a = s0 !== 0 || s1 !== 0 ? [a[0], a[1], a[2], (s0 * layer.vol + s1 * vol) / t] : a
 		layer.vol = t
 	}
 	/** Takes up to vol m³ from layer i; returns what it took. */
@@ -1599,3 +1634,24 @@ export class Basin {
 
 /** The transmitted colour (0…1 per channel) of a dye seen through `path` cm of the liquid: exp(−a·path). */
 export const tintOf = (a: Dye, path = 5): [number, number, number] => [Math.exp(-a[0] * path), Math.exp(-a[1] * path), Math.exp(-a[2] * path)]
+
+/**
+ * What one sees of `path` cm of a liquid (0…1 per channel) and how much of it the liquid scattered back (ρ): the light straight through,
+ * e^(−(a + s)·path) (a its absorbances, s its scattering per cm: the dye's fourth number), and the share ρ = 1 − e^(−s·path) scattered on
+ * the way, seen as a deep layer's diffuse reflectance (Kubelka-Munk: R∞ = 1 + K/S − √((K/S)² + 2K/S), K = 2a, S = s [KUBELKA31]). A clear
+ * liquid (s = 0) is exactly tintOf's e^(−a·path), ρ 0; milk (s about 25 per cm) is its white R∞, ρ 1. Returns [r, g, b, ρ].
+ */
+export const seenOf = (a: Dye, path = 5): [number, number, number, number] => {
+	const s = scatterOf(a)
+	if (!(s > 0)) {
+		const t = tintOf(a, path)
+		return [t[0], t[1], t[2], 0]
+	}
+	const rho = 1 - Math.exp(-s * path)
+	const ch = (k: number) => {
+		const x = (2 * Math.max(0, k)) / s
+		const rInf = 1 + x - Math.sqrt(x * x + 2 * x)
+		return Math.min(1, Math.exp(-(k + s) * path) + rho * rInf)
+	}
+	return [ch(a[0] as number), ch(a[1] as number), ch(a[2] as number), rho]
+}
