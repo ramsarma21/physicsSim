@@ -1857,7 +1857,8 @@ view.setOptions({catalog})   // the app hands its catalog over: the recognizer r
   the drawn models' boxes, measured once the models are in (the mounts and stands the view adds to hold parts up are not part of a part's box).
   A plan naming what the run does not have is a RangeError with the resolver's messages and the nearest ids.
 - Each frame draws its bands (viewport and scissor on the export's MSAA target), each with its own camera; in a split band of one run the other
-  lanes' things (their roots, contact shades, mounts and stands) are left out and the key light's shadow map is drawn again for that band; motion
+  lanes' things (their roots, contact shades, mounts and stands, and what a module's view plug-in draws for them: a plug-in names an object's item
+  as `obj.userData.item`, as the measure module's lane legs, display poles, retort stands and trails do) are left out and the key light's shadow map is drawn again for that band; motion
   blur sub-frames stay inside the frame's own shot (half a frame past its last frame at most, never across a cut), their count measured over every
   band (camera and bodies). The look per shot: backdrop `studio` (the room hidden, a plain backdrop in `tone`: dark #1b1e23, mid #3b4048, light
   #8d929b) / `room` / `scene` (a module's world, space's stars); ground `sweep` (the table top not drawn; an 80 m matte studio floor at its height in

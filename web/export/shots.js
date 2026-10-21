@@ -2187,7 +2187,8 @@ export function autoPlan(world, opts = {}) {
 	}
 	/** a traveller followed at the closest width a calm follow allows (the background slides at most 1.5 widths a second while it is steady) */
 	const followFor = (o, tv, a, b) => {
-		const subj = lanes ? { role: roleOfItem.get(tv) } : { item: tv }
+		const laneOfItem = lanes?.list.find((l) => Object.values(l.cast).includes(tv))?.id
+		const subj = lanes ? { role: roleOfItem.get(tv), lane: laneOfItem } : { item: tv }
 		const P0 = R.itemPts(tv, null, clamp(startOf(tv) ?? a, a, b))
 		const [lo, hi] = boundsOf(P0)
 		const Lx = hi[0] - lo[0] || 0.05
@@ -2248,8 +2249,14 @@ export function autoPlan(world, opts = {}) {
 					return { x, sweep: Math.max(hi[0] - lo[0], hi[1] - lo[1]), sz }
 				})
 				.sort((p, q) => q.sweep - p.sweep)
-			// (only a lone traveller is followed: with others on the move too, a follow of one would drop the rest)
-			const going = tvs.filter((v) => v.sweep >= 1.5 * v.sz)
+			// (only a lone traveller is followed: with others on the move too, a follow of one would drop the rest. With lanes a traveller is a
+			// role, every lane's copy of it, and the follow rides with the copy that goes farthest: the others ride in their own bands at one scale)
+			let going = tvs.filter((v) => v.sweep >= 1.5 * v.sz)
+			if (lanes) {
+				const first = new Map()
+				for (const v of going) if (!first.has(roleOfItem.get(v.x))) first.set(roleOfItem.get(v.x), v) // (the copy that goes farthest)
+				going = [...first.values()]
+			}
 			if (going.length === 1 && going[0].sweep >= 3 * going[0].sz) {
 				const f = followFor({ ...base, intent: "Go with {names}: it stays big while the world slides past.", question: "Can a child see {names} all the way?" }, going[0].x, a, b)
 				if (f && (f.tr.sizeOk || f.tr.minHero > hold.tr.minHero * 1.15)) {
@@ -2394,6 +2401,31 @@ function autoLanes(R, rec, primary) {
 	if (!roles.length) return null
 	for (let i = 0; i < lanes.length; i++)
 		for (const id of lanes[i].items) if (!roles.some((r) => r.per[i] === id) && primary.includes(id)) roles.push({ name: idSafe(typeOf(id), used), per: lanes.map((_, j) => (j === i ? id : null)) })
+	// every other thing of a type that comes once in each lane (a lane's floor and bumper, a ramp's blocks) joins its nearest lane as a role
+	// too: a band then leaves the other lanes' copies out
+	const taken = new Set(roles.flatMap((r) => r.per.filter(Boolean)))
+	const scen = new Set((rec.scenery ?? []).map((x) => x.item))
+	const byType = new Map()
+	for (const id of R.itemIds()) {
+		if (taken.has(id) || scen.has(id) || !R.itemPts(id, null, 0).length) continue
+		const ty = typeOf(id)
+		if (!byType.has(ty)) byType.set(ty, [])
+		byType.get(ty).push(id)
+	}
+	for (const [ty, ids] of byType) {
+		if (ids.length !== lanes.length) continue
+		const per = lanes.map(() => null)
+		const left = ids.map((id) => ({ id, c: centreOf([id]) }))
+		for (let i = 0; i < lanes.length; i++) {
+			let best = -1
+			for (let j = 0; j < left.length; j++) if (left[j] && (best < 0 || Math.hypot(left[j].c[0] - lanes[i].c[0], left[j].c[1] - lanes[i].c[1]) < Math.hypot(left[best].c[0] - lanes[i].c[0], left[best].c[1] - lanes[i].c[1]))) best = j
+			if (best >= 0) {
+				per[i] = left[best].id
+				left[best] = null
+			}
+		}
+		if (per.every(Boolean)) roles.push({ name: idSafe(ty, used), per })
+	}
 	// rows for horizontal action (what moves sweeps wider than tall), columns otherwise
 	const P = []
 	for (const r of roles) for (const id of r.per.filter(Boolean)) for (let k = 0; k <= 10; k++) P.push(...R.itemPts(id, null, (R.dur * k) / 10))

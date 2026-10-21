@@ -8016,6 +8016,8 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			add(itemOf.get(rootSolid(root, ids)), root)
 		}
 		for (const p of run.parts) add(itemOf.get(p.id), p.blob)
+		// (what a module's view plug-in draws for an item it names as its own, userData.item: a lane's legs, a display's pole, a trail)
+		for (const g of run.group.children) if (String(g.name).startsWith("plugin:")) g.traverse((o) => o !== g && typeof o.userData?.item === "string" && add(o.userData.item, o))
 		let report = null
 		return {
 			kind,
