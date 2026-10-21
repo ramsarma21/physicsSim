@@ -119,12 +119,14 @@ def _rotor_inertia(B, r0, R, c0, c1, sheet, dowel=0.0):
     return J, m
 
 
-def _stand_in(c, x, y, J, m, kind):
-    """The rotor's stand-in: a hidden body hinged at (x, y) (its own middle) that touches nothing, whose rotational inertia J (kg*m2) and mass m (kg)
-    are the rotor's: a ball of radius sqrt(2J/m) with inertia 1/2 m r^2."""
-    m = max(m, 1e-5)
-    rs = max(0.005, math.sqrt(2 * J / m))
-    rs = _r(rs)
+STAND_IN_R = 0.02               # m: the stand-in's radius (it touches nothing; only its rotational inertia matters, its weight rests on its hinge)
+
+
+def _stand_in(c, x, y, J, kind):
+    """The rotor's stand-in: a hidden body hinged at (x, y) (its own middle) that touches nothing, whose rotational inertia is the rotor's J (kg*m2):
+    a 2 cm ball with inertia 1/2 m r^2, its mass 2J/r^2 (its weight is the hinge's; a small outline keeps the AI's layout of the scene sane)."""
+    rs = STAND_IN_R
+    m = max(2 * J / (rs * rs), 1e-4)
     dens = m / (4 / 3 * math.pi * rs * rs * rs)
     mat = c.mat(base="turbine plastic", density=float(f"{dens:.6g}"), overrides={})
     return c.ball("hub", rs, x, y, material=mat, kind=kind, look="turbine plastic", words="the rotor's shaft", inertia=0.5, pivot={"x": 0.0, "y": 0.0},
@@ -207,7 +209,7 @@ def _pinwheel():
         # + the straw (6 mm, 13 cm: about 0.5 g) and the bead and pin at the sails' middle (1 g), on the shaft
         J += 0.0005 * 0.003 * 0.003 + 0.001 * 0.005 * 0.005 / 2
         m += 0.0015
-        hub = _stand_in(c, sx, sy, J, m, kind)
+        hub = _stand_in(c, sx, sy, J, kind)
         load = P["load_g"]
         r_spool = P["axle_mm"] / 2000
         # the straw on its skewer: friction mu * r * the weight it carries (the sails, the straw and the cup's pull), on this world's gravity
@@ -285,7 +287,7 @@ def _turbine():
         gen = GENERATORS.get(P["generator"])
         if gen is not None:
             J += gen["J"]
-        hub = _stand_in(c, sx, sy, J, m, kind)
+        hub = _stand_in(c, sx, sy, J, kind)
         load = P["load_g"]
         g = c.settings["gravity"]
         fric = SHAFT_MU * SHAFT_R * (m + load / 1000) * g + (gen["fric"] if gen is not None else 0.0)

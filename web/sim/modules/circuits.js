@@ -1401,9 +1401,23 @@ function aimLit(g, entry, scene, run) {
 		const v = st[id]?.[key]
 		return Array.isArray(v) && v.length ? Number(v[v.length - 1]) : null
 	}
-	const lights = items.filter((i) => i.type === "lamp" || i.type === "flashlight")
-	if (!lights.length) return []
 	const out = []
+	// (a small generator on a turning shaft, the energy module's: turned the wrong way for its leads its + is negative, so an LED wired + to +
+	// stays dark: its leads swapped; turned too slowly for about 2 V: stepped up more)
+	for (const gen of items.filter((i) => i.type === "generator" && typeof i.props?.shaft === "string")) {
+		const v = Number(lastOf(gen.id, "voltage") ?? 0)
+		const leads = gen.props?.leads === "swapped" ? "swapped" : "normal"
+		const swap = v < -0.2 ? [{ kind: "prop", id: gen.id, key: "leads", from: leads, to: leads === "normal" ? "swapped" : "normal" }] : []
+		if (swap.length) out.push({ changes: swap, cost: 1 })
+		const r0 = Number(gen.props?.ratio ?? 1)
+		if (Math.abs(v) > 0.05 && Math.abs(v) < 2)
+			for (const f of [1.5, 2, 3]) {
+				const to = Math.min(20, Math.round(r0 * f * 2) / 2)
+				if (to > r0) out.push({ changes: [{ kind: "prop", id: gen.id, key: "ratio", from: r0, to }, ...swap], cost: 1 + f })
+			}
+	}
+	const lights = items.filter((i) => i.type === "lamp" || i.type === "flashlight")
+	if (!lights.length) return out
 	for (const pv of items.filter((i) => i.type === "solar-panel" && Number(lastOf(i.id, "irradiance") ?? 0) < 1000)) {
 		const x0 = Number(pv.x ?? 0)
 		const L = lights.reduce((b, l) => (Math.abs(Number(l.x ?? 0) - x0) < Math.abs(Number(b.x ?? 0) - x0) ? l : b))
