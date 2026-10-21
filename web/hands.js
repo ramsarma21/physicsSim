@@ -199,10 +199,10 @@ export function makeRig(side = "left") {
 		const B = FINGERS[i + 1]
 		add(root, ell(M.skin, 0.0085, 0.0062, 0.0075, (A.x + B.x) / 2 - 0.0005, -0.0028, (A.z + B.z) / 2))
 	}
-	const wrist = add(root, mesh(taper(0.0168, 0.0168, 0.02), M.skin))
+	const wrist = add(root, mesh(taper(0.0168, 0.0168, 0.02, 32, 10), M.skin))
 	wrist.position.x = -0.004
 	wrist.scale.z = 1.45
-	add(root, ell(M.skin, 0.0172, 0.0166, 0.0242, 0, -0.0005, 0))
+	add(root, ell(M.skin, 0.0162, 0.0158, 0.0228, 0, -0.0005, 0)) // (inside the wrist and the forearm: it only fills the bend between them)
 	for (const [x, z] of [[0.022, 0.02], [0.022, -0.02], [0.046, 0.022], [0.046, -0.022], [0.068, 0.024], [0.068, 0], [0.068, -0.024], [0.044, 0]]) sph(root, x, 0, z, PALM_T / 2, "palm")
 	sph(root, -0.004, 0, 0, 0.02, "wrist")
 	const f = []
@@ -260,8 +260,8 @@ export function makeRig(side = "left") {
 	const arm = new THREE.Group()
 	arm.name = `arm-${side}`
 	arm.scale.setScalar(SIZE)
-	const fore = add(arm, mesh(taper(0.0168, 0.0205, 0.05), M.skin))
-	fore.scale.z = 1.38
+	const fore = add(arm, mesh(taper(0.0163, 0.0205, 0.05, 32, 10), M.skin))
+	fore.scale.z = 1.42
 	const cuff = add(arm, mesh(geo("cuff", () => new THREE.TorusGeometry(ARM_R, 0.0042, 10, 36).rotateY(Math.PI / 2)), M.cuff))
 	cuff.position.x = 0.046
 	cuff.scale.set(1, 1, 1.12)
@@ -399,9 +399,11 @@ function fieldOf(list, pf, boxOf) {
 		for (let i = 0; i < items.length; i++) d = Math.min(d, solidDistance(items[i].s, poses[i], items[i].zh, p))
 		return d
 	}
-	const start = at(list.map(pf))
+	const poses = list.map(pf)
+	const start = at(poses)
 	start.items = items
 	start.at = at
+	start.pose0 = poses
 	return start
 }
 /** Where a ray from o along unit dir first meets the field (sphere tracing), or null within `max` m. */
@@ -784,9 +786,16 @@ function solveHold(grip, from, d, E, move) {
 		// and out to its side faster than it falls (the clearance below keeps it so)
 		rig = makeRig(side > 0 ? "right" : "left") // (the thumb toward the camera)
 		const bottom = hitAlong(d, V(E.cx, E.y0 - 0.3, 0), V(0, 1, 0), 0.6)
-		const B = V(E.cx, bottom === null ? E.y0 : E.y0 - 0.3 + bottom, 0)
+		let B = V(E.cx, bottom === null ? E.y0 : E.y0 - 0.3 + bottom, 0)
 		X = V(side, 0, 0)
 		Y = V(0, -1, 0)
+		const ball = sphereOf(d)
+		if (ball) {
+			// under a ball the palm rolls 20 degrees toward the camera, tangent to it there, so its cupped palm shows
+			const n = V(0, -Math.cos(20 * D2R), Math.sin(20 * D2R))
+			B = ball.c.clone().addScaledVector(n, ball.r)
+			Y = n.clone()
+		}
 		applyPose(rig, POSES.cup)
 		W.copy(B).sub(offsetOf(rig, V(0.046, -PALM_T / 2 - 0.0003, 0), X, Y))
 		A = V(-side * 0.94, -0.22, 0.18)
@@ -843,6 +852,13 @@ function solveHold(grip, from, d, E, move) {
 	A.normalize()
 	const way = (exit ?? [{ dir: A, len: Infinity }]).map((e) => ({ dir: e.dir.clone().normalize(), len: e.len }))
 	return { rig, wrist: W.clone(), X: X.clone(), Y: Y.clone(), armDir: A, exit: way, pace: pace ?? { a: WA, v: WV }, pose: copyPose(rig.pose) }
+}
+/** The field's sphere when it is one ball (not a cylinder): {c, r}, else null. */
+function sphereOf(d) {
+	const it = d.items ?? []
+	if (it.length !== 1 || it[0].s.body.kind !== "ball" || it[0].s.shape === "cylinder") return null
+	const q = d.pose0?.[0]
+	return q ? { c: V(q.x, q.y, 0), r: it[0].s.body.radius } : null
 }
 /** The field's half-depth where it is deepest (the drawn half-depths of its solids). */
 const halfZ = (d) => Math.max(0.001, ...(d.items ?? []).map((i) => i.zh))
@@ -1156,7 +1172,12 @@ function pushRig(p, pf, C) {
 		}
 	}
 	const skin = p.skin
-	const hands = skin === "two hands" ? [{ side: "left", dz: -0.041 * SIZE, dy: 0.022 * SIZE }, { side: "right", dz: 0.041 * SIZE, dy: -0.022 * SIZE }] : [{ side: "left", dz: 0, dy: 0 }]
+	// a ball pushed by open hands: each palm lies flat on it where it touches it (tangent there), a single hand a little toward the camera
+	const ball = target && (skin === "hand" || skin === "two hands") ? sphereOf(target.d) : null
+	const hands =
+		skin === "two hands"
+			? [{ side: "left", dz: -0.041 * SIZE, dy: 0.022 * SIZE }, { side: "right", dz: 0.041 * SIZE, dy: -0.022 * SIZE }]
+			: [{ side: "left", dz: ball ? Math.min(0.04, 0.35 * ball.r) : 0, dy: 0 }]
 	const rigs = []
 	const lay = []
 	const up = V(0, 1, 0)
@@ -1177,8 +1198,8 @@ function pushRig(p, pf, C) {
 			const [c, sn] = k(skin === "finger" ? 14 : 10)
 			A = u0.clone().multiplyScalar(-c).addScaledVector(up, sn)
 		} else {
-			// a flat hand, its palm to the push and leaning 15 degrees into it (round a ball's back), the fingers up; the forearm level behind it
-			// (the wrist bent back 80 degrees, as a hand pushing low is)
+			// a flat hand, its palm to the push, the fingers up: on a ball, tangent to it where it touches; else leaning 15 degrees into the push; the
+			// forearm level behind it (the wrist bent back 80 degrees, as a hand pushing low is)
 			const [c, sn] = k(15)
 			X = u0.clone().multiplyScalar(sn).addScaledVector(up, c)
 			Y = u0.clone().multiplyScalar(-c).addScaledVector(up, sn)
@@ -1188,17 +1209,30 @@ function pushRig(p, pf, C) {
 			A = u0.clone().multiplyScalar(-c2).addScaledVector(up, s2)
 		}
 		A.add(V(0, 0, h.dz * 1.5)).normalize()
-		// a hand beside a ball's middle stands a little ahead of the paddle's face, where the ball's back is at its height and depth
-		let lead = 0
-		if (target && (h.dz || h.dy)) {
+		// where on the thing the hand meets it, as an offset from the paddle's face (which carries it): a hand beside a ball's middle stands where the
+		// ball's back is at its height and depth, a little ahead of the face
+		let off = V(0, h.dy, h.dz)
+		if (ball) {
+			const along = u0.clone()
+			const across = V(0, 0, 1)
+			const side3 = across.clone().cross(along) // (up in the push's frame)
+			const r2 = ball.r * ball.r - h.dy * h.dy - h.dz * h.dz
+			const P = ball.c.clone().addScaledVector(along, -Math.sqrt(Math.max(0, r2))).addScaledVector(side3, h.dy).addScaledVector(across, h.dz)
+			const n = ball.c.clone().sub(P).normalize() // (into the ball)
+			Y = n.clone().negate()
+			X = up.clone().addScaledVector(n, -up.dot(n)).normalize()
+			// (less the air the paddle's face starts with in front of it, so the palm meets the ball when the paddle does)
+			const gap = hitAlong(target.d, face0.clone().addScaledVector(u0, -0.2), u0, 0.5)
+			off = P.sub(face0).addScaledVector(u0, -(gap === null ? 0 : clamp(gap - 0.2, 0, 0.05)))
+		} else if (target && (h.dz || h.dy)) {
 			const o = V(q0.x, q0.y, 0).add(V(0, h.dy, h.dz)).addScaledVector(u0, -0.2)
 			const hit = hitAlong(target.d, o, u0, 0.5)
-			if (hit !== null) lead = clamp(hit - (0.2 + pad.width / 2), 0, 0.03)
+			if (hit !== null) off.addScaledVector(u0, clamp(hit - (0.2 + pad.width / 2), 0, 0.03))
 		}
 		applyPose(rig, pz)
 		const atW = offsetOf(rig, at, X, Y)
 		rigs.push(rig)
-		lay.push({ rig, X, Y, atW, pose: pz, off: V(0, h.dy, h.dz), lead, A })
+		lay.push({ rig, X, Y, atW, pose: pz, off, A })
 	}
 	const reach = Math.max(...lay.map((l) => C.exit(V(q0.x, q0.y, 0), l.A)))
 	for (const r of rigs) setArm(r, clamp(reach + 0.3 + (P.stroke ?? 0.15), 0.45, 3.2))
@@ -1209,7 +1243,7 @@ function pushRig(p, pf, C) {
 		const u = V(Math.cos(pp.angle ?? 0), Math.sin(pp.angle ?? 0), 0)
 		const face = V(pp.x, pp.y, 0).addScaledVector(u, pad.width / 2)
 		for (const l of lay) {
-			W.copy(face).add(l.off).addScaledVector(u, l.lead + 0.0004).sub(l.atW)
+			W.copy(face).add(l.off).addScaledVector(u, 0.0004).sub(l.atW)
 			placeHand(l.rig, W, l.X, l.Y)
 			applyPose(l.rig, l.pose)
 			placeArm(l.rig, l.A)
