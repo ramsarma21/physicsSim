@@ -4347,6 +4347,7 @@ ${GRADE}
 			if (gate && gate.layout(poseOf, track, doc.release?.at ?? 0.5, gateStatics)) {
 				// a starting gate: the pin's post, a boom on its top whose stop touches the item's front; it lifts at the release (gate.at in updateParts)
 				const post = addMesh(group, dowel(POST_R, "post", `post-${id}`), wood)
+				post.castShadow = false // (standing behind the track, its shadow fell on the room's back wall beside the ramp: a ghost of the gate)
 				group.add(gate.root)
 				gates.push(gate)
 				scenery.push(gate.root, post)

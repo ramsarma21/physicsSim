@@ -231,11 +231,14 @@ export function makeGate({ list, addMesh, steel }) {
 		hide() {
 			root.visible = false
 		},
-		/** The arm's swing at the run's time t: shut until the release, then up through LIFT_DEG in LIFT_S (fast at first, easing out). */
+		/** The arm's swing at the run's time t: shut until the release, then up through LIFT_DEG in LIFT_S (fast at first, easing out). Shut, the arm
+		 *  shadows the track it lies across; lifted, it casts none: high over the track its shadow fell on the room's back wall, a grey shape
+		 *  standing apart from everything (a ghost of the gate). */
 		at(t, tRelease) {
 			const s = clamp((t - tRelease) / LIFT_S, 0, 1)
 			const e = 1 - (1 - s) * (1 - s) * (1 - s)
 			root.rotation.z = -side * ((LIFT_DEG * Math.PI) / 180) * e
+			for (const m of meshes) m.castShadow = s <= 0
 		},
 	}
 }
