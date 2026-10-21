@@ -1822,13 +1822,14 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
     copies (the shared ones never change). Scrubbing back before the release shows them again. In the lesson look the pin and post are slim and grey;
   - "hanger": a holder from ABOVE instead of pin and post (`makeHanger`, `HANGER`): a slim rod (not shadow-casting) coming down just behind the item
     (1.5 cm behind it, or behind the deepest static thing over it: a magnet over a clip) and an arm reaching forward over the item's highest point (a
-    slab tilted under 6° is held at its middle), ending in a rubber pad (a suction cup) on its top, for a floater (the run shows it rising once let go;
+    slab tilted under 6° is held at its middle), ending in a rubber pad (a pale suction cup, 3-8 mm in radius: 0.35 x the thing's half-width; a dark disc
+    pressed on a paper clip read as a magnet holding it, the GPT-6.1 judge's FO-13 note) on its top, for a floater (the run shows it rising once let go;
     for a run that ends before its release, its density, a hollow ball's over its whole volume, under the liquid's: `floats`) and for a thing too flat or
-    too wide for jaws (under 6 mm high, over 5 cm wide: a paper clip, a book), or else in two jaws round its top half (a ball, a grape, a block: the
-    jaws reach down to its middle, or 4 cm). Still until the release; then the jaws open 24° in 0.05 s and the holder draws back off the item along the
-    depth in 0.04 s (clear of its depth: a thing that snaps up or flies off passes in front of it) and lifts straight up, at 12 m/s² from 0.02 s, never
-    lower than the item's own top while still over it (a cork that rises at once pushes nothing: the pad goes up ahead of it) and only ever rising (a
-    pure function of t: an export frame is the same in any order); not drawn once 2 m up. Picked as the item while it is held, like the pin;
+    too wide for jaws (under 6 mm high, over 5 cm wide: a paper clip, a book), or else in two jaws round its top half (a ball, a grape, a block: the jaws
+    reach down to its middle, or 4 cm). Still until the release; then the jaws open 24° in 0.05 s and the holder draws back off the item along the depth
+    in 0.04 s (clear of its depth: a thing that snaps up or flies off passes in front of it) and lifts straight up, at 12 m/s² from 0.02 s, never lower
+    than the item's own top while still over it (a cork that rises at once pushes nothing: the pad goes up ahead of it) and only ever rising (a pure
+    function of t: an export frame is the same in any order); not drawn once 2 m up. Picked as the item while it is held, like the pin;
   - "auto": "hanger" when the held part is in a liquid's container or over it (`doc.processes` "liquid", "flow-vessel", "flow-basin": between its x0 and
     x1, below its rim + 15 cm: `overLiquid`), or held up in mid-air (more than 1 cm over the top of the static slab under it, or anything) with room over
     it for the pad and arm (no static thing's underside within 1.2 cm over its top: a magnet 1.5 cm over a clip leaves room, and the holder comes down

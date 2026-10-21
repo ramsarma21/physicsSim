@@ -5,7 +5,7 @@
 //              back 6 cm (RETREAT; short, so a slow-motion clip of the release shows no holder wandering off): nothing is left standing where
 //              the thing was let go (retreatAt).
 //   "hanger"   a holder from ABOVE (makeHanger): a slim rod coming down just behind the thing (behind whatever is over it too: a magnet over a
-//              clip), an arm reaching forward over it, ending in a rubber pad pressing on its top (a floater held under water: the run shows it
+//              clip), an arm reaching forward over it, ending in a pale rubber cup pressing on its top (a floater held under water: the run shows it
 //              rising once let go) or in two jaws round its top half (anything else: an apple over the water, a grape in it, a ball held up). At
 //              the release the jaws open (24 degrees in 0.05 s) and the holder draws back off the thing along the depth (0.04 s), then lifts
 //              straight up at 12 m/s², never lower than the thing's own top while it was over it (a cork that rises at once pushes nothing: the
@@ -151,12 +151,13 @@ let mats = null
 function hangerMats() {
 	mats ??= {
 		rod: new THREE.MeshStandardMaterial({ color: new THREE.Color("#7e848c"), roughness: 0.45, metalness: 0.35 }),
-		pad: new THREE.MeshStandardMaterial({ color: new THREE.Color("#2b2d31"), roughness: 0.85, metalness: 0 }),
+		pad: new THREE.MeshStandardMaterial({ color: new THREE.Color("#c4cad2"), roughness: 0.6, metalness: 0 }), // (a pale rubber cup: a dark disc on a clip reads as a magnet)
 		jaw: new THREE.MeshStandardMaterial({ color: new THREE.Color("#5d636b"), roughness: 0.4, metalness: 0.4 }),
 	}
 	return mats
 }
 const unitRod = new THREE.CylinderGeometry(1, 1, 1, 20, 1)
+const unitCup = new THREE.CylinderGeometry(0.45, 1, 1, 24, 1) // (a suction cup: its neck on the arm, its rim on the thing)
 const unitBox = new THREE.BoxGeometry(1, 1, 1)
 
 /** A holder from above for one held item (list: its held solids, in the doc). addMesh(group, geo, mat, {castShadow}) as the view's. */
@@ -167,7 +168,7 @@ export function makeHanger({ list, addMesh, doc = null }) {
 	root.userData.stand = true
 	const rod = addMesh(root, unitRod, M.rod, { castShadow: false }) // (a 3 m rod's shadow would cross the whole picture)
 	const arm = addMesh(root, unitBox, M.rod, { castShadow: false }) // (from the rod, behind the machine, forward to the holder over the thing)
-	const pad = addMesh(root, unitRod, M.pad)
+	const pad = addMesh(root, unitCup, M.pad)
 	const yoke = addMesh(root, unitBox, M.jaw)
 	const jawL = new THREE.Group()
 	const jawR = new THREE.Group()
@@ -211,8 +212,8 @@ export function makeHanger({ list, addMesh, doc = null }) {
 			const reach = r !== null ? Math.sqrt(Math.max(0, r * r - (r - jaw) * (r - jaw))) : T.hw // the thing's half-width where the jaws end
 			st.hw = Math.max(0.004, reach)
 			st.gap = st.pad ? 0 : 0.002
-			const padR = clamp(0.6 * T.hw, 0.003, 0.012)
-			const padH = 0.004
+			const padR = clamp(0.35 * T.hw, 0.003, 0.008)
+			const padH = 0.005
 			pad.visible = st.pad
 			pad.scale.set(padR, padH, padR)
 			pad.position.set(0, padH / 2, 0)
