@@ -48,6 +48,7 @@ node --no-warnings tools/air/test.mjs   # the air module: machines/mod_air.py ==
 node --no-warnings tools/fracture/test.mjs --n 30   # the fracture module: catalog, random breakable scenes Python == JS, the node engine == the bundle, summaries, and the thresholds it claims in the real engine
 node --no-warnings tools/space/test.mjs --n 30   # the space module: catalog, random orbit and drop scenes Python == JS, the node engine == the bundle, summaries with every goal kind, the AI's registry
 node --no-warnings tools/staging/test.mjs   # the staging module (a fixed camera, starting gates): catalog, doc.view Python == JS, no track changed by it
+node --no-warnings tools/hands/test.mjs   # the hands module (a person's hands, render only): catalog Python == JS, the same documents and tracks with and without hands, the 22 built-in scenes the same with the module and without
 node --no-warnings tools/parity/module.mjs --module circuits --n 12 --mix 60 --engine   # the circuits module through the generic module check: catalog, every type at its defaults and random props with wires linked, mixed circuits with settings, Python == JS; the node engine == the bundle; summaries with every goal kind
 node --test web/ai/test/circuits-plugin.test.mjs   # its goal kinds' summaries Python == JS on real runs, and its AI plug-ins
 node --no-warnings tools/parity/module.mjs --module optics --n 8 --mix 40 --engine   # the optics module: the same generic check

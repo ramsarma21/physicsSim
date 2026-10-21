@@ -1,0 +1,50 @@
+{
+ "version": 2,
+ "id": "mo19-s2-ball-throw",
+ "name": "Hands: MO-19 s2, the ball thrown across, low",
+ "seconds": 3.0,
+ "release": 0.5,
+ "stage": {
+  "x0": -0.6,
+  "x1": 3.0,
+  "y0": -0.1,
+  "y1": 1.6
+ },
+ "items": [
+  {
+   "id": "lawn",
+   "type": "floor",
+   "x": 1.0,
+   "y": 0,
+   "props": {
+    "length": 5.0,
+    "material": "grass",
+    "depth": 4.0
+   }
+  },
+  {
+   "id": "ball",
+   "type": "plastic-ball",
+   "x": 0.0,
+   "y": 0.5,
+   "held": true,
+   "props": {
+    "diameter": 0.16,
+    "color": "red",
+    "start_speed": 2.4,
+    "start_dir": 30,
+    "start_spin": "none",
+    "hand": "auto"
+   }
+  }
+ ],
+ "settings": {
+  "camera": {
+   "x0": -0.24326,
+   "x1": 1.32326,
+   "y": 0.34758,
+   "pitch": 10.0,
+   "hfov": 30.0
+  }
+ }
+}

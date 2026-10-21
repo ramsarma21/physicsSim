@@ -1,0 +1,56 @@
+{
+ "version": 2,
+ "id": "ma25-s9-grape",
+ "name": "Hands: MA-25 s9, grape let go under the water",
+ "stage": {
+  "x0": -0.4,
+  "x1": 0.9,
+  "y0": -0.1,
+  "y1": 0.7
+ },
+ "seconds": 4.0,
+ "release": 0.5,
+ "settings": {
+  "camera": {
+   "x0": -0.06,
+   "x1": 0.56,
+   "y": 0.2,
+   "pitch": 18.0,
+   "hfov": 40.0
+  }
+ },
+ "items": [
+  {
+   "id": "table",
+   "type": "table",
+   "x": 0.25,
+   "y": 0,
+   "props": {
+    "width": 1.5
+   }
+  },
+  {
+   "id": "tank",
+   "type": "water-tank",
+   "x": 0.25,
+   "y": 0,
+   "props": {
+    "style": "aquarium",
+    "length": 0.5,
+    "height": 0.4,
+    "depth": 0.25
+   }
+  },
+  {
+   "id": "grape",
+   "type": "grape",
+   "x": 0.25,
+   "y": 0.2458,
+   "held": true,
+   "props": {
+    "diameter": 0.025,
+    "hand": "auto"
+   }
+  }
+ ]
+}
