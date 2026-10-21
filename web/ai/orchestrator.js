@@ -3076,6 +3076,8 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 	const hard = new Map()
 	const forward = new Map()
 	const add = (m, id, k) => (m.get(id) ?? m.set(id, new Set()).get(id)).add(k)
+	// (the words of a thing's own name and kind: they name the thing, never one of its settings)
+	const ownWords = (it) => `${it?.name ?? ""} ${typeName(it?.type) ?? ""} ${String(it?.type ?? "").replace(/-/g, " ")}`.toLowerCase().split(/[^\p{L}]+/u).filter((w) => w.length >= 3)
 	// (the clauses, and the things each names: what rides on a named thing is named with it)
 	let R = new Map()
 	try {
@@ -3113,7 +3115,7 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 			else if (k === "full") mine && anyC(/\b(full|empty|emptied|filled|fill)\b/i) && add(hard, id, k)
 			else if (k === "material") {
 				// (its own choices too: a charged rod of PVC, a barrier sheet of felt)
-				const pw = propWords(propSpec(it.type, k), k)
+				const pw = propWords(propSpec(it.type, k), k, ownWords(it))
 				if (mine && (anyC(/\b(wood\w*|metal|steel|glass|plastic|rubber|material|made of|paper|cardboard|foam|alumin\w*|ceramic|china|melamine|copper|brass|iron|stone)\b/i) || (pw && anyC(new RegExp(`\\b(?:${pw})\\b`, "i"))))) add(hard, id, k)
 			} else {
 				// (a physics module's setting: the words its module says name it, web/sim/plugins.js keyWords; a setting no word of the core's or a
@@ -3121,7 +3123,7 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 				// switch", "fold the plane as a dart", "set the friction to 0.5")
 				const spec = propSpec(it.type, k)
 				const core = KEY_WORDS.find(([kr]) => kr.test(k))
-				const words = core ? null : [moduleKeyWords(it.type, k), propWords(spec, k)].filter(Boolean).join("|")
+				const words = core ? null : [moduleKeyWords(it.type, k), propWords(spec, k, ownWords(it))].filter(Boolean).join("|")
 				const kw = core ?? (words ? [null, words] : null)
 				if (!mine) continue
 				// (an amount in the setting's own unit, said where the thing is named, that no other setting the edit set shares: "fill the pitcher

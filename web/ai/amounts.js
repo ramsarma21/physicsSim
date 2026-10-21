@@ -83,7 +83,8 @@ export function bareAmount(clause, words, spec) {
 	return after.test(clause) || before.test(clause)
 }
 
-const STOP = new Set(["the", "a", "an", "of", "at", "in", "on", "to", "by", "for", "and", "or", "with", "it", "its", "is", "start", "made", "held", "kind", "set", "shows", "from", "when", "how", "much", "many", "one", "two", "per", "each", "end", "side", "top", "none", "default", "auto", "off"])
+// (and the generic words a label may hold that name nothing of its own: "North on the other side", "Current the other way", "Can", "Add")
+const STOP = new Set(["the", "a", "an", "of", "at", "in", "on", "to", "by", "for", "and", "or", "with", "it", "its", "is", "start", "made", "held", "kind", "set", "shows", "from", "when", "how", "much", "many", "one", "two", "per", "each", "end", "side", "top", "none", "default", "auto", "off", "other", "another", "way", "like", "add", "can", "far", "same", "new", "first", "last", "left", "right", "front", "back", "bottom", "away", "more", "less"])
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 /** A word's own stem, as a regex: "bounciness" -> "bounc\\w*", "padding" -> "pad\\w*", "closed" -> "clos\\w*", "lit" -> "lit". */
 function stemOf(w) {
@@ -112,14 +113,17 @@ const BOOL_WORDS = {
 /**
  * The words that name a setting in a request when no module word does (./orchestrator.js choicesOf), as a regex alternation, or null: the
  * words of its label ("Lit", "Closed at the start", "Design"), its key's, its choices for a pick-from-list ("dart", "glider", "bubble wrap")
- * and an on/off's usual verbs either way ("light", "blow out"; "close", "open"). spec: the prop's catalog spec; key: its key.
+ * and an on/off's usual verbs either way ("light", "blow out"; "close", "open"). spec: the prop's catalog spec; key: its key; own: the words of the
+ * thing's own name and kind, which name the thing, not the setting.
  */
-export function propWords(spec, key) {
+export function propWords(spec, key, own = []) {
 	if (!spec) return null
 	const words = new Set()
+	// (a label word that is the thing's own name is no word for the setting: a drink cup's "Cup", a charged rod's "Rod" name the thing itself)
+	const mine = new Set((Array.isArray(own) ? own : []).map((w) => stemOf(String(w).toLowerCase())))
 	const add = (w) => {
 		const t = String(w ?? "").toLowerCase().trim()
-		if (t.length < 3 || STOP.has(t) || !/^[\p{L}][\p{L}'’-]*$/u.test(t)) return
+		if (t.length < 3 || STOP.has(t) || !/^[\p{L}][\p{L}'’-]*$/u.test(t) || mine.has(stemOf(t))) return
 		words.add(stemOf(t))
 	}
 	for (const w of String(spec.label ?? "").split(/[^\p{L}'’-]+/u)) add(w)

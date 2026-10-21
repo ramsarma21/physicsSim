@@ -61,6 +61,9 @@ test("units are read as what they measure, and an amount holds a setting by its 
 	assert.match(propWords({ label: "Lit", kind: "bool" }, "lit"), /light/)
 	assert.match(propWords({ label: "Closed at the start", kind: "bool" }, "closed"), /open/)
 	assert.match(propWords({ label: "Design", kind: "choice", choices: ["dart", "glider"] }, "design"), /dart/)
+	// (a label word that is the thing's own name names the thing, not the setting; generic words name nothing)
+	assert.equal(propWords({ label: "Cup", kind: "choice", choices: ["foam", "glass"] }, "style", ["drink", "cup"]), "style\\w*|glass|foam")
+	assert.equal(propWords({ label: "North on the other side", kind: "bool" }, "flip"), "north\\w*|flip\\w*")
 })
 
 test("the person's own amount in mL, L, s, rpm, °C, V and Hz is held as theirs (never offered back by a fix)", () => {
@@ -103,6 +106,8 @@ test("a switch or a pick-from-list setting named by its own label, its verbs or 
 		if (!propSpec(item.type, keys[0])) continue
 		assert.deepEqual(said(text, item, keys).hard, keys, text)
 	}
+	// (a setting the AI changed of its own accord on a thing the words only name, "move the drink cup", is not the person's)
+	if (propSpec("drink-cup", "style")) assert.deepEqual(said("Move the drink cup 5 cm left", { id: "dc", type: "drink-cup", name: "Drink cup", x: 0.5, y: 0, props: { style: "glass" } }, ["place", "style"]), { hard: ["place"], forward: [] })
 	// ("put the cap on the deeper bottle": the edit step's own reading names the bottle)
 	if (propSpec("leaky-bottle", "cap")) assert.deepEqual(said("Put the cap on the deeper bottle.", { id: "b", type: "leaky-bottle", name: "Bottle with 20 cm of water", x: 0.5, y: 0, props: { cap: true } }, ["cap"], [{ says: "the deeper bottle", ids: ["b"] }]).hard, ["cap"])
 })
