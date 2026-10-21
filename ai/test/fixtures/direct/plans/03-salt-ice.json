@@ -1,0 +1,317 @@
+{
+	"version": 1,
+	"title": "Salt on one ice cube",
+	"about": "Two equal ice cubes on equal white plates; only the left one has salt. Over an hour the salted cube melts more.",
+	"grade": 3,
+	"source": {
+		"kind": "lesson",
+		"scene": "ft_melt_plates_salt6_plain",
+		"question": "Is this a valid experiment to test salt?",
+		"answer": "Valid. Both cubes are on plates, so the plates are the same. Only the salt is different.",
+		"words": [
+			"We are testing salt.",
+			"Now the cubes sit on white plates."
+		]
+	},
+	"story": [
+		{
+			"id": "pair",
+			"kind": "setup",
+			"says": "Two ice cubes on two white plates.",
+			"evidence": [
+				{
+					"role": "cube"
+				},
+				{
+					"role": "plate"
+				}
+			]
+		},
+		{
+			"id": "salt",
+			"kind": "variable",
+			"says": "Only the left cube has salt on it.",
+			"evidence": [
+				{
+					"item": "left_salt"
+				}
+			]
+		},
+		{
+			"id": "pause",
+			"kind": "pause",
+			"says": "Same cubes, same plates: only the salt differs.",
+			"evidence": [
+				{
+					"role": "cube"
+				},
+				{
+					"role": "plate"
+				},
+				{
+					"item": "left_salt"
+				}
+			]
+		},
+		{
+			"id": "hour",
+			"kind": "action",
+			"says": "An hour goes by.",
+			"evidence": [
+				{
+					"role": "cube"
+				}
+			]
+		},
+		{
+			"id": "result",
+			"kind": "result",
+			"says": "The salted cube is smaller.",
+			"evidence": [
+				{
+					"role": "cube"
+				}
+			]
+		}
+	],
+	"lanes": {
+		"arrange": "columns",
+		"list": [
+			{
+				"id": "salt",
+				"label": "salt",
+				"cast": {
+					"cube": "left_cube",
+					"plate": "left_plate",
+					"salt": "left_salt"
+				}
+			},
+			{
+				"id": "plain",
+				"label": "no salt",
+				"cast": {
+					"cube": "right_cube",
+					"plate": "right_plate"
+				}
+			}
+		]
+	},
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "pair",
+			"beat": "pair",
+			"layout": "split",
+			"intent": "Each plate fills its own half of the picture, at one scale, from only a little above, so each clear cube stands against the backdrop: the two setups read as a matching pair, and the plates are big.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.2
+			},
+			"move": "hold",
+			"subject": {
+				"role": "cube"
+			},
+			"keep": [
+				{
+					"role": "plate"
+				},
+				{
+					"role": "salt"
+				}
+			],
+			"frame": {
+				"fit": "tight"
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 20
+			},
+			"lens": 50,
+			"audit": {
+				"question": "Can a child see one ice cube on a white plate in each picture, the two alike?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "cube"
+					},
+					{
+						"role": "plate"
+					}
+				]
+			}
+		},
+		{
+			"id": "salt",
+			"beat": "salt",
+			"layout": "single",
+			"in": "cut",
+			"intent": "Cut close to the one difference: the salt pile on the left cube, near enough to see it sitting on the ice.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.2
+			},
+			"move": "hold",
+			"subject": {
+				"item": "left_salt"
+			},
+			"keep": [
+				{
+					"item": "left_cube"
+				}
+			],
+			"frame": {
+				"size": 0.5
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 30
+			},
+			"lens": 85,
+			"audit": {
+				"question": "Can a child see the pile of salt on top of the left cube?",
+				"key": "middle",
+				"must_see": [
+					{
+						"item": "left_salt"
+					}
+				]
+			}
+		},
+		{
+			"id": "back",
+			"beat": "pause",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Cut back to the pair for the question, labelled: the child now knows where to look for the difference.",
+			"run": {
+				"freeze": "start",
+				"seconds": 3.0
+			},
+			"move": "hold",
+			"subject": {
+				"role": "cube"
+			},
+			"keep": [
+				{
+					"role": "plate"
+				},
+				{
+					"role": "salt"
+				}
+			],
+			"frame": {
+				"fit": "tight"
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 20
+			},
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "plate"
+					},
+					"text": "{label}",
+					"at": "below"
+				}
+			],
+			"audit": {
+				"question": "Can a child see that both cubes sit on the same white plates and only the left cube has salt?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "cube"
+					},
+					{
+						"role": "plate"
+					}
+				],
+				"details": [
+					{
+						"item": "left_salt"
+					}
+				]
+			}
+		},
+		{
+			"id": "hour",
+			"beat": "hour",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Cut low, nearly level with the plates, so each clear cube stands against the backdrop instead of the white plate, and lock the camera while an hour passes in three seconds.",
+			"run": {
+				"from": "start",
+				"to": "end"
+			},
+			"move": "hold",
+			"subject": {
+				"role": "cube"
+			},
+			"label": "Time-lapse: 1 hour in 3 seconds",
+			"frame": {
+				"size": 0.5
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 9
+			},
+			"lens": 85,
+			"audit": {
+				"question": "Can a child see both cubes get smaller while the pictures stay still?",
+				"key": "end",
+				"details": [
+					{
+						"role": "cube"
+					}
+				]
+			}
+		},
+		{
+			"id": "smaller",
+			"beat": "result",
+			"layout": "split",
+			"in": "continue",
+			"intent": "From the same low side, ease in on what is left of the two cubes, whole and side by side at one scale, so their sizes compare.",
+			"run": {
+				"freeze": "end",
+				"seconds": 3.6,
+				"hold_after": 1.4
+			},
+			"move": "push",
+			"ease": "gentle",
+			"subject": {
+				"role": "cube"
+			},
+			"end": {
+				"subject": {
+					"role": "cube"
+				},
+				"frame": {
+					"size": 0.5
+				},
+				"view": {
+					"yaw": 0,
+					"pitch": 9
+				},
+				"lens": 85
+			},
+			"audit": {
+				"question": "Can a child see that the salted cube is smaller than the plain cube?",
+				"key": "end",
+				"details": [
+					{
+						"role": "cube"
+					}
+				]
+			}
+		}
+	],
+	"notes": "The lesson's segment ends at shot 'back' (the setup pause): the melt is not what the question asks, and nothing plays after a question. Shots 'hour' and 'smaller' are the stand-alone video of the same run. The plates are 0.37 m apart and each 0.16 m across, so one picture of both leaves each plate small; split columns at one scale let each plate fill half the frame (the video-gen original fills its frame with the two plates). The salt dissolves within the first 0.22 s of the run (4 lesson minutes), so it can only be shown on the held start."
+}

@@ -1,0 +1,299 @@
+{
+	"version": 1,
+	"title": "Same 10 m, fewer seconds",
+	"about": "Two toy cars race 10 m; the red car's stopwatch stops at fewer seconds, so the red car is faster.",
+	"grade": 3,
+	"source": {
+		"kind": "lesson",
+		"scene": "mo37-lanes",
+		"question": "Is the red car faster?",
+		"answer": "Yes. Same 10 meters, and red took fewer seconds.",
+		"words": [
+			"Red: 10 meters in 3 seconds. Blue: 10 meters in 4 seconds."
+		]
+	},
+	"story": [
+		{
+			"id": "start",
+			"kind": "setup",
+			"says": "Two cars wait at the start of two 10 m lanes.",
+			"evidence": [
+				{
+					"role": "car"
+				},
+				{
+					"mark": "lane",
+					"m": 0
+				}
+			]
+		},
+		{
+			"id": "race",
+			"kind": "action",
+			"says": "They race: red pulls ahead, blue falls behind.",
+			"evidence": [
+				{
+					"role": "car",
+					"lane": "red"
+				}
+			]
+		},
+		{
+			"id": "finish",
+			"kind": "key",
+			"says": "Red reaches 10 m first; then blue.",
+			"evidence": [
+				{
+					"role": "car"
+				},
+				{
+					"mark": "lane",
+					"m": 10
+				}
+			]
+		},
+		{
+			"id": "watches",
+			"kind": "pause",
+			"says": "Red's stopwatch shows fewer seconds than blue's.",
+			"evidence": [
+				{
+					"role": "watch"
+				}
+			]
+		}
+	],
+	"lanes": {
+		"arrange": "rows",
+		"list": [
+			{
+				"id": "red",
+				"label": "Red car",
+				"cast": {
+					"car": "red",
+					"lane": "lane-top",
+					"watch": "sw-red"
+				}
+			},
+			{
+				"id": "blue",
+				"label": "Blue car",
+				"cast": {
+					"car": "blue",
+					"lane": "lane-bottom",
+					"watch": "sw-blue"
+				}
+			}
+		]
+	},
+	"look": {
+		"backdrop": "studio",
+		"tone": "mid",
+		"ground": "sweep",
+		"light": "subject"
+	},
+	"shots": [
+		{
+			"id": "start",
+			"beat": "start",
+			"layout": "split",
+			"intent": "Each lane in its own band at one scale, the cars big at the 0 m line, room ahead of them for where they will go; each band says whose lane it is.",
+			"run": {
+				"freeze": "start",
+				"seconds": 2.0
+			},
+			"move": "hold",
+			"subject": {
+				"role": "car"
+			},
+			"keep": [
+				{
+					"mark": "lane",
+					"m": 0
+				}
+			],
+			"frame": {
+				"width": 1.0
+			},
+			"place": "left-third",
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "car"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "Can a child see both cars at the 0 m line, one in each lane?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "car"
+					}
+				]
+			}
+		},
+		{
+			"id": "race",
+			"beat": "race",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Ride beside the red car, one camera for both bands: red stays big while blue drops back and slides out of its band, and the metre cards stream past, until red crosses 10 m.",
+			"run": {
+				"from": {
+					"at": "release",
+					"plus": -0.1
+				},
+				"to": {
+					"at": "reading:sw-red.running:settles",
+					"plus": 0.1
+				}
+			},
+			"move": "follow",
+			"subject": {
+				"role": "car",
+				"lane": "red"
+			},
+			"frame": {
+				"width": 2.4
+			},
+			"view": {
+				"yaw": 0,
+				"pitch": 10
+			},
+			"lens": 50,
+			"follow": {
+				"axis": "x",
+				"lead": 0.12
+			},
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "car"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "When red crosses the 10 m card, is the blue car still far behind (not yet in its picture)?",
+				"key": "end",
+				"must_see": [
+					{
+						"role": "car",
+						"lane": "red"
+					}
+				]
+			}
+		},
+		{
+			"id": "finish",
+			"beat": "finish",
+			"layout": "split",
+			"in": "cut",
+			"intent": "Cut closer to the finish, still: red is already there and stops; blue arrives into its band a second later.",
+			"run": {
+				"from": {
+					"at": "reading:sw-red.running:settles",
+					"plus": 0.1
+				},
+				"to": {
+					"at": "reading:sw-blue.running:settles",
+					"plus": 0.6
+				}
+			},
+			"move": "hold",
+			"subject": {
+				"mark": "lane",
+				"m": 10,
+				"pad": 0.3
+			},
+			"keep": [
+				{
+					"role": "car",
+					"when": {
+						"at": "reading:sw-blue.running:settles",
+						"plus": 0.6
+					}
+				}
+			],
+			"frame": {
+				"width": 1.4
+			},
+			"place": "left-third",
+			"view": {
+				"yaw": 0,
+				"pitch": 10
+			},
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "car"
+					},
+					"text": "{label}"
+				}
+			],
+			"audit": {
+				"question": "Can a child see the red car already stopped at the finish while the blue car is still on its way, and then the blue car arrive?",
+				"key": "end",
+				"must_see": [
+					{
+						"role": "car"
+					}
+				]
+			}
+		},
+		{
+			"id": "watches",
+			"beat": "watches",
+			"layout": "split",
+			"arrange": "columns",
+			"align": "watch",
+			"in": "cut",
+			"intent": "Cut to the two stopwatch faces side by side, each filling its half, labelled below: the readings are the answer, so they are big and still.",
+			"run": {
+				"freeze": {
+					"at": "reading:sw-blue.running:settles",
+					"plus": 0.6
+				},
+				"seconds": 3.8
+			},
+			"move": "hold",
+			"subject": {
+				"role": "watch"
+			},
+			"frame": {
+				"fit": "snug"
+			},
+			"view": "eye",
+			"lens": 50,
+			"annotate": [
+				{
+					"kind": "label",
+					"on": {
+						"role": "watch"
+					},
+					"text": "{label}",
+					"at": "below"
+				}
+			],
+			"audit": {
+				"question": "Can a Grade 3 child read both stopwatches, and see that red's shows fewer seconds?",
+				"key": "middle",
+				"must_see": [
+					{
+						"role": "watch"
+					}
+				],
+				"min_size": 0.15
+			}
+		}
+	],
+	"notes": "The cars are 0.2 m long on a 10 m track: a ride-along keeps them readable only on a frame about 2.4 m wide, and at red's 3.4 m/s the background slides 1.4 widths a second: allowed for a follow whose subject stays steady in the picture (the eye rides the car), not for a free pan. In this demo scene both cars draw blue (the 'red' car has no colour prop): the lane labels name them, and the colour goes back to the scene's author."
+}

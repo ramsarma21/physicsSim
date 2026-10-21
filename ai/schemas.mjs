@@ -6,7 +6,8 @@
 //   const r = validate("plan", value, { catalog: cat.index, stage })
 //   r.ok, r.errors (plain sentences with a path, for the repair prompt), r.warnings (small fixes made), r.value (the normalised copy)
 //
-// Steps: "observe" (observation), "plan", "refine" (critique + patches to the plan), "edit" (patches or a whole new plan).
+// Steps: "observe" (observation), "plan", "refine" (critique + patches to the plan), "edit" (patches or a whole new plan), "direct" (the
+// director's shot plan: ai/shot-plan.mjs, against the run's timeline digest in ctx.digest).
 // Patch ops (refine and edit): move, set_props, add, remove, replace_type, set_place, set_item, set_scene, set_goals, set_tune, set_stages;
 // move and set_props may name several items at once with `ids` (expanded here into one patch per item, so a client applies them as single
 // patches). Plans of a chain may list `stages` (2026-10-15, round 2): each stage's expectation (`does`), its own check (a goal: in, falls,
@@ -20,6 +21,7 @@
 // goals' results in the run being judged, from ai/goals.mjs checkGoals: a failing goal caps the score and keeps done false).
 import { GOAL_KINDS, allGoalKinds, goalItems, goalKind, goalLabel, moduleGoal, moduleGoalProblem } from "./goals.mjs"
 import { clashText, goalClash, statesNewOutcome } from "./edit-outcome.mjs"
+import { validateShotPlan } from "./shot-plan.mjs"
 
 export const RESERVED_IDS = ["table", "air"]
 export const GOAL_CONTAINERS = ["box", "cup", "bucket", "basket"]
@@ -2117,7 +2119,8 @@ function outcomeGoalSoft(v, ctx) {
 }
 
 // ---------------------------------------------------------------- per step
-export const VALIDATORS = { observe: validateObservation, plan: validatePlan, refine: validateRefine, rate: validateRate, edit: validateEdit }
+// direct: the director's shot plan (ai/shot-plan.schema.json), resolved against ctx.digest (the run's timeline digest: ai/shot-plan.mjs)
+export const VALIDATORS = { observe: validateObservation, plan: validatePlan, refine: validateRefine, rate: validateRate, edit: validateEdit, direct: validateShotPlan }
 export function validate(step, value, ctx) {
 	const f = VALIDATORS[step]
 	if (!f) throw new Error(`no validator for step ${step}`)
