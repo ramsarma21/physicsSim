@@ -232,20 +232,23 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 		const spoutL = Math.min(0.03, Math.max(0.01, height * 0.15))
 		const prof = [[rOut + wallT, -spoutL], [rOut + wallT, 0], [R + wallT, coneH], [R + wallT + 0.004, coneH + 0.003], [R, coneH + 0.003], [R - 0.0005, coneH], [rOut, 0.0008], [rOut, -spoutL]]
 		g.add(put(mesh(kit.lathe(prof, 64, `gr-funnel|${f5(R)}|${f5(rOut)}|${f5(coneH)}|${f5(spoutL)}`), fm, { cast: true }), 0, tip, 0))
-		// the ring stand: a foot plate behind and to the left, a rod, a ring round the cone
+		// the ring stand: a foot plate behind and to the left, a rod, a ring round the cone (machinery: the lesson look leaves it out, web/lesson-look.js)
 		const steel = kit.steel()
 		const foot = -h / 2 - height
 		const rodX = -(R + 0.06)
 		const rodZ = -0.02
-		g.add(put(mesh(kit.box(0.14, 0.012, 0.1, 0.003), kit.metal("#2f3338", { roughness: 0.5, key: "granular-foot" })), rodX, foot + 0.006, rodZ - 0.01))
+		const stand = kit.group()
+		stand.userData.machinery = true
+		g.add(stand)
+		stand.add(put(mesh(kit.box(0.14, 0.012, 0.1, 0.003), kit.metal("#2f3338", { roughness: 0.5, key: "granular-foot" })), rodX, foot + 0.006, rodZ - 0.01))
 		const rodH = height + coneH + 0.08
-		g.add(put(mesh(kit.cylinderY(0.006, rodH, 24), steel), rodX, foot + rodH / 2, rodZ))
+		stand.add(put(mesh(kit.cylinderY(0.006, rodH, 24), steel), rodX, foot + rodH / 2, rodZ))
 		const ringY = tip + coneH * 0.62
 		const ringR = rOut + (R - rOut) * 0.62 + 0.004
 		const ring = mesh(kit.torus(ringR, 0.003, 12, 64), steel)
-		g.add(put(ring, 0, ringY, 0, Math.PI / 2))
-		g.add(put(mesh(kit.box(Math.abs(rodX) - ringR, 0.006, 0.008, 0.002), steel), (rodX - ringR) / 2, ringY, rodZ / 2))
-		g.add(put(mesh(kit.cylinderY(0.011, 0.02, 16), kit.metal("#4a4f55", { roughness: 0.4, key: "granular-clamp" })), rodX, ringY, rodZ))
+		stand.add(put(ring, 0, ringY, 0, Math.PI / 2))
+		stand.add(put(mesh(kit.box(Math.abs(rodX) - ringR, 0.006, 0.008, 0.002), steel), (rodX - ringR) / 2, ringY, rodZ / 2))
+		stand.add(put(mesh(kit.cylinderY(0.011, 0.02, 16), kit.metal("#4a4f55", { roughness: 0.4, key: "granular-clamp" })), rodX, ringY, rodZ))
 		// its grains as they start: a level fill of the cone
 		const grain = P.grain ?? "sand"
 		const wet = P.wetness ?? "dry"

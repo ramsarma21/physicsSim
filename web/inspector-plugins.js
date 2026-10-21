@@ -106,6 +106,53 @@ const CAMERA_FIELDS = [
 	["hfov", "Camera lens", "° across", 5, 120, 1, 69.39, "Its field of view across the picture (69.4°: a phone's 26 mm lens; less is a longer lens, further away)"],
 ]
 const CAMERA_SPAN = [0.1, 300]
+/** The look rows (the staging module's settings.style, backdrop, release_stand: machines/mod_staging.py, web/lesson-look.js, web/release-stand.js):
+ *  Look (Real / Lesson), its Backdrop (Auto, or a colour) while it is Lesson, and Release (what holds a held thing until the release). A value
+ *  left at its default is not stored. put(key, value | undefined) stores one; returns {update(settings)}. */
+const LOOK_CHOICES = [["", "Real", "The real room, the varnished table, the room's light"], ["lesson", "Lesson", "A plain backdrop and table, soft short shadows, clear water, no stands: reads like a lesson picture (the same run)"]]
+const BACKDROP_CHOICES = [["", "Auto"], ["#eef2f5", "Pale"], ["#f5efe2", "Cream"], ["#dcebf5", "Sky blue"], ["#7d93a7", "Blue-grey"]]
+const RELEASE_CHOICES = [["", "As the look says", "Real: the pin on its post. Lesson: from above in or over water, else the pin and post go"], ["post", "Pin on a post", "The pull pin slides out; its post stays"], ["hidden", "Pin and post go", "They fade out once the thing is let go"], ["hanger", "Holder from above", "A rod from above holds it (a pad on a floater, jaws on anything else) and lifts away"], ["auto", "Lesson's choice", "From above in or over water, else the pin and post go"]]
+function lookRows(sceneRow, put) {
+	const sel = (label, choices, key, tipAll) => {
+		const s = h("select", "num insp-look")
+		s.setAttribute("aria-label", label)
+		s.title = tipAll
+		for (const [v, t, tip] of choices) {
+			const o = h("option")
+			o.value = v
+			o.textContent = t
+			if (tip) o.title = tip
+			s.append(o)
+		}
+		s.addEventListener("change", () => put(key, s.value === "" ? undefined : s.value))
+		return s
+	}
+	const style = sel("Look", LOOK_CHOICES, "style", "Real: the room as filmed. Lesson: plain and high-contrast, like a lesson picture; the run is the same")
+	const backdrop = sel("Backdrop", BACKDROP_CHOICES, "backdrop", "The lesson look's backdrop: Auto picks a pale one, or a blue-grey behind pale things")
+	const release = sel("Release", RELEASE_CHOICES, "release_stand", "What holds a held thing until the release (render only: the engine holds it exactly still either way)")
+	sceneRow("Look", style)
+	sceneRow("Backdrop", backdrop)
+	sceneRow("Release", release)
+	const backdropRow = backdrop.closest(".field")
+	return {
+		update(cur) {
+			const st = cur.style === "lesson" ? "lesson" : ""
+			if (style.value !== st) style.value = st
+			const bd = typeof cur.backdrop === "string" && cur.backdrop !== "auto" ? cur.backdrop.toLowerCase() : ""
+			if (bd && ![...backdrop.options].some((o) => o.value === bd)) {
+				const o = h("option")
+				o.value = bd
+				o.textContent = `${bd} (its own colour)`
+				backdrop.append(o)
+			}
+			if (backdrop.value !== bd) backdrop.value = bd
+			if (backdropRow) backdropRow.hidden = st !== "lesson"
+			const rs = typeof cur.release_stand === "string" ? cur.release_stand : ""
+			if (release.value !== rs) release.value = rs
+		},
+	}
+}
+
 /** A fixed camera to start from: what the scene's items stand over (their x, 0.75 m more each side, at least 2 m), the Wide shot's lens and tilt. */
 function cameraFor(scene) {
 	const xs = (scene?.items ?? []).map((i) => i?.x).filter((x) => typeof x === "number" && Number.isFinite(x))
@@ -230,9 +277,11 @@ export function settingsRows(sceneRow, onScene) {
 		sceneRow(label, box, unit)
 		return { key, box, def, row: box.closest(".field") }
 	})
+	const look = lookRows(sceneRow, put)
 	const update = (scene) => {
 		scn = scene ?? null
 		cur = scene?.settings && typeof scene.settings === "object" ? { ...scene.settings } : {}
+		look.update(cur)
 		const cam = cur.camera && typeof cur.camera === "object" ? cur.camera : null
 		if (camMode.value !== (cam ? "fixed" : "")) camMode.value = cam ? "fixed" : ""
 		for (const b of camBoxes) {

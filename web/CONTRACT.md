@@ -1758,6 +1758,98 @@ and the server: the same bytes). Files: `machines/mod_staging.py` and its port `
 - **Tests**: `node tools/staging/test.mjs [--server <port>]` (catalog entries Python == JS, documents and errors alike, tracks unchanged with and without
   doc.view on the bundle and the server, the AI registry, digest and schema).
 
+## The lesson look, release stands and painted lines (engine6 "look", 2026-10-20): web/lesson-look.js, web/release-stand.js, web/lesson-outline.js
+
+Render only: nothing here changes a body, a contact or a track (`tools/staging/test.mjs`: a scene with the lesson look and a hanger runs to the same
+bytes as without, on the bundle and the server). For a lesson picture that reads like the flat EduLLM pictures and is still the real 3D run.
+- **Scene settings** (the staging module, machines/mod_staging.py `look_of` and its port web/sim/modules/staging.js: the same documents, the same
+  words): `settings.style` "lesson" | "real" (default; writes nothing), `settings.backdrop` "auto" | "#rrggbb" (kept lower-case), `settings.release_stand`
+  "post" | "hidden" | "hanger" | "auto" → `doc.view.style` ("lesson" only), `doc.view.backdrop`, `doc.view.release_stand`. Written only when set, so every
+  other scene builds the very document it did before (`style: "real"` and nulls included). Refused (HTTP 400, both sides): `settings.style must be
+  "lesson" or "real"`, `settings.backdrop must be "auto" or a colour #rrggbb`, `settings.release_stand must be one of post, hidden, hanger, auto`.
+  `ai/schemas.mjs` settings take the three (a scene that has them keeps them through an AI edit). The inspector's Scene settings list **Look** (Real,
+  Lesson), **Backdrop** (while Lesson: Auto, Pale, Cream, Sky blue, Blue-grey, or the scene's own hex) and **Release** (web/inspector-plugins.js `lookRows`).
+- **The view**: `view.setOptions({style: "lesson" | "real" | null, backdrop: "#rrggbb" | "auto" | null, releaseStand: ... | null, outline: false | null})`
+  overrides what the scene says (null or "scene": as the scene says); a change of what is drawn builds the run again (a new `runId`). The look is in the
+  layout signature too, so a scene switched to Lesson in the inspector is built anew. `exportInfo().style` = `{name, backdrop, table, releaseStand,
+  outline, why}` (the colours in effect: pass the first screen's backdrop to every screen of a lesson, so the backdrop is never a change). The export
+  draws the look the view shows; `renderFrame` takes no style of its own.
+- **What the lesson look draws** (web/lesson-look.js `styleOf`, `LESSON_*`; hooks in web/view3d.js `applyEnvironment`, `buildRun`, `lessonDraw`):
+  - the room (wall, shell, floor, cabinet) left out; `scene.background` the backdrop colour, unlit and exact (the backdrop's hex is the picture's bytes;
+    nothing casts a shadow on it). `backdrop: "auto"` (`pickBackdrop`): `#eef2f5` pale, or `#7d93a7` blue-grey when over half the side-view area of the
+    moving things (dynamic solids, not see-through, metals never counted pale) is pale (luminance over 0.55: white, cream). Module liquids and grains
+    are not solids: a scene of white milk or sugar names its backdrop. The table: `#d9caae` (pale) or `#a48d6c` (mid; and with a named backdrop darker
+    than luminance 0.45);
+  - the tabletop (a catalog `table`, or a grained-wood floor) one matte colour, no grain, no varnish, no planar mirror (skipped, canvas and export); a
+    floor of another stuff (grass, carpet, ice) keeps its own look;
+  - light (`LESSON_LIGHT`): key 3.1 from 60° up and in front ((-0.6, 3.8, 1.9) m from the table's middle: a shadow half as long as its thing is high),
+    its shadow map at most 1024 (soft edges), shadows at 0.4 of full (`light.shadow.intensity`; the contact shades unchanged), fill 1.05 (white sky, the
+    table's colour below), environment 0.75. A static part held more than 5 cm up (a funnel, a tap, a fixed magnet: `run.lessonNoShadow`) casts no
+    shadow: one out of the picture laid a band across the table. A module's own world (space) wins over the lesson's room;
+  - liquids (`lessonLiquid`: a lit, alpha-blended volume with no depth write that a model marks `userData.liquid`, or whose kit material key is the
+    liquids' or pouring modules' liquid: `material.userData.kitKey`, which web/models3d.js `kit.mat` now records) drawn both sides, the far side at
+    max(opacity, 0.6) and the near side at 0.45 × opacity (at least 0.12), tone-mapped by their brightest channel (the paints' path: the water stays
+    blue); one as opaque as 0.75 or more (honey, oil, a dyed or milky liquid) as it is. So a thing in the water shows in its own colours with its
+    waterline visible, and the water reads as water. The vessels' faint glass panes at 0.6 × their opacity, less glossy; real (transmissive) glass, a
+    jar's, with at most 0.55 of the room's light in it and its tint over at least 30 cm (`lessonGlass`: what is inside shows); the pouring module's
+    streams, drops and the liquid drawn solid in a glass jar keep their colour (the paints' path) with a softer gloss, and the streams and drops are
+    opaque (three.js's transmission pass draws only opaque things: a see-through stream vanished behind a jar's wall);
+  - no machinery: a model part (any Object3D) marked `userData.machinery = true` is not drawn (now: the sand funnel's ring stand, web/models/mod-granular.js);
+  - mounts (the view's supports of a static part in mid-air): a post or a wall bracket is a **hanger** instead, a slim grey rod from 3 m above down to
+    a small collar on the part's top (`mountHanger`; two near the ends of a bar wider than 26 cm), not in the shot's framing, casting no shadow;
+  - the pull pin and its post slim and plain (a 10 mm grey rod, a 6 mm pin: `lessonPost`);
+  - **outlines** (web/lesson-outline.js `OUTLINE`; on unless `setOptions({outline: false})`): lines 1/400 of the picture's height wide (2.7 px at 1080p,
+    at least 1 px), drawn only by changing pixels already there, on the inside of a silhouette (no shape grows or moves): just inside every thing, its
+    own colour × 0.45 (a darker shade); round a see-through vessel (glass, a tank's panes, ice), 1.6 × as wide, tinted 0.85 toward `#3d6584`; and on a liquid's side,
+    tinted 0.65 toward `#2c6ea8`, where its front meets its surface (one waterline across the vessel, as the flat pictures draw it; the ID pass tells
+    a liquid's up-looking faces apart) and where it covers part of a thing (pass A has that thing behind it there: the waterline round a floating
+    thing), never round its own outline against what is behind it. ID passes draw
+    every mesh in a flat colour per item (a holder or a stand its own; the tabletop or floor and the room are the background) into targets twice the
+    picture's size each way: A the opaque things only (what is in a glass tank gets its line), B the same and the vessels, C the same and the liquids
+    (apart: a tank's front pane would hide its water's surface). Left out of all: contact shades, labels, glows (unlit see-through), streams, drops and
+    puddles, shadow-only proxies (no colour written: a glass tank's faint shadow box), instanced clouds (grains, drops, a chain's links: no line round
+    each grain) and parts shaped in their vertex shader (springs, ropes). A
+    composite pass weighs each pixel by the share of its sub-pixels within the width of another thing: anti-aliased. Export frames outline each
+    (sub-)frame after its main pass (with motion blur, before the frames are summed); the canvas draws its picture into a 4× MSAA target of its own,
+    outlines it with one sub-pixel and copies it out (so its lesson picture can differ from the export's in the lines' anti-aliasing); on the low tier
+    the canvas draws no outlines (a slow machine's frame; the export, always high, has them). Measured (1920 × 1080 export, MA-25's tank, Apple M5
+    Pro under load): 9.1 ms a frame in the real look, 11.0 in the lesson look without outlines, 10.8 (p90 18) with them.
+- **Release stands** (web/release-stand.js; `doc.view.release_stand`, the view's `releaseStand`; default "post" in the real look, "auto" in the lesson
+  look). For a held item (`held: true`) without a starting gate:
+  - "post": the pull pin on its post, as before (the pin slides out at the release, the post stays);
+  - "hidden": the same until the release; then, once the pin is out (release + 0.06 s), the pin and post fade out in 0.12 s while drawing back 6 cm
+    (`RETREAT`; short, so a slow-motion clip shows no holder wandering off), then are not drawn; their contact shade fades with them. Their materials are
+    copies (the shared ones never change). Scrubbing back before the release shows them again. In the lesson look the pin and post are slim and grey;
+  - "hanger": a holder from ABOVE instead of pin and post (`makeHanger`, `HANGER`): a slim rod (not shadow-casting) coming down just behind the item
+    (1.5 cm behind it, or behind the deepest static thing over it: a magnet over a clip) and an arm reaching forward over the item's highest point (a
+    slab tilted under 6° is held at its middle), ending in a rubber pad (a pale suction cup, 3-8 mm in radius: 0.35 x the thing's half-width; a dark disc
+    pressed on a paper clip read as a magnet holding it, the GPT-6.1 judge's FO-13 note) on its top, for a floater (the run shows it rising once let go;
+    for a run that ends before its release, its density, a hollow ball's over its whole volume, under the liquid's: `floats`) and for a thing too flat or
+    too wide for jaws (under 6 mm high, over 5 cm wide: a paper clip, a book), or else in two jaws round its top half (a ball, a grape, a block: the jaws
+    reach down to its middle, or 4 cm). Still until the release; then the jaws open 24° in 0.05 s and the holder draws back off the item along the depth
+    in 0.04 s (clear of its depth: a thing that snaps up or flies off passes in front of it) and lifts straight up, at 12 m/s² from 0.02 s, never lower
+    than the item's own top while still over it (a cork that rises at once pushes nothing: the pad goes up ahead of it) and only ever rising (a pure
+    function of t: an export frame is the same in any order); not drawn once 2 m up. Picked as the item while it is held, like the pin;
+  - "auto": "hanger" when the held part is in a liquid's container or over it (`doc.processes` "liquid", "flow-vessel", "flow-basin": between its x0 and
+    x1, below its rim + 15 cm: `overLiquid`), or held up in mid-air (more than 1 cm over the top of the static slab under it, or anything) with room over
+    it for the pad and arm (no static thing's underside within 1.2 cm over its top: a magnet 1.5 cm over a clip leaves room, and the holder comes down
+    behind it); else "hidden" (a thing that rests on something, a car at the top of a ramp). Decided per held item when the run is built, so per scene:
+    a lesson whose screens could differ in it names one release stand for all of them (`settings.release_stand`).
+  The export's motion blur takes sub-frames while a hidden post fades or a hanger lifts (as for a gate).
+- **Painted lines on any floor** (both looks): the measure module's start and finish lines (web/models/mod-measure.js: their builders say `build.paint =
+  true`) are drawn ON the top face of the highest static slab under the line's middle, from 10 cm below where the line's top is meant to be to 1 cm
+  above it, turned with that face (web/view3d.js `paintOn`; the table, a `floor` of any stuff, a lane, a plank), and their paint lies 1.4 to 2.4 mm above
+  that face (clear of the 1 mm the view grows every surface by; polygon offset too). Before, a line placed flush with a `floor` (or the table) was hidden
+  in it, and its contact shade showed as a dark smudge where it lay; a painted line now casts no contact shade. The line's x (what the stopwatches and
+  `crosses` goals read) is the item's own, unchanged.
+- Not changed in the real look: every scene draws as it did (the 12 scenarios and 10 gallery scenes, export frames wide and director at 0, 1.5 and
+  3.5 s with the table's mirror: byte for byte against origin/integrate/engine-waves, but car-ramp-dominoes at 0 s, 1 pixel by 1 level, which two
+  pages of the baseline also differ by); the only changes are the painted lines above.
+- **Tests**: `node --test tools/staging/look.test.mjs` (the view's decisions: which look, the backdrop and table, auto stands, pad or jaws, the holder's
+  and the fade's timing); `node tools/staging/test.mjs [--server <port>]` (documents Python == JS, errors alike, tracks unchanged).
+- **The five benchmark lessons** (lesson-regen/bench, MA-25, FO-13, MO-19, FO-36, MA-50): the same runs drawn in both looks, side by side with the
+  current EduLLM pictures, as sheets and clips (each prototype screen's own window and slow motion), tracks byte for byte the same in both looks.
+
 ## Machines and motion (module `mechanics`, 2026-10-19/20): catalog-wide start speed and paint, floors and ramps, lab carts, pullers, force meters, simple machines (a screw jack too), a roller coaster, falling through air, a balloon rocket, a fragile egg
 
 Files: `machines/mod_mechanics.py` and its port `web/sim/modules/mechanics.js` (line for line: the same documents, number for number; the AI

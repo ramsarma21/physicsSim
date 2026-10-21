@@ -1,5 +1,6 @@
 // The staging module's port (machines/mod_staging.py, line for line: the same documents, the same errors) and its plug-ins for the AI.
-// Render only: a fixed side camera (settings.camera -> doc.view.camera) and starting gates (start_gate -> doc.view.gates); see the Python file.
+// Render only: a fixed side camera (settings.camera -> doc.view.camera), starting gates (start_gate -> doc.view.gates) and the lesson look
+// (settings.style, backdrop, release_stand -> doc.view.style, backdrop, release_stand); see the Python file.
 // A module file takes everything from the framework object register_all gets (web/sim/items.js FRAMEWORK), so it imports nothing.
 let F = null
 let py = null
@@ -11,6 +12,9 @@ const CAMERA_KEYS = ["x0", "x1", "y", "pitch", "hfov"]
 const CAMERA_RANGE_TEXT = { x0: "-1000 to 1000", x1: "-1000 to 1000", y: "-10 to 100", pitch: "-20 to 80", hfov: "5 to 120" }
 const SPAN = [0.1, 300.0]
 const GATE_CATEGORIES = ["Balls", "Wheels & vehicles", "Blocks & shapes"]
+const STYLES = ["lesson", "real"]
+const RELEASE_STANDS = ["post", "hidden", "hanger", "auto"]
+const HEX = /^#[0-9a-fA-F]{6}$/
 
 const has = (o, k) => o !== null && typeof o === "object" && !Array.isArray(o) && Object.prototype.hasOwnProperty.call(o, k)
 const isDict = (o) => o !== null && typeof o === "object" && !Array.isArray(o)
@@ -46,10 +50,32 @@ export function camera_of(raw) {
 	return out
 }
 
+/** settings.style, settings.backdrop and settings.release_stand checked: the doc.view keys they give ({} for none); ValueError for a bad one. */
+export function look_of(st) {
+	const out = {}
+	const style = has(st, "style") ? st.style : null
+	if (style !== null && style !== undefined) {
+		if (typeof style !== "string" || !STYLES.includes(style)) throw new py.ValueError('settings.style must be "lesson" or "real"')
+		if (style === "lesson") out.style = "lesson"
+	}
+	const bd = has(st, "backdrop") ? st.backdrop : null
+	if (bd !== null && bd !== undefined) {
+		if (typeof bd !== "string" || !(bd === "auto" || HEX.test(bd))) throw new py.ValueError('settings.backdrop must be "auto" or a colour #rrggbb')
+		out.backdrop = bd.toLowerCase()
+	}
+	const rs = has(st, "release_stand") ? st.release_stand : null
+	if (rs !== null && rs !== undefined) {
+		if (typeof rs !== "string" || !RELEASE_STANDS.includes(rs)) throw new py.ValueError("settings.release_stand must be one of post, hidden, hanger, auto")
+		out.release_stand = rs
+	}
+	return out
+}
+
 function _staging(sb, scene) {
 	const view = {}
 	const st = has(scene, "settings") ? scene.settings : null
 	if (isDict(st) && has(st, "camera") && st.camera !== null && st.camera !== undefined) view.camera = camera_of(st.camera)
+	if (isDict(st)) Object.assign(view, look_of(st))
 	const gates = []
 	for (const item of scene.items ?? []) {
 		if (isDict(item) && has(TYPES, item.type) && isDict(item.props) && item.props.start_gate === true) gates.push(item.id)

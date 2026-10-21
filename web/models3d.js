@@ -256,6 +256,7 @@ function mat(key, params = {}) {
 		if (typeof p.color === "string") p.color = new THREE.Color(p.color)
 		if (typeof p.sheenColor === "string") p.sheenColor = new THREE.Color(p.sheenColor)
 		const m = new THREE.MeshPhysicalMaterial(p)
+		m.userData.kitKey = key // (what it is: web/lesson-look.js knows a liquid by it)
 		if (isPlainPaint(m)) {
 			m.onBeforeCompile = paintHook // (a model that grades its material itself replaces this)
 			m.customProgramCacheKey = gradeKeyFor(paintHook)

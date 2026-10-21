@@ -11,11 +11,19 @@
                    on a post behind the track whose stop touches the item's front and lifts away at the release (web/start-gate.js). The
                    engine's hold is exact (the item is still until the release), so the gate only shows what holds it. doc.view.gates lists
                    the items that set it.
+  settings.style   "lesson" | "real" (the default): the LESSON LOOK (web/lesson-look.js): a plain backdrop, a plain table, soft short shadows,
+                   clear water, no machinery; readable like a flat lesson picture, still the real 3D run. doc.view.style = "lesson" ("real"
+                   writes nothing).
+  settings.backdrop  "auto" | "#rrggbb": the lesson look's backdrop (auto: chosen from the moving things' colours). doc.view.backdrop.
+  settings.release_stand  "post" | "hidden" | "hanger" | "auto": what holds a held item until the release (web/release-stand.js): the
+                   pull pin on its post (the real look's default), the pin and post going away once it is let go, a holder from above
+                   that lifts away, or the lesson look's choice (auto: from above in or over a liquid, else hidden). doc.view.release_stand.
 
 The build hook writes doc.view (machines/items.py build: a module's build hook may set sb.view) only for a scene that sets one of these, so
 every other scene builds the very document it did before. web/sim/modules/staging.js is its port, line for line.
 """
 import math
+import re
 
 NEEDED = ("register_build_hook", "register_common_prop", "Prop", "TYPES")
 
@@ -27,6 +35,9 @@ CAMERA_KEYS = ("x0", "x1", "y", "pitch", "hfov")
 CAMERA_RANGE_TEXT = {"x0": "-1000 to 1000", "x1": "-1000 to 1000", "y": "-10 to 100", "pitch": "-20 to 80", "hfov": "5 to 120"}
 SPAN = (0.1, 300.0)          # m: the narrowest and the widest x1 - x0
 GATE_CATEGORIES = ("Balls", "Wheels & vehicles", "Blocks & shapes")
+STYLES = ("lesson", "real")
+RELEASE_STANDS = ("post", "hidden", "hanger", "auto")
+HEX = re.compile(r"#[0-9a-fA-F]{6}")
 
 
 def register_all(g):
@@ -61,12 +72,37 @@ def camera_of(raw):
     return out
 
 
+def look_of(st):
+    """settings.style, settings.backdrop and settings.release_stand checked: the doc.view keys they give ({} for none); ValueError for a bad one."""
+    out = {}
+    style = st.get("style")
+    if style is not None:
+        if not isinstance(style, str) or style not in STYLES:
+            raise ValueError('settings.style must be "lesson" or "real"')
+        if style == "lesson":
+            out["style"] = "lesson"
+    bd = st.get("backdrop")
+    if bd is not None:
+        if not isinstance(bd, str) or not (bd == "auto" or HEX.fullmatch(bd)):
+            raise ValueError('settings.backdrop must be "auto" or a colour #rrggbb')
+        out["backdrop"] = bd.lower()
+    rs = st.get("release_stand")
+    if rs is not None:
+        if not isinstance(rs, str) or rs not in RELEASE_STANDS:
+            raise ValueError("settings.release_stand must be one of post, hidden, hanger, auto")
+        out["release_stand"] = rs
+    return out
+
+
 def _staging(sb, scene):
-    """doc.view for a scene that sets a fixed camera or starting gates (sb.view: machines/items.py build writes it); nothing otherwise."""
+    """doc.view for a scene that sets a fixed camera, starting gates or the lesson look (sb.view: machines/items.py build writes it); nothing
+    otherwise."""
     view = {}
     st = scene.get("settings")
     if isinstance(st, dict) and st.get("camera") is not None:
         view["camera"] = camera_of(st["camera"])
+    if isinstance(st, dict):
+        view.update(look_of(st))
     gates = []
     for item in scene.get("items", []):
         if isinstance(item, dict) and item.get("type") in TYPES and isinstance(item.get("props"), dict) and item["props"].get("start_gate") is True:

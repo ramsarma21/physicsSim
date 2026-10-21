@@ -216,19 +216,24 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 	})
 
 	// ============================================================== start and finish lines
+	// (the line's solid is a 2 mm slab whose top, at y = +1 mm in its frame, is the floor's top: its paint is drawn 1.4 to 2.4 mm above that, clear of
+	// the 1 mm the view grows every drawn surface by, so it shows on a table, a floor, a lane or a ramp alike; the view lays it on whatever it lies on:
+	// the builder's `paint` flag, web/view3d.js paintOn)
+	const LINE_Y = 0.001 + 0.0019
+	const linePaint = (hex, key) => kit.mat(`measure|line-${key}`, { color: hex, roughness: 0.5, metalness: 0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })
 	for (const kind of ["start-line", "finish-line"]) {
-		addModel(kind, "line", ({ d, props }) => {
+		const build = ({ d, props }) => {
 			const P = props ?? {}
 			const fin_ = kind === "finish-line"
 			const g = kit.group()
-			const band = kit.mesh(kit.box(fin_ ? 0.1 : 0.05, 0.0012, d), kit.mat("measure|white-paint", { color: "#fbfbf8", roughness: 0.5, metalness: 0 }), { cast: false })
-			at(band, 0, 0.0004, 0)
+			const band = kit.mesh(kit.box(fin_ ? 0.1 : 0.05, 0.001, d, 0.0003), linePaint("#fbfbf8", "white"), { cast: false })
+			at(band, 0, LINE_Y, 0)
 			g.add(band)
 			if (fin_) {
 				const list = []
 				const nz = Math.max(2, Math.round(d / 0.05))
-				for (let r = 0; r < 2; r++) for (let k = 0; k < nz; k++) if ((r + k) % 2 === 0) list.push(new THREE.BoxGeometry(0.05, 0.0013, d / nz).translate(-0.025 + r * 0.05, 0.0006, -d / 2 + (k + 0.5) * (d / nz)))
-				g.add(kit.mesh(kit.merge(list, `finish-line|${d.toFixed(3)}`), kit.mat("measure|black-paint", { color: "#121212", roughness: 0.5 }), { cast: false }))
+				for (let r = 0; r < 2; r++) for (let k = 0; k < nz; k++) if ((r + k) % 2 === 0) list.push(new THREE.BoxGeometry(0.05, 0.001, d / nz).translate(-0.025 + r * 0.05, LINE_Y + 0.0002, -d / 2 + (k + 0.5) * (d / nz)))
+				g.add(kit.mesh(kit.merge(list, `finish-line2|${d.toFixed(3)}`), linePaint("#121212", "black"), { cast: false }))
 			}
 			if (P.sign !== false) {
 				const word = fin_ ? "FINISH" : "START"
@@ -245,7 +250,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 				}
 			}
 			return g
-		})
+		}
+		build.paint = true // (web/view3d.js: drawn on the top face of what it lies on)
+		addModel(kind, "line", build)
 	}
 
 	// ============================================================== stopwatch (a big LCD stopwatch)
