@@ -219,7 +219,7 @@ ok(cs[0].ok === true, "ai/goals.mjs reads it from the summary alone", JSON.strin
 ok(aiGoals.allGoalKinds().includes("toy_melts") && aiGoals.goalLabel({ kind: "toy_melts", item: "cube", before_s: 2 }, { cube: "the wax" }) === "the wax melts by 2 s", "goal kinds and labels")
 const wg = await import(pathToFileURL(join(PG, "web/ai/goals.js")).href)
 ok(JSON.stringify(wg.checkGoals([{ kind: "toy_melts", item: "cube" }], { doc: sp.doc, track: sr.track })) === JSON.stringify(aiGoals.checkGoals([{ kind: "toy_melts", item: "cube" }], { doc: sp.doc, track: sr.track })), "web/ai/goals.js judges it as ai/goals.mjs")
-const { richDigestFrom } = await import(pathToFileURL(join(PG, "ai/rich-digest.mjs")).href)
+const { moduleLinesOf, richDigestFrom } = await import(pathToFileURL(join(PG, "ai/rich-digest.mjs")).href)
 const { sceneDigest } = await import(pathToFileURL(join(PG, "ai/scene-digest.mjs")).href)
 const rd = richDigestFrom(sp.scene, await sceneDigest(sp.scene, dg.index), { sim: { ...sm, track: sr.track }, cat: dg })
 writeFileSync(join(OUT, "toy-rich-digest.txt"), rd.text)
@@ -230,6 +230,10 @@ const lessonS = (w) => [...w.matchAll(/([\d.]+) (h|min|s)\b/g)].reduce((s, [, n,
 const reads = rd.text.match(/readings in the last run: temperature 20\.0 → 58\.0 °C \(reaches its end value at ([^)]+) of lesson time\); melted 0\.00 → 1\.00 \(reaches its end value at ([^)]+) of lesson time\)/)
 const happened = rd.text.match(/What else happened \(the physics modules\): (1\.\d\d) s cube melted completely/)
 ok(!!reads && !!happened && 0 < lessonS(reads[1]) && lessonS(reads[1]) < lessonS(reads[2]) && Math.abs(lessonS(reads[2]) - 120 * Number(happened[1])) <= 1 && /Settings: time_lapse 120/.test(rd.text), "the edit step's digest: readings (in lesson time on a time-lapse), happenings, settings", rd.text.match(/.*readings in the last run.*/)?.[0])
+// (lesson time to the whole second, then minutes: a reading that settles 179.6 s into the lesson (time-lapse 60, a 120 fps frame) does so
+// "at 3 min", never "at 2 min 60 s", and its readings through the run end "58.0 at 3 min, 58.0 at 4 min")
+const edge = moduleLinesOf({ items: [{ id: "cube", type: "toy-cube" }] }, { doc: { settings: { timeLapse: 60 } }, track: { frames: [0, 1, 179.6 / 60, 4].map((t) => ({ t })), state: { cube: { temperature: [20, 40, 58, 58] } } } }, dg).cube ?? []
+ok(/ 20\.0 → 58\.0 °C \(reaches its end value at 3 min of lesson time\)$/.test(edge[0] ?? "") && /: 20\.0 at 0 s, 40\.0 at 60 s, 58\.0 at 3 min, 58\.0 at 4 min$/.test(edge[1] ?? ""), "lesson time in words: 179.6 s is 3 min", edge.slice(0, 2).join(" | "))
 const { fixWords } = await import(pathToFileURL(join(PG, "web/ai/fixer.js")).href)
 const fw = fixWords([{ kind: "prop", id: "pad", key: "power", from: 60, to: 72 }], sp.scene)
 ok(/^turn the hot pad up \(60 W → 72 W\)$/i.test(fw.say) && /^turned the hot pad up/i.test(fw.did), "the make-it-work search's words for a module knob", JSON.stringify(fw))

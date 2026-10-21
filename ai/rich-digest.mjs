@@ -191,8 +191,10 @@ function clock(s) {
 	const v = Math.max(0, Number(s) || 0)
 	if (v < 120) return `${+v.toFixed(v < 10 ? 2 : 1)} s`
 	if (v < 3570) {
-		const m = Math.floor(v / 60)
-		const r = Math.round(v - m * 60)
+		// (to the whole second first, then minutes: 179.6 s is "3 min", never "2 min 60 s")
+		const w = Math.round(v)
+		const m = Math.floor(w / 60)
+		const r = w - m * 60
 		return r && m < 20 ? `${m} min ${r} s` : `${Math.round(v / 60)} min`
 	}
 	const mins = Math.round(v / 60)
