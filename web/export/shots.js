@@ -1123,7 +1123,12 @@ export function compile(plan, world, opts = {}) {
 		const layout = sh.layout ?? (lanes ? "split" : "single")
 		if (layout !== "single" && !lanes) throw new PlanError(`${where}: layout ${layout} needs the plan's lanes`)
 		const arrange = sh.arrange ?? plan.lanes?.arrange ?? "rows"
-		const bands = bandsOf(layout, arrange, lanes, W, H)
+		// (a single shot in a comparison filmed one run per lane looks at one lane's things: the lane its subject names (or its travel's path or its
+		// end), whose run the band is filmed from; a single shot naming no lane is the first lane's, as before)
+		const laneNamed = (tg) => (tg && typeof tg === "object" ? (tg.lane ?? (tg.through ?? []).map(laneNamed).find(Boolean) ?? null) : null)
+		const soloLane = layout === "single" && lanes && !S.one ? (laneNamed(sh.subject) ?? laneNamed(sh.travel?.path) ?? laneNamed(sh.end?.subject) ?? null) : null
+		if (soloLane && !lanes.some((l) => l.id === soloLane)) throw new PlanError(`${where}: lane ${soloLane} is not one of the plan's lanes (${lanes.map((l) => l.id).join(", ")})`)
+		const bands = bandsOf(layout, arrange, lanes, W, H).map((b) => (soloLane ? { ...b, lane: soloLane } : b))
 		const asp = bands[0].rect[2] / bands[0].rect[3]
 		const shNotes = []
 		// the clock: run time t = min(to, from + rate u) for u video seconds into the shot, then held; a freeze holds one moment
@@ -1167,7 +1172,7 @@ export function compile(plan, world, opts = {}) {
 				if (tg.role !== undefined && !tg.lane) return lanes.flatMap((ln) => S.pts({ ...tg, lane: ln.id }, S.one ? null : ln.id, t) ?? [])
 				return S.pts(tg, S.one ? null : lanes[0].id, t) ?? []
 			}
-			return S.pts(tg, S.one ? null : (lanes?.[0]?.id ?? null), t) ?? []
+			return S.pts(tg, S.one ? null : (soloLane ?? lanes?.[0]?.id ?? null), t) ?? []
 		}
 		const need = (tg, P, what) => {
 			if (!P.length) throw new PlanError(`${where}: ${what} ${JSON.stringify(tg)} shows nothing then (nothing drawn, or every lane's copy left out)`)
@@ -1187,7 +1192,7 @@ export function compile(plan, world, opts = {}) {
 		let travelLen = 0
 		if (sh.move === "travel") {
 			if (!sh.travel?.path) throw new PlanError(`${where}: a travel needs travel.path`)
-			travelPath = ctx(() => S.path(sh.travel.path, S.one ? null : (lanes?.[0]?.id ?? null), tA))
+			travelPath = ctx(() => S.path(sh.travel.path, S.one ? null : (soloLane ?? lanes?.[0]?.id ?? null), tA))
 			if (layout === "split" && S.one && lanes) {
 				const tp = sh.travel.path
 				const own = tp.item !== undefined ? S.laneOf.get(tp.item) : undefined
@@ -1577,7 +1582,7 @@ export function measure(film) {
 				return S.pts(tg, lane, t) ?? []
 			}
 			if (fs.layout === "together" && S.lanes && tg.role !== undefined && !tg.lane) return S.lanes.flatMap((ln) => S.pts({ ...tg, lane: ln.id }, S.one ? null : ln.id, t) ?? [])
-			return S.pts(tg, S.one ? null : (S.lanes?.[0]?.id ?? null), t) ?? []
+			return S.pts(tg, S.one ? null : (fs.bands[bi].lane ?? S.lanes?.[0]?.id ?? null), t) ?? []
 		}
 		const aspOf = (bi) => fs.bands[bi].rect[2] / fs.bands[bi].rect[3]
 		const F = film.frames.slice(fs.i0, fs.i0 + fs.n)
@@ -2227,7 +2232,7 @@ function marksOf(film) {
 				return S.pts(tg, lane, t) ?? []
 			}
 			if (fs.layout === "together" && lanes && tg.role !== undefined && !tg.lane) return lanes.flatMap((ln) => S.pts({ ...tg, lane: ln.id }, S.one ? null : ln.id, t) ?? [])
-			return S.pts(tg, S.one ? null : (lanes?.[0]?.id ?? null), t) ?? []
+			return S.pts(tg, S.one ? null : (fs.bands[bi].lane ?? lanes?.[0]?.id ?? null), t) ?? []
 		}
 		for (let i = 0; i < fs.n; i++) {
 			const fr = film.frames[fs.i0 + i]
