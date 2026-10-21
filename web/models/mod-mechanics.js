@@ -231,7 +231,8 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 				const drum = solid(sp.drum)
 				const b = sp.b === null ? null : solid(sp.b)
 				if (!drum || !b) continue
-				const z = drum.itemType === "wheel-and-axle" && sp.radius < (drum.body.radius ?? 0) - 1e-6 ? 0.03 + (drum.depth3d ?? 0.02) / 2 : 0
+				// (a record may say where its cord runs: the energy module's spool on a waterwheel's axle, in front of its paddles)
+				const z = typeof sp.z === "number" ? sp.z : drum.itemType === "wheel-and-axle" && sp.radius < (drum.body.radius ?? 0) - 1e-6 ? 0.03 + (drum.depth3d ?? 0.02) / 2 : 0
 				const t = tube(sp.radius > 0.05 ? 0.0025 : 0.0015, sp.radius > 0.05 ? rope : string)
 				ctx.group.add(t.mesh)
 				parts.push({ t, frame: (tt) => {

@@ -92,12 +92,12 @@ function _bearing(c, x, y, friction, wound = null) {
 
 const _winding = (free, r_spool) => Math.max(0.0, (free - SPOOL_GAP - 0.002) / r_spool)
 
-function _cup(c, sx, sy, r_spool, sense, load_g, drum, others) {
+function _cup(c, sx, sy, r_spool, sense, load_g, drum, others, z = 0.0) {
 	const kg = load_g / 1000
 	const x = sx + sense * r_spool
 	const mat = c.mat({ base: "cardboard", density: _r(kg / (CUP_W * CUP_H * CUP_D), 3), overrides: {} })
 	const cup = c.slab("load", CUP_W, CUP_H, CUP_D, x, CUP_H / 2, { material: mat, kind: "dynamic", look: "cardboard", words: `a paper cup of pennies (${_trim(load_g)} g)` })
-	c.process("mechanics", "thread", { role: "spool", drum, b: cup, center: { x: 0.0, y: 0.0 }, radius: _r(r_spool, 6), sense: Math.trunc(sense), anchorB: { x: 0.0, y: _r(CUP_H / 2) }, minLength: SPOOL_GAP })
+	c.process("mechanics", "thread", { role: "spool", drum, b: cup, center: { x: 0.0, y: 0.0 }, radius: _r(r_spool, 6), sense: Math.trunc(sense), anchorB: { x: 0.0, y: _r(CUP_H / 2) }, minLength: SPOOL_GAP, ...(Math.abs(z) > 1e-9 ? { z: _r(z, 4) } : {}) })
 	c.process("mechanics", "thread-pull", { role: "meter", reads: "rope", a: drum, b: cup, key: "pull_n" })
 	c.process("mechanics", "lift", { role: "meter", reads: "rise", solid: cup, key: "lift_m" })
 	c.process("energy", "load-pass", { role: "pass", solid: cup, through: [...others] })
@@ -117,10 +117,18 @@ function _world(c, lx, ly) {
 }
 
 // ---------------------------------------------------------------- the paper windmill (pinwheel)
-export function pinwheel_geometry(P) {
+function _head(P, down, up) {
 	const s = _side(P)
+	const a = P.yaw * D2R
+	const ca = cos(a)
+	const sa = sin(a)
+	return [s, s * down * ca, -s * up * ca, -down * sa]
+}
+
+export function pinwheel_geometry(P) {
+	const [s, sx, rx, sz] = _head(P, 0.08, 0.04)
 	const H = P.height
-	return { spool: [s * 0.08, H], rotor: [-s * 0.04, H], side: s }
+	return { spool: [sx, H], rotor: [rx, H], spool_z: sz, side: s }
 }
 
 function _pinwheel() {
@@ -153,7 +161,7 @@ function _pinwheel() {
 			role: "rotor", solid: hub, at: _world(c, rx, ry), axis: _axis(c, s), yaw: _r(P.yaw * D2R, 6),
 			rotor: { blades: B, r0: PIN_HUB, R: _r(R), chord: [_r(c0, 6), _r(c1, 6)], pitch: [_r(Math.min(80.0, pitch + PIN_TWIST) * D2R, 6), _r(pitch * D2R, 6)], ar: _r(span / ((c0 + c1) / 2), 4), cd0: CD0, stations: 8 }
 		})
-		if (load > 0) _cup(c, sx, sy, r_spool, 1.0, load, hub, [foot, post])
+		if (load > 0) _cup(c, sx, sy, r_spool, 1.0, load, hub, [foot, post], geo.spool_z)
 		P.rotor_g = _r(m * 1000, 2)
 		P.pennies = load > 0 ? Math.max(0, Math.trunc((load - CUP_G) / PENNY_G)) : 0
 	}
@@ -183,9 +191,9 @@ function _pinwheel() {
 
 // ---------------------------------------------------------------- the model wind turbine
 export function turbine_geometry(P) {
-	const s = _side(P)
+	const [s, sx, rx, sz] = _head(P, 0.11, 0.07)
 	const H = P.height
-	return { spool: [s * 0.11, H], rotor: [-s * 0.07, H], nacelle: [s * 0.02, H], side: s }
+	return { spool: [sx, H], rotor: [rx, H], nacelle: [s * 0.02, H], spool_z: sz, side: s }
 }
 
 function _turbine() {
@@ -234,7 +242,7 @@ function _turbine() {
 			for (const [name, post] of [["+", posts[0]], ["-", posts[1]]]) st.terminals[`${iid}/${name}`] = { solid: post, at: { x: 0.0, y: 0.005 } }
 			st.parts.push({ kind: "generator", id: `${iid}/generator`, item: iid, name: truthy(c.item.name) ? c.item.name : TYPES[c.item.type].name, a: `${iid}/+`, b: `${iid}/-`, role: "generator", k: gen.k, r: gen.r, rotor: hub })
 		}
-		if (load > 0) _cup(c, sx, sy, P.axle_mm / 2000, 1.0, load, hub, [base, tower, nacelle, ...posts])
+		if (load > 0) _cup(c, sx, sy, P.axle_mm / 2000, 1.0, load, hub, [base, tower, nacelle, ...posts], geo.spool_z)
 		P.rotor_g = _r(m * 1000, 1)
 		P.diameter = _r(2 * R, 4)
 		P.pennies = load > 0 ? Math.max(0, Math.trunc((load - CUP_G) / PENNY_G)) : 0
@@ -322,6 +330,8 @@ function _generator() {
 			c.sb.joints.push({ kind: "pin", id: `${iid}/drag`, item: iid, a: null, b: `${iid}/rotor`, anchorA: { x: _r(wx), y: _r(wy) }, anchorB: { x: 0.0, y: 0.0 }, friction: _r(gen.fric * ratio, 7), render: { hinge: "none" } })
 			Object.assign(part, { rotor: `${iid}/rotor`, ratio, sense: P.leads === "swapped" ? -1 : 1 })
 			P.coupled = sid
+			const shaftItem = c.sb.scene_items.get(shaft)
+			P.belt_z = shaftItem.type === "waterwheel" ? _r(props_of(shaftItem).paddle_depth / 2 + 0.045, 4) : 0.05
 		}
 		st.parts.push(part)
 	}

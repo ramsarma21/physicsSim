@@ -144,7 +144,7 @@ def _winding(free, r_spool):
     return max(0.0, (free - SPOOL_GAP - 0.002) / r_spool)
 
 
-def _cup(c, sx, sy, r_spool, sense, load_g, drum, others):
+def _cup(c, sx, sy, r_spool, sense, load_g, drum, others, z=0.0):
     """A paper cup of pennies (`load_g` grams in all) on a thread wound on `drum` (a solid turning about its own middle at item-local (sx, sy)), the
     thread leaving the spool on the side that winds it up as the drum turns `sense` (+1 counter-clockwise): it rests on the table under the spool
     (or hangs, when nothing is under it) and passes through its own machine (`others`: those solids' contacts with it are left out)."""
@@ -153,7 +153,7 @@ def _cup(c, sx, sy, r_spool, sense, load_g, drum, others):
     mat = c.mat(base="cardboard", density=_r(kg / (CUP_W * CUP_H * CUP_D), 3), overrides={})
     cup = c.slab("load", CUP_W, CUP_H, CUP_D, x, CUP_H / 2, material=mat, kind="dynamic", look="cardboard", words=f"a paper cup of pennies ({_trim(load_g)} g)")
     c.process("mechanics", "thread", role="spool", drum=drum, b=cup, center={"x": 0.0, "y": 0.0}, radius=_r(r_spool, 6), sense=int(sense),
-              anchorB={"x": 0.0, "y": _r(CUP_H / 2)}, minLength=SPOOL_GAP)
+              anchorB={"x": 0.0, "y": _r(CUP_H / 2)}, minLength=SPOOL_GAP, **({"z": _r(z, 4)} if abs(z) > 1e-9 else {}))
     c.process("mechanics", "thread-pull", role="meter", reads="rope", a=drum, b=cup, key="pull_n")
     c.process("mechanics", "lift", role="meter", reads="rise", solid=cup, key="lift_m")
     c.process("energy", "load-pass", role="pass", solid=cup, through=list(others))
@@ -171,11 +171,21 @@ def _trim(v):
 
 
 # ---------------------------------------------------------------- the paper windmill (pinwheel)
-def pinwheel_geometry(P):
-    """Item-local places: the spool / stand-in (x, y) at the straw's downwind end, the rotor's middle (x, y), and side (see _side)."""
+def _head(P, down, up):
+    """A rotor's head turned `yaw` about its post toward the viewer: the spool `down` m downwind of the post and the rotor `up` m upwind, as the
+    picture's plane sees them (x, item-local), and how far behind it the spool then is (z, m: the thread hangs there)."""
     s = _side(P)
+    a = P["yaw"] * D2R
+    ca, sa = cos(a), sin(a)
+    return s, s * down * ca, -s * up * ca, -down * sa
+
+
+def pinwheel_geometry(P):
+    """Item-local places: the spool / stand-in (x, y) at the straw's downwind end, the rotor's middle (x, y), the spool's z (behind the picture's
+    plane when the windmill is turned toward you), and side (see _side)."""
+    s, sx, rx, sz = _head(P, 0.08, 0.04)
     H = P["height"]
-    return {"spool": (s * 0.08, H), "rotor": (-s * 0.04, H), "side": s}
+    return {"spool": (sx, H), "rotor": (rx, H), "spool_z": sz, "side": s}
 
 
 def _pinwheel():
@@ -209,7 +219,7 @@ def _pinwheel():
                          "pitch": [_r(min(80.0, pitch + PIN_TWIST) * D2R, 6), _r(pitch * D2R, 6)], "ar": _r(span / ((c0 + c1) / 2), 4), "cd0": CD0,
                          "stations": 8})
         if load > 0:
-            _cup(c, sx, sy, r_spool, 1.0, load, hub, [foot, post])
+            _cup(c, sx, sy, r_spool, 1.0, load, hub, [foot, post], geo["spool_z"])
         P["rotor_g"] = _r(m * 1000, 2)
         P["pennies"] = max(0, int((load - CUP_G) / PENNY_G)) if load > 0 else 0
     register(ItemType("pinwheel", "Paper windmill", CAT, build, dynamic=False, module=MODULE,
@@ -239,10 +249,11 @@ def _world(c, lx, ly):
 
 # ---------------------------------------------------------------- the model wind turbine
 def turbine_geometry(P):
-    """Item-local places: the spool / stand-in (x, y) at the nacelle's back, the rotor's middle (x, y), the nacelle's middle, and side."""
-    s = _side(P)
+    """Item-local places: the spool / stand-in (x, y) at the shaft's back end, the rotor's middle (x, y), the nacelle's middle (as built: not
+    turned), the spool's z, and side."""
+    s, sx, rx, sz = _head(P, 0.11, 0.07)
     H = P["height"]
-    return {"spool": (s * 0.11, H), "rotor": (-s * 0.07, H), "nacelle": (s * 0.02, H), "side": s}
+    return {"spool": (sx, H), "rotor": (rx, H), "nacelle": (s * 0.02, H), "spool_z": sz, "side": s}
 
 
 def _turbine():
@@ -291,7 +302,7 @@ def _turbine():
             st["parts"].append({"kind": "generator", "id": f"{iid}/generator", "item": iid, "name": c.item.get("name") or TYPES[c.item["type"]].name,
                                 "a": f"{iid}/+", "b": f"{iid}/-", "role": "generator", "k": gen["k"], "r": gen["r"], "rotor": hub})
         if load > 0:
-            _cup(c, sx, sy, P["axle_mm"] / 2000, 1.0, load, hub, [base, tower, nacelle] + posts)
+            _cup(c, sx, sy, P["axle_mm"] / 2000, 1.0, load, hub, [base, tower, nacelle] + posts, geo["spool_z"])
         P["rotor_g"] = _r(m * 1000, 1)
         P["diameter"] = _r(2 * R, 4)
         P["pennies"] = max(0, int((load - CUP_G) / PENNY_G)) if load > 0 else 0
@@ -388,6 +399,9 @@ def _generator():
                                 "anchorB": {"x": 0.0, "y": 0.0}, "friction": _r(gen["fric"] * ratio, 7), "render": {"hinge": "none"}})
             part.update({"rotor": f"{iid}/rotor", "ratio": ratio, "sense": -1 if P["leads"] == "swapped" else 1})
             P["coupled"] = sid
+            # (where the view draws its belt: in front of a waterwheel's paddles, else 5 cm in front of the picture's plane)
+            shaft_item = c.sb.scene_items[shaft]
+            P["belt_z"] = _r(props_of(shaft_item)["paddle_depth"] / 2 + 0.045, 4) if shaft_item.get("type") == "waterwheel" else 0.05
         st["parts"].append(part)
     register(ItemType("generator", "Small generator", CAT, build, dynamic=False, module=MODULE,
                       props=[Prop("kind", "Generator", "KidWind generator", kind="choice", choices=list(GENERATORS),
