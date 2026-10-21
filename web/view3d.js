@@ -4446,6 +4446,8 @@ ${GRADE}
 		const gateStatics = gated.size ? solids.filter((o) => o.kind === "static" && !o.hidden_3d) : []
 		for (const list of heldByItem.values()) {
 			if (hands.holds(list[0].item)) continue // (a hand holds it: web/hands.js)
+			// (a thing held from above, one held in a liquid: its clamp on a rod over it is web/models/mod-mechanics.js's "mechanics:holders")
+			if (list.some((o) => o.holdFrom === "above")) continue
 			const s = postPart(list)
 			if (!s) continue
 			const id = s.id

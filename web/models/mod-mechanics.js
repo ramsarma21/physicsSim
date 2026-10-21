@@ -847,4 +847,96 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 			}
 		}
 	})
+
+	// ============================================================== holders from above: a thing held in a liquid (holdFrom "above")
+	// A cork held down on a tank's floor, a grape held under the water: a grey plastic rod comes straight down from a steel arm over the tank
+	// and its two-pronged foot holds the thing's top; the arm runs along the tank, over its rim, to a wooden post standing on the table just
+	// past the tank's nearer end (the view's pull pin and post are not drawn for it: web/view3d.js). At the release the arm, rod and foot slide
+	// up the post at once (ease-out, 0.15 s) until the foot is 2 cm over the liquid and the rim, and stay there: what was held floats up or
+	// sinks on its own. Render only (machines/mod_mechanics.py _holds).
+	const holderPlastic = kit.plastic("#d4d8dd", { gloss: 0.35, key: "mechanics|holder" })
+	const holderWood = kit.wood("#b07a45")
+	const LIFT_S = 0.15
+	addViewPlugin({
+		name: "mechanics:holders",
+		load(ctx) {
+			const held = new Set(ctx.doc.release?.parts ?? [])
+			const marked = ctx.doc.solids.filter((s) => s.holdFrom === "above" && held.has(s.id))
+			if (!marked.length) return null
+			const at0 = (s) => ctx.placementAt(s.id, 0) ?? { x: s.at.x, y: s.at.y, angle: s.angle ?? 0 }
+			/** a body's outline's reach up, down and to the sides from its middle at angle a (m) */
+			const extent = (s, a) => {
+				const b = s.body
+				if (b.kind === "ball") return { up: b.radius, down: b.radius, half: b.radius }
+				const pts = b.kind === "polygon" ? b.points.map((p) => [p.x, p.y]) : [[-b.width / 2, -b.height / 2], [b.width / 2, -b.height / 2], [b.width / 2, b.height / 2], [-b.width / 2, b.height / 2]]
+				const c = Math.cos(a)
+				const n = Math.sin(a)
+				const xs = pts.map(([x, y]) => x * c - y * n)
+				const ys = pts.map(([x, y]) => x * n + y * c)
+				return { up: Math.max(...ys), down: -Math.min(...ys), half: (Math.max(...xs) - Math.min(...xs)) / 2 }
+			}
+			const liquids = (ctx.doc.processes ?? []).filter((p) => p.kind === "liquid")
+			const tAt = ctx.doc.release?.at ?? 0.5
+			const rigs = []
+			for (const item of [...new Set(marked.map((s) => s.item))]) {
+				const mine = marked.filter((s) => s.item === item)
+				// (it holds the item's top: the held part whose outline reaches highest)
+				const top = mine.map((s) => ({ s, p: at0(s), e: extent(s, at0(s).angle) })).sort((a, b) => b.p.y + b.e.up - (a.p.y + a.e.up))[0]
+				const x = top.p.x
+				const foot = top.p.y + top.e.up
+				const liq = liquids.find((q) => q.x0 < x && x < q.x1) ?? null
+				const surface = liq ? liq.floor + (liq.layers ?? []).reduce((a, l) => a + l.height, 0) : foot
+				const clear = Math.max(surface, liq?.rim ?? surface) + 0.02
+				const lift = Math.max(0, clear - foot)
+				const armY = Math.max(foot, clear) + 0.06
+				// (the post stands on the table 4 cm past the container's nearer end wall, a hair behind the machine plane; its foot where the container's is)
+				const walls = liq ? ctx.solidsOf(liq.item) : []
+				const outer = (sx) => walls.reduce((m, s) => (sx < 0 ? Math.min(m, s.at.x - (s.body?.width ?? 0) / 2) : Math.max(m, s.at.x + (s.body?.width ?? 0) / 2)), sx < 0 ? x : x)
+				const side = liq && x - liq.x0 > liq.x1 - x ? 1 : -1
+				const xPost = liq ? outer(side) + side * 0.04 : x - 0.1
+				const zPost = -0.02
+				const base = walls.length ? walls.reduce((m, s) => Math.min(m, s.at.y - (s.body?.height ?? 0) / 2), Infinity) : 0
+				const r = Math.max(0.006, Math.min(0.016, top.e.half * 0.7))
+				const g = new THREE.Group()
+				g.name = `holder:${item}`
+				const rodLen = armY - foot
+				const rod = kit.mesh(kit.cylinderY(0.004, rodLen, 20), holderPlastic)
+				rod.position.set(0, rodLen / 2, 0)
+				const pad = kit.mesh(kit.cylinderY(r, 0.003, 28), holderPlastic)
+				pad.position.set(0, 0.0015, 0)
+				g.add(rod, pad)
+				// a fork over its top: a yoke across it and two tines down its sides to its middle's height, at most 2.5 cm (they hold a thing that
+				// sinks, as the pad holds one that floats)
+				const deep = Math.min(0.012, 2 * r)
+				const yoke = kit.mesh(kit.box(2 * top.e.half + 0.009, 0.003, deep), holderPlastic)
+				yoke.position.set(0, 0.0015, 0)
+				g.add(yoke)
+				const tine = Math.min(0.025, top.e.up)
+				for (const sx of [-1, 1]) {
+					const p = kit.mesh(kit.box(0.003, tine + 0.003, deep), holderPlastic)
+					p.position.set(sx * (top.e.half + 0.003), 0.003 - tine / 2, 0)
+					g.add(p)
+				}
+				// (the arm along x from the rod's top to the post, behind the rod by its own width)
+				const armLen = Math.abs(xPost - x) + 0.012
+				const arm = kit.mesh(kit.box(armLen, 0.012, 0.012, 0.002), kit.steel())
+				arm.position.set((xPost - x) / 2, rodLen + 0.006, zPost)
+				g.add(arm)
+				g.position.set(x, foot, 0)
+				const postH = armY + lift + 0.04 - base
+				const post = kit.mesh(kit.cylinderY(0.009, postH, 20), holderWood)
+				post.position.set(xPost, base + postH / 2, zPost)
+				ctx.group.add(g, post)
+				rigs.push({ g, x, foot, lift })
+			}
+			return {
+				frame: (t) => {
+					for (const q of rigs) {
+						const u = Math.min(1, Math.max(0, (t - tAt) / LIFT_S))
+						q.g.position.set(q.x, q.foot + q.lift * (1 - (1 - u) * (1 - u)), 0)
+					}
+				}
+			}
+		}
+	})
 }

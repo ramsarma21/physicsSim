@@ -24,6 +24,8 @@
 //   against its lip, the plank against its lip), worked out in the part's own tilted frame (seatOf / placeOnSeat).
 // - air: y_m (the anchor) or bottom_m (the lowest point) above the table top, x as given, EXACTLY (only a hair's overlap, up to 1.5 cm, is
 //   lifted clear; more is a warning); held items wait for the release.
+// - hanging machines (HUNG: an Atwood machine, a pulley lift) put on a support hang over it by their rope's drop, at most 1 m (hangClear):
+//   set down on it their weights would rest there.
 // - Overlaps with anything already placed are cleared by the smallest sideways move along the support (straight up for things in the air with
 //   no height given); a plank's legs count where they would show through, and a leg is never "cleared" by raising (it stands on the floor).
 //   Items are placed in dependency order (supports first); a cycle is an error.
@@ -46,12 +48,13 @@ export const SLOP = 0.0005
 const OVERLAP_TOL = 0.0004 // deeper than this counts as overlapping (the resting distances are all larger than 0, so a solved scene has none)
 const ROOM_GAP = 0.006 // the clearance an item moved out of the way keeps
 const CONTAINERS_CHECKED = new Set(["box", "cup", "bucket", "basket"]) // the containers web/sim's inside() (the goal check) knows
-const CONTAINERS_BY_WALLS = new Set(["plastic-cup", "glass-jar", "coffee-mug"]) // and the ones ./goals.js judges by their walls in the run
+const CONTAINERS_BY_WALLS = new Set(["plastic-cup", "glass-jar", "coffee-mug", "pulley-lift"]) // and the ones ./goals.js judges by their walls in the run (a pulley lift: its pail's)
 const LONG_PROPS = ["length", "width"] // what a leaned item's span sets, in order of preference
 const LEGS_MIN = 0.03 // the 3D view draws a plank's legs only where its end is at least this high (view3d.js)
 const AIR_NUDGE = 0.015 // an item given its height in the air is lifted at most this much to clear a body it was put a hair inside
 const HOLD_GAP = 0.004 // a static thing with nothing this close under it (and no legs, cords or stand) floats
 const OPEN_BELOW = new Set(["funnel"]) // things open at the bottom: a stand goes under their outer ends, never under the opening
+const HUNG = new Set(["atwood-machine", "pulley-lift"]) // weights hanging from a pulley: put on a support they hang over it, never rest on it (hangClear)
 const EPS = 1e-9
 
 export class SolveError extends Error {
@@ -884,7 +887,10 @@ export function solve(plan, opts = {}) {
 		const sup = p.inside ?? (p.on === undefined ? (p.y !== null || p.bottom !== null ? "air" : "table") : p.on)
 		if (p.inside !== undefined && !isContainer(byId.get(p.inside)?.type)) say("warn", "not_container", `${s.name} is meant to go inside ${byId.get(p.inside).name}, which isn't a container: it was put on top of it`, s.id)
 		if (sup === "air") placeAir(s, geo, report)
-		else placeOn(s, geo, sup, p.inside !== undefined && isContainer(byId.get(p.inside)?.type), report)
+		else {
+			placeOn(s, geo, sup, p.inside !== undefined && isContainer(byId.get(p.inside)?.type), report)
+			if (p.inside === undefined && HUNG.has(s.type)) hangClear(s, sup, report)
+		}
 	}
 
 	// ---- 4b. a thing floating in a container starts at its LOADED floating height: what rests on it (a boat's cargo, and what rests on that)
@@ -1320,6 +1326,21 @@ export function solve(plan, opts = {}) {
 		report.angle = r6(angle)
 		clearOverlaps(s, "seat", report)
 		return true
+	}
+
+	/**
+	 * A machine whose weights hang from its pulley (HUNG: an Atwood machine, a pulley lift) put on the table or on a thing: its stand stands
+	 * there (the 3D view draws it) and its weights hang over it by the rope below its pulley (its `drop`, 0.1-1 m), free to move. Set down on
+	 * the support, its lowest weight rested there: an Atwood machine's two weights both rested on the table and nothing could move.
+	 */
+	function hangClear(s, sup, report) {
+		const P = placed.get(s.id)
+		const drop = num(s.props.drop) ?? num(schemaOf(s.type).defaults.drop) ?? 0.3
+		const clear = Math.min(1, Math.max(0.1, drop))
+		put(s, P.geo, P.x, P.y + clear, P.angle)
+		report.hung = r6(clear)
+		say("info", "hung", `${s.name}'s weights hang from its pulley: it was raised ${(clear * 100).toFixed(0)} cm so they hang clear of ${sup === "table" ? "the table" : byId.get(sup).name} and can move`, s.id)
+		clearOverlaps(s, "air", report)
 	}
 
 	/** In the air: at y_m (its anchor) or bottom_m (its lowest point above the table top); x as given or by a relation. */
@@ -1913,7 +1934,9 @@ export function planFromScene(scene) {
 		}
 		const dynamic = TYPES[it.type].dynamic && !it.fixed
 		const tilted = Math.abs(Number(it.angle) || 0) > 0.05
-		if (support && (dynamic || !tilted)) {
+		// (a hanging machine is kept exactly where the scene has it, resting or not: re-solved "on" its support it would be hung, hangClear, and an
+		// edit moves nothing it was not asked to)
+		if (support && (dynamic || !tilted) && !HUNG.has(it.type)) {
 			const place = support.type === "table" ? { on: "table", x: it.x } : isContainer(support.type) && boxOf(mine).y0 < boxOf(sh.get(support.id)).y1 - 0.003 ? { inside: support.id, x: it.x } : { on: support.id, x: it.x }
 			if (tilted) {
 				// a tilt that is just the support's slope there is re-made by the solver (so it follows the support); any other is kept

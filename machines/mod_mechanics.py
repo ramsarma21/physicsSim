@@ -117,6 +117,7 @@ def _catalog_wide():
     register_build_hook(_links)
     register_build_hook(_fragile)
     register_build_hook(_shows)
+    register_build_hook(_holds)
 
 
 # ---------------------------------------------------------------- materials
@@ -232,11 +233,17 @@ def _common(sb, scene):
             # a round body (a ball, a wheel) rolling along the floor turns at -v/r, the floor's way: its speed along its heading over its radius
             along = v * cos(a - heading)
             roll = props.get("start_spin", "roll") != "none"
+            # (two bodies on one rope over a pulley, an Atwood machine's weights or a pulley lift's weight and pail: the rope's first end moves as
+            # asked and its other end the rope's way, rising as fast as the first falls (÷ the rope's ratio); the same start for both was one the
+            # rope could not take, so equal weights given a start did not move at all)
+            rope_b = {j["b"]: j.get("ratio") or 1.0 for j in sb.joints
+                      if j.get("kind") == "pulley" and j.get("item") == iid and isinstance(j.get("a"), str) and isinstance(j.get("b"), str)}
             # (weld groups move as one: a start goes on each group's root, the solids without a parent; a vehicle's wheels are their own bodies)
             for s in mine:
                 if s["kind"] != "dynamic" or ("parent" in s and "pivot" not in s):
                     continue
-                rec = {"kind": "mechanics", "id": f"{s['id']}#start", "item": iid, "role": "start", "solid": s["id"], "vx": vx, "vy": vy}
+                rec = {"kind": "mechanics", "id": f"{s['id']}#start", "item": iid, "role": "start", "solid": s["id"], "vx": vx,
+                       "vy": round(-vy / rope_b[s["id"]], 6) if s["id"] in rope_b else vy}
                 if roll and s["body"]["kind"] == "ball" and s["body"]["radius"] > 0:     # (a ball too small to have a radius in the doc does not spin)
                     rec["w"] = round(-along / s["body"]["radius"], 6)
                 sb.processes.append(rec)
@@ -557,28 +564,45 @@ def _puller():
                       facts="5 N steady pull", edit=[]))
 
 
+PUSH_ROD_KG = 0.135648     # kg: the pusher's rod, whatever its length (what its first 12 cm, 12 mm square steel bar weighed)
+PUSH_PADDLE_KG = 0.06336   # kg: its paddle, whatever its size (the 6 cm pad's: 12 mm x 6 cm x 8 cm of 1100 kg/m³ rubber): its size is its reach, not its weight
+
+
 def _pusher():
     def build_pusher(c, P):
         stroke = P["stroke"]
         h = P["height"]
-        steel = c.mat(base="steel", overrides={})
-        c.slab("housing", 0.1, 0.05, 0.08, -0.05, 0.025, kind="static", material=c.mat(base="cart plastic", overrides={}), look="cart blue", words="the pusher's housing")
-        rod = c.slab("rod", 0.12, 0.012, 0.012, -0.04, h, material=steel, look="steel", words="the pusher's rod")
-        c.slab("paddle", 0.012, P["paddle"], 0.08, 0.026, h, material=c.mat(base="rubber mat", overrides={}), look="rubber mat",
-               words="the pusher's flat paddle")
+        # The housing is the actuator's body: as long as the rod's travel and 2 cm more (at least 10 cm), its rod 5 mm over its middle, so a raised
+        # rod is mounted in it (the housing stands on a wooden block under it), never over it. The rod slides in the housing's bore on the
+        # drive's rail, which is the housing's: the two never touch (the rod in the housing's solid fought the rail, and its friction took a
+        # different share of each push: a sprung toy car pushed with 5 N left at 0.93 m/s, with 5.25 N at 0.49 m/s).
+        Lh = max(0.1, stroke + 0.02)
+        yh = max(0.025, h - 0.005)
+        housing = c.slab("housing", Lh, 0.05, 0.08, -Lh / 2, yh, kind="static", material=c.mat(base="cart plastic", overrides={}), look="cart blue",
+                         words="the pusher's housing")
+        if yh - 0.025 > 0.001:
+            c.slab("riser", Lh, yh - 0.025, 0.08, -Lh / 2, (yh - 0.025) / 2, kind="static", material=c.mat(base="varnished hardwood", overrides={}), look="wood",
+                   words="the wooden block the pusher stands on")
+        # the rod spans the housing and reaches 2 cm out of its front, to the paddle; the rod and the paddle weigh what they do whatever the
+        # stroke and the paddle's size (PUSH_ROD_KG, PUSH_PADDLE_KG): only the force and the time say how hard it pushes
+        L = Lh + 0.02
+        rod = c.slab("rod", L, 0.012, 0.012, 0.02 - L / 2, h, material=c.mat(base="steel", density=_r(PUSH_ROD_KG / (L * 0.012 * 0.012), 3), overrides={}),
+                     look="steel", words="the pusher's rod")
+        c.slab("paddle", 0.012, P["paddle"], 0.08, 0.026, h, material=c.mat(base="rubber mat", density=_r(PUSH_PADDLE_KG / (0.012 * P["paddle"] * 0.08), 3), overrides={}),
+               look="rubber mat", words="the pusher's flat paddle")
         s = c.sb.solids[-1]
         s["parent"] = rod
-        s["at"] = {"x": 0.066, "y": 0.0}
+        s["at"] = {"x": _r(0.006 + L / 2), "y": 0.0}
         s.pop("angle", None)
         t0 = P["delay"]
+        # (the rail: from the rod's middle where it starts, along the housing, in the housing's own frame)
+        rail = dict(role="slider", a=housing, b=rod, anchorA={"x": 0.01, "y": _r(h - yh)}, anchorB={"x": 0.0, "y": 0.0}, axis={"x": 1.0, "y": 0.0},
+                    lower=0.0, upper=_r(stroke))
         if P["mode"] == "force":
-            c.process("mechanics", "drive", role="slider", a=None, b=rod, anchorA=dict(zip("xy", (_r(v) for v in c.world(-0.04, h)))),
-                      anchorB={"x": 0.0, "y": 0.0}, axis={"x": _r(cos(c.a), 6), "y": _r(sin(c.a), 6)}, lower=0.0, upper=_r(stroke),
-                      speed=10.0, force=_r(P["force"], 4), friction=50.0, **({"from": t0} if t0 > 0 else {}), until=_r(P["push_time"] + t0, 4))
+            c.process("mechanics", "drive", **rail, speed=10.0, force=_r(P["force"], 4), friction=50.0, **({"from": t0} if t0 > 0 else {}),
+                      until=_r(P["push_time"] + t0, 4))
         else:
-            c.process("mechanics", "drive", role="slider", a=None, b=rod, anchorA=dict(zip("xy", (_r(v) for v in c.world(-0.04, h)))),
-                      anchorB={"x": 0.0, "y": 0.0}, axis={"x": _r(cos(c.a), 6), "y": _r(sin(c.a), 6)}, lower=0.0, upper=_r(stroke),
-                      speed=_r(P["speed"], 4), force=200.0, friction=50.0, **({"from": t0} if t0 > 0 else {}))
+            c.process("mechanics", "drive", **rail, speed=_r(P["speed"], 4), force=200.0, friction=50.0, **({"from": t0} if t0 > 0 else {}))
     register(ItemType("pusher", "Pusher", "Machines & motion", build_pusher, dynamic=True, module="mechanics",
                       props=[Prop("mode", "Pushes", "force", kind="choice", choices=["force", "speed"],
                                   help="force: pushes with its set force for its push time; speed: moves its paddle at a set speed for its stroke"),
@@ -586,14 +610,16 @@ def _pusher():
                              Prop("push_time", "Push time", 0.2, 0.02, 5.0, 0.01, "s", "How long it pushes (force mode)"),
                              Prop("speed", "Speed", 0.5, 0.05, 3.0, 0.01, "m/s", "The paddle's speed (speed mode)"),
                              Prop("stroke", "Stroke", 0.15, 0.03, 0.5, 0.005, "m", "How far its paddle can go"),
-                             Prop("height", "Height", 0.03, 0.015, 0.5, 0.005, "m", "The rod's height: set it to the pushed thing's middle"),
-                             Prop("paddle", "Paddle height", 0.06, 0.02, 0.3, 0.005, "m"),
+                             Prop("height", "Height", 0.03, 0.015, 0.5, 0.005, "m", "The rod's height: set it to the pushed thing's middle (a raised housing stands on a wooden block)"),
+                             Prop("paddle", "Paddle height", 0.06, 0.02, 0.3, 0.005, "m", "How tall its paddle is (its reach; it weighs 63 g whatever its size)"),
                              Prop("delay", "Starts after", 0.0, 0.0, 10.0, 0.05, "s", "Seconds after the scene lets go")],
                       tags=["pusher", "push", "force", "piston", "plunger", "applied force", "kick", "shove", "paddle", "net force", "harder push"],
-                      anchor="the floor under its paddle's starting face",
+                      anchor="the floor under its housing's front end (its paddle's face starts 3.2 cm ahead of it)",
                       description="A driven paddle on a rod from a fixed housing: it pushes what is in front of it (to its right; turn it to push another "
                                   "way) with a set force for a set time, or moves at a set speed: a harder push, a bigger change in motion.",
-                      source="A linear actuator held at its set force (or speed) along its stroke; no people needed.", facts="5 N for 0.2 s", edit=[{"kind": "rotate"}]))
+                      source="A linear actuator held at its set force (or speed) along its stroke; no people needed. Its rod (136 g) and paddle (63 g), "
+                             "whatever their sizes, move with what it pushes: a push of F for t gives a thing of mass m that slides about "
+                             "F·t / (m + 0.2 kg) (provisional weights).", facts="5 N for 0.2 s", edit=[{"kind": "rotate"}]))
 
 
 # ---------------------------------------------------------------- edge pulley: a cart pulled by a hanging mass (F = ma)
@@ -1280,6 +1306,27 @@ EGG = dict(k=1.5e4, force=35.0)
 PIN_MU, PIN_R = 0.25, 0.0015   # a lever's pivot: steel pin on wood (friction, provisional) and the pin's radius (m)
 # soft surfaces: their crush stiffness E·A/t over a 2 x 2 cm patch, E in Pa (open-cell foam 30-100 kPa; a pillow far softer; a sponge; a rubber mat 1-5 MPa)
 SOFT = {"foam": 5e4, "sponge": 1e5, "pillow": 1e4, "rubber mat": 2e6, "carpet": 5e5, "trampoline mat": 2e5, "felt": 3e5}
+
+
+def _holds(sb, scene):
+    """A held thing that starts in a liquid (a cork held down on a tank's floor, a grape held under the water) is held from above: its moving
+    solids carry `holdFrom: "above"` (render only: the 3D view draws a fork on a rod from an arm over the tank, lifted clear at the release,
+    instead of its pull pin on a post from the table, which under a cork reads as a peg it rests on). Whether a root body's middle
+    starts between a liquid's walls (x0..x1), over its floor and under its surface (the floor plus its layers' heights). A scene without a
+    liquid gets nothing; the engine never reads it."""
+    liquids = [p for p in sb.processes if p.get("kind") == "liquid" and p.get("layers")]
+    if not liquids:
+        return
+    tops = [(p["x0"], p["x1"], p["floor"], p["floor"] + sum(layer["height"] for layer in p["layers"])) for p in liquids]
+    for item in scene.get("items", []):
+        if not isinstance(item, dict) or not item.get("held") or item.get("type") not in TYPES:
+            continue
+        mine = [s for s in sb.solids if s.get("item") == item["id"] and s["kind"] == "dynamic"]
+        # (a welded part's `at` is in its parent's frame: only bodies' roots, and hinged parts, are where they say in the world)
+        roots = [s for s in mine if "parent" not in s or "pivot" in s]
+        if any(x0 < s["at"]["x"] < x1 and floor < s["at"]["y"] < top for s in roots for x0, x1, floor, top in tops):
+            for s in mine:
+                s["holdFrom"] = "above"
 
 
 def _fragile(sb, scene):

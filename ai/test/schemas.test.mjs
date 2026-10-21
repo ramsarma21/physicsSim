@@ -691,3 +691,20 @@ test("edit: words that send a new thing off the table make its goal an 'off' goa
 	const r2 = validate("edit", { ...K(), mode: "patch", reply: "Added a ping-pong ball.", patches }, { catalog, scene, text: "Add a ping-pong ball that the fan blows along the table." })
 	assert.equal(r2.value.patches.find((p) => p.op === "set_goals").goals[1].kind, "moves")
 })
+
+test("a pulley lift's pail is a container: a thing may go inside it, and an \"in\" goal may name it (judged by the pail's walls in the run); a hanging machine's note says it hangs over the table", () => {
+	const plan = {
+		title: "A pail lifts an apple",
+		seconds: 3,
+		items: [
+			{ id: "lift", type: "pulley-lift", props: { weight: 1.2, cup_width: 0.14, cup_height: 0.1 }, place: { on: "air", x: 1.3, y_m: 1.25 } },
+			{ id: "apple", type: "apple", place: { inside: "lift" } }
+		],
+		goals: [{ kind: "in", item: "apple", container: "lift", label: "the apple rides up in the pail" }]
+	}
+	const r = validate("plan", plan, { catalog })
+	assert.deepEqual(r.errors, [])
+	assert.equal(catalog.types["pulley-lift"].container, true)
+	assert.equal(catalog.types["pulley-lift"].goalContainer, true)
+	assert.match(catalog.types["atwood-machine"].note, /never resting on it/)
+})
