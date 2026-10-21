@@ -7,7 +7,7 @@ import assert from "node:assert/strict"
 import { readdirSync, readFileSync } from "node:fs"
 import { after, before, beforeEach, test } from "node:test"
 import { AIError } from "../core.mjs"
-import { REPAIR_TURNS, SOFT_CHECKS, directSource, executorFrom, failedChecks, loadExecutor, repairTurn, safePlan, worldInput } from "../director.mjs"
+import { REPAIR_TURNS, SOFT_CHECKS, directSource, executorFrom, failedChecks, loadExecutor, pictureOf, repairTurn, safePlan, worldInput } from "../director.mjs"
 import { VALIDATORS } from "../schemas.mjs"
 import { checkShotPlanSchema, nearest, validateShotPlan } from "../shot-plan.mjs"
 import { runScene, runStep, STEPS } from "../steps.mjs"
@@ -435,6 +435,24 @@ test("a comparison filmed one run per lane reaches the executor as one run per l
 	assert.match(gw.requests[0].body.messages[1].content, /A comparison filmed one run per lane: top = ft_1b_car_red_clay, bottom = ft_3b_car_red_clay\. Your lanes\.list must have exactly these lane ids\./)
 	const wi = worldInput(ctx)
 	assert.deepEqual(Object.keys(wi.runs), ["top", "bottom"])
+	assert.deepEqual([ctx.W, ctx.H], [1920, 1080], "no aspect: a 16:9 picture")
+})
+
+test("a plan is measured at the video's own aspect: a 3:2 lesson's split bands are 3:1, as the compositor films them", async () => {
+	assert.deepEqual(pictureOf("3:2"), { W: 1620, H: 1080 })
+	assert.deepEqual(pictureOf("16:9"), { W: 1920, H: 1080 })
+	assert.deepEqual(pictureOf(undefined), { W: 1920, H: 1080 })
+	gw.script("m1", [answer(plan("02-fairtest-ramps"))])
+	const ex = stubExecutor([PASS])
+	const [top, bottom] = (await runsOf("02-fairtest-ramps")).map((r) => r.scene)
+	await runStep("direct", { runs: { top, bottom }, aspect: "3:2", lesson: { question: "Is this a valid experiment to test ramp height?", pauses: [{ where: "result" }], grade: 3 } }, opts({ executor: ex }))
+	assert.deepEqual([ex.seen[0].ctx.W, ex.seen[0].ctx.H], [1620, 1080])
+	// the real executor films the same plan at the two pictures differently: each band's aspect decides its framing
+	const world = Shots.makeWorld(worldInput({ runs: Object.fromEntries((await runsOf("02-fairtest-ramps")).map((r) => [r.lane, { scene: r.scene, run: r.run }])) }))
+	const wide = Shots.compile(plan("02-fairtest-ramps"), world, { width: 1920, height: 1080, fps: 30 })
+	const lesson = Shots.compile(plan("02-fairtest-ramps"), world, { width: 1620, height: 1080, fps: 30 })
+	assert.deepEqual(lesson.shots[0].bands.map((b) => b.rect[2] / b.rect[3]), [3, 3])
+	assert.notDeepEqual(lesson.frames[0].b, wide.frames[0].b)
 })
 
 test("the step measures with web/export/shots.js itself: one world of the step's runs, its moments the digest's, its measured failures sent back", async () => {

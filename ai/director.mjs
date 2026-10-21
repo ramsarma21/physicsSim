@@ -272,6 +272,12 @@ async function measured(executor, plan, ctx) {
 // ------------------------------------------------------------------------------------------------ the automatic plan
 const VIEW = { yaw: 0, pitch: 4 } // square on, a little above: lengths and heights read true
 const ASPECT = { "16:9": 16 / 9, "4:3": 4 / 3, "3:2": 3 / 2, "1:1": 1, "3:1": 3 }
+/** The picture a plan is measured on: 1080 high at the video's aspect (16:9 when none), so a 3:2 lesson's split bands are measured at 3:1, as
+ *  the caller films them (sizes and margins are shares of each band; a 16:9 picture's bands would be 32:9). */
+export function pictureOf(aspect) {
+	const a = ASPECT[aspect] ?? 16 / 9
+	return { W: Math.round(1080 * a), H: 1080 }
+}
 const SNUG = 0.1 // the snug fit's margin on each side
 const r3 = (v) => Math.round(v * 1000) / 1000
 const unite = (bs) => {
@@ -496,8 +502,9 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 	const repairNeeds = Math.min(REPAIR_MIN_MS, Number.isFinite(route?.timeoutMs) ? route.timeoutMs : REPAIR_MIN_MS)
 	const left = () => deadline - Date.now()
 	const validate = (v) => validateShotPlan(v, { digest, lanes: src.lanes ?? null })
-	// (what the executor reads: the runs, their digest, the picture; extra: the executor's world already built, the catalog and registry)
-	const ctx = { digest, runs, W: 1920, H: 1080, fps: 30, aspect: src.aspect, ...extra }
+	// (what the executor reads: the runs, their digest, the picture at the video's own aspect; extra: the executor's world already built, the
+	// catalog and registry)
+	const ctx = { digest, runs, ...pictureOf(src.aspect), fps: 30, aspect: src.aspect, ...extra }
 	const attempts = []
 	const warnings = []
 	let usage = {}
