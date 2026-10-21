@@ -70,6 +70,8 @@ export function unitAmount(clause, spec, others = []) {
 	const fam = unitFamily(spec?.unit)
 	if (!fam || PLACE_FAMILIES.has(fam)) return false
 	if (others.some((o) => o && o !== spec && unitFamily(o.unit) === fam)) return false
+	// ("heat it to 80 degrees": degrees with no C or F are a temperature's where nothing in the clause turns or tilts)
+	if (fam === "temperature" && /\b\d+(?:\.\d+)?\s*deg(?:rees?)?\b/i.test(clause) && !/\b(tilt|turn|rotat|angle|lean|steep|incline|slope|aim|point|swing)/i.test(clause)) return true
 	return amountsIn(clause).some((a) => a.family === fam)
 }
 /** A bare number said for a setting that has no unit ("set the friction to 0.5", "bounciness 0.8", "use 3 cells"): words is the setting's regex

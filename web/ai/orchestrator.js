@@ -3872,6 +3872,19 @@ export function createOrchestrator(deps) {
 		if (!isObj(plan) || !Array.isArray(plan.items)) throw new AiError("invalid", "The plan that came back has no items", { step: mode === "edit" ? "edit" : "plan", retryable: true })
 		check()
 		report.initialPlan = clone(plan)
+		// (a new scene's things are what they are made of (./realism.js): a friction, rolling resistance, bounce or kick no real one of its
+		// material has, that the words don't ask for, is left at its material's own, and the assumptions say so)
+		const realNotes = []
+		if (mode === "new")
+			for (const u of unrealIn({ items: [] }, plan)) {
+				if (materialSaid(u.key, personText)) continue
+				const it = plan.items.find((x) => isObj(x) && x.id === u.id)
+				if (!it || !isObj(it.props)) continue
+				const props = { ...it.props }
+				delete props[u.key]
+				plan = { ...plan, items: plan.items.map((x) => (x === it ? { ...x, props } : x)) }
+				realNotes.push(`${nameOfItem(it) ?? u.id}${/s$/.test(nameOfItem(it) ?? u.id) ? "’" : "’s"} ${u.label} is a real one’s, not the ${sig(u.to)} planned (a real one has ${sig(u.lo)}–${sig(u.hi)})`)
+			}
 
 		// ---- 3. solve, 4. simulate (each version of the scene: {id, plan, solved, scene, sim, score, judged, fromRound, parent, tuned})
 		// An edit or a check of the scene on the table changes what was asked and nothing else: what the change did not touch is solved at its
@@ -6089,7 +6102,7 @@ export function createOrchestrator(deps) {
 		const ownDiff = (mode === "new" && !concept) || (mode === "edit" && (editOut?.differences !== undefined || ownPlan))
 		const asm = !ownAsm ? [] : Array.isArray(finalPlan.assumptions) ? finalPlan.assumptions : typeof finalPlan.assumptions === "string" ? [finalPlan.assumptions] : []
 		const notesArr = ownNotes && Array.isArray(finalPlan.notes) ? finalPlan.notes : []
-		let assumptions = [...asm, ...notesArr].map(String).filter(Boolean)
+		let assumptions = [...asm, ...notesArr, ...realNotes].map(String).filter(Boolean)
 		// what differs from the request or the picture, up front: the plan's own list, a mirrored layout (the plan says so in its notes),
 		// the stands added so nothing floats, and what of the picture is still not built
 		const differences = []

@@ -53,6 +53,8 @@ test("units are read as what they measure, and an amount holds a setting by its 
 	assert.equal(unitAmount("fill the pitcher with 200 mL", fill), true)
 	assert.equal(unitAmount("fill the pitcher with 200 mL", fill, [{ unit: "mL" }]), false, "two settings in mL: the unit alone can't say which")
 	assert.equal(unitAmount("make it 30 cm wide", { unit: "m" }), false, "a length is said for a move as often: its own words decide")
+	assert.equal(unitAmount("heat the water to 80 degrees", { unit: "°C" }), true, "degrees with no C are a temperature's")
+	assert.equal(unitAmount("tilt the lamp 30 degrees", { unit: "°C" }), false, "…but not where the clause turns something")
 	assert.equal(bareAmount("set the friction to 0.5", "friction\\w*", { unit: "" }), true)
 	assert.equal(bareAmount("use 3 cells", "cell\\w*", { unit: "" }), true)
 	assert.equal(bareAmount("make it bounce 2 times", "bounc\\w*", { unit: "" }), false)

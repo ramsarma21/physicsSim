@@ -142,3 +142,14 @@ test("the critic's patch that gives a soda can a friction of 1.6 is not applied,
 	assert.equal(r.scene.items.find((i) => i.id === "can1").props?.friction, undefined)
 	assert.ok(r.refine[0].skipped.some((s) => /Soda can 1: its friction was not set to 1\.6, which no real one has \(0\.12–0\.6\)/.test(s)), JSON.stringify(r.refine[0].skipped))
 })
+
+test("a new scene's plan that grips the cans like glue: built with a real can's friction, and the assumptions say so; asked for in the words, it stays", async () => {
+	const glue = () => ({ ...cansPlan(), items: cansPlan().items.map((i) => (/^can/.test(i.id) ? { ...i, props: { friction: 1.6 } } : i)) })
+	const refine = { done: true, score_0_10: 8, issues: [], patches: [] }
+	const r = await createOrchestrator({ api: mockApi({ plan: glue(), refine }) }).build({ text: "a bowling ball knocks three soda cans over" }, { stageTune: false }).result
+	assert.ok(r.scene.items.filter((i) => /^can/.test(i.id)).every((i) => i.props?.friction === undefined), JSON.stringify(r.scene.items.map((i) => i.props)))
+	assert.ok(r.assumptions.some((a) => /^Soda can 1’s friction is a real one’s, not the 1\.6 planned \(a real one has 0\.12–0\.6\)$/.test(a)), JSON.stringify(r.assumptions))
+	assert.equal(r.initialPlan.items.find((i) => i.id === "can1").props.friction, 1.6, "the plan as the AI wrote it is kept on the report")
+	const asked = await createOrchestrator({ api: mockApi({ plan: glue(), refine }) }).build({ text: "a bowling ball rolls into three super grippy soda cans" }, { stageTune: false }).result
+	assert.equal(asked.scene.items.find((i) => i.id === "can1").props.friction, 1.6, "the person asked for grippy cans")
+})
