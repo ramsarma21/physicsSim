@@ -280,7 +280,16 @@
 						"role": "fan"
 					}
 				]
-			}
+			},
+			"context": [
+				{
+					"gap": [
+						"fan",
+						"boat"
+					],
+					"when": "start"
+				}
+			]
 		},
 		{
 			"id": "start",
