@@ -117,9 +117,9 @@ After `vercel deploy`, open the deployment URL (logged in to Vercel, or through 
 
 Then share the link.
 
-`vercel deploy` uploads what `.vercelignore` lets through (about 155 files, 5 MB: package files, `vercel.json`, `api/`, `ai/` without its
-research, benchmark, tests, notes and cache, the build scripts, the engine's sources in `tooling/src`, `web/` without `web/dev` and the other
-local-only folders), then Vercel runs:
+`vercel deploy` uploads what `.vercelignore` lets through (about 345 files, 14 MB on 2026-10-21: package files, `vercel.json`, `api/`, `ai/`
+without its research, benchmark, tests, notes and cache, the build scripts, the engine's sources in `tooling/src`, `web/` without `web/dev`, the
+other local-only folders and the client tests: `web/ai/test`, `web/account/test`, `web/export/test`), then Vercel runs:
 
 1. `npm ci` (the lockfile: three 0.170.0, mediabunny 1.61.0, planck 1.5.0, effect 4.0.2, @neondatabase/serverless 1.2.0, esbuild 0.28.2,
    @electric-sql/pglite 0.5.8 for the accounts' tests).
