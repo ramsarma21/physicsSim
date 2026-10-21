@@ -1085,9 +1085,8 @@ scene without a liquid container, a sailboat, a hull boat or a breeze (the 22 sc
     rim reaches the water (theory ρV_env − m: 565), it floods and sinks at 10 s; a foam bowl never sinks; the stoneware mug (330 g, its handle 15 %)
     floats tipped toward its handle and floods (2D statics: GM 3 mm against the handle's 9 mm lever), a light one floats on its side, as real light
     cups do. The solver's `place.float` starts a vessel at its height. The catalog's cup, plastic-cup, jar, bucket and box are fixed: never float.
-    Not yet: a tap's or a pitcher's stream into a vessel that floats in a tank joins the TANK's water (tooling/src/sim/modules/flow.ts `land()`
-    gives a particle to a RegionStore once it is below the tank's surface, though it is inside a BasinStore's inside): the flow module's change; the
-    how-to and the edit digest say so and build the hose version.
+    A tap's or a pitcher's stream into a vessel that floats in a tank fills it too since engine6 (flow.ts `land()` gives a particle to the innermost
+    container and leaves one over a floating vessel's opening to it: see "Cross-module gaps (engine6 crossmod)"; the hose version still works).
   - *Goal* `floats_then_sinks {item, by_s?}` (Python == JS, aliases fills_and_sinks, fills_then_sinks, sinks_when_full…): it floats first (afloat 1),
     later sinks (sunk 1) and rests on the bottom at the end; never met by a thing that sank at once (entry `floated_s`, `sank_s`, `flooded`).
   - *Surface tension* (records `surface`, `soap`; layers get `tension` N/m and `wets` (the largest contact angle it allows, °) only in a scene with
@@ -1163,7 +1162,7 @@ Files: `machines/mod_measure.py` (catalog, goal kinds), `web/sim/modules/measure
   one; a `measure-mark` process record {zero, start, finish} (world x of its marks; no engine work) lets a goal check that has only the document
   find its finish); `start-line` / `finish-line` (painted bands, `sign`, `gate` posts; a `measure-mark` record {x});
   `stopwatch` (links `watch`, `start_line`, `finish_line` (a line or a lane); `start` release | moves | crosses (`start_x`); `stop` crosses (`stop_x`) |
-  stops | hits | at (`stop_at`) | never; `reaction_s` 0…0.3 (a hand's delay on presses that answer something seen); `counts` run | lesson (seconds ×
+  stops | hits | at (`stop_at`) | reads (`stop_reading`, `stop_value`: engine6, "Cross-module gaps") | never; `reaction_s` 0…0.3 (a hand's delay on presses that answer something seen); `counts` run | lesson (seconds ×
   the scene's time-lapse); `face_cm` 6…60 (drawn only); `on_table` a real 6 × 8 × 1.5 cm 60 g one; readouts seconds, meters, start_s, stop_s, running,
   lesson_s; with nothing to watch (no watch link, or one that names nothing) a watch that starts at the release and stops `at` or `never` runs as
   a plain clock, any other reads 0); `measuring-tape` (`watch`, `point` front | back | centre, `from` left end | right end, `length` 0.3…30 m: meters =
@@ -1181,7 +1180,7 @@ Files: `machines/mod_measure.py` (catalog, goal kinds), `web/sim/modules/measure
   on Earth: under `settings.gravity` moon a 1 kg mass reads 165 g, on Mars 378 g; `over` past capacity_kg × 9.81 N), smoothed over
   0.05 s from what rests on it at the release; tare takes off the weight Σ m·g of what rests on it at the release (the first step that sees contacts),
   never what lands on it later: a tared bowl reads an egg dropped into it, smashed or whole; the frames before that step read that first reading, so it
-  shows what was set on it from 0 s); `pan-balance`
+  shows what was set on it from 0 s; since engine6 it also weighs grains heaped and liquid lying as a puddle on its platform: "Cross-module gaps"); `pan-balance`
   (a 30 cm beam on a pin with ±`stop_deg` limits and `damping` (0.02 N·m·s), pans hung on pins 12 cm under its ends (the hangers' bodies are the top 2 cm of
   their bows; the model draws them down to the pans): tilt (right pan down +), heavier −1 | 0 (within 0.5°) | 1, left_g and right_g (what rests in each
   pan, as the kitchen scale finds it); its beam, pointer and a 46.6 g brass gravity bob 9 cm under the pivot are ghosts (what is dropped into a pan
@@ -1927,8 +1926,8 @@ research/rw-validate-optics.ts [snell|fresnel|mirror|tir|prism|lens|image|invers
     (`spread` π, `out` π/2, 8.4 lm/W of its rating and 77 % of it as infrared, provisional) and an LED a 30° cone up (red 0.5, yellow 0.5, green 1.5,
     blue 0.4, white 4 lm at 20 mA, one-colour LED spectra, provisional); their light is their `light` reading × that (a bulb on 2 cells reads 11.6 ×
     the lux of one on 1 cell on a meter: its light ratio), they cast shadows, and a bulb's thin glass globe passes its own light (it is left out of the
-    bodies). The circuits module's solar panel still keeps its own light estimate (sun, lamps and glowing bulbs, no mirrors or lenses):
-    `opticsOf(scene).irradiance(panel solid, at, normal, width)` gives it the traced light whenever its owner reads it.
+    bodies). The circuits module's solar panel takes the traced light (its face a light-taking `panel` body; see the circuits section and
+    "Cross-module gaps (engine6 crossmod)"); `opticsOf(scene).irradiance(panel solid, at, normal, width)` gives the traced light on any face.
   - **Coloured and blinking torches.** The flashlight's `color` white | red | green | blue (one-colour LEDs: light kinds `led-red` 640 nm, `led-green`
     525, `led-blue` 465, `led-yellow` 590 (an LED's), FWHM 15-35 nm, Schubert); its `lumens` follows the colour until set (red 40, green 100, blue 10,
     white 150 lm: BT.2020's white balance, so red + green + blue make white and pairs make yellow, magenta, cyan). Its `pattern` (an open choice:
@@ -2010,7 +2009,8 @@ research/rw-validate-optics.ts [snell|fresnel|mirror|tir|prism|lens|image|invers
   an item (≥ 1e-9 W and 1e-6 of the source), "shadow" [occluder, screen] (light it stops would have landed on the screen first), "sees" [eye, item] (rays
   from its pupil over its field, through glass and off mirrors, end on a thing that scatters ≥ 1e-4 lm, or a source's light lands on it), "tir" [item].
   For other modules: `opticsOf(scene)` → `{absorbed(solid) W, irradiance(solid, at, normal, width) W/m², result()}` (the heat module's lamp heating and the
-  circuits module's solar panels can read the traced light from it; today both keep their own simpler estimates, which agree for an unobstructed beam).
+  circuits module's solar panels read the traced light from it; the heat module takes it for opaque bodies). Since engine6 a clear body, a filter, a
+  translucent sheet and a flat mirror take the share of a tube their depth catches, as an opaque body does ("Cross-module gaps (engine6 crossmod)").
 - **Goal kinds** (`machines/mod_optics.py` == `web/sim/modules/optics.js` == the AI's checks): `hits_target {light, target, before_s?}` ("light"
   event), `lit {item, at_least_lux?}` (a meter's lux at the end ≥ the value, default 1 lx; a target: mW > 0; else light_w > 0), `dark {item,
   at_most_lux?}`, `shadow_on {occluder, screen}`, `sees {eye, item}`, `brighter {a, b}` (lux, else mW, else light taken in), `focused {screen}`
@@ -2920,7 +2920,8 @@ without modules; the catalog grows by the types and props below).
   times heat's own absorptivity (Incropera A.12: white paint 0.2 … black 0.97; the tracer's own 1 − reflectance would make a white glaze take a
   tenth of a lamp's infrared). Clear bodies (ice, water, glass: optics role `glass`) keep heat's own estimate: the tracer gives a body of the glass
   role the whole height of a beam out of the plane rather than the share its depth catches (a 4 cm ice cube 34 cm from a lamp would take 12 × its
-  light: an optics-side limit, reported to its owner), and water, puddles and thermometers' bulbs keep heat's own too. Without optics (or before
+  light: an optics-side limit, reported to its owner; fixed on the optics side in engine6, heat.ts traced() still leaves them out), and water, puddles
+  and thermometers' bulbs keep heat's own too. Without optics (or before
   its first trace) heat's own estimate holds for everything, and clear solids in the way now pass their share (heat-data `TRANSMITTANCE`: glass,
   optical glass 0.92; PET, bag film 0.9; acrylic 0.92) instead of blocking: an ice cube under a clear jar gets 92 % of a lamp's heat. A focus (many
   bent or turned rays, ≥ 8, in 4 mm of a face) is a hot spot: its power on a spot of its rays' spread (0.5-2 mm radius), conducted into the sheet
@@ -2970,8 +2971,8 @@ without modules; the catalog grows by the types and props below).
   warms it (0.2-1.2 J), and a kitchen scale under a burning candle reads about 1 g less after 10 minutes.
 - **Known limits**: friction's and impacts' heat is lumped (a rubbed face is warmer than the block's mean); a candle's wax pool and dripping are not
   drawn and a candle shrinks evenly as it burns; a jar's air is one mixture (no draught under a raised jar); heat takes the optics module's light only
-  for opaque bodies (see above) and a flat mirror's reflection off a small mirror is the tracer's (it reflects the whole height of a lamp's beam: the
-  foil demo uses sunlight, which it handles exactly); poured liquid mixes as if of one kind; the circuits module's solar panel reads its own light; the fix search keeps a covered candle riding with its jar's top, so it seldom resizes a
+  for opaque bodies (see above) and a flat mirror's reflection off a small mirror is the tracer's (since engine6 the share of a beam its depth
+  catches, sunlight too); poured liquid mixes as if of one kind; the fix search keeps a covered candle riding with its jar's top, so it seldom resizes a
   jar over a candle (the jar's `volume_ml` knob is offered, but the moved candle makes the smaller jar's scene unfit).
 
 ### Heat repair 2 (2026-10-20): one water and one level, lids with holes, the clock from t = 0, the thermostat, no air, cups, the fix search
@@ -3102,8 +3103,8 @@ validator `research/rw-validate-granular.ts`. Category "Sand & soil".
   sheet, and falling grains as streaks of grains (a funnel's or a neck's stream is continuous; a crater's splash flies).
 - **AI** (`plugin` in web/sim/modules/granular.js): how-to and plan/edit/refine lines (grains and their angles, Beverloo's rates and the jam widths per
   grain, craters need held balls over a tray and follow Uehara's law, stream tables need time_lapse 10-30, a poured heap is the funnel's own: never a
-  sand-pile under a funnel, a heap must fit its plank or shelf, an hourglass is its own clock (never a stopwatch on it), a kitchen scale does not weigh
-  grains, a change of grain/spout/neck that makes a goal stale is rewritten with set_goals); goal kinds `piles {item: pile or funnel, min_deg?, max_deg?}`
+  sand-pile under a funnel, a heap must fit its plank or shelf, an hourglass is its own clock (or a stopwatch with stop reads on its empty, engine6), a
+  kitchen scale weighs the grains on its platform (engine6), a change of grain/spout/neck that makes a goal stale is rewritten with set_goals); goal kinds `piles {item: pile or funnel, min_deg?, max_deg?}`
   (a funnel's `heap_mm`/`heap_deg` when the item has no height_mm), `stands {item}`, `collapses {item}`, `steeper {a, b}` (piles or funnels),
   `crater {item, min_mm?}`, `crater_bigger {a, b}`, `sand_runs_out {item, before_s?, after_s?}`, `runs_out_first {a, b}`, `timer {item, seconds, tol_s?}`
   (tol_s in seconds, default 5 % of seconds; an old `tol` under 1 is a share, 0.1 = 10 %, 1 or more seconds; the entry carries want, tol, empty, jammed),
@@ -3145,12 +3146,10 @@ validator `research/rw-validate-granular.ts`. Category "Sand & soil".
   after "fill the funnel with fine sand instead") is rewritten with set_goals to what the change now shows, and the reply says so. A refine round
   whose run the engine cannot finish (too slow under load) keeps the last version that ran (web/ai/orchestrator.js). The open rework's refusal says a
   module goal's "<label>: no (…)" as "“<label>” still doesn’t happen (…)", never "<label>, and no".
-- For other modules: `grainsOn(scene, item)` (tooling/src/sim/modules/granular.ts) gives the grains (kg) resting on an item's fixed solids now (a kitchen
-  scale's platform); `grainsIn(scene)` the run's beds.
-- Known limits: a kitchen scale does not weigh grains yet (the measure module's scale counts moving solids; `grainsOn` is there for it to add);
-  a stopwatch cannot time an hourglass (its stop rules watch motion and an hourglass stands still: the hourglass's own run_s and the timer goal are its
-  clock; a stopwatch stop on another item's reading would need the measure module); sand rests only on fixed solids (a movable board under a heap is
-  not its floor);
+- For other modules: `grainsOn(scene, item, solid?)` (tooling/src/sim/modules/granular.ts) gives the grains (kg) resting on an item's fixed solids now
+  (with `solid`, that solid's only: a kitchen scale's platform, which weighs them since engine6); `grainsIn(scene)` the run's beds.
+- Known limits: a stopwatch times an hourglass only by its readings (stop reads, engine6: "Cross-module gaps"); sand rests only on fixed solids (a
+  movable board under a heap is not its floor);
   sand does not pile on moving bodies (falling grains pass through them) and does not push bodies sideways (an avalanche against a block);
   a pile is one heightfield (nothing under an overhang); the hourglass and funnel are fixed; a column taller than the crush height fails by slumping its
   edges rather than as one block; running water is quasi-steady (no waves; flood routing, not shallow-water dynamics) and the bed's change is
@@ -3612,3 +3611,90 @@ are identical byte for byte (document, resolved, warnings, summary and track; Py
   `tools/parity-engine.mjs --catalog` ALL IDENTICAL (131 scenes × 3 runs in node and headless Chromium, 4 rates, 4 error messages),
   `tools/parity/fuzz-live.mjs --n 300` 754 cases, 0 mismatches; the node:test files as CI runs them, 473 of 473; the app in headless Chromium (the
   engine on the server and in the page) runs the starter and wrecking-ball, the same track both ways, no console errors.
+
+## Cross-module gaps (engine6 crossmod, 2026-10-20): a stream into a floating vessel, a scale that weighs sand and puddles, the panel's traced light, a beam's depth share, the string telephone, a stopwatch stopped by a reading
+Where one module's thing meets another's. The 12 scenarios and the 10 gallery scenes are byte-identical (document, resolved, track, summary); of the 403
+demo and fixture scenes (demos/*, tools/parity/fixtures/*-demos.json) only those named below differ, with every goal as before. Checked by
+`research/rw-validate-crossmod.ts` (new: `vessel|weigh|solar|depth|telephone|stopwatch|all`; 44 checks: on the engine before this batch 29 of the
+39 outside the stopwatch group fail, the 4 solar checks pass, and the stopwatch group is refused: `reads` was no stop).
+- **A stream into a floating vessel** (tooling/src/sim/modules/flow.ts `land()`, `overOpening`): a falling particle inside several containers at once (a
+  bowl floating in a tank, a cup standing in a bucket) belongs to the innermost, the one whose inside's floor is the highest, and joins only its liquid
+  when it reaches that surface; a particle over the opening of one of the module's containers (its rim within about 27° of level) whose rim stands above
+  the surface of the container it is in is left to fall into it. So a tap's or a pitcher's stream over a bowl (or a mug) floating in a fluids tank fills
+  it (its weight through SolidHandle.carry, which the fluids module's `heldIn` reads) until its rim reaches the tank's surface; then the tank's water comes
+  over the rim (fluids' flood) and what lands there is the tank's water. Measured: a melamine bowl under an 80 mL/s tap holds what the tap let go a fall
+  earlier (463.8 mL at 6.5 s for 460.2), the tank takes 1.8 mL before the bowl's rim reaches the water at 7.43 s, the bowl holds 560.7 mL at its fullest
+  (ρ·V_envelope − m: 565 mL; the hose version 559), floods at 8.8 s and rests on the bottom at 9.06 s (`floats_then_sinks` met with a tap); a cup on a
+  bucket's floor fills (342 mL) and only its overflow reaches the bucket. No flow or fluids demo changed.
+- **A kitchen scale weighs grains and puddles** (measure.ts `measure-scale`; granular.ts `grainsOn(scene, item, solid?)`, flow.ts `puddlesOn(scene, solid)`;
+  each puddle keeps its kg, every particle at its own liquid's density): the reading adds, at rest, the weight of the grains whose bed columns stand on
+  the platform solid itself (not the scale's base) and of the liquid lying on it as puddles, through its load-cell filter and its tare like the rest of its
+  load (a heap set on it before the release is tared). A falling stream's own push is not added (as for a stream into a mug on it), and a puddle is as big
+  as the flow module makes it (it does not run off a small platform's edge). Measured: 30 mL of water spilt on the platform 29.95 g (× 0.9982), corn
+  syrup 1.38 g a mL, a 100 g heap set on it 100.0 g (tared: 0), a funnel's 100 g poured onto it 99.99 g, rising as it heaps (27 g at 1.5 s), a heap on
+  the table beside it 0, a funnel's 100 g poured into a bowl standing on it 485.1 g (the bowl's 385.1 g and 99.99 g: the grains rest only on fixed
+  solids, so the sand lies on the platform under the bowl, which weighs it all the same). Nothing changes in a scene without grains or puddles on a
+  platform.
+- **The solar panel and the traced light**: already in before this batch (circuits.ts `tracedLight`, the panel's face a light-taking `panel` body of the
+  optics trace); checked again: a flashlight aimed at an indoor panel (sun 0) 167 W/m² of sunlight's worth and 33 mA into an ammeter, aimed away 0, a
+  cardboard card between them 0, turned onto it by a flat mirror 34 W/m² and 6.7 mA.
+- **A beam's depth share** (tooling/src/sim/optics.ts `beside` and the mirror branch; web/sim/optics.js rebuilt): a clear body (glass, water, ice), a colour
+  filter and a translucent sheet without a round aperture take only the part of a lamp's, flashlight's or laser's tube within |z| < D/2 of their depth D,
+  as an opaque body does (`caught`; the tube is cut to it, `clipTo`), the rest passing beside them out of the plane, not followed; a tube that fits within
+  the depth is left exactly as it was (a laser's 0.75 mm beam bit for bit). A flat mirror turns back only what it catches, sunlight too: a band its own
+  depth tall (before, a deep body downstream took its own depth of reflected sunlight). Uncut sunlight through clear bodies keeps its W per metre of
+  height (what passes beside them is sunlight too). Measured: a 4 cm glass cube 34 cm from a torch catches what a 4 cm opaque cube catches (128.6 mW
+  each; the beam's whole height there, which it took before, 356 mW); under a desk lamp's 35° shade a tenth of the height (11.0 against 100.8 mW, the heat
+  repair's "12 times"); a filter the same; a 4 cm flat mirror's face catches what an opaque slab there catches and a deep screen gets 0.9 × it; sunlight
+  off a 10 cm mirror onto a body 1 m deep 0.9 × the mirror's catch, not 10 ×; the lamp-and-ice demo's near cube 0.14 W (2.0 W before). Changed scenes: the
+  `light_w` of clear bodies under lamps and the light reflected off small flat mirrors (demos/optics/demo-lamp-ice and demo-periscope, demos/thermal/
+  heat-lamp, heat-led and heat-puddle, demos/heat/heat-oil-water, jarlamp, oil, foil-18, foil-30, foil0, foil18 and heat-foil-reflector, the heat-demos
+  fixtures 2, 3, 8, 17 and 20): every goal as before. Heat still keeps its own estimate for clear bodies (heat.ts `traced()` leaves glass-role bodies
+  out; it could take optics' figure now), so temperatures move only where light went through a clear body onto something opaque (heat-led's ice under
+  the old bulb melts at 9.117 s, 9.083 s before; plates within 0.001 °C; a plate's focused hot spot under an ice cube is gone).
+- **String telephone** (`string-telephone`, the waves module: machines/mod_waves.py `build_telephone` == web/sim/modules/waves.js; tooling/src/sim/waves.ts
+  `telephoneOf` and SoundField `telephones`): two 9 oz paper cups (9 cm, mouths outward; ghost solids `cup-talk`, `cup-listen`) and a string between their
+  bottoms (ghost `string`, carrying `sag`, render only), always level, its anchor the string's middle at the cups' height. Props `length` 0.5-20 m (3),
+  `pull` 0-30 N (5), `pinched`, `string` cotton string (1 mm, 0.6 g/m, about 2 GPa, loss factor 0.08) | fishing line (nylon 0.5 mm, 1140 kg/m³, 3 GPa,
+  0.03) | wire (steel 0.3 mm, 200 GPa, 0.001), `voice` none | whisper | quiet | normal | loud | shout (40, 52, 62, 75, 82 dB 1 m away: whisper provisional,
+  Pearsons 1977, ANSI S3.5-1997), `talk_at`, `talk_for` (a held voice: a whisper as breath noise at 1-4 kHz, a voice 220 Hz and its harmonics),
+  `show_waves`. Readouts: its voice's sounding, pitch, struck, amp_mm; `carries` (no | yes), `sag_mm`, `loss_db`, `string_ms`. Records: its voice (a
+  source at the left cup's mouth) and `{kind: "sound", role: "telephone", solid, a, b (the cups' mouths), length, diameter, rho, E, eta, tension, pinched,
+  cup: {r, m, f, v}, reach}`. Engine: a source within `reach` (0.5 m) of one cup's mouth is heard by a meter within 0.5 m of the other's (each way): in at
+  the near mouth by 1/r (5 cm at least), × ratio, out by 1/r from 5 cm of the far mouth; its time the two air legs at the air's speed and the string at
+  its own; nothing in a vacuum (no air takes the voice to the cup). ratio = 2·S²·Z_s·ρ₀c²/(ω·V·(Z_d² + Z_s²))·e^(−η·ω·L/(2√(E/ρ))) at 1 kHz (a lumped
+  cup-string-cup model, provisional): Ernst's sagging-string modulus E/(1 + (μgL)²·EA/(12T³)) (Der Bauingenieur 40, 52 (1965)), a thin bar's impedance
+  A·√(E_eq·ρ) and speed √(E_eq/ρ) (Kinsler §3.5), each cup bottom a 0.66 g plate above its 590 Hz resonance (Z_d = ω·m·|1 − (f_r/f)²|), the ear closing the
+  far cup (V 266 mL, ρ₀c² = 1.4 × 101325 Pa); no pull or pinched: nothing; the sag μgL²/(8T) under the run's gravity, at most 30 % of its length. Numbers:
+  3 m of cotton at 5 N loses 24.3 dB cup to cup, +1.35 dB a metre; wire 16.3 dB; fishing line 29.4 dB, +0.5 a metre; drooping at 0.1 N 39.5 dB (6.6 cm
+  of sag); on the Moon the same 0.1 N droops 1.1 cm and loses 27 dB. A whisper into the left cup reaches an ear at the right cup's mouth at 42.8 dB through
+  3 m of taut cotton, 1.9 ms after (1618 m/s), against 30.6 dB through the air alone (under a quiet room's 35). Goal `hears` takes `expect: false` (a slack
+  or pinched telephone's ear does not hear it; items.py and web/sim alike). AI: how-to and plan lines (the ear's place: meter x = phone.x + length/2 +
+  0.12, its height the phone's), a worked example (a taut and a slack telephone, each with its ear), knobs (pull, pinched, voice, length), digest lines
+  (what it carries, where an ear hears it, how the child talked). View (web/models/mod-waves.js): the cups with a red (talk) and a blue (listen) band, the
+  string hanging in its sag, a clothes peg when pinched; the sound lines also spread from the far cup while the string carries the voice (0.7 as strong: a
+  picture).
+- **A stopwatch stopped by a reading** (measure: `stop` reads; props `stop_reading`, an open choice of empty, bottom_g, clogged, melted, reading, temp,
+  water_temp, boiling, flame, popped, broken, light, on, lux, liquid_ml, volume_ml, left_ml, flooded, sunk, grams, level, rpm, dissolved_g or any other
+  reading key, default empty, and `stop_value` (1); the record's `stop_key` and `stop_value` only with stop reads, so every other stopwatch's document is
+  as before): it stops when the watched item's reading reaches the value from the side it was on when the watch started (one that starts on the value
+  waits until it leaves it), timed where it crossed between the step before and now (a module's 0/1 reading: at the step it changed), plus `reaction`.
+  A `reads` goal's `seconds` on a stopwatch that counts lesson reads its `lesson_s` (what its face shows; the same as before at a time-lapse of 1).
+  Measured: a one-minute sand timer under a time-lapse of 4: the stopwatch on its empty reads 59.6 lesson s (the timer's own run_s 59.59), stopped at
+  15.10 s as it ran out; on 20 g in its bottom bulb it stops with 19.9 g there; a 0.2 s reaction stops it 0.2 s later; on an ice cube's melted under a
+  time-lapse of 600 it stops as the cube melts (11.57 s: 113.7 lesson minutes). The measure demos' resolved props gain the two new props' defaults.
+- **Texts**: fluids (a tap or pitcher fills a floating bowl; the digest's "no water from the tap landed in it" when a stream misses), granular (a kitchen
+  scale weighs a heap on it; a stopwatch can time a sand timer), flow (a puddle on a scale is weighed), measure (stop reads, counts lesson, the scale's
+  grains and puddles, two worked examples) and waves (the telephone) how-to, plan and edit lines.
+- **Checked** (2026-10-20): research/rw-validate-crossmod.ts ALL PASS (44 checks); tools/parity/module.mjs
+  --module waves (767 checks) and --module measure (773), tools/parity/waves.mjs --n 60 --browser (671 cases, 6 telephone scenes), granular (368),
+  flow (404), fluids (1213), module.mjs --module optics (741), heat (35 of 35) and circuits (ALL PASS): 0 mismatches; the node engine == the browser
+  bundle on all of them. The other validators as before: air 114, circuits 83, flow 60, fluids 71, fracture 45, granular 130, magnetism 79, matter
+  232, measure 139, mechanics 104, p2 30, p3 98, plugins 16, poly 47, softbody 109, space 117, space-air 38, stack 9, thermal 118, thermal-2 31,
+  waves 54 PASS, 0 FAIL; optics 110 of 111, its `perf` wall-clock timing over by the machine's load alone (the engine before this batch, run
+  alternately, 7.7-19.7 ms against 8.8-14.1 ms here; that frame has no clear body, so `beside` never runs in it); p4 55 of 56: its crash fuzz
+  (5000 scenes) has 3 breakdowns in 4986 scenes, each a lever-kit (class 2 or 3, a light effort, a start speed: alone with the table it breaks
+  down too) that the engine before this batch breaks on the same way, at the same moment, built by its own builder: the string telephone, a new
+  type, moves the fuzz's draw onto them. machines/test_measure.py 434 of 434, test_catalog.py 351 of 351 (the string telephone among them); the
+  node:test files as CI runs them 759 of 761, the other two (ai/test/server.test.mjs per-step slots, a timing; web/ai/test/creative-fix.test.mjs
+  c03, a search against the clock) pass run alone, as on the engine before this batch.
