@@ -3630,7 +3630,10 @@ bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte 
   hardwood, rigid and 8 Hz axles; sprung = rigid within 1.8 %; 5 N within 1.7 % of (F·t − C_rr·m·g·t)/(car + wheels' I/r² + rod and paddle);
   3 N × 0.2 s = 6 N × 0.1 s (the rolling resistance's share given back) within 0.6 %; 2.5, 7 and 14 cm paddles push a soccer ball alike (0.4 %);
   pushing nothing, the rod and paddle go the integrator's own ½(F/0.199 kg)t² × 25/24 (0.02 %). Above about 7 N for 0.15 s the stroke's end
-  (15 cm) cuts the push short (the start then grows more slowly: still at every step).
+  (15 cm) cuts the push short (the start then grows more slowly: still at every step). The benchmark's FO-36 scenes (pushers stood on blocks)
+  as they are: the finger's 5 N push starts the soccer ball at 0.360 m/s (it was 0.373: a 2 cm paddle weighed 21 g, now 63 g), the hand's 10 N at
+  0.996 m/s (0.947: its 10 cm paddle weighed 106 g, and the rod rubbed); 384 pushers at every corner of their props, pushing a block or a car at
+  0°, 180° and 37°, run finite.
 - **Held from above** (build hook `_holds`, both ports; render only): a held thing whose body (a root's middle) starts in a liquid (between a
   `liquid` record's x0 and x1, over its floor, under its surface: the floor + its layers' heights) carries `holdFrom: "above"` on its moving
   solids. web/view3d.js draws no pull pin or post for such an item; web/models/mod-mechanics.js "mechanics:holders" draws a grey plastic rod
@@ -3663,5 +3666,11 @@ bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte 
   24 cells' magnetization is right. Reckoning a row's pull on its cells is the fix (more face sampling: not done).
 - Checked: the 22 identity scenes byte-identical (server: Python + engine; web/sim + engine); `tools/mechanics/test.mjs` 0 mismatches (its new
   regressions: the pusher at five heights, strokes and paddles, one turned; held cork, grape and dry tank; an Atwood/pulley-lift "moves" and pail
-  "walls" run); "moves" on eight multi-body scenes and "walls" on a pail Python == web/sim; web/ai/test/solver.test.mjs, ai/test/goals.test.mjs,
-  ai/test/schemas.test.mjs (new tests for each); the view's holder seen in headless renders of the cork and the grape.
+  "walls" run; `--n 300`); "moves" on eight multi-body scenes and "walls" on a pail Python == web/sim; web/ai/test/solver.test.mjs, ai/test/goals.test.mjs,
+  ai/test/schemas.test.mjs (new tests for each); the view's holder seen in headless renders of the cork and the grape. Against this branch's base
+  (2cbfe0e), on the 18-core Mac under other agents' load (80-120): every research/rw-validate*.ts passes as before (mechanics 121, magnetism 81,
+  thermal 118, fluids 71, the rest unchanged) but optics' timing check (4-10 ms against its 2 ms, the base tree's the same); tools/parity/core.mjs
+  core and server modes 21995 cases with the base's own 117 mismatches (this machine's Python 3.14 against web/sim/unicode.js's 3.13 tables and
+  its "division by zero" wording), the summaries' 312 runs 0; fuzz-live --n 300 967 cases 0; fluids.mjs 1213 checks 0; staging all pass;
+  machines/test_*.py all pass; the node:test files 765 of 766 (ai/test/server.test.mjs "per-step slots", a timing test the base fails alike under
+  that load); the engine bundle rebuilds byte for byte.
