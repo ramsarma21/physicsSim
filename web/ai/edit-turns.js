@@ -119,14 +119,15 @@ export const MISHAP_KINDS = new Set(["pulled-off", "burns-out", "short", "breaks
  * battery car added "so the two race" hit the table's end at 3.85 s, its battery thrown off and both its leads pulled off, under "Done —
  * everything still works ✓").
  */
-export function mishapLines({ after = null, beforeScene = null, afterScene = null, skip = [] } = {}) {
+export function mishapLines({ after = null, beforeScene = null, afterScene = null, skip = [], say = null } = {}) {
 	const old = new Set((beforeScene?.items ?? []).filter(isObj).map((i) => i.id))
 	const items = new Map((afterScene?.items ?? []).filter(isObj).map((i) => [i.id, i]))
 	const skipped = new Set(skip)
 	const added = (id) => typeof id === "string" && items.has(id) && !old.has(id)
 	const fresh = (id) => added(id) && !skipped.has(id)
 	const endWall = (id) => items.get(id)?.type === "wall" && items.get(id)?.props?.invisible_in_3d === true && !skipped.has(id)
-	const nameOf = (id) => String(items.get(id)?.name ?? id)
+	// (`say`: how a sentence names a thing, "the hobby-motor car", "Battery 2"; else its name on screen)
+	const nameOf = (id) => String((typeof say === "function" ? say(id) : null) ?? items.get(id)?.name ?? id)
 	const out = []
 	// (into a table end's wall: the first thing added to hit it, and those that hit it within 0.2 s of it)
 	const walls = new Map()

@@ -6389,7 +6389,11 @@ export function createOrchestrator(deps) {
 			// end and both its leads pulled off under "everything still works ✓" (V2 release); said with the names on screen, at its time)
 			let mishaps = []
 			try {
-				mishaps = mishapLines({ after: cur.sim, beforeScene: request.scene, afterScene: cur.scene, skip: (G(cur) ?? []).filter(isObj).flatMap((g) => goalRefs(g)) }).map((m) => `${clauseName(m.text, cur.scene)} (${Number(m.t).toFixed(2)} s)`)
+				const say = (id) => {
+					const it = cur.scene.items.find((i) => i.id === id)
+					return it ? placeName(it, cur.scene) : null
+				}
+				mishaps = mishapLines({ after: cur.sim, beforeScene: request.scene, afterScene: cur.scene, skip: (G(cur) ?? []).filter(isObj).flatMap((g) => goalRefs(g)), say }).map((m) => `${clauseName(m.text, cur.scene)} (${Number(m.t).toFixed(2)} s)`)
 			} catch {}
 			report.lead = editLead({ changes: asked.map((c) => c.text), targets: report.targets ?? [], noChange: !!report.edit?.noChange && !report.fixApplied, fixApplied: oneChange ? null : report.fixApplied, undid: report.edit?.fixFlow?.undid ?? null, room: roomLines, also: alsoLines(), said: fixKind && pureFix && report.fixApplied && humanList.length ? humanList : null, mishaps })
 			if (report.edit) {

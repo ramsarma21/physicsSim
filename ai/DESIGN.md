@@ -437,8 +437,8 @@ without modules: the digest text, the prompts and every answer are what they wer
   and edit lines say how (the measuring module's lanes one above the other at x −0.15, 2.9 m with margin 0.3 inside the table's end walls,
   end_stop on: checked in the engine, both cars' goals met, no lead pulled off); and `mishapLines` (web/ai/edit-turns.js): a thing the change added
   that runs into an invisible wall at the table's end, or that a module says went wrong (a lead pulled off, a bulb or LED burnt out, a short, a
-  break; not for a thing a goal names), is said in the edit's lead with its time, "Done — both goals still happen, but Battery 2 (2 AA) and
-  Hobby-motor car run into the end of the table (3.84 s), Black lead 2 pulled off (3.90 s) and 1 more thing goes wrong ✗", never "everything
+  break; not for a thing a goal names), is said in the edit's lead with its time, "Done — both goals still happen, but Battery 2 (2 AA) and the
+  hobby-motor car run into the end of the table (3.84 s), Black lead 2 pulled off (3.90 s) and 1 more thing goes wrong ✗", never "everything
   still works". Tests: `ai/test/edit-outcome.test.mjs`, `web/ai/test/edit-turns.test.mjs` (the AI's own scene on the real engine).
 - **"What I planned" after tuning**: the critic is sent what the user was told (the plan's `reply`) and may answer `planned` (refine and rate, ≤ 1200
   characters, only with done or in the final check) when the version it judges no longer fits it; a new scene's card shows that for the version on the
