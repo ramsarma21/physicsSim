@@ -222,7 +222,13 @@ const { richDigestFrom } = await import(pathToFileURL(join(PG, "ai/rich-digest.m
 const { sceneDigest } = await import(pathToFileURL(join(PG, "ai/scene-digest.mjs")).href)
 const rd = richDigestFrom(sp.scene, await sceneDigest(sp.scene, dg.index), { sim: { ...sm, track: sr.track }, cat: dg })
 writeFileSync(join(OUT, "toy-rich-digest.txt"), rd.text)
-ok(/readings in the last run: temperature 20\.0 → 58\.0 °C \(reaches its end value at \d\.\d\d s\); melted 0\.00 → 1\.00 \(reaches its end value at 1\.\d\d s\)/.test(rd.text) && /What else happened \(the physics modules\): 1\.\d\d s cube melted completely/.test(rd.text) && /Settings: time_lapse 120/.test(rd.text), "the edit step's digest: readings, happenings, settings", rd.text.match(/.*readings in the last run.*/)?.[0])
+// (on a time-lapse the readings say lesson time, the run's seconds × time_lapse (ai/DESIGN.md §19), and the happenings the run's own seconds:
+// warmed on the pad's 0.1 s beats from the release, the cube reaches the wax's 58 °C at 0.90 s of the run, 108 s of lesson time, and is all
+// melted at 1.60 s, 3 min 12 s: after it reaches 58 °C, and at the happening's time × 120 to within a frame of the 120 fps track)
+const lessonS = (w) => [...w.matchAll(/([\d.]+) (h|min|s)\b/g)].reduce((s, [, n, u]) => s + Number(n) * { h: 3600, min: 60, s: 1 }[u], 0)
+const reads = rd.text.match(/readings in the last run: temperature 20\.0 → 58\.0 °C \(reaches its end value at ([^)]+) of lesson time\); melted 0\.00 → 1\.00 \(reaches its end value at ([^)]+) of lesson time\)/)
+const happened = rd.text.match(/What else happened \(the physics modules\): (1\.\d\d) s cube melted completely/)
+ok(!!reads && !!happened && 0 < lessonS(reads[1]) && lessonS(reads[1]) < lessonS(reads[2]) && Math.abs(lessonS(reads[2]) - 120 * Number(happened[1])) <= 1 && /Settings: time_lapse 120/.test(rd.text), "the edit step's digest: readings (in lesson time on a time-lapse), happenings, settings", rd.text.match(/.*readings in the last run.*/)?.[0])
 const { fixWords } = await import(pathToFileURL(join(PG, "web/ai/fixer.js")).href)
 const fw = fixWords([{ kind: "prop", id: "pad", key: "power", from: 60, to: 72 }], sp.scene)
 ok(/^turn the hot pad up \(60 W → 72 W\)$/i.test(fw.say) && /^turned the hot pad up/i.test(fw.did), "the make-it-work search's words for a module knob", JSON.stringify(fw))
