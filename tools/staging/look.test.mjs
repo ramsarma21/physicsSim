@@ -59,6 +59,29 @@ test("auto: a holder from above in or over a liquid, else the pin and post that 
 	assert.equal(R.standModeFor("auto", tankDoc, cork, at(0.6, 0.05)), "hidden")
 	assert.equal(R.standModeFor("auto", {}, cork, at(0.25, 0.05)), "hidden")
 	for (const m of ["post", "hidden", "hanger"]) assert.equal(R.standModeFor(m, tankDoc, cork, at(0.6, 0.05)), m)
+	// held up in mid-air: from above, unless something is just over it (a magnet over a clip): then the pin and post that go
+	assert.equal(R.standModeFor("auto", {}, cork, at(0.6, 0.4), { airborne: true, roomAbove: true }), "hanger")
+	assert.equal(R.standModeFor("auto", {}, cork, at(0.6, 0.4), { airborne: true, roomAbove: false }), "hidden")
+	assert.equal(R.standModeFor("auto", {}, cork, at(0.6, 0.4), { airborne: false, roomAbove: true }), "hidden")
+})
+
+test("the grip: jaws on a ball, a pad on a floater and on a flat or wide thing", async () => {
+	const THREE = await import("three")
+	const add = (g, geo, mat) => {
+		const m = new THREE.Mesh(geo, mat)
+		g.add(m)
+		return m
+	}
+	const padOf = (h) => h.meshes[2].visible // (rod, arm, pad, yoke, jaws)
+	const still = { fps: 1, frames: [{ t: 0, placements: {} }] }
+	const clip = { id: "clip/clip", item: "clip", body: { kind: "slab", width: 0.033, height: 0.001, depth: 0.008 }, material: "steel" }
+	const block = { id: "b/b", item: "b", body: { kind: "slab", width: 0.03, height: 0.03, depth: 0.03 }, material: "wood" }
+	const ball = { id: "ball/ball", item: "ball", body: { kind: "ball", radius: 0.08 }, material: "plastic" }
+	for (const [o, pad] of [[clip, true], [block, false], [ball, false]]) {
+		const h = R.makeHanger({ list: [o], addMesh: add, doc: {} })
+		h.layout(() => at(0, 0.3), still, 0.5)
+		assert.equal(padOf(h), pad, o.id)
+	}
 })
 
 test("a floater gets a pad, a sinker jaws (by density when the run cannot say)", () => {
@@ -98,12 +121,17 @@ test("the holder: closed and still until the release, opening, lifting, never be
 	h.layout(() => at(0.25, 0.018), track, 0.5)
 	h.at(0.3, 0.5)
 	assert.ok(Math.abs(h.root.position.y - 0.03) < 1e-9 && h.root.visible, "held at the cork's top until the release")
-	for (const t of [0.52, 0.55, 0.6, 0.7]) {
+	let prev = -Infinity
+	for (const t of [0.505, 0.52, 0.535, 0.55, 0.6, 0.7, 0.9]) {
 		h.at(t, 0.5)
 		const top = 0.03 + (t - 0.5) * 0.4
-		assert.ok(h.root.position.y >= top - 1e-9, `never below the rising cork at ${t} s`)
+		// (over the cork it is never below its top; it draws back off it in 0.04 s, along the depth, and only rises)
+		if (t - 0.5 < R.HANGER.backS) assert.ok(h.root.position.y >= top - 1e-9, `never below the rising cork while over it, at ${t} s`)
+		else assert.ok(h.root.position.z < -0.012, `drawn back off the cork at ${t} s`)
+		assert.ok(h.root.position.y >= prev, `it only rises (${t} s)`)
+		prev = h.root.position.y
 	}
-	h.at(0.5 + Math.sqrt((2 * R.HANGER.gone) / R.HANGER.accel) + 0.01, 0.5)
+	h.at(0.5 + R.HANGER.backS / 2 + Math.sqrt((2 * R.HANGER.gone) / R.HANGER.accel) + 0.01, 0.5)
 	assert.equal(h.root.visible, false, "gone once 2 m up")
 	// a sinker: jaws, which open at the release
 	const grape = { id: "grape/grape", item: "grape", body: { kind: "ball", radius: 0.0125 }, material: "grape" }

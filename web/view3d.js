@@ -4370,6 +4370,57 @@ ${GRADE}
 			const mid = list.reduce((sum, o) => sum + poseOf(o).x, 0) / list.length
 			return pick.sort((a, b) => Math.abs(poseOf(a).x - mid) - Math.abs(poseOf(b).x - mid))[0]
 		}
+		// (web/release-stand.js: a held part more than 1 cm over the top of whatever static slab is under it is held up in mid-air; the deepest static thing
+		// over a held item, a magnet over a clip, is what a holder from above comes down behind)
+		const airborne = (o, q) => {
+			const bottom = q.y - bottomOf(o, q)
+			let top = -Infinity
+			for (const sp of supports) {
+				if (Math.abs(sp.c) < 0.2 || solidById.get(sp.id)?.ghost === true) continue
+				const u = (q.x - sp.x + sp.hh * sp.s) / sp.c
+				if (Math.abs(u) > sp.hw) continue
+				const y = sp.y + u * sp.s + sp.hh * sp.c
+				if (y <= bottom + 0.005 && y > top) top = y
+			}
+			return bottom - (top === -Infinity ? 0 : top) > 0.01
+		}
+		const roomAbove = (list, pf) => {
+			// (no static thing's underside within 5 cm over the item's top across its width: room for a holder from above)
+			let x0 = Infinity
+			let x1 = -Infinity
+			let y1 = -Infinity
+			for (const o of list) {
+				const e = extentOf(o.body, pf(o))
+				x0 = Math.min(x0, e.x0)
+				x1 = Math.max(x1, e.x1)
+				y1 = Math.max(y1, e.y1)
+			}
+			for (const o of solids) {
+				if (o.kind !== "static" || o === table || o.ghost === true || isTableSolid(o)) continue
+				const e = extentOf(o.body, pf(o))
+				if (e.x1 >= x0 - 0.02 && e.x0 <= x1 + 0.02 && e.y0 >= y1 - 0.005 && e.y0 < y1 + 0.05) return false
+			}
+			return true
+		}
+		const depthAbove = (list, pf) => {
+			let x0 = Infinity
+			let x1 = -Infinity
+			let y1 = -Infinity
+			for (const o of list) {
+				const e = extentOf(o.body, pf(o))
+				x0 = Math.min(x0, e.x0)
+				x1 = Math.max(x1, e.x1)
+				y1 = Math.max(y1, e.y1)
+			}
+			let half = 0
+			for (const o of solids) {
+				if (o.kind !== "static" || o === table || o.ghost === true || isTableSolid(o)) continue
+				const e = extentOf(o.body, pf(o))
+				if (e.x1 < x0 - 0.02 || e.x0 > x1 + 0.02 || e.y0 < y1 - 0.005 || e.y0 > y1 + 3) continue // (over it: its underside above the item's top)
+				half = Math.max(half, depthOfSolid(o) / 2)
+			}
+			return half
+		}
 		const heldByItem = new Map()
 		for (const id of doc.release?.parts ?? []) {
 			const o = solids.find((x) => x.id === id)
@@ -4411,7 +4462,7 @@ ${GRADE}
 				})
 				continue
 			}
-			const mode = standModeFor(look.releaseStand, doc, s, poseOf(s))
+			const mode = standModeFor(look.releaseStand, doc, s, poseOf(s), { airborne: airborne(s, poseOf(s)), roomAbove: roomAbove(list, poseOf) })
 			if (mode === "hanger") {
 				const hg = makeHanger({ list, addMesh, doc })
 				group.add(hg.root)
@@ -4420,7 +4471,7 @@ ${GRADE}
 					m.userData.solidId = id
 					pickables.push(m)
 				}
-				postFits.push((pf) => hg.layout(pf, postTrack, doc.release?.at ?? 0.5))
+				postFits.push((pf) => hg.layout(pf, postTrack, doc.release?.at ?? 0.5, depthAbove(list, pf)))
 				continue
 			}
 			const pin = addMesh(group, dowel(0.004, "pin", `pin-${id}`), wood)

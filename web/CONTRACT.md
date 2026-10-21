@@ -1784,7 +1784,8 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
     floor of another stuff (grass, carpet, ice) keeps its own look;
   - light (`LESSON_LIGHT`): key 3.1 from 60° up and in front ((-0.6, 3.8, 1.9) m from the table's middle: a shadow half as long as its thing is high),
     its shadow map at most 1024 (soft edges), shadows at 0.4 of full (`light.shadow.intensity`; the contact shades unchanged), fill 1.05 (white sky, the
-    table's colour below), environment 0.75. A module's own world (space) wins over the lesson's room;
+    table's colour below), environment 0.75. A static part held more than 5 cm up (a funnel, a tap, a fixed magnet: `run.lessonNoShadow`) casts no
+    shadow: one out of the picture laid a band across the table. A module's own world (space) wins over the lesson's room;
   - liquids (`lessonLiquid`: a lit, alpha-blended volume with no depth write that a model marks `userData.liquid`, or whose kit material key is the
     liquids' or pouring modules' liquid: `material.userData.kitKey`, which web/models3d.js `kit.mat` now records) drawn both sides, the far side at
     max(opacity, 0.6) and the near side at 0.45 × opacity (at least 0.12), tone-mapped by their brightest channel (the paints' path: the water stays
@@ -1795,27 +1796,37 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
   - mounts (the view's supports of a static part in mid-air): a post or a wall bracket is a **hanger** instead, a slim grey rod from 3 m above down to
     a small collar on the part's top (`mountHanger`; two near the ends of a bar wider than 26 cm), not in the shot's framing, casting no shadow;
   - the pull pin and its post slim and plain (a 10 mm grey rod, a 6 mm pin: `lessonPost`);
-  - **outlines** (web/lesson-outline.js; on unless `setOptions({outline: false})`): a line 1/400 of the picture's height (2.7 px at 1080p, at least
-    1 px) just inside every thing's silhouette, its own colour × 0.45 (a darker shade, drawn by darkening its pixels: no shape grows or moves). An ID
-    pass draws every mesh in a flat colour per item (a holder or a stand its own; the tabletop or floor and the room are the background) into a target
-    twice the picture's size each way, leaving out see-through things (so what is in a glass tank gets its line), contact shades, labels and parts shaped
-    in their vertex shader (springs, ropes); a composite pass darkens each pixel by the share of its sub-pixels within the width of another thing:
-    anti-aliased. Export frames outline each (sub-)frame after its main pass (with motion blur, before the frames are summed); the canvas draws its
-    picture into a 4× MSAA target of its own, outlines it with one sub-pixel and copies it out (so its lesson picture can differ from the export's in
-    the lines' anti-aliasing).
+  - **outlines** (web/lesson-outline.js `OUTLINE`; on unless `setOptions({outline: false})`): lines 1/400 of the picture's height wide (2.7 px at 1080p,
+    at least 1 px), drawn only by changing pixels already there, on the inside of a silhouette (no shape grows or moves): just inside every thing, its
+    own colour × 0.45 (a darker shade); round a see-through vessel (glass, a tank's panes, ice), tinted 0.75 toward `#45708f`; and on a liquid's side
+    where it meets anything (its surface against the glass above, the waterline under a floating thing), tinted 0.65 toward `#2c6ea8`. ID passes draw
+    every mesh in a flat colour per item (a holder or a stand its own; the tabletop or floor and the room are the background) into targets twice the
+    picture's size each way: A the opaque things only (what is in a glass tank gets its line), B the same and the vessels, C the same and the liquids
+    (apart: a tank's front pane would hide its water's surface). Left out of all: contact shades, labels, glows (unlit see-through), streams, drops and
+    puddles, shadow-only proxies (no colour written: a glass tank's faint shadow box) and parts shaped in their vertex shader (springs, ropes). A
+    composite pass weighs each pixel by the share of its sub-pixels within the width of another thing: anti-aliased. Export frames outline each
+    (sub-)frame after its main pass (with motion blur, before the frames are summed); the canvas draws its picture into a 4× MSAA target of its own,
+    outlines it with one sub-pixel and copies it out (so its lesson picture can differ from the export's in the lines' anti-aliasing).
 - **Release stands** (web/release-stand.js; `doc.view.release_stand`, the view's `releaseStand`; default "post" in the real look, "auto" in the lesson
   look). For a held item (`held: true`) without a starting gate:
   - "post": the pull pin on its post, as before (the pin slides out at the release, the post stays);
   - "hidden": the same until the release; then, once the pin is out (release + 0.06 s), the pin and post fade out in 0.12 s while drawing back 6 cm
     (`RETREAT`; short, so a slow-motion clip shows no holder wandering off), then are not drawn; their contact shade fades with them. Their materials are
-    copies (the shared wood never changes). Scrubbing back before the release shows them again;
-  - "hanger": a holder from ABOVE instead of pin and post (`makeHanger`): a slim rod (not shadow-casting) down to the item's highest point, ending in a
-    rubber pad on a floater (the run shows it rising once let go; for a run that ends before its release, its density, a hollow ball's over its whole
-    volume, under the liquid's: `floats`) or in two jaws round its top half (the jaws reach down to its middle, or 4 cm). Still until the release; then
-    the jaws open 24° in 0.05 s and the holder lifts straight up at 12 m/s² from rest, never lower than the item's own top while the item is under it
-    (a cork that rises at once pushes nothing: the pad goes up ahead of it), and is not drawn once 2 m up. Picked as the item while it is held, like the pin;
+    copies (the shared ones never change). Scrubbing back before the release shows them again. In the lesson look the pin and post are slim and grey;
+  - "hanger": a holder from ABOVE instead of pin and post (`makeHanger`, `HANGER`): a slim rod (not shadow-casting) coming down just behind the item
+    (1.5 cm behind it, or behind the deepest static thing over it: a magnet over a clip) and an arm reaching forward over the item's highest point (a
+    slab tilted under 6° is held at its middle), ending in a rubber pad (a suction cup) on its top, for a floater (the run shows it rising once let go;
+    for a run that ends before its release, its density, a hollow ball's over its whole volume, under the liquid's: `floats`) and for a thing too flat or
+    too wide for jaws (under 6 mm high, over 5 cm wide: a paper clip, a book), or else in two jaws round its top half (a ball, a grape, a block: the
+    jaws reach down to its middle, or 4 cm). Still until the release; then the jaws open 24° in 0.05 s and the holder draws back off the item along the
+    depth in 0.04 s (clear of its depth: a thing that snaps up or flies off passes in front of it) and lifts straight up, at 12 m/s² from 0.02 s, never
+    lower than the item's own top while still over it (a cork that rises at once pushes nothing: the pad goes up ahead of it) and only ever rising (a
+    pure function of t: an export frame is the same in any order); not drawn once 2 m up. Picked as the item while it is held, like the pin;
   - "auto": "hanger" when the held part is in a liquid's container or over it (`doc.processes` "liquid", "flow-vessel", "flow-basin": between its x0 and
-    x1, below its rim + 15 cm: `overLiquid`), else "hidden". Decided per held item when the run is built.
+    x1, below its rim + 15 cm: `overLiquid`), or held up in mid-air (more than 1 cm over the top of the static slab under it, or anything) with room over
+    it (no static thing's underside within 5 cm over its top); else "hidden" (a thing that rests on something, a car at the top of a ramp; a clip with a
+    magnet just over it). Decided per held item when the run is built, so per scene: a lesson whose screens differ in what is over the thing (FO-13: a
+    magnet in its second screen) names one release stand for all of them (`settings.release_stand`).
   The export's motion blur takes sub-frames while a hidden post fades or a hanger lifts (as for a gate).
 - **Painted lines on any floor** (both looks): the measure module's start and finish lines (web/models/mod-measure.js: their builders say `build.paint =
   true`) are drawn ON the top face of the highest static slab under the line's middle, from 10 cm below where the line's top is meant to be to 1 cm
@@ -1823,9 +1834,13 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
   that face (clear of the 1 mm the view grows every surface by; polygon offset too). Before, a line placed flush with a `floor` (or the table) was hidden
   in it, and its contact shade showed as a dark smudge where it lay; a painted line now casts no contact shade. The line's x (what the stopwatches and
   `crosses` goals read) is the item's own, unchanged.
-- Not changed in the real look: every scene draws as it did (pixel for pixel; the only changes are the painted lines above).
+- Not changed in the real look: every scene draws as it did (the 12 scenarios and 10 gallery scenes, export frames wide and director at 0, 1.5 and
+  3.5 s with the table's mirror: byte for byte against origin/integrate/engine-waves, but car-ramp-dominoes at 0 s, 1 pixel by 1 level, which two
+  pages of the baseline also differ by); the only changes are the painted lines above.
 - **Tests**: `node --test tools/staging/look.test.mjs` (the view's decisions: which look, the backdrop and table, auto stands, pad or jaws, the holder's
   and the fade's timing); `node tools/staging/test.mjs [--server <port>]` (documents Python == JS, errors alike, tracks unchanged).
+- **The five benchmark lessons** (lesson-regen/bench, MA-25, FO-13, MO-19, FO-36, MA-50): the same runs drawn in both looks, side by side with the
+  current EduLLM pictures, as sheets and clips (each prototype screen's own window and slow motion), tracks byte for byte the same in both looks.
 
 ## Machines and motion (module `mechanics`, 2026-10-19/20): catalog-wide start speed and paint, floors and ramps, lab carts, pullers, force meters, simple machines (a screw jack too), a roller coaster, falling through air, a balloon rocket, a fragile egg
 

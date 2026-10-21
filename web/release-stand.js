@@ -4,13 +4,15 @@
 //   "hidden"   the same pin and post until the release; then the pin slides out as ever and the pin and post fade out in 0.12 s, drawing
 //              back 6 cm (RETREAT; short, so a slow-motion clip of the release shows no holder wandering off): nothing is left standing where
 //              the thing was let go (retreatAt).
-//   "hanger"   a holder from ABOVE (makeHanger): a slim rod down to the thing's top, ending in a rubber pad pressing on it (a floater held under
-//              water: the run shows it rising once let go) or in two jaws round its top half (a thing held up: an apple over the water, a grape
-//              in it, a clip under a magnet's reach). At the release the jaws open (24 degrees in 0.05 s) and the holder lifts straight up,
-//              speeding up at 12 m/s² and never lower than the thing's own top while the thing is under it (a cork that rises at once pushes
-//              nothing: the pad goes up ahead of it); it is gone once it is 2 m up.
+//   "hanger"   a holder from ABOVE (makeHanger): a slim rod coming down just behind the thing (behind whatever is over it too: a magnet over a
+//              clip), an arm reaching forward over it, ending in a rubber pad pressing on its top (a floater held under water: the run shows it
+//              rising once let go) or in two jaws round its top half (anything else: an apple over the water, a grape in it, a ball held up). At
+//              the release the jaws open (24 degrees in 0.05 s) and the holder draws back off the thing along the depth (0.04 s), then lifts
+//              straight up at 12 m/s², never lower than the thing's own top while it was over it (a cork that rises at once pushes nothing: the
+//              pad goes up ahead of it); it is gone once it is 2 m up. A thing that snaps up or flies off passes in front of it.
 //   "auto"     the lesson look's choice (standModeFor): a hanger where the thing is in or over a liquid (a post would stand in the water, and under a
-//              floater a pin reads as a peg it rests on), else hidden.
+//              floater a pin reads as a peg it rests on) or held up in mid-air (a post behind a falling thing looks like a stick it slides down),
+//              else hidden (a thing that rests on something: a car at the top of a ramp).
 // mountHanger: the lesson look's support for a static part held in mid-air (a fixed magnet, a pendulum's bar), in place of a retort stand or a
 // wall bracket: a slim rod from 3 m up down to a small collar on the part's top.
 // Render only: the engine holds a held thing exactly still until the release and lets it go from rest; none of this touches a body.
@@ -18,7 +20,7 @@ import * as THREE from "three"
 import { placementAt } from "./view-plugins.js"
 
 export const RETREAT = { delay: 0.06, seconds: 0.12, back: 0.06 } // after the pin is out (the view slides it out in 0.07 s from release - 0.01 s)
-export const HANGER = { rod: 0.0025, openS: 0.05, openDeg: 24, accel: 12, gone: 2, length: 3 }
+export const HANGER = { rod: 0.0025, openS: 0.05, openDeg: 24, accel: 12, gone: 2, length: 3, backS: 0.04, behind: 0.015 }
 
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v))
 const smooth = (u) => u * u * (3 - 2 * u)
@@ -45,8 +47,8 @@ export function topOf(s, q) {
 		x0 = Math.min(x0, wx)
 		x1 = Math.max(x1, wx)
 	}
-	// (a slab lying level: its top is a face, held at its middle)
-	if (Math.abs(sn) < 0.05 || b.kind === "polygon") tx = (x0 + x1) / 2
+	// (a slab lying level, or tilted less than 6 degrees: its top is a face, held at its middle)
+	if (Math.abs(sn) < 0.1 || b.kind === "polygon") tx = (x0 + x1) / 2
 	return { top, hw: (x1 - x0) / 2, x: tx }
 }
 
@@ -78,10 +80,14 @@ export function floats(doc, s, q) {
 	return false
 }
 
-/** What holds a held item: "post" | "hidden" | "hanger" (want: the style's release stand, "auto" resolved here for the item's held part s at pose q). */
-export function standModeFor(want, doc, s, q) {
+/** What holds a held item: "post" | "hidden" | "hanger" (want: the style's release stand, "auto" resolved here for the item's held part s at pose
+ *  q: a holder from above in or over a liquid, or for a thing held up in mid-air (airborne: more than 1 cm over whatever is under it) with room
+ *  over it (roomAbove: no static thing within 5 cm over it, as a magnet just over a clip), else the pin and post that go (a thing that rests on
+ *  something, a car at the top of a ramp, is held from behind; so is one with a magnet just over it). Decided per scene: a lesson whose screens
+ *  differ in what is over the thing names one release stand for all of them. */
+export function standModeFor(want, doc, s, q, { airborne = false, roomAbove = true } = {}) {
 	if (want === "post" || want === "hidden" || want === "hanger") return want
-	return overLiquid(doc, q.x, q.y) ? "hanger" : "hidden"
+	return overLiquid(doc, q.x, q.y) || (airborne && roomAbove) ? "hanger" : "hidden"
 }
 
 /** The lesson look's pin and post: slim and plain (a 10 mm grey rod, a 6 mm pin; the real look's are 24 mm and 8 mm wooden dowels), so the
@@ -160,6 +166,7 @@ export function makeHanger({ list, addMesh, doc = null }) {
 	root.name = `hanger-${list[0].item}`
 	root.userData.stand = true
 	const rod = addMesh(root, unitRod, M.rod, { castShadow: false }) // (a 3 m rod's shadow would cross the whole picture)
+	const arm = addMesh(root, unitBox, M.rod, { castShadow: false }) // (from the rod, behind the machine, forward to the holder over the thing)
 	const pad = addMesh(root, unitRod, M.pad)
 	const yoke = addMesh(root, unitBox, M.jaw)
 	const jawL = new THREE.Group()
@@ -167,14 +174,15 @@ export function makeHanger({ list, addMesh, doc = null }) {
 	root.add(jawL, jawR)
 	const jl = addMesh(jawL, unitBox, M.jaw)
 	const jr = addMesh(jawR, unitBox, M.jaw)
-	const meshes = [rod, pad, yoke, jl, jr]
+	const meshes = [rod, arm, pad, yoke, jl, jr]
 	for (const m of meshes) m.userData.stand = true
-	const st = { part: list[0], x: 0, tip: 0, hw: 0.01, pad: false, track: null, tRelease: 0.5, gap: 0 }
+	const st = { part: list[0], x: 0, tip: 0, hw: 0.01, pad: false, track: null, tRelease: 0.5, gap: 0, zr: 0, back: 0, rise: null }
 	return {
 		root,
 		meshes,
-		/** Where it holds the item standing at its start poses pf, and how (a pad on a floater, the run says, else jaws). */
-		layout(pf, track, tRelease) {
+		/** Where it holds the item standing at its start poses pf, and how (a pad on a floater, the run says, else jaws). above: how deep (m, half
+		 *  its depth) the deepest static thing over the item is (a magnet just over a clip): the rod comes down behind it, and an arm reaches forward. */
+		layout(pf, track, tRelease, above = 0) {
 			let best = null
 			for (const o of list) {
 				const T = topOf(o, pf(o))
@@ -195,7 +203,9 @@ export function makeHanger({ list, addMesh, doc = null }) {
 				const q1 = placementAt(track, o.id, Math.min(tRelease + 0.25, fr[fr.length - 1].t))
 				if (q1) rise = q1.y - q0.y
 			}
-			st.pad = rise !== null ? rise > 0.003 : floats(doc, o, q0)
+			// (a pad, a suction cup, also on a thing too flat or too wide for jaws: under 6 mm high, over 5 cm wide; a ball always gets jaws)
+			const flat = o.body.kind !== "ball" && (T.top - (q0.y - (T.top - q0.y)) < 0.006 || 2 * T.hw > 0.05)
+			st.pad = (rise !== null ? rise > 0.003 : floats(doc, o, q0)) || flat
 			const r = o.body.kind === "ball" ? o.body.radius : null
 			const jaw = r !== null ? Math.min(r, 0.04) : clamp(T.hw, 0.004, 0.04) // how far down the jaws reach
 			const reach = r !== null ? Math.sqrt(Math.max(0, r * r - (r - jaw) * (r - jaw))) : T.hw // the thing's half-width where the jaws end
@@ -218,10 +228,43 @@ export function makeHanger({ list, addMesh, doc = null }) {
 				m.position.set(0, -(jaw + st.gap) / 2, 0)
 			}
 			const base = st.pad ? padH : st.gap + yokeH
+			// the rod stands behind the thing (and behind whatever is over it), an arm reaching forward over the thing to the holder: the holder can
+			// draw back off the thing along the depth at the release, out of the way of a thing that rises or flies off, before it lifts
+			let half = 0
+			for (const q of list) half = Math.max(half, (q.body.kind === "ball" ? (q.depth3d ?? 2 * q.body.radius) : (q.body.depth ?? 0.1)) / 2)
+			st.back = half + (st.pad ? padR : d / 2) + 0.004 // (how far it draws back: clear of the thing's own depth)
+			st.zr = -(Math.max(half, above) + HANGER.behind)
+			const armH = 0.004
+			arm.scale.set(HANGER.rod * 2, armH, -st.zr + HANGER.rod)
+			arm.position.set(0, base + armH / 2, st.zr / 2)
 			rod.scale.set(HANGER.rod, HANGER.length, HANGER.rod)
-			rod.position.set(0, base + HANGER.length / 2, 0)
+			rod.position.set(0, base + HANGER.length / 2, st.zr)
+			// how much higher than its lift the holder must be at each moment so it is never below the thing's top while over it (a cork rising at once):
+			// the most it had to be at any moment up to then, from the track (a pure function of t: an export frame is the same in any order)
+			st.rise = null
+			if (fr.length > 1) {
+				const need = []
+				let most = 0
+				for (const f of fr) {
+					if (f.t <= tRelease) continue
+					const q = f.placements[o.id]
+					const tau = f.t - tRelease
+					if (q) {
+						const Tq = topOf(o, q)
+						// (only while it is still over the thing: once drawn back, the thing passes in front of it)
+						if (Math.abs(Tq.x - st.x) < st.hw + 0.02 && tau < HANGER.backS) most = Math.max(most, Tq.top - (st.tip + this.lift(tau)))
+					}
+					need.push([f.t, Math.max(0, most)])
+				}
+				st.rise = need
+			}
 			root.visible = true
 			this.at(-1, tRelease)
+		},
+		/** How far it has lifted tau s after the release (m). */
+		lift(tau) {
+			const u = tau - HANGER.backS / 2
+			return u > 0 ? 0.5 * HANGER.accel * u * u : 0
 		},
 		/** The holder at the run's time t: closed and still until the release, then open, lifted, gone. */
 		at(t, tRelease = st.tRelease) {
@@ -229,17 +272,34 @@ export function makeHanger({ list, addMesh, doc = null }) {
 			const open = st.pad ? 0 : smooth(clamp(tau / HANGER.openS, 0, 1))
 			jawL.rotation.z = -((HANGER.openDeg * Math.PI) / 180) * open
 			jawR.rotation.z = ((HANGER.openDeg * Math.PI) / 180) * open
-			const lift = tau > 0 ? 0.5 * HANGER.accel * tau * tau : 0
-			let tip = st.tip + lift
-			if (tau > 0 && st.track) {
-				// never lower than the thing's own top while it is under the holder (a floater rising at once)
+			const lift = tau > 0 ? this.lift(tau) : 0
+			let extra = 0
+			if (tau > 0 && st.rise?.length) {
+				// (never below the thing's top while over it: the most it had to rise by up to now, between the track's frames)
+				const R = st.rise
+				let lo = 0
+				let hi = R.length - 1
+				if (t >= R[hi][0]) extra = R[hi][1]
+				else if (t > R[0][0]) {
+					while (hi - lo > 1) {
+						const m = (lo + hi) >> 1
+						if (R[m][0] <= t) lo = m
+						else hi = m
+					}
+					const u = (t - R[lo][0]) / (R[hi][0] - R[lo][0])
+					extra = R[lo][1] + (R[hi][1] - R[lo][1]) * u
+				} else extra = R[0][1] * clamp(tau / Math.max(1e-6, R[0][0] - tRelease), 0, 1)
+			}
+			if (tau > 0 && tau < HANGER.backS && st.track) {
+				// (while it is still over the thing: exactly at the thing's top, between the track's frames too)
 				const q = placementAt(st.track, st.part.id, t)
 				if (q) {
-					const T = topOf(st.part, q)
-					if (Math.abs(T.x - st.x) < st.hw + 0.02) tip = Math.max(tip, T.top)
+					const Tq = topOf(st.part, q)
+					if (Math.abs(Tq.x - st.x) < st.hw + 0.02) extra = Math.max(extra, Tq.top - (st.tip + lift))
 				}
 			}
-			root.position.set(st.x, tip, 0)
+			const back = tau > 0 ? -st.back * smooth(clamp(tau / HANGER.backS, 0, 1)) : 0 // (it draws back off the thing first)
+			root.position.set(st.x, st.tip + lift + extra, back)
 			root.visible = lift < HANGER.gone
 		},
 		hide() {
