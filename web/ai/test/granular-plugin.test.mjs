@@ -290,6 +290,56 @@ test("a funnel's poured heap: the funnel reads it, piles and steeper judge it (n
 	assert.match(plugins.digestLines(R.scene.items.find((i) => i.id === "gravelF"), R).join(" "), /its poured heap: \d+ mm tall, sides at 3\d\.\d°/)
 })
 
+test("piles {in}: the heap must end inside that container (90 % of what it poured, the container's grains_g); a stream beside a jar is read against it, outside and said (V2 release round 2)", () => {
+	const s = scene(
+		[
+			{ id: "jar", type: "glass-jar", name: "Glass jar", x: 0.8, y: 0 },
+			{ id: "over", type: "sand-funnel", name: "Funnel over the jar", x: 0.8, y: 0, props: { grain: "sugar", sand_kg: 0.1, height: 0.25, outlet_mm: 12 } },
+			{ id: "jar2", type: "glass-jar", name: "Second jar", x: 1.9, y: 0 },
+			{ id: "beside", type: "sand-funnel", name: "Funnel beside it", x: 2.0, y: 0, props: { grain: "sugar", sand_kg: 0.1, height: 0.25, outlet_mm: 12 } }
+		],
+		[
+			{ kind: "piles", item: "over", in: "jar" },
+			{ kind: "piles", item: "beside", in: "jar2", label: "The sugar piles up inside the second jar" },
+			{ kind: "piles", item: "beside" },
+			{ kind: "piles", item: "over", in: "jar2" }
+		],
+		8
+	)
+	const R = run(s)
+	const end = (id, k) => R.track.state[id]?.[k]?.at(-1)
+	assert.ok(Math.abs(end("over", "heap_g") - 100) < 0.5 && end("over", "outside_g") < 0.5, "over the jar: every grain in it")
+	assert.ok(Math.abs(end("jar", "grains_g") - end("over", "heap_g")) < 1e-9, "the jar's grains_g is the heap in it")
+	// (10 cm beside the second jar: its stream comes down on the table, read against that jar: nothing in it, all of it outside, and said)
+	assert.ok(end("beside", "heap_g") < 0.5 && Math.abs(end("beside", "outside_g") - 100) < 0.5, `beside: ${end("beside", "heap_g")} in, ${end("beside", "outside_g")} out`)
+	assert.ok(end("jar2", "grains_g") < 0.5)
+	assert.ok(R.summary.happenings.some((h) => h.text === "beside spills sugar outside jar2" && h.kind === "spilled"), JSON.stringify(R.summary.happenings))
+	assert.deepEqual(R.summary.goals.map((g) => g.ok), [true, false, false, false], JSON.stringify(R.summary.goals))
+	const g = R.summary.goals[1]
+	assert.deepEqual([g.in, g.in_g, g.of_g], ["jar2", 0, 100])
+	const detail = plugins.modules().find((m) => m.name === "mod_granular").goals.find((k) => k.kind === "piles").detail
+	assert.equal(detail(g), "no (0 of 100 g inside it; no heap inside it)")
+	assert.match(detail(R.summary.goals[0]), /^yes \(100 of 100 g inside it; \d+ mm tall, its sides at 3\d\.\d°\)$/)
+	assert.equal(R.summary.goals[3].label, "Funnel over the jar stands as a heap inside Second jar")
+	assert.match(plugins.digestLines(R.scene.items.find((i) => i.id === "beside"), R).join(" "), /none of its grains is in the container beside it: all 100 g landed OUTSIDE it/)
+	assert.match(plugins.digestLines(R.scene.items.find((i) => i.id === "jar2"), R).join(" "), /^0 g of grains inside it at the end/)
+	assert.match(plugins.digestLines(R.scene.items.find((i) => i.id === "jar"), R).join(" "), /^100 g of grains inside it at the end/)
+	// the same summaries in Python
+	const py = JSON.parse(
+		execFileSync("python3", ["-c", `
+import json, sys, os
+sys.path.insert(0, ${JSON.stringify(join(PG, "machines"))})
+import items
+d = json.load(sys.stdin)
+print(json.dumps(items.summarize(d["scene"], d["doc"], d["track"])))
+`], { input: JSON.stringify({ scene: R.scene, doc: R.doc, track: R.track }), env: { ...process.env, PLAYGROUND_MODULES: "granular" }, maxBuffer: 1 << 28 }).toString()
+	)
+	assert.deepEqual(py.goals, JSON.parse(JSON.stringify(R.summary.goals)))
+	assert.deepEqual(py.readings, JSON.parse(JSON.stringify(R.summary.readings)))
+	// (in names an item the scene has: one it lacks is no goal of the run; a plan's field check says so)
+	assert.match(plugins.goalProblem({ kind: "piles", item: "over", in: "nojar" }, new Set(["over"])), /no item "nojar"/)
+})
+
 test("a heap wider than the shelf it stands on: exactly its grains, some spilled off the edge and said; never sand from nothing", () => {
 	const s = scene(
 		[

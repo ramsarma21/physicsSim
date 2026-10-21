@@ -408,9 +408,29 @@ def _heap_keys(ctx, iid):
     return ("heap_mm", "heap_deg") if not ctx.state(iid, "height_mm") and ctx.state(iid, "heap_mm") else ("height_mm", "angle_deg")
 
 
+def _heap_total(ctx, iid):
+    """A heap's grains in all (g): what a funnel or a cup poured, or a laid heap's own (on its support or in its container, and what spilled)."""
+    p = _last(ctx, iid, "poured_g")
+    if p is not None:
+        return p
+    m = _last(ctx, iid, "mass_g")
+    if m is None:
+        return None
+    sp = _last(ctx, iid, "spilled_g")
+    return m + (0.0 if sp is None else sp)
+
+
+IN_SHARE = 0.9   # the share of a heap's grains that must end inside the container a piles goal names (`in`)
+
+
 def _goals():
     def piles(ctx, g):
         if not ctx.known(g.get("item")):
+            return None
+        # (in: the container it must heap up inside: a label that says "piles up inside the jar" is checked there, never by the heap's height
+        # alone, which a heap on the table beside an empty jar met (2026-10-21))
+        cin = g.get("in")
+        if cin is not None and not ctx.known(cin):
             return None
         lo, hi = ctx.num(g.get("min_deg")), ctx.num(g.get("max_deg"))
         kh, ka = _heap_keys(ctx, g["item"])
@@ -418,8 +438,18 @@ def _goals():
         ok = h is not None and h >= 5 and a is not None and (lo is None or a >= lo) and (hi is None or a <= hi)
         span = (f" at {_fmt(lo, 0)}°" if lo is not None and hi is None else "") + (f" between {_fmt(lo, 0)}° and {_fmt(hi, 0)}°" if lo is not None and hi is not None else "") + \
             (f" no steeper than {_fmt(hi, 0)}°" if hi is not None and lo is None else "")
-        return {"label": g.get("label") or f"{ctx.name(g['item'])} stands as a heap{span}", "ok": ok, "kind": "piles", "item": g["item"],
-                "deg": None if a is None else round(a, 1), "mm": None if h is None else round(h, 1)}
+        out = {"label": g.get("label") or f"{ctx.name(g['item'])} stands as a heap{f' inside {ctx.name(cin)}' if cin is not None else ''}{span}", "ok": ok,
+               "kind": "piles", "item": g["item"], "deg": None if a is None else round(a, 1), "mm": None if h is None else round(h, 1)}
+        if cin is not None:
+            # (the grains inside it at the end: its grains_g, 0 when no bed reaches it; at least 90 % of the heap's own)
+            inside = _last(ctx, cin, "grains_g")
+            inside = 0.0 if inside is None else inside
+            total = _heap_total(ctx, g["item"])
+            out["ok"] = ok and total is not None and total > 0 and inside >= IN_SHARE * total
+            out["in"] = cin
+            out["in_g"] = round(inside, 1)
+            out["of_g"] = None if total is None else round(total, 1)
+        return out
 
     def stands(ctx, g):
         if not ctx.known(g.get("item")):

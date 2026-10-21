@@ -249,7 +249,7 @@ if (want === "all" || want === "cupengine") {
 
 // ---------------------------------------------------------------- every gram a cup pours is read: in its container or outside it
 if (want === "all" || want === "conserve") {
-	console.log("\n# conserve: a cup of sugar held 0 to 15 cm over each container's rim: heap_g + outside_g = poured_g (within 1 g); a stream thrown past its landing bed is read outside")
+	console.log("\n# conserve: a cup of sugar held 0 to 15 cm over each container's rim: heap_g + outside_g = poured_g (within 1 g); a stream thrown past its landing bed is read outside; cups and funnels 0-20 cm off the jar's opening: every gram in the jar or outside it, said, and piles {in: jar} judged by the jar's grains_g")
 	const kf = (R: ReturnType<typeof run>, item: string) => {
 		const k = (R.track as unknown as { keyframes?: Record<string, Record<string, number[][]>> }).keyframes?.[item] ?? {}
 		const key = Object.keys(k).find((q) => q.startsWith("holders:"))
@@ -284,6 +284,72 @@ if (want === "all" || want === "conserve") {
 	const hiMiss = last(hi.track, "cup", "poured_g") - last(hi.track, "cup", "heap_g") - last(hi.track, "cup", "outside_g")
 	check(`a cup 1 m up tipped 170° (outside ${fmt(last(hi.track, "cup", "outside_g"))} g): poured − heap − outside`, hiMiss, 0, 1, "g")
 	claim("... and the run says it spills outside the jar", (hi.track.events ?? []).some((e) => /^cup spills sugar outside jar$/.test(e.text)))
+	// sideways (V2 release, round 2, 2026-10-21): a cup's lip or a funnel's spout 0 to 20 cm off the pint jar's opening, either way, so its stream
+	// comes down inside, on the jar's wall, beside it or past where its bed reaches: every gram is read in the jar or outside it; what lands
+	// outside is said; the jar's grains_g is the heap in it; piles {in: jar} holds only with 90 % of the grains inside. (Before: a stream that came
+	// down beside the jar was read as the heap, all of it, with no outside_g and nothing said, and "piles up inside the jar" held over an empty
+	// jar; a stream on the jar's wall read the grains inside and the wedge outside as one heap at 50°.)
+	{
+		const says = (R: ReturnType<typeof run>, grain: string) => (R.track.events ?? []).some((e) => e.text === `p spills ${grain} outside jar`)
+		let worstS = 0
+		let nS = 0
+		const wrong: string[] = []
+		const split: string[] = []
+		for (const [kind, grain] of [["cup", "sugar"], ["cup", "salt"], ["cup", "rice"], ["funnel", "sugar"], ["funnel", "salt"]] as const)
+			for (const dx of [0, -0.02, -0.04, -0.05, -0.06, -0.08, -0.1, -0.15, -0.2, 0.05, 0.1, 0.2]) {
+				const pour: Item =
+					kind === "cup"
+						? { id: "p", type: "pitcher", x: 1.37 + dx, y: 0.24, props: { vessel: "cup", contents: "grains", grain, fill_ml: 200, tilt: 135 } }
+						: { id: "p", type: "sand-funnel", x: 1.4 + dx, y: 0, props: { grain, sand_kg: 0.15, height: 0.25, outlet_mm: 12 } }
+				const R = run(scene([{ id: "jar", type: "glass-jar", x: 1.4, y: 0.003 }, pour], kind === "cup" ? 6 : 11, { goals: [{ kind: "piles", item: "p", in: "jar", label: `The ${grain} piles up inside the jar` }] }))
+				const at = `${kind} of ${grain} ${dx >= 0 ? "+" : ""}${Math.round(dx * 100)} cm`
+				const poured = last(R.track, "p", "poured_g")
+				const heap = last(R.track, "p", "heap_g")
+				const out = last(R.track, "p", "outside_g")
+				const inJar = last(R.track, "jar", "grains_g")
+				const goal = R.summary.goals.find((g) => (g as { kind?: string }).kind === "piles") as { ok: boolean } | undefined
+				nS++
+				if (Number.isFinite(out)) {
+					// (the jar is its container: the heap in it and the rest outside, the jar's own reading the same grains)
+					worstS = Math.max(worstS, Math.abs(poured - heap - out))
+					if (Math.abs(inJar - heap) > 1e-9) wrong.push(`${at}: the jar reads ${fmt(inJar)} g, the heap in it ${fmt(heap)} g`)
+					if (out >= 1 !== says(R, grain)) wrong.push(`${at}: ${fmt(out)} g outside, and the run ${says(R, grain) ? "says" : "never says"} it spills`)
+					if (heap > 1 && out > 1) split.push(`${at} (${fmt(heap)} in, ${fmt(out)} out)`)
+				} else {
+					// (its stream comes down past where any bed reaches the jar: a heap on the table, the jar's grains none)
+					worstS = Math.max(worstS, Math.abs(poured - heap))
+					if (Number.isFinite(inJar) && inJar > 1e-9) wrong.push(`${at}: no container read, yet the jar holds ${fmt(inJar)} g`)
+				}
+				const inside = Number.isFinite(inJar) ? inJar : 0
+				const should = inside >= 0.9 * poured && last(R.track, "p", "heap_mm") >= 5
+				if (goal?.ok !== should) wrong.push(`${at}: piles {in: jar} ${goal?.ok} with ${fmt(inside)} of ${fmt(poured)} g inside`)
+				if (dx === 0 && goal?.ok !== true) wrong.push(`${at}: over the opening's middle, piles {in: jar} fails`)
+				if (Math.abs(dx) >= 0.08 && goal?.ok !== false) wrong.push(`${at}: beside the jar, piles {in: jar} holds`)
+			}
+		check(`${nS} pours 0-20 cm off the jar's opening (cups of sugar, salt, rice; funnels of sugar, salt): the worst |poured − heap − outside|`, worstS, 0, 1, "g")
+		claim(`... the jar's grains_g is the heap in it, a gram outside is said, piles {in: jar} holds just when 90 % is inside${wrong.length ? `: ${wrong.slice(0, 4).join("; ")}` : ""}`, wrong.length === 0)
+		claim(`... a stream onto the jar's wall is read as the grains inside it and those outside, never one heap (${split.slice(0, 3).join(", ")})`, split.length > 0)
+	}
+	// the AI's two scenes of V2 release round 2: "Move the jar 15 cm to the left, and leave the cup where it is" (a cup of sugar), and the same with
+	// a funnel of salt: their labels say "inside the jar" and before the move the grains are there; after it, all of them are on the table, said,
+	// and the piles goal (with or without `in`) fails
+	for (const [label, pourer, secs, jar0] of [
+		["the AI's cup of sugar", { id: "p", type: "pitcher", x: 1.185, y: 0.235, props: { vessel: "cup", contents: "grains", fill_ml: 150, tip_s: 2, tilt: 135, hand: "hand" } }, 7, 1.2],
+		["the AI's funnel of salt", { id: "p", type: "sand-funnel", x: 1.2, y: 0, props: { grain: "salt", sand_kg: 0.15, height: 0.25, sand_color: "white" } }, 11, 1.2]
+	] as const) {
+		for (const moved of [0, -0.15]) {
+			const goals = [{ kind: "piles", item: "p", label: "The grains pile up inside the jar" }, { kind: "piles", item: "p", in: "jar", label: "The grains pile up inside the jar" }]
+			const R = run(scene([{ id: "jar", type: "glass-jar", x: jar0 + moved, y: 0.003 }, pourer as unknown as Item], secs, { goals }))
+			const ok = R.summary.goals.map((g) => g.ok)
+			const poured = last(R.track, "p", "poured_g")
+			if (moved === 0) claim(`${label}, over the jar: ${fmt(last(R.track, "jar", "grains_g"))} of ${fmt(poured)} g in it; both piles goals hold`, ok.every((v) => v === true))
+			else
+				claim(
+					`${label}, the jar moved 15 cm: ${fmt(last(R.track, "p", "outside_g"))} of ${fmt(poured)} g outside it (said: ${(R.track.events ?? []).some((e) => / spills \w+ outside jar$/.test(e.text))}), the jar ${fmt(last(R.track, "jar", "grains_g"))} g; both piles goals fail`,
+					ok.every((v) => v === false) && Math.abs(last(R.track, "p", "outside_g") - poured) < 1 && (R.track.events ?? []).some((e) => / spills \w+ outside jar$/.test(e.text))
+				)
+		}
+	}
 }
 
 // ---------------------------------------------------------------- milk, chocolate milk, white and brown colouring

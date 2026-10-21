@@ -22,7 +22,8 @@
  *       works out each one's inside from its solids' outlines at the start (granular.ts holderOf) and, where the bed reaches it, makes its inside
  *       the floor and a ring of wall columns round it (front and back too), the bed grown to hold it whole with columns no wider than a tenth of
  *       its inside; a pile or landing region whose middle is over its inside is read inside it (heap_* / height_mm..., and outside_g /
- *       spilled_g: what lies outside it).
+ *       spilled_g: what lies outside it); a landing region (a cup's or a funnel's) whose middle is over none is read inside the nearest one
+ *       whose wall reaches into it (its stream came down beside it, on its wall or past it: outside_g, never the heap, 2026-10-21).
  *   {kind: "sand-pour", id, item, solid, inside: [4 {x, y}], depth, wall, grain, wet, volume (m³ packed), asked? (mL)}
  *       a cup of grains a hand tips (the flow module's pitcher with contents "grains": that module's flow-pour record tips its root `solid`
  *       about the lip): granular.ts TipCup in that solid's frame; what leaves over the lip falls as parcels (lands on its landing region).
@@ -43,6 +44,8 @@
  *              heap_deg, heap_g (+ outside_g in a container: everything it poured that is not in it, on the bed, off its edges, on another bed,
  *              lost below or falling under the bed's floor, so heap_g + outside_g = poured_g but what is still in the air); keyframe "cup" (its
  *              grains' surface in the cup's frame: nx, ny, c (m), area (m²), and the cup's world angle (rad), up to 30 a second while they change)
+ *   a container a bed holds (a jar, a cup, a bowl...: its item): grains_g (the grains inside it now, whoever poured or laid them there; what
+ *              piles {item, in: container} weighs, 2026-10-21)
  *   a bed with containers: keyframe "holders:<bed>" once ([n, (round, x, floor, r0, rb, ylo, rt, yhi, wall, rim, k, ring) ×n])
  * Keyframes (track.keyframes, for the view): each bed under its first item: "grid" once ([x0, z0, dx, nx, nz, K, grain index ×K (GRAIN_KEYS),
  * wetness index ×K (WETNESS), base (m), the floor as N runs [N, (step, count) ×N] of its column-to-column steps in tenths of a mm over the
@@ -276,6 +279,8 @@ class Grains {
 	 *  never move, so they are found once) */
 	readonly floorSolid = new Map<Bed, string[]>()
 	readonly cellsOn = new Map<string, { bed: Bed; cells: Int32Array }[]>()
+	/** Each container's inside columns, in every bed that holds it whole: what its `grains_g` reading weighs. */
+	readonly insideOf = new Map<string, { bed: Bed; cells: Int32Array }[]>()
 	/** The containers among the holders that stand by their own weight (a bowl or a mug: dynamic, not fixed): what lies in one lies on what
 	 *  it stands on (a kitchen scale's platform weighs it, grainsOn); a fixed cup or jar holds its grains itself. */
 	readonly loose = new Set<string>()
@@ -415,6 +420,14 @@ class Grains {
 			this.floorItem.set(bed, by)
 			if (hs.length) this.holders.set(bed, hs)
 			this.floorSolid.set(bed, sids)
+			// (each container's inside columns: what it holds, whoever poured or laid it there)
+			for (const H of hs) {
+				const cells: number[] = []
+				for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) if ((kind[j * nx + i] as number) === 0 && holderQ(H, bed.cx(i), bed.cz(j)) <= H.rt) cells.push(j * nx + i)
+				const list = this.insideOf.get(H.item) ?? []
+				list.push({ bed, cells: Int32Array.from(cells) })
+				this.insideOf.set(H.item, list)
+			}
 			this.shown.push({ bed, item: first.item as string, cls: -2, last: new Float64Array(bed.n), lastT: -1, lastW: undefined, lastWT: -1 })
 			let low = Number.POSITIVE_INFINITY
 			for (let c = 0; c < bed.n; c++) if ((kind[c] as number) !== 2 && (floor[c] as number) < low) low = floor[c] as number
@@ -430,10 +443,27 @@ class Grains {
 						const z = bed.cz(j)
 						if (x + e >= (r.x0 as number) && x - e <= (r.x1 as number) && z + e >= (r.z0 as number) && z - e <= (r.z1 as number)) cells.push(j * nx + i)
 					}
-				// (its container: the one whose inside holds its middle, where its grains land or lie)
+				// (its container: the one whose inside holds its middle, where its grains land or lie. A cup's or a funnel's landing region whose middle
+				// is over none: the nearest container whose wall reaches into it, so what comes down beside it, on its wall or past it is read
+				// outside it, never as its heap (2026-10-21: a cup 15 cm beside a jar read the heap it made on the table, all of it, as the heap, and
+				// "piles up inside the jar" held over an empty jar; a stream onto the jar's wall read the grains inside and the wedge outside as one
+				// heap at 50°). A heap laid by a pile's deposit lies where it is laid: it keeps the container under its middle, or none.)
 				const mx = 0.5 * ((r.x0 as number) + (r.x1 as number))
 				const mz = 0.5 * ((r.z0 as number) + (r.z1 as number))
-				const H = hs.find((q) => holderQ(q, mx, mz) <= q.rt) ?? null
+				let H = hs.find((q) => holderQ(q, mx, mz) <= q.rt) ?? null
+				if (H === null && r.role === "landing") {
+					let gap = Number.POSITIVE_INFINITY
+					for (const q of hs) {
+						const rx = q.rt + q.t
+						const rz = q.round ? q.k * (q.rt + q.t) : q.k * q.rt + q.t
+						if (q.x + rx < (r.x0 as number) || q.x - rx > (r.x1 as number) || rz < (r.z0 as number) || -rz > (r.z1 as number)) continue
+						const d = holderQ(q, mx, mz) - q.rt
+						if (d < gap) {
+							gap = d
+							H = q
+						}
+					}
+				}
 				const inside: number[] = []
 				const flat: number[] = []
 				const edge: number[] = []
@@ -1032,6 +1062,15 @@ class Grains {
 				this.spilledTold.add(reg.bed.id)
 				ctx.event(`sand spills off the edge by ${reg.item}`, [reg.item], "spilled")
 			}
+		}
+		// (each container near grains: the grains inside it now, whoever poured or laid them there: what a goal that a heap ends inside it reads)
+		for (const [item, list] of this.insideOf) {
+			let m = 0
+			for (const { bed: b, cells } of list) {
+				const A = b.dx * b.dx
+				for (const c of cells) for (let k = 0; k < b.classes.length; k++) m += ((b.hk[k] as Float64Array)[c] as number) * A * (b.classes[k] as ClassInfo).rhoB
+			}
+			ctx.set(item, "grains_g", m * 1000)
 		}
 		for (const v of this.vessels) {
 			const role = v.record.role

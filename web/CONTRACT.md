@@ -3497,7 +3497,11 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
   the container (on the region's own columns and on the margin the bed grew round its containers that no region's rectangle covers), what fell
   off the bed's edges and, of a cup's stream, what came down on another bed, fell past every bed or is falling below the bed's floor; so
   `heap_g + outside_g` is everything poured but what is still in the air over it (2026-10-21: before, a stream thrown past its landing bed was in
-  neither). Once a gram lies outside it the run says "<cup> spills sugar outside <jar>" (a funnel's too; kind `spilled`).
+  neither). Once a gram lies outside it the run says "<cup> spills sugar outside <jar>" (a funnel's too; kind `spilled`). A landing region (a
+  funnel's, a cup's) whose middle is over no container's inside is read against the nearest container whose wall reaches into its rectangle
+  (2026-10-21, round 2: its stream came down beside the container, on its wall or past it), so its heap_* are what got in (maybe nothing) and
+  the rest is outside_g; a pile's region keeps the container under its middle, or none (a heap is laid where it is put). Every container a bed
+  holds reads `grains_g`: the grains inside it now, whoever poured or laid them there.
 - **A cup of grains** (the flow module's `pitcher`: `contents` liquid | grains (default liquid), `grain` sugar (default) | salt | rice | sand | fine
   sand | coarse sand | gravel | soil | flour, `fill_ml` ("Amount in it") the grains' packed volume: 200 mL of sugar is 160 g): its `flow-pour` record
   carries `contents: "grains"`, `grain`, `grains` (m³), `grains_asked?` and `volume: 0` (the flow module only tips it, pours no liquid and reads only its
@@ -3515,7 +3519,8 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
   the lip's corner and land on the landing bed (in a jar under it, inside the jar). Readings on the pitcher: `left_g, poured_g, flow_gs, lands_x,
   heap_mm, heap_deg, heap_g, outside_g`; events "<cup> starts pouring its sugar: tipped 86°, past what its grains stand at" (kind `pours`), "<cup> is
   empty: all its sugar has poured out" (kind `emptied`), at the start "only N mL of sugar fits in <cup> (not M mL): it is filled to the brim" (kind
-  `brim`). Goals: flow's `empties {item}` reads `left_g` for a cup of grains; granular's `piles {item: the cup}` reads its heap.
+  `brim`). Goals: flow's `empties {item}` reads `left_g` for a cup of grains; granular's `piles {item: the cup, in?: the container}` reads its
+  heap (and, with `in`, the container's grains_g: at least 90 % of what it poured inside it).
 - **Keyframes** (drawing only): `cup` on the pitcher ([nx, ny, c, area, angle]: its grains' surface n·p = c in the cup's frame, their section in m²
   to 7 decimals, the cup's angle; 30 a second while it changes); `holders:<bed>` once, under the bed's first item ([n, (round 1 | square 0, x, floor,
   r0, rb, ylo, rt, yhi, wall, rim, k, ring) × n]).
@@ -3576,6 +3581,28 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
   (milk and chocolate milk into water and water into milk: one layer, density and viscosity exactly the rule's (2e-15), named white and brown;
   water from a tap then milk into a glass jar: one white liquid; oil onto water: two layers), rw-validate-fluids.ts, -flow.ts and -crossmod.ts
   all pass; tools/parity/flow.mjs and fluids.mjs --engine 0 mismatches.
+- **A stream beside its container (repair of 2026-10-21, round 2)**: a cup's or a funnel's stream that came down beside the jar was read as
+  the heap, all of it, with no `outside_g` and nothing said, and the AI's "The sugar piles up into a heap inside the jar" held while the heap
+  stood on the table next to an empty jar (the V2 release's edit "Move the jar 15 cm to the left, and leave the cup where it is": heap_g 120 of
+  120 g); a stream on the jar's wall read the grains inside and the wedge outside as one heap at 50°: only a landing region whose middle was over
+  the jar's inside was read against it. Now (tooling/src/sim/modules/granular.ts build) a landing region whose middle is over no container's
+  inside is read against the nearest container whose wall reaches into it (the same readings, `outside_g` and the spill said), and every
+  container a bed holds reads `grains_g`. `piles` takes `in` (an item: the container the heap must end inside; Python == JS): it holds only
+  with the heap's test and at least 90 % (`IN_SHARE`) of the item's grains (its `poured_g`; a laid heap's `mass_g + spilled_g`) in that
+  container's `grains_g` (0 when no bed reaches it); its summary entry adds `in`, `in_g`, `of_g`, its card words "no (0 of 120 g inside it;
+  no heap inside it)", its default label "… stands as a heap inside <container>". The AI: piles' `about`, the plan prompt and both how-tos say
+  to give `in` whenever the heap must end in a container, the worked example "Pour sugar into a glass jar" gives `in: jar`, and a plan's or an
+  edit's piles goal whose label says the heap is in/inside/into/within a container of the plan but leaves `in` out gets it (ai/schemas.mjs
+  `labelRef`, from the goal kind's `fromLabel`: the container's name, id or type word after those words, with at most an article and two
+  words between; two of that kind and no words to tell them: none), said in a warning; the edit digest says "none of its grains is in the
+  container beside it: all N g landed OUTSIDE it" for a funnel or a cup whose heap inside is empty, and of each container near grains "N g of
+  grains inside it at the end". Measured (rw-validate-kitchen.ts
+  `conserve`): 60 pours 0-20 cm off the pint jar's opening (cups of sugar, salt and rice tipped to 135° 12.5 cm over the rim; funnels of
+  sugar and salt): every gram in the jar or outside it (worst 7e-15 g), the jar's `grains_g` the heap in it, a gram outside said, piles
+  {in: jar} holding just when 90 % is inside; a stream on the wall split (a cup of sugar 5 cm off: 134.6 g in, 25.4 g out, where it read one
+  160 g heap); 20 cm off the jar is past the cup's landing bed: a heap on the table, the jar 0 g, piles {in: jar} fails. The AI's two scenes:
+  over the jar both piles goals hold (116.2 of 120 g, 150 of 150 g in); the jar moved 15 cm, all outside, said, both fail. The 12 scenarios and
+  10 gallery scenes: byte for byte as before (web/export/test/identity-tracks.json re-armed: only its web/sim fingerprint).
 - **Known limits**: a container keeps grains where it stood at the start (moved or tipped in the run, its walls for the grains stay where it began;
   one `held` to be let go is not a holder); a jar filled past its shoulder heaps as if its body went straight up (its neck is not a wall for the grains); grains and liquids do not meet (milk on
   sugar neither wets nor dissolves it; the matter module's dissolving is its own); a cup of grains is its 2-D section × its depth

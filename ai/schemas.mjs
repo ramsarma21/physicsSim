@@ -613,6 +613,59 @@ function tidyGoals(goals, path, warnings) {
 		cutStr(g, "label", 200, at, warnings)
 	}
 }
+/**
+ * The item a goal's label names for one of its fields (a module goal kind's `fromLabel`, web/sim/plugins.js: piles' `in`, "the sugar piles up
+ * inside the jar"): an item of those types whose name's, id's or type's last word ("glass-jar": jar) comes after one of the words (in, inside,
+ * into, within) with at most an article and two more words between ("in the tall glass jar"); of several of that kind, the one whose words
+ * include those before it ("the blue jar"), else none. -> its id, or null.
+ */
+export function labelRef(label, items, spec) {
+	const sing = (w) => (w.length > 3 && /(?:x|ch|sh|ss)es$/.test(w) ? w.slice(0, -2) : w.length > 3 && /[^s]s$/.test(w) ? w.slice(0, -1) : w)
+	const toks = (s) => String(s ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).map(sing)
+	const after = new Set((spec?.after ?? []).map((w) => String(w).toLowerCase()))
+	const types = new Set(spec?.types ?? [])
+	const cands = (Array.isArray(items) ? items : []).filter((it) => isObj(it) && typeof it.id === "string" && types.has(it.type))
+	if (!cands.length || !after.size) return null
+	const heads = cands.map((it) => new Set([toks(it.name).at(-1), toks(it.id).at(-1), toks(it.type).at(-1)].filter(Boolean)))
+	const words = cands.map((it) => new Set([...toks(it.name), ...toks(it.id), ...toks(it.type)]))
+	const ART = new Set(["the", "a", "an", "its", "their", "his", "her", "this", "that", "same", "one"])
+	const said = String(label ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean)
+	for (let i = 0; i < said.length; i++) {
+		if (!after.has(said[i])) continue
+		let k = i + 1
+		while (k < said.length && ART.has(said[k])) k++
+		const before = []
+		for (let n = 0; n < 3 && k + n < said.length && !after.has(said[k + n]); n++) {
+			const w = sing(said[k + n])
+			const hit = cands.map((_, j) => j).filter((j) => heads[j].has(w))
+			if (hit.length) {
+				const by = hit.length > 1 && before.length ? hit.filter((j) => before.every((b) => words[j].has(b))) : hit
+				return by.length === 1 ? cands[by[0]].id : null
+			}
+			before.push(w)
+		}
+	}
+	return null
+}
+/** A goal of a module kind that names an item in its label but leaves that field out (`fromLabel`: "piles up inside the jar" without `in`)
+ *  gets it, said in a warning, so the run checks what the card says (a heap on the table beside an empty jar met "piles up inside the jar":
+ *  2026-10-21). items: the plan's or the scene's. */
+function goalRefsFromLabels(goals, items, path, warnings) {
+	if (!Array.isArray(goals) || !Array.isArray(items)) return
+	for (const [i, g] of goals.entries()) {
+		if (!isObj(g) || typeof g.label !== "string" || GOAL_KINDS.includes(g.kind)) continue
+		const mod = moduleGoal(g.kind)
+		if (!isObj(mod?.fromLabel)) continue
+		const own = new Set(goalItems({ ...g, kind: mod.kind }))
+		for (const [field, spec] of Object.entries(mod.fromLabel)) {
+			if (g[field] !== undefined || !Object.hasOwn(mod.fields ?? {}, field)) continue
+			const id = labelRef(g.label, items, spec)
+			if (id === null || own.has(id)) continue
+			g[field] = id
+			warnings.push(`${path}[${i}].${field} "${id}" added: its label says so ("${g.label.slice(0, 80)}")`)
+		}
+	}
+}
 function tidyPlanText(plan, warnings, path = "plan") {
 	if (!isObj(plan)) return
 	tidyReply(plan, path, warnings)
@@ -781,6 +834,8 @@ export function validatePlan(value, ctx = {}) {
 	if (plan.notes === undefined) plan.notes = ""
 	tidyPlanText(plan, warnings)
 	if (Array.isArray(plan.items)) for (const [i, it] of plan.items.entries()) normaliseItem(it, `items[${i}]`, catalog, warnings)
+	// (a goal whose label names a container it leaves out: "piles up inside the jar" checks the jar)
+	goalRefsFromLabels(plan.goals, plan.items, "goals", warnings)
 	checkSchema(planSchema, plan, "plan", errors)
 	// the semantic checks run even when the structure is off (as far as it lets them), so one repair can fix everything at once
 	bestEffort(() => checkPlanSemantics(plan, ctx, errors, warnings), errors.length > 0)
@@ -1264,6 +1319,7 @@ export function checkPatches(patches, basePlan, ctx, path = "patches") {
 		if (p.op === "set_place" && isObj(p.place)) normaliseItem({ place: p.place }, at, catalog, warnings)
 		if (p.op === "replace_type") p.type = normTypeKey(p.type, catalog)
 		if (p.op === "set_goals") tidyGoals(p.goals, `${at}.goals`, warnings)
+		if (p.op === "set_goals") goalRefsFromLabels(p.goals, plan.items, `${at}.goals`, warnings)
 		const errs = []
 		checkSchema(patchSchemas[p.op], p, at, errs)
 		if (errs.length) {

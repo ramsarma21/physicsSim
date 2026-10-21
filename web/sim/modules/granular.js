@@ -506,8 +506,22 @@ const _heap_keys = (ctx, iid) => {
 }
 const r1 = (v, n) => (v === null ? null : pyRound(v, n))
 
+/** A heap's grains in all (g): what a funnel or a cup poured, or a laid heap's own (on its support or in its container, and what spilled). */
+const _heap_total = (ctx, iid) => {
+	const p = _last(ctx, iid, "poured_g")
+	if (p !== null) return p
+	const m = _last(ctx, iid, "mass_g")
+	return m === null ? null : m + (_last(ctx, iid, "spilled_g") ?? 0)
+}
+/** The share of a heap's grains that must end inside the container a piles goal names (`in`). */
+const IN_SHARE = 0.9
+
 function piles(ctx, g) {
 	if (!ctx.known(g.item)) return null
+	// (in: the container it must heap up inside: a label that says "piles up inside the jar" is checked there, never by the heap's height alone,
+	// which a heap on the table beside an empty jar met (2026-10-21))
+	const cin = g.in === undefined || g.in === null ? null : g.in
+	if (cin !== null && !ctx.known(cin)) return null
 	const lo = ctx.num(g.min_deg)
 	const hi = ctx.num(g.max_deg)
 	const [kh, ka] = _heap_keys(ctx, g.item)
@@ -516,7 +530,17 @@ function piles(ctx, g) {
 	const ok = h !== null && h >= 5 && a !== null && (lo === null || a >= lo) && (hi === null || a <= hi)
 	const span = (lo !== null && hi === null ? ` at ${_fmt(lo, 0)}°` : "") + (lo !== null && hi !== null ? ` between ${_fmt(lo, 0)}° and ${_fmt(hi, 0)}°` : "") +
 		(hi !== null && lo === null ? ` no steeper than ${_fmt(hi, 0)}°` : "")
-	return { label: lab(g, `${ctx.name(g.item)} stands as a heap${span}`), ok, kind: "piles", item: g.item, deg: r1(a, 1), mm: r1(h, 1) }
+	const out = { label: lab(g, `${ctx.name(g.item)} stands as a heap${cin !== null ? ` inside ${ctx.name(cin)}` : ""}${span}`), ok, kind: "piles", item: g.item, deg: r1(a, 1), mm: r1(h, 1) }
+	if (cin !== null) {
+		// (the grains inside it at the end: its grains_g, 0 when no bed reaches it; at least 90 % of the heap's own)
+		const inside = _last(ctx, cin, "grains_g") ?? 0.0
+		const total = _heap_total(ctx, g.item)
+		out.ok = ok && total !== null && total > 0 && inside >= IN_SHARE * total
+		out.in = cin
+		out.in_g = r1(inside, 1)
+		out.of_g = r1(total, 1)
+	}
+	return out
 }
 function stands(ctx, g) {
 	if (!ctx.known(g.item)) return null
@@ -675,7 +699,11 @@ function keepTime(P, neckMm, { goals, item }) {
 const pair = (v, d, u) => `${n0(v?.[0], d)} vs ${n0(v?.[1], d)}${u}`
 /** A goal's result in words for the cards ("no (it ran out after 69.9 lesson s; the goal 60 ± 3 s)"): never a bare "no". */
 const DETAIL = {
-	piles: (e) => `${yes(e)} (${e.mm === null || e.mm === undefined ? "no heap there" : `${n0(e.mm)} mm tall, its sides at ${n0(e.deg, 1)}°`})`,
+	piles: (e) => {
+		const heap = e.mm === null || e.mm === undefined ? "no heap there" : `${n0(e.mm)} mm tall, its sides at ${n0(e.deg, 1)}°`
+		// (a goal that names its container says how much of the heap's grains ended inside it: "no (0 of 120 g inside it; ...)")
+		return e.in === undefined || e.in === null ? `${yes(e)} (${heap})` : `${yes(e)} (${n0(e.in_g)} of ${n0(e.of_g)} g inside it; ${e.mm ? heap : "no heap inside it"})`
+	},
 	stands: (e) => `${yes(e)} (${e.share === null || e.share === undefined ? "no reading" : `it ends ${n0(e.share * 100)} % as tall as it started`})`,
 	collapses: (e) => `${yes(e)} (${e.share === null || e.share === undefined ? "no reading" : `it ends ${n0(e.share * 100)} % as tall as it started`})`,
 	steeper: (e) => `${yes(e)} (${pair(e.deg, 1, "°")})`,
@@ -701,21 +729,21 @@ export const plugin = {
 		"Sand timers: an hourglass runs only dry fine sand (neck over 0.9 mm), sand (over 2 mm) or coarse sand (over 5 mm); gravel, pebbles, soil and flour jam in any neck it has (12 mm at most). A jammed timer reads clogged 1 (\"jammed\"), its clock (run_s) stops and the run says \"<timer> jams: its grains arch over the 3 mm neck\": widen the neck past 5 grains or use finer grains. The hourglass is its own clock: time it by its run_s and the timer goal (lesson seconds, with the scene's time-lapse); a stopwatch can time it too: watch = the hourglass, stop = reads (stop_reading empty, stop_value 1: it stops as the sand runs out), counts lesson under a time-lapse (its face then shows lesson seconds, and a reads goal's seconds are those).",
 		"Craters: hold a ball above a sand-tray (place it in the air over the tray, held, released at the scene's release): it strikes, throws sand out and is buried; the crater follows Uehara et al.'s law, D ≈ 0.9·(ρ_ball/ρ_sand)^¼·D_ball^¾·H^¼/√(tan repose): a 2.5 cm steel ball from 0.6 m about 9 cm, from 1 m about 10 cm; a ping-pong ball only about its own size (4-4.5 cm), whatever the height: a heavier ball, or a higher drop, makes a wider crater. In sand thinner than the ball goes (a 1 cm layer), it hits the floor and the crater is smaller. Compare two trays side by side. A ball or a toy car rolled into sand ploughs and stops.",
 		"Erosion: a stream-table needs time: set the scene's settings.time_lapse (10-30) so seconds of the run are minutes of the lesson (the sand changes that much faster; the water runs as it does). More slope, more water or finer grains erode more; gravel hardly moves; plants (\"lower half\", \"all\") protect the sand they cover. Two tables side by side differing in ONE prop make a fair test.",
-		"Readings each run: a pile's height_mm, width_mm, angle_deg, mass_g (on what it stands on), spilled_g; a tray's crater_mm (rim to rim), crater_depth_mm; a funnel's left_g, poured_g, flow_gs, clogged, heap_mm, heap_deg, heap_g (the heap it poured); an hourglass's top_g, bottom_g, flow_gs, run_s (lesson seconds), empty, clogged; a stream table's eroded_g (sand carried off the slope), delta_cm, channel_mm.",
-		"Containers keep grains: a glass-jar (made wider and lower it is a dish, narrower and taller a glass; set its depth to its width), cup, plastic-cup, bucket, basket, box, beaker, graduated-cylinder, measuring-jug, coffee-mug or bowl that grains pour into (from a funnel, or a pitcher of grains: the flow module's pitcher with contents \"grains\") or that a sand-pile is laid in (its anchor on the container's floor) holds every grain inside its round or square walls: they pile up in it at their angle of repose, a bed that fills it topped by a cone once the heap reaches its wall (400 g of sand in a 6.5 cm glass: a 10.5 cm bed and cone, nothing outside). The pourer's heap_mm, heap_deg and heap_g are read inside the container; outside_g is what missed it (a pile's spilled_g). A funnel's spout or a cup's lip goes over the opening's middle (grains fall nearly straight down).",
+		"Readings each run: a pile's height_mm, width_mm, angle_deg, mass_g (on what it stands on), spilled_g; a tray's crater_mm (rim to rim), crater_depth_mm; a funnel's left_g, poured_g, flow_gs, clogged, heap_mm, heap_deg, heap_g (the heap it poured), outside_g (with a container: what missed it); a container's grains_g (the grains inside it); an hourglass's top_g, bottom_g, flow_gs, run_s (lesson seconds), empty, clogged; a stream table's eroded_g (sand carried off the slope), delta_cm, channel_mm.",
+		"Containers keep grains: a glass-jar (made wider and lower it is a dish, narrower and taller a glass; set its depth to its width), cup, plastic-cup, bucket, basket, box, beaker, graduated-cylinder, measuring-jug, coffee-mug or bowl that grains pour into (from a funnel, or a pitcher of grains: the flow module's pitcher with contents \"grains\") or that a sand-pile is laid in (its anchor on the container's floor) holds every grain inside its round or square walls: they pile up in it at their angle of repose, a bed that fills it topped by a cone once the heap reaches its wall (400 g of sand in a 6.5 cm glass: a 10.5 cm bed and cone, nothing outside). The pourer's heap_mm, heap_deg and heap_g are read inside the container; outside_g is what missed it (a pile's spilled_g). A funnel's spout or a cup's lip goes over the opening's middle (grains fall nearly straight down): a stream that comes down beside the container, on its wall or past it is read against it all the same (heap_g what got in, maybe 0; the rest outside_g) and the run says \"<pourer> spills <grain> outside <container>\". The container reads grains_g, the grains inside it. When the heap must end INSIDE a container, say so in the goal: piles {item: the funnel or cup, in: the container} (at least 90 % of what it poured inside it).",
 		"A kitchen-scale weighs the grains resting on its platform or in a bowl or coffee-mug standing on it (a heap poured on it from a funnel above it, a sand-pile set on it: on: the scale, or sugar poured into a bowl on it: the bowl and the sugar); a fixed cup, jar, beaker, bucket or box holds its own grains (a scale under one weighs neither): measure's reads {item: scale, grams}; its tare zeroes a heap set on it before the release. Known limits: sieving (separating sand from gravel or pebbles by grain size) is the matter module's mixture-dish and sieve, not these items."
 	].join(" "),
 	prompt: {
 		plan: [
 			"Sand and soil: sand-pile, sand-tray, sand-funnel, hourglass and stream-table stand fixed on the table (place {on: \"table\"}); set their grain and wetness props. A funnel pours at the release (its `delay` later) and a stream table's hose runs from the release, so give funnels and hourglasses seconds enough (sand_kg ÷ flow: 0.3 kg of sand at 25 g/s is 12 s; a 60 s hourglass needs settings.time_lapse ≥ 4 to run out in a 15 s run) and stream tables a time_lapse of 10-30. A poured heap is the funnel's own: never put a sand-pile under a funnel; judge it with piles/steeper on the funnel. A heap on a plank or shelf must fit it (12 cm deep: up to about 300 g).",
-			"Craters: a sand-tray (sand or flour) with a ball held over it (place {on: \"air\", x: the tray's x, y_m: drop height + the tray's sand top}, held: true): compare drop heights or balls in two trays side by side. Goals: crater {item: tray, min_mm?}, crater_bigger {a: tray, b: tray}. Piles: piles {item: pile or funnel, min_deg?, max_deg?}, steeper {a, b} (piles or funnels), stands {item} / collapses {item} for castles (damp vs dry). Pouring and timers: sand_runs_out {item, before_s?}, runs_out_first {a, b}, timer {item: hourglass, seconds, tol_s?} (tol_s in seconds; leave it out for 5 %), clogs {item: funnel or hourglass}. Erosion: erodes {item, min_g?}, erodes_more {a, b}, delta {item, min_cm?}. Time a sand timer by its own timer goal, or by a stopwatch with stop = reads (stop_reading empty) watching it."
+			"Craters: a sand-tray (sand or flour) with a ball held over it (place {on: \"air\", x: the tray's x, y_m: drop height + the tray's sand top}, held: true): compare drop heights or balls in two trays side by side. Goals: crater {item: tray, min_mm?}, crater_bigger {a: tray, b: tray}. Piles: piles {item: pile, funnel or a pitcher of grains, min_deg?, max_deg?, in?: the container when the heap must end inside it (\"piles up in the jar\": in: the jar)}, steeper {a, b} (piles or funnels), stands {item} / collapses {item} for castles (damp vs dry). Pouring and timers: sand_runs_out {item, before_s?}, runs_out_first {a, b}, timer {item: hourglass, seconds, tol_s?} (tol_s in seconds; leave it out for 5 %), clogs {item: funnel or hourglass}. Erosion: erodes {item, min_g?}, erodes_more {a, b}, delta {item, min_cm?}. Time a sand timer by its own timer goal, or by a stopwatch with stop = reads (stop_reading empty) watching it."
 		].join("\n"),
 		edit: "Sand and soil: change grains with grain/wetness; a heap's size with sand_kg; a castle's with width/height (damp stands, dry slumps); a funnel's rate with outlet_mm (wider: faster; too narrow for the grains: it clogs); an hourglass's time with sand_kg (more sand: longer; past what its top bulb holds, about 0.75·bulb_cm³ g, widen bulb_cm too) or neck_mm (wider: shorter; under 5 grains wide it jams: coarse sand needs over 5 mm); a funnel holds about 0.36·funnel_cm³ g (12 cm: 620 g); a stream table's erosion with tilt_deg, flow_lpm, grain (finer erodes more, gravel hardly) or plants (cover protects). A crater grows with the ball's drop height (move the ball up) and its weight. A change of grain, spout or neck can make a goal stale (fine sand instead of gravel in a funnel that had \"clogs\"; coarse sand in a timer that had \"timer\"): rewrite that goal with set_goals to what the change now shows (sand_runs_out, or clogs) and say so in the reply.",
 		refine: "Sand and soil: a funnel or an hourglass must run long enough to empty within the run (raise seconds or settings.time_lapse, or shrink sand_kg); a stream table needs settings.time_lapse 10-30 to show erosion; a crater goal needs the ball held above the tray's sand (not resting on it) and released; a poured heap is the funnel's (remove any sand-pile put under a funnel); a timer that jams needs a wider neck or finer grains."
 	},
 	examples: [
 		{ ask: "Pour sand from a funnel onto the table to see it make a cone-shaped pile.", how: "a sand-funnel (sand_kg 0.3, outlet_mm 10, height 0.25) on the table, nothing under it; seconds ≥ mass ÷ 25 g/s + 2; goals sand_runs_out {funnel}, piles {funnel} (its poured heap)", plan: { seconds: 15, items: [{ id: "funnel", type: "sand-funnel", props: { sand_kg: 0.3, outlet_mm: 10, height: 0.25 }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "sand_runs_out", item: "funnel" }, { kind: "piles", item: "funnel" }] } },
-		{ ask: "Pour sugar into a glass jar and see it pile up.", how: "a glass-jar on the table and a sand-funnel of sugar (grain sugar, sand_kg 0.15, outlet_mm 12, height 0.25) at the jar's x, its spout over the jar's middle; seconds ≥ 150 g ÷ 20 g/s + 2; the jar keeps every grain; goal piles {funnel} (its heap in the jar)", plan: { seconds: 10, items: [{ id: "jar", type: "glass-jar", place: { on: "table", x: 1.2 } }, { id: "funnel", type: "sand-funnel", props: { grain: "sugar", sand_kg: 0.15, outlet_mm: 12, height: 0.25 }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "piles", item: "funnel" }] } },
+		{ ask: "Pour sugar into a glass jar and see it pile up.", how: "a glass-jar on the table and a sand-funnel of sugar (grain sugar, sand_kg 0.15, outlet_mm 12, height 0.25) at the jar's x, its spout over the jar's middle; seconds ≥ 150 g ÷ 20 g/s + 2; the jar keeps every grain; goal piles {funnel, in: jar} (its heap, inside the jar)", plan: { seconds: 10, items: [{ id: "jar", type: "glass-jar", place: { on: "table", x: 1.2 } }, { id: "funnel", type: "sand-funnel", props: { grain: "sugar", sand_kg: 0.15, outlet_mm: 12, height: 0.25 }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "piles", item: "funnel", in: "jar" }] } },
 		{ ask: "Pour dry sand from one funnel and gravel from another: which makes the steeper pile?", how: "two sand-funnels side by side (sand: outlet_mm 12; gravel: outlet_mm 40), sand_kg 0.25 each, NO sand-pile under them; goal steeper {a: gravel funnel, b: sand funnel} on their poured heaps", plan: { seconds: 9, items: [{ id: "sandF", type: "sand-funnel", props: { grain: "sand", sand_kg: 0.25, outlet_mm: 12, height: 0.25 }, place: { on: "table", x: 0.9 } }, { id: "gravelF", type: "sand-funnel", props: { grain: "gravel", sand_kg: 0.25, outlet_mm: 40, height: 0.25 }, place: { on: "table", x: 1.6 } }], goals: [{ kind: "steeper", a: "gravelF", b: "sandF" }] } },
 		{ ask: "Drop a steel ball into sand from a low and a high height: which makes the bigger crater?", how: "two sand-trays side by side, a steel-ball held over each (place on air, x = the tray's x, y_m 0.6 and 0.2); goal crater_bigger {a: high tray, b: low tray}", plan: { seconds: 3, items: [{ id: "trayA", type: "sand-tray", place: { on: "table", x: 0.8 } }, { id: "trayB", type: "sand-tray", place: { on: "table", x: 1.6 } }, { id: "high", type: "steel-ball", props: { diameter: 0.025 }, held: true, place: { on: "air", x: 0.8, y_m: 0.6 } }, { id: "low", type: "steel-ball", props: { diameter: 0.025 }, held: true, place: { on: "air", x: 1.6, y_m: 0.2 } }], goals: [{ kind: "crater_bigger", a: "trayA", b: "trayB" }] } },
 		{ ask: "Make a sand timer that runs out in about 30 seconds.", how: "an hourglass of fine sand (sand_kg 0.033 with the 3 mm neck: 1.1 g/s), settings.time_lapse 4 and seconds 12; goal timer {item, seconds: 30} (5 % by default; tol_s is in seconds)", plan: { seconds: 12, settings: { time_lapse: 4 }, items: [{ id: "timer", type: "hourglass", props: { sand_kg: 0.033 }, place: { on: "table", x: 1.2 } }], goals: [{ kind: "timer", item: "timer", seconds: 30 }] } },
@@ -723,10 +751,18 @@ export const plugin = {
 		{ ask: "Does a steeper stream table erode more sand? (5 minutes)", how: "two stream-tables (tilt_deg 12 and 4), settings.time_lapse 20, seconds 15; goal erodes_more {a: steep, b: gentle}", plan: { seconds: 15, settings: { time_lapse: 20 }, items: [{ id: "steep", type: "stream-table", props: { tilt_deg: 12 }, place: { on: "table", x: 0.75 } }, { id: "gentle", type: "stream-table", props: { tilt_deg: 4 }, place: { on: "table", x: 1.85 } }], goals: [{ kind: "erodes_more", a: "steep", b: "gentle" }] } }
 	],
 	goals: [
-		{ kind: "piles", aliases: ["pile", "heap", "forms_pile", "angle_of_repose", "repose"], fields: { item: "item", min_deg: "number?", max_deg: "number?" },
-			about: "piles {item: sand-pile, or sand-funnel for the heap it pours, min_deg?, max_deg?}: at the end it stands as a heap at least 5 mm tall, its slope (angle_deg, a funnel's heap_deg) within the bounds",
-			label: (g, n) => `${n(g.item)} stands as a heap`, summarize: (ctx, g) => piles(ctx, g), detail: DETAIL.piles,
-			sample: (scene, pick) => { const xs = ofType(scene, HEAPS); return xs.length ? { kind: "piles", item: pick(xs).id, ...(pick([true, false]) ? { min_deg: pick([25, 30, 33]), max_deg: pick([36, 40, 50]) } : {}) } : null } },
+		{ kind: "piles", aliases: ["pile", "heap", "forms_pile", "angle_of_repose", "repose"], fields: { item: "item", min_deg: "number?", max_deg: "number?", in: "item?" },
+			about: "piles {item: sand-pile, a sand-funnel for the heap it pours or a pitcher of grains for the heap its grains make, min_deg?, max_deg?, in?}: at the end it stands as a heap at least 5 mm tall, its slope (angle_deg, a funnel's or a cup's heap_deg) within the bounds; in: the container (a jar, glass, cup, mug, bowl, bucket, beaker or box) it must heap up INSIDE: at least 90 % of what it poured (a laid heap: of its grains) ends in it (the container's grains_g). Whenever the label says the heap is in a container (\"piles up inside the jar\"), give in",
+			label: (g, n) => `${n(g.item)} stands as a heap${typeof g.in === "string" ? ` inside ${n(g.in)}` : ""}`, summarize: (ctx, g) => piles(ctx, g), detail: DETAIL.piles,
+			// (a label that says where the heap ends, "piles up inside the jar", names its container: a plan's or an edit's goal that leaves `in` out
+			// gets it from those words (ai/schemas.mjs), so the run checks what the card says)
+			fromLabel: { in: { after: ["in", "inside", "into", "within"], types: Object.keys(HOLDERS) } },
+			sample: (scene, pick) => {
+				const xs = ofType(scene, HEAPS)
+				if (!xs.length) return null
+				const cs = ofType(scene, Object.keys(HOLDERS))
+				return { kind: "piles", item: pick(xs).id, ...(pick([true, false]) ? { min_deg: pick([25, 30, 33]), max_deg: pick([36, 40, 50]) } : {}), ...(cs.length && pick([true, false]) ? { in: pick(cs).id } : {}) }
+			} },
 		{ kind: "stands", aliases: ["stays_standing", "holds_shape", "stand"], fields: { item: "item" },
 			about: "stands {item}: a sand-pile (a castle) ends at least 90 % as tall as it started",
 			label: (g, n) => `${n(g.item)} stays standing`, summarize: (ctx, g) => stands(ctx, g), detail: DETAIL.stands,
@@ -825,7 +861,9 @@ export const plugin = {
 			const left = endOf(run, item.id, "left_g")
 			if (left !== null) out.push(`poured ${n0(endOf(run, item.id, "poured_g"))} g (${n0(left)} g left)${endOf(run, item.id, "clogged") === 1 ? `; it CLOGGED: the ${n0(P.outlet_mm ?? 10, 1)} mm spout is too narrow for ${P.grain ?? "sand"} (it needs over ${n0(JAM_MM[P.grain ?? "sand"] ?? 2, 1)} mm${(P.wetness ?? "dry") !== "dry" ? ", and dry grains" : ""})` : ""}`)
 			const hm = endOf(run, item.id, "heap_mm")
-			if (hm !== null && hm > 0) out.push(`its poured heap: ${n0(hm)} mm tall, sides at ${n0(endOf(run, item.id, "heap_deg"), 1)}°, ${n0(endOf(run, item.id, "heap_g"))} g (what piles/steeper on this funnel judge)${(endOf(run, item.id, "outside_g") ?? 0) > 0.5 ? `; ${n0(endOf(run, item.id, "outside_g"))} g landed OUTSIDE the container under it: put the spout over its opening's middle` : ""}`)
+			const og = endOf(run, item.id, "outside_g") ?? 0
+			if (hm !== null && hm > 0) out.push(`its poured heap: ${n0(hm)} mm tall, sides at ${n0(endOf(run, item.id, "heap_deg"), 1)}°, ${n0(endOf(run, item.id, "heap_g"))} g (what piles/steeper on this funnel judge)${og > 0.5 ? `; ${n0(og)} g landed OUTSIDE the container under it: put the spout over its opening's middle` : ""}`)
+			else if (og > 0.5) out.push(`none of its grains is in the container beside it: all ${n0(og)} g landed OUTSIDE it (no heap inside it): put the spout over its opening's middle`)
 		} else if (item.type === "hourglass") {
 			out.push(`${n0((P.sand_kg ?? 0.066) * 1000)} g of ${P.grain ?? "fine sand"} through a ${n0(P.neck_mm ?? 3, 1)} mm neck`)
 			const s = endOf(run, item.id, "run_s")
@@ -837,6 +875,12 @@ export const plugin = {
 			out.push(`tipped ${n0(P.tilt_deg ?? 6, 1)}°, ${n0(P.flow_lpm ?? 1, 1)} L/min, ${P.wetness ?? "damp"} ${P.grain ?? "sand"} ${n0((P.sand_depth ?? 0.05) * 100, 1)} cm deep${P.plants && P.plants !== "none" ? `, grass on the ${P.plants}` : ""}`)
 			const e = endOf(run, item.id, "eroded_g")
 			if (e !== null) out.push(`eroded ${n0(e)} g, channel ${n0(endOf(run, item.id, "channel_mm"))} mm deep, delta ${n0(endOf(run, item.id, "delta_cm"), 1)} cm`)
+		}
+		// (a jar, a glass, a cup, a bowl or a box that grains were poured or heaped near: what ended inside it, its grains_g, what piles {in: it}
+		// weighs; an empty jar beside a heap is said as plainly)
+		if (Object.prototype.hasOwnProperty.call(HOLDERS, item.type)) {
+			const gg = endOf(run, item.id, "grains_g")
+			if (gg !== null) out.push(`${n0(gg)} g of grains inside it at the end (grains_g: what piles {item, in: it} weighs)`)
 		}
 		return out.length ? out : null
 	},
