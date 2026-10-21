@@ -234,7 +234,7 @@ function _pourers() {
 		],
 		links: [], readouts: _pour_readouts(),
 		tags: ["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill",
-			"chocolate milk", "cup of sugar", "pour sugar", "cup of rice", "pour rice", "pour salt", "pour sand", "cup of sand"],
+			"chocolate milk", "cup of sugar", "pour sugar", "cup of rice", "pour rice", "cup of salt", "pour salt", "pour sand", "cup of sand"],
 		description: "A pitcher, jug or cup of liquid that a hand tips to pour, from the moment you set and as far as you set. Its item position is " +
 			"its pour lip, where the stream starts: put the lip above the container to fill (a few cm to its side the stream lands a " +
 			"little further). The level inside stays flat as it tips; it pours over the lip like water over a weir, so honey pours far " +
@@ -841,6 +841,9 @@ function surfaceUnder(run, x, y) {
 }
 /** The run's events about an item, of a kind ("jam", "inside", "brim", "holes", "capped", "siphon"). */
 const eventsOf = (run, iid, kind) => (run?.track?.events ?? []).filter((e) => e?.kind === kind && Array.isArray(e.items) && e.items.includes(iid))
+// (a cup of grains in a request's words: a cup, a tip or a pour, and the grains a pitcher holds (GRAINS): words.picks below)
+const POURS = "cups?|mugs?|jugs?|pitchers?|scoops?|tip(?:s|ped|ping)?|tilt(?:s|ed|ing)?|pour(?:s|ed|ing)?"
+const GRAIN_WORDS = "sugar|salt|rice|grains?|sand|flour|gravel|soil"
 
 export const plugin = {
 	// (the words a teacher uses: pour, tap, faucet, spill, overflow, siphon, puddle, jet, waterwheel; the digest's tiers pick this module's
@@ -1112,6 +1115,10 @@ export const plugin = {
 			if (item?.type === "leaky-bottle") return `a bottle with ${P.holes ?? 3} holes`
 			return null
 		},
+		// (grains with a cup, a tip or a pour, in either order within a sentence, pick this module whatever its other words: its pitcher is the cup
+		// of grains a hand tips. "A hand tips a cup of salt into a jar" picked only the granular, hands and heat modules, and the planner said
+		// the library had no tipping pourer for grains and used a funnel of sand, 2026-10-21)
+		picks: `\\b(?:${POURS})\\b[^.!?;\\n]{0,60}?\\b(?:${GRAIN_WORDS})\\b|\\b(?:${GRAIN_WORDS})\\b[^.!?;\\n]{0,60}?\\b(?:${POURS})\\b`,
 		/** the words in a request that name a setting (the person's own choice: a fix never offers it back) */
 		keys: {
 			"pitcher.tilt": "tip\\w*|tilt\\w*|angle",

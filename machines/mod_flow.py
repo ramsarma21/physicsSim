@@ -257,7 +257,7 @@ def _pourers():
                              Prop("back_at", "Tips back at", 0.0, 0.0, 30.0, 0.1, "s", "When the hand stands it up again (0: never)")],
                       links=[], readouts=_pour_readouts(),
                       tags=["pitcher", "jug", "pour", "pouring", "cup", "glass", "water", "milk", "fill", "measuring cup", "honey", "syrup", "kettle", "cup of water", "glass of water", "cup of oil", "cup of milk", "cup of juice", "pour water", "pour oil", "pour milk", "pour juice", "pour honey", "pour syrup", "vegetable oil", "coloured water", "colored water", "paint water", "food colouring", "food coloring", "water runs down", "spill",
-                            "chocolate milk", "cup of sugar", "pour sugar", "cup of rice", "pour rice", "pour salt", "pour sand", "cup of sand"],
+                            "chocolate milk", "cup of sugar", "pour sugar", "cup of rice", "pour rice", "cup of salt", "pour salt", "pour sand", "cup of sand"],
                       description="A pitcher, jug or cup of liquid that a hand tips to pour, from the moment you set and as far as you set. Its item position is "
                                   "its pour lip, where the stream starts: put the lip above the container to fill (a few cm to its side the stream lands a "
                                   "little further). The level inside stays flat as it tips; it pours over the lip like water over a weir, so honey pours far "

@@ -677,6 +677,9 @@ const cmOf = (m) => `${_fmt(m * 100, 1)} cm`
 /** The narrowest spout or neck a dry grain runs through (mm; tooling/src/sim/granular.ts jamDiameter: 5 grains [ZURIGUEL05], flour and soil arch). */
 const JAM_MM = { "fine sand": 0.9, sand: 2, "coarse sand": 5, gravel: 30, pebbles: 100, soil: 15, flour: 20, sugar: 2.5, salt: 2, rice: 14 }
 const yes = (e) => (e.ok ? "yes" : "no")
+// (grains in a request's words with a cup, a tip or a pour: words.picks below; web/sim/modules/flow.js has the same for its pitcher)
+const POURS = "cups?|mugs?|jugs?|pitchers?|scoops?|tip(?:s|ped|ping)?|tilt(?:s|ed|ing)?|pour(?:s|ed|ing)?"
+const GRAIN_WORDS = "sugar|salt|rice|grains?|sand|flour|gravel|soil"
 const TIMER_KINDS = ["timer", "times", "sand_timer", "runs_for", "hourglass_time"]
 /**
  * A wider neck with the sand that keeps a timer goal's time (the make-it-work search's coupled knob, web/ai/fixer.js `also`): the time is the
@@ -914,6 +917,10 @@ export const plugin = {
 		// coarse sand jams a neck fine sand ran through; an edit asking for it may rewrite such a goal (web/sim/plugins.js moduleRegoals; verify-fga
 		// G6: "fill the funnel with fine sand instead" kept "the gravel jams in the 10 mm spout", failing))
 		regoals: "fine sand|coarse sand|gravel|pebbles?|flour|soil|dirt|sugar|salt|rice|damp|soaked|spout\\w*|neck\\w*|outlet\\w*",
+		// (grains poured from a cup or tipped, in either order within a sentence, pick this module whatever its other words: their heap and the
+		// container it must end in are its (the flow module's words pick the pitcher itself); "A cup of salt is tipped over a bowl" picked only the
+		// heat module, 2026-10-21)
+		picks: `\\b(?:${POURS})\\b[^.!?;\\n]{0,60}?\\b(?:${GRAIN_WORDS})\\b|\\b(?:${GRAIN_WORDS})\\b[^.!?;\\n]{0,60}?\\b(?:${POURS})\\b`,
 		change(type, key, a, b) {
 			const num = (v, d = 1) => (typeof v === "number" ? _fmt(v, d) : String(v))
 			if (type === "stream-table" && key === "tilt_deg") return `slope ${num(a)} → ${num(b)}°`

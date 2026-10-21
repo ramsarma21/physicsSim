@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { test } from "node:test"
-import { detailFor, digestFromCatalog, getCatalog, _resetMemo } from "../catalog-digest.mjs"
+import { detailFor, digestFromCatalog, getCatalog, promptCatalog, _resetMemo } from "../catalog-digest.mjs"
 import { sceneDigest, simText } from "../scene-digest.mjs"
 
 const PG = new URL("../../", import.meta.url)
@@ -67,6 +67,28 @@ test("the cache: written once, then reused while web/sim is unchanged", async ()
 		delete process.env.AI_CACHE_DIR
 		rmSync(dir, { recursive: true, force: true })
 	}
+})
+
+test("a cup of grains in the request's words gives the planner the pitcher (the flow module) and the grains' heap (the granular module)", async () => {
+	const cat = await getCatalog()
+	if (!cat.tiers) return // (a catalog small enough to go whole into every prompt: nothing is picked)
+	// (V2 release, 2026-10-21: "a hand tips a cup of salt" picked granular, hands and heat only, and the planner said the library had no tipping
+	// pourer for grains and used a funnel of sand; "a cup of salt is tipped over a bowl" picked heat alone, "tip a cup of grains into a glass" waves)
+	for (const text of [
+		"A hand tips a cup of salt so it pours into a round glass jar on the table, and the salt piles up inside the jar.",
+		"A hand tips a cup of sugar so it pours into a round glass jar on the table, and the sugar piles up inside the jar.",
+		"A hand tips a cup of rice so it pours into a round glass jar on the table, and the rice piles up inside the jar.",
+		"A cup of salt is tipped over a bowl.",
+		"Tip a cup of grains into a glass.",
+		"Pour flour from a cup into a bowl.",
+		"Salt pours from a mug into a jar."
+	]) {
+		const picked = promptCatalog(cat, { text }).modules
+		for (const m of ["mod_flow", "mod_granular"]) assert.ok(picked.includes(m), `${text}: picks ${m} (picked ${picked.join(", ")})`)
+	}
+	// (grains with no cup, tip or pour, and a cup with no grains, are not a cup of grains)
+	assert.ok(!promptCatalog(cat, { text: "A ball rolls down a ramp into a cup" }).modules.includes("mod_granular"))
+	assert.ok(!promptCatalog(cat, { text: "Salt on one of two ice cubes: which melts first?" }).modules.includes("mod_flow"))
 })
 
 test("scene digest: true outlines and what each item rests on (sloped supports too)", async () => {

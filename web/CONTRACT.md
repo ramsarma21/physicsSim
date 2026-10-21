@@ -3546,6 +3546,12 @@ a container near grains builds and runs exactly as before (the 12 scenarios and 
   its digest gives a grain cup's grams and heap); the granular plug-in's name sugar, salt and rice (keys, how-to, the angles and jam widths) and the
   containers (a funnel over a jar heaps inside it; `outside_g` in the digest); a new worked example, "Pour sugar into a glass jar and see it pile up"
   (solved and met in web/ai/test/granular-plugin.test.mjs); tags and the pile's and funnel's descriptions name the kitchen grains (Python == JS).
+  A cup of grains reaches the planner (2026-10-21, round 2): a request with grains (sugar, salt, rice, grains, sand, flour, gravel, soil) and a
+  cup, mug, jug, pitcher, scoop, a tip, a tilt or a pour in one sentence, in either order (`words.picks` of the flow and the granular plug-ins),
+  picks both modules for the plan's and the edit's prompt: "A hand tips a cup of salt so it pours into a round glass jar" picked granular, hands
+  and heat (not flow, whose pitcher holds the grains: the planner said the library had no tipping pourer for grains and used a funnel of sand),
+  "A cup of salt is tipped over a bowl" heat alone, "Tip a cup of grains into a glass" waves alone; the pitcher's tags have "cup of salt" beside
+  sugar, rice and sand (Python == JS). Checked in ai/test/digest.test.mjs.
 - **Checked** (2026-10-20, `research/rw-validate-kitchen.ts`: 123 checks, 0 failed; CPU 0.2 s for a cup of sugar into a jar, 0.54 s for 400 g into the
   glass, 0.07 s for a cup of milk): bulk densities 800.0, 1200.1, 770.0 kg/m³; heaps on the table 35.8°, 33.3°, 32.3° (± 3°); Beverloo's rates (19.7,
   30.5, 90.2 g/s) and the jams (rice clogs a 12 mm spout and runs through 20 mm, sugar 2 mm and 4 mm, a salt timer 1.5 mm and 3 mm); 400 g of sand into
