@@ -44,9 +44,12 @@ uniform vec3 uGlass;
 uniform vec3 uWater;
 uniform float uGlassK;
 uniform float uWaterK;
+uniform vec4 uRect;
 out vec4 outColor;
+// (uRect: the sub-pixels a line may look at, x0 y0 x1 y1: the whole picture, or one band of a directed camera's picture, so no line is drawn along
+// a band's edge where another band's things are)
 int idAt(sampler2D t, ivec2 p, ivec2 size) {
-	vec4 c = texelFetch(t, clamp(p, ivec2(0), size - 1), 0);
+	vec4 c = texelFetch(t, clamp(p, ivec2(uRect.xy), ivec2(uRect.zw) - 1), 0);
 	return int(c.r * 255.0 + 0.5) + 256 * int(c.g * 255.0 + 0.5) + 65536 * int(c.b * 255.0 + 0.5);
 }
 const vec2 DIRS[8] = vec2[8](vec2(1.0, 0.0), vec2(0.7071, 0.7071), vec2(0.0, 1.0), vec2(-0.7071, 0.7071), vec2(-1.0, 0.0), vec2(-0.7071, -0.7071), vec2(0.0, -1.0), vec2(0.7071, -0.7071));
@@ -168,6 +171,7 @@ void main() {
 			tColor: { value: null }, tId: { value: null }, tGlass: { value: null }, tLiquid: { value: null }, uGlassOn: { value: false }, uLiquidOn: { value: false },
 			uR: { value: 2 }, uRg: { value: 3 }, uS: { value: OUTLINE.ss }, uDark: { value: OUTLINE.dark },
 			uGlass: { value: new THREE.Color(OUTLINE.glass) }, uWater: { value: new THREE.Color(OUTLINE.water) }, uGlassK: { value: OUTLINE.glassK }, uWaterK: { value: OUTLINE.waterK },
+			uRect: { value: new THREE.Vector4(0, 0, 1, 1) },
 		},
 		depthTest: false,
 		depthWrite: false,
@@ -277,67 +281,144 @@ void main() {
 			for (const o of hide) o.visible = true
 		}
 	}
+	/** The meshes of the run's group as the ID passes see them ([mesh, kind], the visible ones) and whether any is a see-through vessel or a liquid. */
+	const collect = (run) => {
+		const list = []
+		let glass = false
+		let liquid = false
+		run.group.traverse((o) => {
+			if (!(o.isMesh || o.isSprite || o.isLine || o.isPoints) || !o.visible) return
+			const kind = kindOf(o)
+			list.push([o, kind])
+			if (kind === "glass") glass = true
+			else if (kind === "liquid") liquid = true
+		})
+		return { list, glass, liquid }
+	}
+	/** The ID passes of what `camera` sees, into the whole of each target, or into `rect` [x, y, w, h] of it (sub-pixels from the bottom left: one
+	 *  band of a picture; the rest of each target is left as it is). */
+	const idPasses = (scene, camera, run, L, rect = null) => {
+		const targets = [idRT, L.glass ? glassRT : null, L.liquid ? liquidRT : null].filter(Boolean)
+		const bg = scene.background
+		const ov = scene.overrideMaterial
+		const clear = renderer.getClearColor(new THREE.Color())
+		const alpha = renderer.getClearAlpha()
+		const shadowUpdate = renderer.shadowMap.needsUpdate
+		const mask = camera.layers.mask
+		try {
+			if (rect)
+				for (const rt of targets) {
+					rt.viewport.set(rect[0], rect[1], rect[2], rect[3])
+					rt.scissor.set(rect[0], rect[1], rect[2], rect[3])
+					rt.scissorTest = true
+				}
+			scene.background = null
+			scene.overrideMaterial = idMat
+			renderer.shadowMap.needsUpdate = false
+			camera.layers.disable(3) // (labels and panes: not things)
+			renderer.setClearColor(0x000000, 1)
+			renderer.autoClear = true
+			drawPass(scene, camera, idRT, run, L.list, (k) => k === "thing")
+			// (each kind of see-through thing in its own pass with the opaque things: a tank's front pane would hide its water's surface)
+			if (L.glass) drawPass(scene, camera, glassRT, run, L.list, (k) => k === "thing" || k === "glass")
+			if (L.liquid) drawPass(scene, camera, liquidRT, run, L.list, (k) => k === "thing" || k === "liquid", true)
+		} finally {
+			if (rect)
+				for (const rt of targets) {
+					rt.viewport.set(0, 0, rt.width, rt.height)
+					rt.scissor.set(0, 0, rt.width, rt.height)
+					rt.scissorTest = false
+				}
+			camera.layers.mask = mask
+			scene.overrideMaterial = ov
+			scene.background = bg
+			renderer.setClearColor(clear, alpha)
+			renderer.shadowMap.needsUpdate = shadowUpdate
+			code.clear()
+			tops.clear()
+		}
+	}
+	/** The composite into outRT: over the whole picture, or over `rect` [x, y, w, h] of it (pixels from the bottom left), its lines looking at the ID
+	 *  passes inside that rectangle only. */
+	const composite = (color, L, W, H, ss, width, rect = null) => {
+		const U = comp.uniforms
+		U.tColor.value = color
+		U.tId.value = idRT.texture
+		U.tGlass.value = L.glass ? glassRT.texture : idRT.texture
+		U.tLiquid.value = L.liquid ? liquidRT.texture : idRT.texture
+		U.uGlassOn.value = L.glass
+		U.uLiquidOn.value = L.liquid
+		U.uS.value = ss
+		U.uR.value = width ?? Math.max(OUTLINE.minWidth, OUTLINE.width * H)
+		U.uRg.value = U.uR.value * OUTLINE.glassWidth
+		const [x, y, w, h] = rect ?? [0, 0, W, H]
+		U.uRect.value.set(x * ss, y * ss, (x + w) * ss, (y + h) * ss)
+		if (rect) {
+			outRT.viewport.set(x, y, w, h)
+			outRT.scissor.set(x, y, w, h)
+			outRT.scissorTest = true
+		}
+		renderer.autoClear = false
+		renderer.setRenderTarget(outRT)
+		renderer.render(quadScene, quadCam)
+		if (rect) {
+			outRT.viewport.set(0, 0, W, H)
+			outRT.scissor.set(0, 0, W, H)
+			outRT.scissorTest = false
+		}
+	}
+	/** `color` copied into outRT as it is (the picture's parts no band outlines). */
+	const copyIn = (color) => {
+		blit.uniforms.tSrc.value = color
+		quad.material = blit
+		renderer.autoClear = false
+		renderer.setRenderTarget(outRT)
+		renderer.render(quadScene, quadCam)
+		quad.material = comp
+	}
 	return {
 		/** The outlines on a picture: `color` (the frame, W x H, sRGB bytes) drawn by `camera` from `scene` (its run's `group`), into a target of
 		 *  its own, which it returns (the caller reads it as it read `color`). run: {group, itemOf (solid id -> item), groundIds}. */
 		draw(scene, camera, color, W, H, run, { ss = OUTLINE.ss, width = null } = {}) {
-			const list = []
-			let glass = false
-			let liquid = false
-			run.group.traverse((o) => {
-				if (!(o.isMesh || o.isSprite || o.isLine || o.isPoints) || !o.visible) return
-				const kind = kindOf(o)
-				list.push([o, kind])
-				if (kind === "glass") glass = true
-				else if (kind === "liquid") liquid = true
-			})
-			sizeTo(W, H, ss, glass, liquid)
+			const L = collect(run)
+			sizeTo(W, H, ss, L.glass, L.liquid)
 			thingNo.clear()
-			const bg = scene.background
-			const ov = scene.overrideMaterial
 			const autoClear = renderer.autoClear
 			const prevRt = renderer.getRenderTarget()
-			const clear = renderer.getClearColor(new THREE.Color())
-			const alpha = renderer.getClearAlpha()
-			const shadowUpdate = renderer.shadowMap.needsUpdate
-			const mask = camera.layers.mask
-			try {
-				scene.background = null
-				scene.overrideMaterial = idMat
-				renderer.shadowMap.needsUpdate = false
-				camera.layers.disable(3) // (labels and panes: not things)
-				renderer.setClearColor(0x000000, 1)
-				renderer.autoClear = true
-				drawPass(scene, camera, idRT, run, list, (k) => k === "thing")
-				// (each kind of see-through thing in its own pass with the opaque things: a tank's front pane would hide its water's surface)
-				if (glass) drawPass(scene, camera, glassRT, run, list, (k) => k === "thing" || k === "glass")
-				if (liquid) drawPass(scene, camera, liquidRT, run, list, (k) => k === "thing" || k === "liquid", true)
-			} finally {
-				camera.layers.mask = mask
-				scene.overrideMaterial = ov
-				scene.background = bg
-				renderer.setClearColor(clear, alpha)
-				renderer.shadowMap.needsUpdate = shadowUpdate
-				code.clear()
-				tops.clear()
-			}
-			// the composite
-			const U = comp.uniforms
-			U.tColor.value = color
-			U.tId.value = idRT.texture
-			U.tGlass.value = glass ? glassRT.texture : idRT.texture
-			U.tLiquid.value = liquid ? liquidRT.texture : idRT.texture
-			U.uGlassOn.value = glass
-			U.uLiquidOn.value = liquid
-			U.uS.value = ss
-			U.uR.value = width ?? Math.max(OUTLINE.minWidth, OUTLINE.width * H)
-			U.uRg.value = U.uR.value * OUTLINE.glassWidth
-			renderer.autoClear = false
-			renderer.setRenderTarget(outRT)
-			renderer.render(quadScene, quadCam)
+			idPasses(scene, camera, run, L)
+			composite(color, L, W, H, ss, width)
 			renderer.autoClear = autoClear
 			renderer.setRenderTarget(prevRt)
 			return outRT
+		},
+		/** The outlines of a picture drawn band by band (a directed camera's frame, web/view3d.js exportDrawPlan; each band its own camera and
+		 *  rectangle): `begin(W, H)` once a (sub-)frame, then `job.band(scene, camera, color, rect, run)` right after each band's main pass, while
+		 *  its things are hidden as that band hides them (rect [x, y, w, h] px from the top left, as the film's bands). Each band is outlined inside
+		 *  its own rectangle as a whole picture is (no line along its edge where the next band's things are). `job.target`: the outlined picture
+		 *  (null until a band is drawn; the first band copies `color` in whole, so a band this view does not draw stays as the main pass left it). */
+		begin(W, H, { ss = OUTLINE.ss, width = null } = {}) {
+			thingNo.clear()
+			const job = {
+				target: null,
+				band(scene, camera, color, rect, run) {
+					const L = collect(run)
+					sizeTo(W, H, ss, L.glass, L.liquid)
+					const autoClear = renderer.autoClear
+					const prevRt = renderer.getRenderTarget()
+					const [x, y, w, h] = rect
+					const gy = H - y - h // (from the bottom left, as GL counts)
+					try {
+						idPasses(scene, camera, run, L, [x * ss, gy * ss, w * ss, h * ss])
+						if (!job.target) copyIn(color)
+						composite(color, L, W, H, ss, width, [x, gy, w, h])
+					} finally {
+						renderer.autoClear = autoClear
+						renderer.setRenderTarget(prevRt)
+					}
+					job.target = outRT
+				},
+			}
+			return job
 		},
 		/** The canvas's picture with its outlines: the scene drawn as for the canvas (tone mapping and sRGB in the shaders: an XR-type target, as
 		 *  the export's main pass) into a 4 x MSAA target of the drawing buffer's size, outlined (one sub-pixel: the canvas is drawn at every

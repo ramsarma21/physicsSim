@@ -9,7 +9,7 @@ The deploy is a **static site** (the whole app, with the physics engine running 
 | Part | What it is | Where it comes from |
 | --- | --- | --- |
 | `dist/` (Vercel's `outputDirectory`) | index.html, the app's modules, models, styles, the engine bundle (`sim/engine-worker.js`, a module Worker), the 12 built-in scenes and `scenario-list.json`, vendored three.js and mediabunny (the MP4 muxer) | `tools/build-static.mjs`, from `web/` |
-| `/api/ai/observe\|plan\|refine\|edit` | the Vercel twin of `web/server.py`'s AI route | `api/ai/[step].mjs`, with all of `ai/` (the AI core, `ai/prompts/`, `ai/models.json`) and `web/sim/`'s code |
+| `/api/ai/observe\|plan\|refine\|edit\|imagine\|direct` | the Vercel twin of `web/server.py`'s AI route (`direct`: a video's shot plan, ai/DESIGN.md §21) | `api/ai/[step].mjs`, with all of `ai/` (the AI core, `ai/prompts/`, `ai/models.json`), `web/sim/`'s code, and `web/track.js` with `web/export/`'s code and data (the director's plan executor) |
 | `/api/scenes`, `/api/scenes/:id[/thumb\|/restore]`, `/api/scenes/me` | accounts: sign in with Google, a person's saved scenes on any device, their AI allowance. **Off until Clerk and Neon are connected** (setup step 6); until then `/api/scenes/me` answers `{accounts: null}` and the page keeps scenes in the browser | `api/scenes/index.mjs` with `api/_lib/` and `web/sim/`'s code (docs/ACCOUNTS.md) |
 | `/api/videos/upload`, `/api/videos/publish`, `/videos/<gallery>[/batches/<batch>]`, `/videos/<gallery>/jobs/<job>/<file>` | the video pipeline: Blob upload tokens, publishing to the team gallery, the gallery page and each video's report page. Robot keys only (`x-agent-key`); see "Robot keys and the video gallery" below | `api/videos/*.mjs` with `api/_lib/` (videos, blob, agent-keys, gallery) |
 
@@ -157,7 +157,7 @@ client (docs/ACCOUNTS.md 9.5).
 | `cleanUrls` | `true` | `/index.html` 308s to `/`; no other page has a URL of its own. Module paths (`/sim/index.js`) are untouched. |
 | `functions["api/ai/*.mjs"].maxDuration` | `300` | The most Hobby allows (Pro: up to 800 s). See "What the AI steps need". The glob is `*.mjs`, not `[step].mjs`: in a glob, `[step]` would mean one of the letters s, t, e, p. |
 | `...supportsCancellation` | `true` | When the browser gives up (the panel's Cancel, a closed tab) Vercel ends the function, so the model call stops with it. |
-| `...includeFiles` | `{ai/**,web/sim/**/*.js,web/sim/**/*.json}` | The AI core reads its prompts and routing and imports web/sim (the catalog digest, `clean()`, and the engine bundle that checks a refine's goals) by computed paths, which the file tracer cannot follow. All of `ai/` goes in, so a new module or data file there needs no change here; web/sim's `.js` and `.json` at any depth, never its source maps. |
+| `...includeFiles` | `{ai/**,web/sim/**/*.js,web/sim/**/*.json,web/track.js,web/export/*.js,web/export/*.json}` | The AI core reads its prompts and routing and imports web/sim (the catalog digest, `clean()`, and the engine bundle that checks a refine's goals) by computed paths, which the file tracer cannot follow. All of `ai/` goes in, so a new module or data file there needs no change here; web/sim's `.js` and `.json` at any depth, never its source maps; the `direct` step's plan executor, recognizer and digest (`web/export/shots.js`, `subjects.js`, `digest.js`, the shot plan's schema) and `web/track.js`, which they import. |
 | `...excludeFiles` | `web/sim/**/*.map` | Keeps the 6 MB engine source map out of what the tracer adds (the function is 1.1 MB). It does not filter `includeFiles`, which is why that pattern names `.js` and `.json` only. |
 | `functions["api/scenes/*.mjs"]` | `maxDuration` 30, `includeFiles` web/sim's `.js` and `.json` | The accounts' scenes function (docs/ACCOUNTS.md): short requests (a list, a save, a picture); it validates scenes with web/sim's `clean()`, which imports the catalog. |
 | `functions["api/videos/*.mjs"]` | `maxDuration` 60 | The video functions (upload tokens, publish, the gallery page, a video's report page): short requests; the video bytes go straight to Blob, never through a function. |
@@ -183,10 +183,13 @@ but could block a live flow (the blob: Workers, inline styles) and would have to
 | plan | 9–108 s in the live smoke, 145 s worst seen (typical 20–45 s) | 300 s / 420 s |
 | refine | about 9 s (each round) | 120 s / 240 s |
 | edit | 13–15 s | 60 s / 180 s |
+| direct (2026-10-20/21) | 21–160 s with 0 to 2 repair turns, $0.06–0.47 (24 live runs); 75 s, $0.18 for a held cork in the lesson look | 240 s / 600 s |
 
 These are open on Hobby, and owned by the AI client and server code, not by this deploy setup:
 
-- **Time**: each step is its own request, so the 300 s cap applies per step. Every measured step fits. The plan step's budget (420 s:
+- **Time**: each step is its own request, so the 300 s cap applies per step. Every measured step fits. The `direct` step's 600 s budget (a plan
+  and up to 2 repair turns) is cut to what the function has left (it ends 20 s before `maxDuration`); its slowest measured run, 160 s, fits, and
+  a director that runs out of time leaves the export dialog filming with the automatic camera. The plan step's budget (420 s:
   its 300 s attempt plus a fallback route) does not: on Hobby a plan whose first route runs long and then falls back is cut at 300 s
   with Vercel's `504 FUNCTION_INVOCATION_TIMEOUT` instead of the fallback's answer (the panel shows a timeout and can retry). Fixes: keep the
   plan budget at 290 s or less when hosted, or deploy under a Pro team (`vercel teams ls` lists `emufarm` as Pro) and raise `maxDuration`

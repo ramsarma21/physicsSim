@@ -8174,8 +8174,9 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			}
 			const acc = new Map()
 			for (const root of r.group.children.slice(1)) {
-				// (a mount or a stand the view draws to hold a part up is not the part: a retort stand under a laser would frame the stand)
-				if (root === r.blobs || String(root.name).startsWith("plugin:") || root.userData.mount || root.userData.stand) continue
+				// (a mount or a stand the view draws to hold a part up is not the part: a retort stand under a laser would frame the stand; nor is a
+				// person's hand, web/hands.js, whose arm runs out of the picture: a magnet in a fist would frame the arm)
+				if (root === r.blobs || root === r.hands?.group || String(root.name).startsWith("plugin:") || root.userData.mount || root.userData.stand) continue
 				const sid = rootSolid(root, ids)
 				if (!sid || out.has(sid) || kindOf.get(sid) !== "static") continue
 				const pts = []
@@ -8252,7 +8253,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			roots.get(item).push(o)
 		}
 		for (const root of run.group.children.slice(1)) {
-			if (root === run.blobs || String(root.name).startsWith("plugin:")) continue
+			if (root === run.blobs || root === run.hands?.group || String(root.name).startsWith("plugin:")) continue // (the hands: planHide, each with its item)
 			add(itemOf.get(rootSolid(root, ids)), root)
 		}
 		for (const p of run.parts) add(itemOf.get(p.id), p.blob)
@@ -8267,6 +8268,8 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			lane: spec.lane,
 			runs: !!spec.runs || film.perLaneRuns,
 			roots,
+			ids,
+			itemOf,
 			get report() {
 				if (!report && film._ctx) report = Shots.measure(film)
 				return report
@@ -8298,11 +8301,14 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 	}
 	const STUDIO = { floor: null }
 	/** A frame's look (section 3.9), undone after the frame: studio (the room hidden, a plain backdrop in the tone), the ground drawn as a seamless
-	 *  matte studio floor at the table top's height fading into the backdrop (sweep), the table, or nothing; the modules' boards and words hidden. */
+	 *  matte studio floor at the table top's height fading into the backdrop (sweep), the table, or nothing; the modules' boards and words hidden.
+	 *  A run drawn in the lesson look (web/lesson-look.js; no module's world) keeps its own colours: its backdrop for studio and room alike (the
+	 *  lesson look has no room), the sweep in its table's colour and finish (lessonTableMaterial), fogged into its backdrop. */
 	function applyPlanLook(look, d) {
 		const saved = { roomWanted, tableWanted, bg: scene.background, fog: scene.fog }
-		const studio = look.backdrop === "studio"
-		const back = new THREE.Color(Shots.TONES[look.tone] ?? Shots.TONES.mid)
+		const L = run.lesson && !run.plugins?.find((p) => p.environment) ? run.lesson : null // (as applyEnvironment: a module's world wins over the lesson look)
+		const studio = look.backdrop === "studio" || (!!L && look.backdrop === "room")
+		const back = L ? (L.bg ??= new THREE.Color(L.backdrop)) : new THREE.Color(Shots.TONES[look.tone] ?? Shots.TONES.mid)
 		if (studio) {
 			roomWanted = false
 			scene.background = back
@@ -8319,7 +8325,10 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			const tb = run.table
 			const top = tb ? tb.at.y + (tb.body?.height ?? 0) / 2 : TABLE_TOP
 			STUDIO.floor.position.set(tb ? tb.at.x : 1.3, top - 0.0002, 0)
-			STUDIO.floor.material.color.set(Shots.FLOORS[look.tone] ?? Shots.FLOORS.mid)
+			const fm = STUDIO.floor.material
+			fm.color.set(L ? L.table : (Shots.FLOORS[look.tone] ?? Shots.FLOORS.mid))
+			fm.roughness = L ? 0.93 : 0.92
+			fm.envMapIntensity = L ? 0.4 : 1
 			STUDIO.floor.visible = true
 			scene.fog = new THREE.Fog(studio ? back : (scene.background?.isColor ? scene.background : back), d + 0.6, d + 4.5)
 		}
@@ -8348,6 +8357,9 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			}
 		}
 		for (const id of items ?? []) for (const o of shot.roots.get(id) ?? []) off(o)
+		// (a person's hand and arm, web/hands.js, go with the item it holds, pushes or tips: each rig looked up now, as the hands are built again
+		// whenever the posts are placed again)
+		if (items?.length && run.hands?.group) for (const c of run.hands.group.children) if (items.includes(shot.itemOf.get(rootSolid(c, shot.ids)))) off(c)
 		if (labels)
 			run.group.traverse((o) => {
 				if (o.visible && o.layers.mask === 1 << PANE_LAYER && (o.isSprite || o.parent?.name?.startsWith?.("plugin:"))) off(o)
@@ -8417,6 +8429,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 	/** Pose the parts at t, leave out what the band hides, and draw the key light's shadow map for that (exportPose's pass). -> undo of the hiding. */
 	function planPose(g, t, shot, items, labels) {
 		updateParts(t)
+		lessonDraw(run) // (the lesson look on what is drawn: a module's liquid made for this moment)
 		const undo = planHide(shot, items, labels)
 		const tm = run.tableMesh
 		if (tm) tm.visible = false
@@ -8484,7 +8497,8 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 			}
 		}
 		const runs = fb.t > fa.t + 1e-9
-		const busy = runs && (run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(fa.t - run.tRelease) < 0.1) || (run.gates.length > 0 && fa.t > run.tRelease - 0.02 && fa.t < run.tRelease + 0.2))
+		const busy = runs && (run.spinners.length > 0 || animates(run) || run.doc.solids.some((s) => s.surfaceSpeed) || (run.pins.length > 0 && Math.abs(fa.t - run.tRelease) < 0.1) || (run.gates.length > 0 && fa.t > run.tRelease - 0.02 && fa.t < run.tRelease + 0.2) ||
+			(run.retreats.length > 0 && fa.t > run.tRelease && fa.t < run.tRelease + RETREAT.delay + RETREAT.seconds + 0.02) || (run.hangers.length > 0 && fa.t > run.tRelease - 0.02 && fa.t < run.tRelease + 0.7) || !!run.hands?.busy(fa.t) || !!run.hands?.busy(fb.t)) // (as blurCount: a pin and post going away, a holder from above lifting; a hand)
 		if (px < 0.5 && !busy) return 1
 		return Math.min(o.most, Math.max(o.blur, Math.ceil(px / BLUR_STEP_PX)))
 	}
@@ -8545,7 +8559,9 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 					stencilBuffer: false,
 				})
 			}
-			const mirror = refl.enabled && look.ground === "table" && !!r.tableMesh
+			const mirror = refl.enabled && look.ground === "table" && !!r.tableMesh && !r.lesson // (the lesson look's table mirrors nothing)
+			const outline = !!r.lesson?.outline // (the lesson look's outlines, web/lesson-outline.js: each band's inside its own rectangle)
+			let src = g.rt.texture // (what the picture is read from: the main pass's, or its outlined copy)
 			const hides = sh.hide ?? []
 			const sameHide = hides.every((h) => !h.length)
 			const bg = scene.background?.isColor ? scene.background : clearC
@@ -8560,6 +8576,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 				renderer.setClearColor(bg, 1)
 				renderer.clear(true, true, false)
 				let undoHide = sameHide ? planPose(g, fi.t, shot, [], look.labels === "hidden") : null
+				const job = outline ? outlinerOf().begin(g.W, g.H) : null
 				for (const bi of drawn) {
 					const b = fi.bands[bi]
 					const [x, y, w, h] = b.rect
@@ -8571,6 +8588,7 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 					g.rt.scissorTest = true
 					renderer.setRenderTarget(g.rt)
 					renderer.render(scene, g.cam)
+					job?.band(scene, g.cam, g.rt.texture, b.rect, r) // (its outlines while its things are hidden as it hides them)
 					if (!sameHide) {
 						undoHide()
 						undoHide = null
@@ -8580,11 +8598,12 @@ ivec2 flipped() { ivec2 p = ivec2(gl_FragCoord.xy); p.y = uH - 1 - p.y; return p
 				g.rt.viewport.set(0, 0, g.W, g.H)
 				g.rt.scissor.set(0, 0, g.W, g.H)
 				g.rt.scissorTest = false
-				if (N > 1) quadPass(g, exportQuad(g).acc, g.rt.texture, g.acc, i === 0 ? THREE.NoBlending : THREE.CustomBlending, 1 / N)
+				src = job?.target?.texture ?? g.rt.texture
+				if (N > 1) quadPass(g, exportQuad(g).acc, src, g.acc, i === 0 ? THREE.NoBlending : THREE.CustomBlending, 1 / N)
 			}
 			const q = exportQuad(g)
 			if (N > 1) quadPass(g, q.enc, g.acc.texture, g.out)
-			else quadPass(g, q.copy, g.rt.texture, g.out)
+			else quadPass(g, q.copy, src, g.out)
 			const tr = performance.now()
 			exportRead(g)
 			xstats.readMs = performance.now() - tr

@@ -1874,6 +1874,8 @@ view.setOptions({catalog})   // the app hands its catalog over: the recognizer r
   the tone, #15171b / #2c3036 / #6f747c, receiving shadows, fogged into the backdrop from d + 0.6 to d + 4.5 m: no wood, no edge, no wall), `table`,
   `hidden`; light `subject` (the key light's shadow frustum fitted to what the bands see) or `room`; labels `hidden` (the modules' sprites and boards);
   vignette. Not drawn yet: depth `soft` (no depth of field), a beam drawn only as far as a travel has gone (`travel.reveal`; noted in the film).
+  A run drawn in the lesson look keeps its own colours, light and outlines in every band, and hands are drawn in their own lane's bands: "Directed
+  exports with the lesson look and hands" (after the lesson look's section).
 - Over each frame (2D, after the picture is read back; `output: "imagedata"` included): the plan's marks through each band's own camera (lines,
   dashed normals, angle arcs with the tracer's measured angles, distance bars, labels with `{label}` `{value}` `{m}` `{dt}` `{s}`; key readings 4 %
   of the frame's height, other words 3 %, white with a dark edge), a line between split bands, an inset's frame, and the shot's badge (`label`,
@@ -2017,6 +2019,45 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
   and the fade's timing); `node tools/staging/test.mjs [--server <port>]` (documents Python == JS, errors alike, tracks unchanged).
 - **The five benchmark lessons** (lesson-regen/bench, MA-25, FO-13, MO-19, FO-36, MA-50): the same runs drawn in both looks, side by side with the
   current EduLLM pictures, as sheets and clips (each prototype screen's own window and slow motion), tracks byte for byte the same in both looks.
+
+### Directed exports with the lesson look and hands (release 2 merge, 2026-10-21): web/view3d.js, web/lesson-outline.js
+
+The directed cameras (`"focus"`, `"director-plan"`: "Filming module: directed cameras") film a run in the lesson look, and a run with hands, as the
+other cameras and the canvas draw it. Render only: no body, contact or track changes.
+- **The look**: a shot's look keeps its own choices (backdrop, ground, light, labels, vignette) and takes the lesson look's colours
+  (`applyPlanLook`): `studio` and `room` are the lesson backdrop (its exact bytes; the lesson look has no room); `sweep` is the studio floor in the
+  lesson table's colour and finish (#d9caae or #a48d6c, roughness 0.93, environment 0.4: `lessonTableMaterial`'s), fogged into that backdrop; `table`
+  is the lesson's matte table and never the table's mirror; the light is the lesson's (`light: "subject"` still fits the key light's shadow frustum to
+  the shot). A module's own world (space) wins over the lesson look, as in `applyEnvironment`. Every moment a directed frame poses is put in the
+  lesson look (`lessonDraw` in `planPose`: the clear liquids a module makes for that moment, no machinery); the holders the look chose (hanger,
+  hidden post) are the run's own.
+- **Outlines in every band**: `outliner.begin(W, H)` once a (sub-)frame, then `job.band(scene, camera, color, rect, run)` right after each band's
+  main pass, while its things are hidden as that band hides them: the band's ID passes go into its own rectangle (viewport and scissor), and its
+  composite looks only at the ID passes inside that rectangle (`uRect`), so a band is outlined as a whole picture is (no line along its edge where
+  the next band's things are); lines 1/400 of the whole picture's height in every band; motion blur outlines each sub-frame before the sum, as
+  the other cameras do. `draw()` (the other cameras) and `present()` (the canvas) draw exactly as before (`uRect` the whole picture).
+- **Hands** (web/hands.js): drawn in every band of their own lane and in none of another lane's: `planHide` finds each rig's item when it hides
+  (the rigs are built again whenever the posts are placed again, so they are looked up then, not kept). Not part of any model box (`planBoxes`
+  leaves the hands' group out, as it leaves out mounts and stands): no plan frames a hand, and a magnet held in a fist is framed as the magnet,
+  not the arm that runs out of the picture. Motion blur takes sub-frames while a hand moves, a hidden post fades or a hanger lifts
+  (`blurCountPlan`, as `blurCount`). The mechanics module's fork on a rod (`"mechanics:holders"`) names its item (`userData.item`), so a band
+  leaves another lane's fork out, as it does that lane's pins, gates, hangers and hands.
+- **Ice** (web/models/blocks.js): engine6's frosty ice is the one kept (its shell tinted #8fc5e8 over 9 cm, a milky body at 30 %, the frost skin at
+  92 % that melts off as the cube warms); the director branch's own shell (transmission 0.82, #8cc3e8 over 7 cm) was made for the same reason (a
+  cube on a white plate read as a glass block) and is left out: with both the cube would be frosted twice.
+- **Design plan 09** (the clip that jumps to a magnet, `web/export/test/plans`): its push ends on 6 cm round the clip instead of 8; engine6 draws
+  the Gem clip at its true size (the old wire overshot its loops), and at 8 cm the clip measured 0.088 of the picture in the page, under the
+  must-see floor of 0.09; 0.12 now.
+- **Checked** (2026-10-21, branch release2, headless Chromium with the app's own page and server): the egg drop demo
+  (`demos/mechanics/egg-drop.json`) with a hand on each egg (`hand: "auto"`: two palms) in the lesson look (the mid palette: the eggs are
+  pale), its plan from the live director (4 shots, the two lanes split, every check passing in the page), filmed to an MP4 by the page's
+  encoder: each lane's hand only in its own band, outlines in both bands, the top row of every shot the backdrop's own bytes; in its setup
+  39147 pixels change with the hands off and 6363 with the outlines off. The same for a cork held under water by a fingertip (MA-25's
+  screen in the lesson look) and a hand-written split of two balls on two palms. `tools/hands/browser.mjs` 114 of 114; the twelve design
+  plans filmed in the page (`film-plans.mjs`): every check passes, deterministic, projection exact; wide and fixed export frames of four
+  scenes (lesson and real look, motion blur) and the focus camera's frames of four real-look scenes the same bytes as before this change (the
+  salt-on-ice scene compared page for page: in either tree its pictures differ between a browser's first and second page, a difference that
+  is older than this change).
 
 ## Machines and motion (module `mechanics`, 2026-10-19/20): catalog-wide start speed and paint, floors and ramps, lab carts, pullers, force meters, simple machines (a screw jack too), a roller coaster, falling through air, a balloon rocket, a fragile egg
 
@@ -4060,7 +4101,8 @@ above (and a starting gate: the hand wins when an item sets both).
   nails; a neutral mid skin (#c69273) and a plain blue-grey sleeve (#7187a5) with a cuff, graded as the view's own looks (gradeShader). Real size
   whatever it does: a harder push is the pusher's force and time, never a bigger hand. The forearm and sleeve run from the wrist to beyond the
   picture (the scene's fixed camera, `doc.view.camera`, as filmed at up to 4:3; else a box round the scene as the wide shot frames it): no elbow, no
-  person. It casts and takes shadows and shows in the table's mirror; it is in no shot's framing (every camera frames as it did). Its meshes pick as
+  person. It casts and takes shadows and shows in the table's mirror; it is in no shot's framing (every camera frames as it did; a directed camera's
+  model boxes leave it out: "Directed exports with the lesson look and hands"). Its meshes pick as
   the item (a held thing's only while it is held, as the pin's; never as the surface under the cursor).
 - **Grips** (closed onto what is drawn: each finger's joints close together until a part touches the thing, the underactuated way a gripper closes,
   against the thing's outline in the machine plane and its drawn depth — the model's own box, so a wine cork is 44 mm long). `auto` picks: in a

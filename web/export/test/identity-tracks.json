@@ -1,7 +1,7 @@
 {
- "about": "sha256 of JSON.stringify of each built-in scenario's and gallery scene's run (doc, track, summary) as the engine made them at integrate/engine-waves 19947da, before the directed cameras, and the fingerprint of web/sim then (every .js/.mjs/.json under it). web/export/test/identity.test.mjs compares today's runs with these while web/sim is unchanged (the filming module is view-only); once the engine changes, regenerate them (node web/export/test/identity.test.mjs --write).",
+ "about": "sha256 of JSON.stringify of each built-in scenario's and gallery scene's run (doc, track, summary) as the engine made them at integrate/engine-waves 19947da, before the directed cameras, and the fingerprint of web/sim then (every .js/.mjs/.json under it). web/export/test/identity.test.mjs compares today's runs with these while web/sim is unchanged (the filming module is view-only); once the engine changes, regenerate them (node web/export/test/identity.test.mjs --write). Re-armed on release 2 (2026-10-21: engine6 and the resized-body repair changed web/sim): the 22 runs are byte for byte these 19947da hashes, so only the web/sim fingerprint was renewed.",
  "base": "19947da",
- "engine": "ac7994901c4094eaf67373213a09a6d7d7d29b257a1b8cb0470bb623e5bcca47",
+ "engine": "5f96bef6288a0fab212906829a4fe90a635af0da0997d16f5843b466b76122f4",
  "scenes": {
   "web/scenarios/rube-goldberg.json": {
    "track": "302d69002820a830810d8d949cfda196fa7aef2d2fa17117dfb7933ee396db51",

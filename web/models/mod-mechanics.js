@@ -929,6 +929,8 @@ export default function register({ addModel, addViewPlugin, addFrameHook, kit, T
 				const postH = armY + lift + 0.04 - base
 				const post = kit.mesh(kit.cylinderY(0.009, postH, 20), holderWood)
 				post.position.set(xPost, base + postH / 2, zPost)
+				g.userData.item = item // (whose holder it is: a directed camera's band leaves another lane's out, as it does that lane's pins and hands)
+				post.userData.item = item
 				ctx.group.add(g, post)
 				rigs.push({ g, x, foot, lift })
 			}
