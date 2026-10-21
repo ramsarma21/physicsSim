@@ -33,6 +33,7 @@ import { statesNewOutcome, orderKey, overriddenBy } from "./outcome-goals.js"
 import { refreshPlanned } from "./planned-words.js"
 import { AMOUNT, EXPLICIT as EXPLICIT_AMOUNT, unitAmount, bareAmount, propWords } from "./amounts.js"
 import { unrealIn, unrealWords, realKnob, realPatches, materialSaid } from "./realism.js"
+import { storyLines, lessonSpan } from "./run-story.js"
 import { holdTargets, targetLines, targetChanges, changeWords as targetChangeWords, heldOffer, heldWords, heldSentence, targetValue } from "./goal-targets.js"
 import { addedWords as moduleAddedWords, changeWords as moduleChangeWords, howWords as moduleHowWords, keyWords as moduleKeyWords, outcomeWords as moduleOutcomeWords, moduleRegoals, settingWords as moduleSettingWords, properName as moduleProperName, knobTunable, moduleMass, moduleMoves, ownHitsTold } from "../sim/plugins.js"
 export { isChainRequest, conceptPlan, conceptRoute, CONCEPT_NOTE, CONCEPT_LABEL, IMAGINE_MODES, imagineMode } from "./imagine.js"
@@ -2326,15 +2327,34 @@ export function describeRun(sim, scene = null, goals = null) {
 			return kept.some(([a, b]) => s0 < b && a < s1) ? m : pre + nameOf.get(id)
 		})
 	}
-	if (!moved.length && !all.length && !inner.length)
-		return happ.length ? `In the run: ${happ.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${happ.length > 4 ? ` → ${happ.length - 4} more` : ""}.` : "In the run nothing moves: everything stays where it was put."
+	const happWords = (list) => `${list.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${list.length > 4 ? ` → ${list.length - 4} more` : ""}`
+	// (what the readings show of the things no event tells about, an ice cube melting on a hot plate, a pan of water warming (./run-story.js), so a
+	// run where only heat, light or liquid changes never reads "nothing moves"; none in a run without readings: every scene without modules)
+	const toldIds = new Set(happ.flatMap((e) => (Array.isArray(e.items) ? e.items.map(String) : [])))
+	const story = () => {
+		try {
+			return storyLines(sim, scene, { max: happ.length || moved.length || all.length ? 2 : 3, skip: toldIds })
+		} catch {
+			return []
+		}
+	}
+	if (!moved.length && !all.length && !inner.length) {
+		const told = story()
+		if (happ.length) return `In the run: ${happWords(happ)}.${told.length ? ` ${told.join("; ")}.` : ""}`
+		const span = lessonSpan(sim)
+		return told.length ? `In the run${span ? `, over ${span}` : ""}: ${told.join("; ")}.` : "In the run nothing moves: everything stays where it was put."
+	}
 	const parts = []
 	if (shown.length) parts.push(`In the run: ${shown.map((e) => `${e.text} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${more > 0 ? ` → ${more} more hit${more === 1 ? "" : "s"}` : ""}.`)
 	else if (inner.length) parts.push(`In the run: ${innerWords.join("; ")}.`)
-	else if (happ.length) parts.push(`In the run: ${happ.slice(0, 4).map((e) => `${named(e)} (${Number(e.t).toFixed(2)} s)`).join(" → ")}${happ.length > 4 ? ` → ${happ.length - 4} more` : ""}.`)
+	else if (happ.length) parts.push(`In the run: ${happWords(happ)}.`)
 	else parts.push(`In the run: ${andList(moved.slice(0, 3).map((st) => st.name))} ${moved.length === 1 ? "moves but hits" : "move but hit"} nothing.`)
+	// (the modules' happenings beside the hits: a pour, a melt, a bulb that lights is never left out because something also moved or struck)
+	if ((shown.length || inner.length) && happ.length) parts.push(`Also: ${happWords(happ)}.`)
 	const extra = [...(shown.length ? innerWords : []), ...stories.filter((st) => /^\d+ of \d+ fall$/.test(st.text ?? "")).map((st) => `${st.name}: ${fallText(sim, st)}`), ...stories.filter((st) => /^turns /.test(st.text ?? "") && st.ok).map((st) => `${st.name} ${st.text}`)]
 	if (extra.length) parts.push(`${extra.slice(0, 4).join("; ")}.`)
+	const told = story()
+	if (told.length) parts.push(`${told.join("; ")}.`)
 	return parts.join(" ")
 }
 /** An item's own parts striking each other in a run (a Newton's cradle's balls; the engine's summary leaves these out): Map item -> {n, t (the first)}. */
