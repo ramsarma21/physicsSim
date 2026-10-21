@@ -184,20 +184,19 @@ export function makeGate({ list, addMesh, steel }) {
 				base = Math.min(base, b)
 				top = Math.max(top, b)
 			}
-			let hs = 0
-			let k = 0
+			let hs = Infinity
 			for (let i = 0; i < pts.length; i += 2) {
 				if (pts[i] * u.x + pts[i + 1] * u.y < front - 0.002) continue
-				hs += pts[i] * n.x + pts[i + 1] * n.y
-				k++
+				hs = Math.min(hs, pts[i] * n.x + pts[i + 1] * n.y)
 			}
 			const H = top - base
 			const rs = clamp(0.1 * H, 0.003, 0.03) // the stop's radius
-			// it meets the item's front where the front is (a ball's equator, a bumper), kept off the surface and below the item's top
-			const hS = clamp(hs / k, base + rs + 0.002, base + Math.max(rs + 0.002, 0.8 * H))
+			// it meets the item's front low, where the front is lowest (a bumper's foot, a ball just under its equator), kept off the surface and below
+			// the item's top: a low gate holds the toy without its arm crossing the toy's body in every picture of the setup
+			const hS = clamp(hs, base + rs + 0.002, base + Math.max(rs + 0.002, 0.8 * H))
 			const sa = front + rs + 0.0003
 			const S = { x: sa * u.x + hS * n.x, y: sa * u.y + hS * n.y }
-			const La = clamp(1.2 * Math.max(front - rear, H), 0.12, 0.6) // the arm, from the stop to the pivot: level, on the way-down side
+			const La = clamp(0.6 * Math.max(front - rear, H), 0.08, 0.3) // the arm, from the stop to the pivot: level, on the way-down side, short
 			side = u.x > 0 ? 1 : -1
 			let half = 0
 			for (const o of list) half = Math.max(half, depthOfSolid(o) / 2)

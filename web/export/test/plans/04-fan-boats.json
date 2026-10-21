@@ -112,7 +112,7 @@
 			"id": "gaps",
 			"beat": "gaps",
 			"layout": "split",
-			"intent": "Square on, both lanes at one scale, framed from fan to boat: the gap is the variable, only a side view shows a length true, and the two sails sit side by side to be compared (the first question).",
+			"intent": "Square on, both lanes at one scale, each band panned so its fan stands on the left: the gap from fan to boat reads true, short above and long below, and the two sails sit there to be compared.",
 			"run": {
 				"freeze": "start",
 				"seconds": 3.0
@@ -160,7 +160,8 @@
 						"role": "boat"
 					}
 				]
-			}
+			},
+			"align": "fan"
 		},
 		{
 			"id": "spins",
@@ -202,22 +203,17 @@
 			"beat": "sail",
 			"layout": "split",
 			"in": "cut",
-			"intent": "Cut back to square on, framed on the water the boats cross (the fans were just seen), and keep still: the boats sail across a steady picture, as big as their whole run allows.",
+			"intent": "Ride along beside each boat as its fan blows it across the water, each band with its own boat at one scale: the boats stay big and the water slides past.",
 			"run": {
 				"from": "t=1.6",
-				"to": "result"
+				"to": "t=3.3"
 			},
-			"move": "hold",
+			"move": "follow",
 			"subject": {
 				"role": "boat"
 			},
-			"keep": [
-				{
-					"role": "boat"
-				}
-			],
 			"frame": {
-				"fit": "snug"
+				"width": 0.9
 			},
 			"view": "eye",
 			"lens": 50,
@@ -229,38 +225,30 @@
 						"role": "boat"
 					}
 				]
+			},
+			"follow": {
+				"axis": "x",
+				"lead": 0.1,
+				"per_lane": true
 			}
 		},
 		{
 			"id": "back",
 			"beat": "start",
 			"layout": "split",
-			"in": "continue",
-			"intent": "On the held end, glide back toward the fans: dashed marks show where each boat started, and the starting gaps are measured again for the second question.",
+			"in": "cut",
+			"intent": "Cut to the fans and where each boat started, each band panned so its fan stands on the left at one scale: dashed marks show the starting places, and the two starting gaps are measured again for the second question.",
 			"run": {
-				"freeze": "result",
-				"seconds": 3.4
+				"freeze": "t=3.3",
+				"seconds": 1.4
 			},
-			"move": "push",
-			"ease": "gentle",
+			"move": "hold",
 			"subject": {
-				"role": "boat"
-			},
-			"end": {
-				"subject": {
-					"role": "fan"
-				},
-				"keep": [
-					{
-						"role": "boat",
-						"when": "start"
-					}
+				"gap": [
+					"fan",
+					"boat"
 				],
-				"frame": {
-					"fit": "snug"
-				},
-				"view": "eye",
-				"lens": 50
+				"when": "start"
 			},
 			"annotate": [
 				{
@@ -268,13 +256,12 @@
 					"on": {
 						"role": "boat",
 						"when": "start"
-					},
-					"appear": "settled"
+					}
 				}
 			],
 			"audit": {
-				"question": "Does the camera move back to the fans and where the boats started?",
-				"key": "end",
+				"question": "Can a child see each fan and the dashed place where its boat started?",
+				"key": "middle",
 				"must_see": [
 					{
 						"role": "fan"
@@ -289,7 +276,18 @@
 					],
 					"when": "start"
 				}
-			]
+			],
+			"align": "fan",
+			"keep": [
+				{
+					"role": "fan"
+				}
+			],
+			"frame": {
+				"fit": "snug"
+			},
+			"view": "eye",
+			"lens": 50
 		},
 		{
 			"id": "start",
@@ -298,17 +296,20 @@
 			"in": "continue",
 			"intent": "Hold for the second question: each fan and the place its boat started, with the two starting gaps written on them.",
 			"run": {
-				"freeze": "result",
+				"freeze": "t=3.3",
 				"seconds": 3.0
 			},
 			"move": "hold",
 			"subject": {
-				"role": "fan"
+				"gap": [
+					"fan",
+					"boat"
+				],
+				"when": "start"
 			},
 			"keep": [
 				{
-					"role": "boat",
-					"when": "start"
+					"role": "fan"
 				}
 			],
 			"annotate": [
@@ -339,8 +340,14 @@
 						"role": "fan"
 					}
 				]
-			}
+			},
+			"align": "fan",
+			"frame": {
+				"fit": "snug"
+			},
+			"view": "eye",
+			"lens": 50
 		}
 	],
-	"notes": "The turned 'spins' shot happens before either boat has gone far, so the comparison never loses a lane while it matters. The second question is about the setup, not about where the boats ended, so its pause frames the fans and the start marks big instead of the whole 2 m lane with tiny boats."
+	"notes": "The turned 'spins' shot happens before either boat has gone far. Each band pans so its fan stands at the same place (align on the fans, one scale): the gap from fan to boat reads short above and long below, and each band is filled with its own fan and boat. The boats are ridden at one width while they sail. The second question is about the setup, so its stop frames the fans and the start marks big instead of the whole 2 m lane with tiny boats."
 }

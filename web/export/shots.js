@@ -49,6 +49,9 @@ export const NET = Object.freeze({
 	spread: 0.6, // ... and covers this share of the box round it (things far apart with backdrop between belong in their own bands)
 	absentS: 0.5, // video seconds a playing shot may show none of its subject once it has been seen (it left the picture) ...
 	waitS: 1.5, // ... and before it first comes in (a cut ahead that waits for a fast thing to arrive)
+	stopBackdrop: 0.6, // a lesson's stop (a pause beat's last shot): at most this share of each band shows nothing of the scene (a low setup under one floor line with a tall one leaves its band about half empty, as the drawn originals do)
+	cutScale: 2.5, // a cut out to a wider picture while things move widens it at most this much (the movers shrink to specks in a bigger jump)
+	pathFill: 0.85, // a still whose subject is a path (an orbit, a trip): the path spans at least this share of the picture's longer side
 })
 /** The named views: yaw and pitch in degrees, and the lens a view takes when the shot names none (mm on a full-frame camera). */
 export const VIEWS = Object.freeze({
@@ -67,6 +70,7 @@ export const FLOORS = Object.freeze({ dark: "#15171b", mid: "#2c3036", light: "#
 /** The look a plan gets where it says nothing (section 3.9): the room hidden behind a plain backdrop, the table drawn as a seamless studio floor. */
 export const DEFAULT_LOOK = Object.freeze({ backdrop: "studio", tone: "mid", ground: "sweep", light: "subject", depth: "none", vignette: 0, labels: "scene" })
 const MARGINS = { tight: 0.06, snug: 0.1, loose: 0.18 }
+const KEEP_PAD = 0.05 // a framing by width or size: what it keeps stays at least this share of the picture inside every edge
 const PLACES = { centre: [0, 0], "left-third": [-1 / 3, 0], "right-third": [1 / 3, 0], "upper-third": [0, 1 / 3], "lower-third": [0, -1 / 3] }
 const MARK = { yellow: "#ffd84a", white: "#ffffff", blue: "#9fd0ff" }
 
@@ -201,7 +205,7 @@ function solveFraming({ subj, keep = [], frame, place, view, asp }) {
 		}
 		return at(anchor, d)
 	}
-	const anchor = centre3(subj)
+	let anchor = centre3(subj)
 	let d
 	if (fr.width) d = fr.width / 2 / tanH
 	else {
@@ -211,7 +215,23 @@ function solveFraming({ subj, keep = [], frame, place, view, asp }) {
 		}
 		d = bisectD(big, 0.01, 600)
 	}
-	if (keep.length && !insideAll(at(anchor, d), asp, all, 0.03)) d = bisectD((dd) => insideAll(at(anchor, dd), asp, all, 0.03), d, 600)
+	// what must stay whole keeps room round it (KEEP_PAD of the picture), never pressed against an edge: first the look point slides (the subject's
+	// place gives way, its scale stays), and only when the kept things cannot fit at this scale does the camera back off, from their middle
+	if (keep.length && !insideAll(at(anchor, d), asp, all, KEEP_PAD)) {
+		const lim = 1 - 2 * KEEP_PAD
+		for (let it = 0; it < 8; it++) {
+			const b = projBox(at(anchor, d), asp, all)
+			if (b.behind || b.x1 - b.x0 > 2 * lim || b.y1 - b.y0 > 2 * lim) break
+			const ox = b.x0 < -lim ? b.x0 + lim : b.x1 > lim ? b.x1 - lim : 0
+			const oy = b.y0 < -lim ? b.y0 + lim : b.y1 > lim ? b.y1 - lim : 0
+			if (Math.abs(ox) < 1e-6 && Math.abs(oy) < 1e-6) break
+			anchor = add(anchor, add(mul(B.r, ox * d * tanH), mul(B.up, oy * d * tanV)))
+		}
+		if (!insideAll(at(anchor, d), asp, all, KEEP_PAD)) {
+			anchor = centre3(all)
+			d = bisectD((dd) => insideAll(at(anchor, dd), asp, all, KEEP_PAD), d, 600)
+		}
+	}
 	return at(anchor, d)
 }
 const lerpPose = (a, b, u) => ({ L: lerp3(a.L, b.L, u), d: Math.exp(Math.log(a.d) + (Math.log(b.d) - Math.log(a.d)) * u), yaw: a.yaw + (b.yaw - a.yaw) * u, pitch: a.pitch + (b.pitch - a.pitch) * u, hfov: a.hfov + (b.hfov - a.hfov) * u })
@@ -808,12 +828,16 @@ function scopeOf(world, lanesSpec) {
 			}
 		}
 	}
-	/** a lane's shift for one shot: lined up on one role's copies (`align`), or the plan's */
+	/** a lane's shift for one shot: lined up on one role's copies (`align`), or the plan's. One run: the shift between the role's two copies in the
+	 *  scene. One run per lane: the shift between the role's copies in their own runs at the start, so each band pans to its own copy at one scale
+	 *  (a fan 10 cm from its boat and one 80 cm from its boat, each at the left of its band; the clay on a low car and on a high one, each centred) */
 	const offsetFor = (laneId, role) => {
 		if (!lanes) return [0, 0, 0]
-		if (!role || !one) return offsets.get(laneId) ?? [0, 0, 0]
-		const pa = ptsOfIds(one, roleIds(role, lanes[0].id), 0)
-		const pb = ptsOfIds(one, roleIds(role, laneId), 0)
+		if (!role) return offsets.get(laneId) ?? [0, 0, 0]
+		const Ra = one ?? runOf(lanes[0].id)
+		const Rb = one ?? runOf(laneId)
+		const pa = ptsOfIds(Ra, roleIds(role, lanes[0].id), 0)
+		const pb = ptsOfIds(Rb, roleIds(role, laneId), 0)
 		if (!pa.length || !pb.length) return offsets.get(laneId) ?? [0, 0, 0]
 		const d = sub(centre3(pb), centre3(pa))
 		return [d[0], d[1], 0]
@@ -1131,9 +1155,11 @@ export function compile(plan, world, opts = {}) {
 				const out = []
 				for (const ln of lanes) {
 					if (tg.lane && tg.lane !== ln.id) continue
-					const off = S.one ? S.offsetFor(ln.id, sh.align) : [0, 0, 0]
+					// (one run: a role's copies shifted back by their lane's offset; one run per lane aligned on a role: every lane's points shifted back by
+					// its lane's pan, so lane 0's frame holds them all)
+					const off = S.one || sh.align ? S.offsetFor(ln.id, sh.align) : [0, 0, 0]
 					const P = perLane ? S.pts(tg, ln.id, t) : S.one ? (ln === lanes[0] ? S.pts(tg, null, t) : null) : S.pts(tg, ln.id, t)
-					if (P) for (const X of P) out.push(perLane ? sub(X, off) : X)
+					if (P) for (const X of P) out.push(perLane || !S.one ? sub(X, off) : X)
 				}
 				return out
 			}
@@ -1274,7 +1300,7 @@ export function compile(plan, world, opts = {}) {
 		if (glide && inJ === "continue" && sh.move !== "push" && sh.move !== "pull" && sh.move !== "arc") shNotes.push(`continue: the shot's own start differs from where the last one ended; it glides in over ${join} s`)
 		const final = glide ? (u) => lerpPose(from, poseAt(u), smoother(u / join)) : poseAt
 		// bands: each lane's camera is the shot's pose shifted by its lane's offset (one run), the very pose (one run per lane), or its own (per_lane)
-		const offs = bands.map((b) => (layout === "split" && S.one ? S.offsetFor(b.lane, sh.align) : [0, 0, 0]))
+		const offs = bands.map((b) => (layout === "split" && (S.one || sh.align) ? S.offsetFor(b.lane, sh.align) : [0, 0, 0]))
 		const bandPose = (p, bi, u) => {
 			if (perLane) return perLane(bi, u, p)
 			const o = offs[bi]
@@ -1399,8 +1425,12 @@ function followPoses({ sh, S, lanes, layout, asp, view, t0, t1, rate, holdAfter,
 	const B = basis(view.yaw, view.pitch)
 	const [px, py] = placeOf(sh.place)
 	const lookAt = (s, k, d) => {
-		const vx = ((s.sx[Math.min(n - 1, k + 3)] - s.sx[Math.max(0, k - 3)]) * HZ) / 6
-		const vy = ((s.sy[Math.min(n - 1, k + 3)] - s.sy[Math.max(0, k - 3)]) * HZ) / 6
+		// (the speed over the samples either side, one-sided at the shot's ends: a centred estimate there read half the speed, and the room ahead
+		// jumped in the shot's first frames)
+		const ka = Math.max(0, k - 3)
+		const kb = Math.min(n - 1, k + 3)
+		const vx = kb > ka ? ((s.sx[kb] - s.sx[ka]) * HZ) / (kb - ka) : 0
+		const vy = kb > ka ? ((s.sy[kb] - s.sy[ka]) * HZ) / (kb - ka) : 0
 		const dirx = axis === "y" ? 0 : clamp(vx / 0.3, -1, 1)
 		const diry = axis === "x" ? 0 : clamp(vy / 0.3, -1, 1)
 		const c = [axis === "y" ? s.sx[0] : s.sx[k], axis === "x" ? s.sy[0] : s.sy[k], s.sz[k]]
@@ -1643,22 +1673,50 @@ export function measure(film) {
 		const beatKind = plan.story?.find((bt) => bt.id === sh.beat)?.kind ?? "action"
 		const wholeShot = beatKind === "setup" || beatKind === "reveal"
 		const heroFloor = wholeShot ? NET.detailS : NET.heroS
-		const heroRows = []
-		for (const tg of heroesOf(subjAtKey))
-			for (let bi = 0; bi < nb; bi++) {
-				if (tg.lane && fs.bands[bi].lane && tg.lane !== fs.bands[bi].lane) continue
-				const P = tgPts(tg, bi, KF.t)
+		/** a hero the recognizer ranks context (a plate, a tank, a board: what holds the subject), standing for the primaries on or in it at run time
+		 *  t in band bi: a container is never the hero, what it holds is (a 4 cm ice cube on a 27 cm plate is measured as the cube) */
+		const standIns = (tg, bi, t) => {
+			const lane = fs.bands[bi].lane
+			const R = S.one ? S.one : S.runOf(lane)
+			const ids = tg.item !== undefined && !tg.part && !tg.reading ? [tg.item] : tg.role !== undefined ? S.roleIds(tg.role, tg.lane ?? lane) : null
+			const prim = new Set(R?.recog?.primary ?? [])
+			const ctxs = new Set(R?.recog?.context ?? [])
+			if (!ids?.length || !ids.every((id) => ctxs.has(id) && !prim.has(id))) return [tg]
+			const C = ids.flatMap((id) => R.itemPts(id, null, t))
+			if (!C.length) return [tg]
+			const [clo, chi] = boundsOf(C)
+			const out = []
+			for (const pid of prim) {
+				if (ids.includes(pid) || !R.solidsOf.has(pid)) continue
+				if (S.one && S.lanes && lane && S.laneOf.has(pid) && S.laneOf.get(pid) !== lane) continue
+				const P = R.itemPts(pid, null, t)
 				if (!P.length) continue
-				const asp = aspOf(bi)
-				const s = boxStats(projBox(arrPose(KF.b[bi]), asp, P))
-				heroRows.push({ what: JSON.stringify(tg), lane: fs.bands[bi].lane, s: r3(s.s), w: r3(s.w), h: r3(s.h), margin: r3(s.margin), flat: s.h < 0.3 * s.w * asp || s.w * asp < 0.3 * s.h })
+				const [lo, hi] = boundsOf(P)
+				const ox = Math.min(hi[0], chi[0]) - Math.max(lo[0], clo[0])
+				if (ox < 0.5 * (hi[0] - lo[0]) || lo[1] < clo[1] - 0.01 || lo[1] > chi[1] + 0.03) continue
+				out.push({ item: pid })
+			}
+			return out.length ? out : [tg]
+		}
+		const heroRows = []
+		for (const tg0 of heroesOf(subjAtKey))
+			for (let bi = 0; bi < nb; bi++) {
+				if (tg0.lane && fs.bands[bi].lane && tg0.lane !== fs.bands[bi].lane) continue
+				for (const tg of standIns(tg0, bi, KF.t)) {
+					const P = tgPts(tg, bi, KF.t)
+					if (!P.length) continue
+					const asp = aspOf(bi)
+					const s = boxStats(projBox(arrPose(KF.b[bi]), asp, P))
+					heroRows.push({ what: JSON.stringify(tg), ...(tg !== tg0 ? { for: JSON.stringify(tg0) } : {}), lane: fs.bands[bi].lane, s: r3(s.s), w: r3(s.w), h: r3(s.h), margin: r3(s.margin), flat: s.h < 0.3 * s.w * asp || s.w * asp < 0.3 * s.h })
+				}
 			}
 		const must = []
 		const small = typeof sh.audit?.small_because === "string" && sh.audit.small_because.length >= 12
 		const look = (list, isDetail) => {
-			for (const tg of list ?? [])
+			for (const tg0 of list ?? [])
 				for (let bi = 0; bi < nb; bi++) {
-					if (tg.lane && fs.bands[bi].lane && tg.lane !== fs.bands[bi].lane) continue
+					if (tg0.lane && fs.bands[bi].lane && tg0.lane !== fs.bands[bi].lane) continue
+					for (const tg of isDetail ? [tg0] : standIns(tg0, bi, KF.t)) {
 					const P = tgPts(tg, bi, KF.t)
 					if (!P.length) continue
 					const s = boxStats(projBox(arrPose(KF.b[bi]), aspOf(bi), P))
@@ -1667,6 +1725,7 @@ export function measure(film) {
 					// schema's 0.03); small_because alone lowers a must-see hero to the detail floor
 					const floor = sh.audit?.min_size !== undefined ? (small ? sh.audit.min_size : isDetail ? kindFloor : Math.max(sh.audit.min_size, kindFloor)) : small && !isDetail ? Math.min(kindFloor, NET.detailS) : kindFloor
 					must.push({ what: JSON.stringify(tg), lane: fs.bands[bi].lane, s: r3(s.s), h: r3(s.h), margin: r3(s.margin), floor, detail: !!isDetail })
+					}
 				}
 		}
 		look(sh.audit?.must_see, false)
@@ -1792,6 +1851,93 @@ export function measure(film) {
 			const who = heroes.map((h) => JSON.stringify(h)).join(", ")
 			;(bad ? fail : pass)(sh.id, "present", gone > NET.absentS + 1e-9 ? `the subject (${who}) leaves the picture and is gone for ${r3(gone)} s, until ${goneAt} s of video (at most ${NET.absentS} s): follow it, end the shot as it leaves, or frame where it goes` : wait > NET.waitS + 1e-9 ? `the picture waits ${r3(wait)} s for the subject (${who}) to come in (at most ${NET.waitS} s): start the shot later, or frame where it is` : `the subject stays in the picture${wait > 0 ? ` (it comes in after ${r3(wait)} s)` : ""}`)
 		}
+		// every lane's copy of what the shot is about stays in its own band while a split shot plays, whichever lane the shot names: a band whose
+		// lane's mover has gone shows an empty lane, and the comparison loses the very thing it compares (a race filmed beside its leader drops the
+		// slower car). What the shot is about: the roles its subject, keep and end name (an item a lane's cast names counts as its role)
+		const namedRoles = () => {
+			const out = new Set()
+			const castRole = (id) => {
+				for (const l of S.lanes) for (const [role, v] of Object.entries(l.cast)) if ([].concat(v).includes(id)) return role
+				return null
+			}
+			const add = (tg) => {
+				if (!tg || typeof tg !== "object") return
+				if (tg.role !== undefined) out.add(tg.role)
+				if (tg.item !== undefined && !tg.part) {
+					const r = castRole(tg.item)
+					if (r) out.add(r)
+				}
+				for (const id of tg.items ?? []) {
+					const r = castRole(id)
+					if (r) out.add(r)
+				}
+				for (const g of tg.gap ?? []) (S.isRole(g) ? out.add(g) : add({ item: g }))
+				for (const x of tg.through ?? []) add(x)
+			}
+			for (const tg of [sh.subject, ...(sh.keep ?? []), sh.end?.subject, ...(sh.end?.keep ?? [])]) add(tg)
+			return [...out]
+		}
+		if (fs.layout === "split" && S.lanes && fs.rate !== 0 && sh.move !== "travel" && nb > 1) {
+			const roles = namedRoles()
+			const rows = []
+			for (let bi = 0; bi < nb; bi++) {
+				const lane = fs.bands[bi].lane
+				if (!lane) continue
+				for (const role of roles) {
+					const tg = { role, lane }
+					let P0 = null
+					let moved = 0
+					let size = 0
+					for (let j = 0; j <= 8; j++) {
+						let P = []
+						try {
+							P = tgPts(tg, bi, fs.t0 + ((fs.t1 - fs.t0) * j) / 8)
+						} catch {
+							P = []
+						}
+						if (!P.length) continue
+						const [lo, hi] = boundsOf(P)
+						size = Math.max(size, hi[0] - lo[0], hi[1] - lo[1])
+						if (!P0) P0 = centre3(P)
+						else moved = Math.max(moved, len3(sub(centre3(P), P0)))
+					}
+					if (!(moved > Math.max(0.03, 0.5 * size))) continue
+					let run = 0
+					let seenYet = false
+					let gone = 0
+					let goneAt = null
+					let wait = 0
+					for (let i = 0; i < F.length; i++) {
+						const P = tgPts(tg, bi, F[i].t)
+						let seen = false
+						if (P.length) {
+							const b = projBox(arrPose(F[i].b[bi]), aspOf(bi), P)
+							if (!b.behind) {
+								const inW = Math.max(0, Math.min(1, b.x1) - Math.max(-1, b.x0))
+								const inH = Math.max(0, Math.min(1, b.y1) - Math.max(-1, b.y0))
+								seen = (inW * inH) / Math.max(1e-9, (b.x1 - b.x0) * (b.y1 - b.y0)) >= 0.25
+							}
+						}
+						if (seen) {
+							seenYet = true
+							run = 0
+							continue
+						}
+						run++
+						if (!seenYet) wait = Math.max(wait, run / fps)
+						else if (run / fps > gone) {
+							gone = run / fps
+							goneAt = r3(fs.tau0 + i / fps)
+						}
+					}
+					rows.push({ role, lane, gone: r3(gone), goneAt, wait: r3(wait) })
+				}
+			}
+			if (rows.length) {
+				const bad = rows.filter((x) => x.gone > NET.absentS + 1e-9 || x.wait > NET.waitS + 1e-9)
+				;(bad.length ? fail : pass)(sh.id, "lanes-present", bad.length ? `${bad.map((x) => (x.gone > NET.absentS + 1e-9 ? `${x.role}@${x.lane} leaves its band and is gone for ${x.gone} s, until ${x.goneAt} s of video (at most ${NET.absentS} s)` : `${x.role}@${x.lane}'s band waits ${x.wait} s for it to come in (at most ${NET.waitS} s)`)).join("; ")}: every band shows its own lane's mover while the run plays (ride the pair: subject and keep the role; or follow.per_lane; or cut ahead to where they arrive; or end the shot as one leaves)` : `every lane's mover stays in its own band (${rows.map((x) => `${x.role}@${x.lane}`).join(", ")})`)
+			}
+		}
 		// fill (FRAMING_RULE gate 4): a still picture shows the scene, not backdrop. Most of it may be backdrop only when what the shot names already
 		// spans the picture and fills the box round it (a thin or flat thing framed tight); otherwise the camera is too far, or the things it names
 		// stand apart with empty backdrop between them
@@ -1891,6 +2037,12 @@ export function measure(film) {
 				fills.push({ lane, backdrop: r3(1 - shown / all), longer: r3(longer), cover: r3(inU ? hitU / inU : 1) })
 			}
 			row.fill = fills
+			// a lesson's stop: the child reads this picture while the video waits, so each band is mostly the scene (the original drawn lessons fill
+			// each band with its things, edge to edge): a lane's things pushed into a corner of a band sized for the other lane's leave it empty
+			if (plan.source?.kind === "lesson" && beatKind === "pause" && meta.filter((x) => x.sh.beat === sh.beat).at(-1) === m && fills.length) {
+				const emptyBands = fills.filter((f) => f.backdrop > NET.stopBackdrop + 1e-9)
+				;(emptyBands.length ? fail : pass)(sh.id, "stop-fill", emptyBands.length ? `${emptyBands.map((f) => `${f.lane ? `${f.lane}: ` : ""}${f.backdrop}`).join("; ")} of the band is backdrop at the stop (at most ${NET.stopBackdrop}): frame closer, pan each band to its own lane's things at the same scale (align on the role), or name what belongs round them` : `the stop's bands are mostly the scene (${fills.map((f) => `${f.lane ? f.lane + " " : ""}backdrop ${f.backdrop}`).join(", ")})`)
+			}
 			const bad = fills.filter((f) => f.backdrop > NET.backdrop + 1e-9 && (f.longer < NET.fillLong - 1e-9 || f.cover < NET.spread - 1e-9))
 			const say = (f) => `${f.lane ? `${f.lane}: ` : ""}${f.backdrop} of the picture is backdrop (at most ${NET.backdrop}); what the shot names ${f.longer < NET.fillLong ? `spans ${f.longer} of the picture's longer side (${NET.fillLong} would fill it)` : ""}${f.longer < NET.fillLong && f.cover < NET.spread ? " and " : ""}${f.cover < NET.spread ? `covers ${f.cover} of the box round it (${NET.spread} would fill it): things apart with backdrop between` : ""}`
 			if (fills.length) (bad.length ? fail : pass)(sh.id, "fill", bad.length ? `${bad.map(say).join("; ")}: frame closer or with a longer lens, give far-apart things their own bands (layout split, one scale) or show them one at a time, or name what belongs in the room around them (keep, context)` : `the scene fills the picture (${fills.map((f) => `${f.lane ? f.lane + " " : ""}backdrop ${f.backdrop}`).join(", ")})`)
@@ -1920,10 +2072,61 @@ export function measure(film) {
 			const turn = Math.max(Math.abs(c.yaw - a.yaw), Math.abs(c.pitch - a.pitch)) / D2R
 			const jumpCut = (shift > 0.03 || scale > Math.log(1.08)) && shift < 0.25 && scale < Math.log(1.6) && turn < 20 && fs.layout === prevLayout
 			;(jumpCut ? fail : pass)(sh.id, "cut", `a cut: the picture moves ${r3(shift)} widths, scale x${r3(Math.exp(scale))}, turns ${r3(turn)} deg${jumpCut ? ": a jump cut (change more, or glide)" : ""}`)
+			// a cut into moving action that jumps far in scale (a close setup to an extreme wide of the whole path, the movers specks): the child loses
+			// what moves; a still after the cut (a reveal of a whole, a stop) gives the eye time to find it again
+			// (the movers: things the shot names that move while its run plays, each with its size in the picture at the cut, every band; a held
+			// moment, or things at rest with only the camera moving over them, is a picture the eye can search)
+			const moversAtCut = () => {
+				if (fs.rate === 0) return []
+				const out = []
+				for (const tg of [sh.subject, ...(sh.keep ?? [])].filter((x) => thing(x))) {
+					for (const h of heroesOf(tg).map(({ when, ...x }) => x)) {
+						for (let bi = 0; bi < nb; bi++) {
+							if (h.lane && fs.bands[bi].lane && h.lane !== fs.bands[bi].lane) continue
+							let c0 = null
+							let moves = false
+							for (let j = 0; j <= 8 && !moves; j++) {
+								const P = tgPts(h, bi, fs.t0 + ((fs.t1 - fs.t0) * j) / 8)
+								if (!P.length) continue
+								const [lo, hi] = boundsOf(P)
+								const c = centre3(P)
+								if (!c0) c0 = { c, size: Math.max(hi[0] - lo[0], hi[1] - lo[1]) }
+								else if (len3(sub(c, c0.c)) > Math.max(0.02, 0.25 * c0.size)) moves = true
+							}
+							if (!moves) continue
+							const P0 = tgPts(h, bi, F[0].t)
+							if (!P0.length) continue
+							out.push({ what: `${JSON.stringify(h)}${fs.bands[bi].lane ? "@" + fs.bands[bi].lane : ""}`, s: r3(boxStats(projBox(arrPose(F[0].b[bi]), aspOf(bi), P0)).s) })
+						}
+					}
+				}
+				return out
+			}
+			// a cut out to a much wider picture that leaves the movers small (a close setup to an extreme wide of the whole path, the toys specks): the
+			// child loses what moves. A cut in, or a wider picture where the movers stay big, the eye follows
+			const wider = c.d * Math.tan(c.hfov / 2) > a.d * Math.tan(a.hfov / 2)
+			const k2 = Math.exp(scale)
+			if (wider && k2 > NET.cutScale + 1e-9) {
+				const small = moversAtCut().filter((x) => x.s < NET.heroS - 1e-9)
+				;(small.length ? fail : pass)(sh.id, "cut-scale", small.length ? `a cut out to a picture x${r3(k2)} wider (at most x${NET.cutScale} into moving action) leaves the movers small: ${small.map((x) => `${x.what} s ${x.s}`).join("; ")} (floor ${NET.heroS}): the child loses them. Ride with them at a scale near the last picture's, widen in two steps, or glide over at least 1 s (in: {ease})` : `the cut widens the picture x${r3(k2)}, the movers big in it`)
+			}
 		}
 		prevPose = arrPose(F[F.length - 1].b[0])
 		prevLayout = fs.layout
 		if (beam) (beam.corePx >= NET.beamCorePx && beam.haloPx >= NET.beamHaloPx ? pass : fail)(sh.id, "beam-visible", `beam core ${beam.corePx} px, glow ${beam.haloPx} px`)
+		// a path that is the shot's subject (an orbit, a whole trip) fills the picture: the loop a child must see whole is the picture, not a ring in
+		// the middle of it
+		if (sh.move === "hold" && subjAtKey?.trail !== undefined) {
+			const fr = []
+			for (let bi = 0; bi < nb; bi++) {
+				const P = tgPts(subjAtKey, bi, KF.t)
+				if (!P.length) continue
+				const b = projBox(arrPose(KF.b[bi]), aspOf(bi), P)
+				fr.push({ lane: fs.bands[bi].lane, span: r3(Math.max((Math.min(1, b.x1) - Math.max(-1, b.x0)) / 2, (Math.min(1, b.y1) - Math.max(-1, b.y0)) / 2)) })
+			}
+			const low = fr.filter((x) => x.span < NET.pathFill - 1e-9)
+			if (fr.length) (low.length ? fail : pass)(sh.id, "path-fill", low.length ? `the path spans ${low.map((x) => `${x.lane ? x.lane + " " : ""}${x.span}`).join(", ")} of the picture's longer side (at least ${NET.pathFill}): frame it tight (fit tight), the mover whole` : `the path fills the picture (${fr.map((x) => x.span).join(", ")})`)
+		}
 		if (fs.rate !== 0 && fs.rate !== 1 && !sh.label) fail(sh.id, "label", "slow motion or a speed-up without its label")
 	}
 	report.ok = report.checks.every((c) => c.ok)
@@ -2539,6 +2742,7 @@ export function autoPlan(world, opts = {}) {
 	}
 	if (!plan.story.length) plan.story = [{ id: "whole", kind: "reveal", says: "the whole of it" }]
 	// ---- joins: no jump cuts (a cut to almost the same picture glides instead), glides slow enough, and the last shot still at its end
+	const scaleGlided = new Set()
 	for (let pass = 0; pass < 4; pass++) {
 		let rep
 		try {
@@ -2557,6 +2761,11 @@ export function autoPlan(world, opts = {}) {
 			const cap = k === plan.shots.length - 1 ? Math.max(0.3, T - 0.6) : Math.max(0.3, T - 0.2)
 			if (c.check === "cut" && s.in === "cut") {
 				s.in = { ease: r3(Math.min(0.8, cap)) }
+				changed = true
+			} else if (c.check === "cut-scale" && s.in === "cut" && !scaleGlided.has(s.id)) {
+				// (a big jump in scale into moving action glides as long as the shot allows; a glide too fast for that stays a cut)
+				scaleGlided.add(s.id)
+				s.in = { ease: r3(cap) }
 				changed = true
 			} else if ((c.check === "speed" || c.check === "zoom-rate" || c.check === "no-jump") && s.in && typeof s.in === "object") {
 				if (s.in.ease < cap - 1e-6) s.in = { ease: r3(Math.min(cap, s.in.ease * 1.6)) }

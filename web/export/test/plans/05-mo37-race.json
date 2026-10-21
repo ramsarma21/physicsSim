@@ -143,34 +143,25 @@
 			"beat": "race",
 			"layout": "split",
 			"in": "cut",
-			"intent": "Ride beside the red car, one camera for both bands: red stays big while blue drops back and slides out of its band, and the metre cards stream past, until red crosses 10 m.",
+			"intent": "Cut ahead to the 5 m card and wait, still, both bands at one scale: the red car comes through first and the blue one after it, each big as it passes. Chasing them would lose one of the two.",
 			"run": {
-				"from": {
-					"at": "release",
-					"plus": -0.1
-				},
-				"to": {
-					"at": "reading:sw-red.running:settles",
-					"plus": 0.1
-				}
+				"from": "t=1.75",
+				"to": "t=3.1"
 			},
-			"move": "follow",
+			"move": "hold",
 			"subject": {
-				"role": "car",
-				"lane": "red"
+				"mark": "lane",
+				"m": 5,
+				"pad": 0.5
 			},
 			"frame": {
-				"width": 2.4
+				"width": 1.6
 			},
 			"view": {
 				"yaw": 0,
-				"pitch": 10
+				"pitch": 8
 			},
 			"lens": 50,
-			"follow": {
-				"axis": "x",
-				"lead": 0.12
-			},
 			"annotate": [
 				{
 					"kind": "label",
@@ -181,8 +172,8 @@
 				}
 			],
 			"audit": {
-				"question": "When red crosses the 10 m card, is the blue car still far behind (not yet in its picture)?",
-				"key": "end",
+				"question": "Can a child see the red car pass the 5 m card before the blue car does?",
+				"key": "t=2.4",
 				"must_see": [
 					{
 						"role": "car",
@@ -196,12 +187,9 @@
 			"beat": "finish",
 			"layout": "split",
 			"in": "cut",
-			"intent": "Cut closer to the finish, still: red is already there and stops; blue arrives into its band a second later.",
+			"intent": "Cut ahead again, to the finish, still: red comes in and stops at 10 m; blue arrives in its band a second later.",
 			"run": {
-				"from": {
-					"at": "reading:sw-red.running:settles",
-					"plus": 0.1
-				},
+				"from": "t=3.6",
 				"to": {
 					"at": "reading:sw-blue.running:settles",
 					"plus": 0.6
@@ -296,5 +284,5 @@
 			}
 		}
 	],
-	"notes": "The cars are 0.2 m long on a 10 m track: a ride-along keeps them readable only on a frame about 2.4 m wide, and at red's 3.4 m/s the background slides 1.4 widths a second: allowed for a follow whose subject stays steady in the picture (the eye rides the car), not for a free pan. In this demo scene both cars draw blue (the 'red' car has no colour prop): the lane labels name them, and the colour goes back to the scene's author."
+	"notes": "The cars are 0.2 m long on a 10 m track and red runs 3.3 m/s: a ride beside one car loses the other (its band goes empty), and a ride wide enough for both makes them specks. So the camera cuts ahead and waits: at the 5 m card, then at the finish, each car arriving big in its own band at one scale. In this demo scene both cars draw blue (the 'red' car has no colour prop): the lane labels name them, and the colour goes back to the scene's author."
 }

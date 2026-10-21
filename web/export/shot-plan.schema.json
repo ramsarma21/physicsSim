@@ -1214,7 +1214,7 @@
 						"per_lane": {
 							"type": "boolean",
 							"default": false,
-							"description": "Split lanes: each band follows its own lane's subject (one scale still); only when the comparison is not about where things are."
+							"description": "Split lanes: each band rides its own lane's subject at one width (one scale still): movers that part far (a fast car and a slow one, a boat that sails twice as far) each stay big; where they ended is compared after, in a still at one scale."
 						},
 						"stop_at": {
 							"$ref": "#/$defs/target",
@@ -1333,7 +1333,7 @@
 				},
 				"align": {
 					"$ref": "#/$defs/id",
-					"description": "For a split shot: the lanes.cast role whose copies line up in every band (each band shifted by that role's own offset), when the roles do not all sit at the same place in their lanes (two stopwatches hung at different heights over their lanes). Default: the median shift of all paired roles."
+					"description": "For a split shot: the lanes.cast role whose copies line up in every band (each band panned by that role's own offset, one scale: one run, the copies' shift in the scene; one run per lane, their shift between the runs at the start), when the copies do not sit at the same place in their lanes (a fan 10 cm or 80 cm behind its boat, two stopwatches hung at different heights). Not when the difference in place is the evidence (a taller stack, where each car stopped). Default: one run, the median shift of all paired roles; one run per lane, none."
 				}
 			},
 			"allOf": [

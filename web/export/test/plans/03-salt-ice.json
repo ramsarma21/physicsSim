@@ -188,7 +188,7 @@
 			"beat": "pause",
 			"layout": "split",
 			"in": "cut",
-			"intent": "Cut back to the pair for the question, labelled: the child now knows where to look for the difference.",
+			"intent": "Cut back to the pair for the question, closer: nothing moves, so each cube with its salt fills its own half, the plates' rims round them. The child now knows where to look for the difference.",
 			"run": {
 				"freeze": "start",
 				"seconds": 3.0
@@ -199,25 +199,22 @@
 			},
 			"keep": [
 				{
-					"role": "plate"
-				},
-				{
 					"role": "salt"
 				}
 			],
 			"frame": {
-				"fit": "tight"
+				"size": 0.5
 			},
 			"view": {
 				"yaw": 0,
 				"pitch": 20
 			},
-			"lens": 50,
+			"lens": 85,
 			"annotate": [
 				{
 					"kind": "label",
 					"on": {
-						"role": "plate"
+						"role": "cube"
 					},
 					"text": "{label}",
 					"at": "below"
@@ -229,9 +226,6 @@
 				"must_see": [
 					{
 						"role": "cube"
-					},
-					{
-						"role": "plate"
 					}
 				],
 				"details": [
@@ -239,7 +233,12 @@
 						"item": "left_salt"
 					}
 				]
-			}
+			},
+			"context": [
+				{
+					"role": "plate"
+				}
+			]
 		},
 		{
 			"id": "hour",

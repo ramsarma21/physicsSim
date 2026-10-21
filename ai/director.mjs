@@ -181,9 +181,13 @@ const REMEDY = {
 	"must-see": "a must-see thing or detail under its floor: frame closer or a longer lens; split far-apart things into bands, or show them one at a time; small_because with min_size (at least 0.03) lowers the floor for details too, when the smallness is the point",
 	fill: "most of the picture is backdrop: frame closer, give far-apart things their own bands or one shot each, or name what belongs in the room around them (a gap between two things, the light a laser sends, the ramp a car rolls on) in context",
 	present: "the subject is out of the picture too long: follow it, end the shot (its run's to) as it leaves, start later, or frame where it goes",
+	"lanes-present": "a lane's own mover leaves its band (or never comes in) while the shot plays: every band shows its lane's copy of what the shot is about. Ride the pair (subject and keep the role: the camera rides their middle and widens only enough to hold both), follow.per_lane (each band rides its own at one width), cut ahead to where both arrive and wait, or end the shot as one leaves",
+	"cut-scale": "a cut out to a much wider picture leaves the movers small: ride with them at a scale near the last picture's (a follow), widen in two steps, or glide (in: {ease: at least 1})",
+	"stop-fill": "a band of the lesson's stop is mostly backdrop: frame closer on what the stop's question names, pan each band to its own lane's copy at one scale (align on that role), or look a little higher so the floor and the tank fill the band",
+	"path-fill": "the path the shot is about is small in its picture: frame it tight (fit tight), the mover kept whole",
 	repeat: "the same still picture twice: make the two shots one (a mark can appear or change inside a shot: from, to), or change the picture (another subject, scale or place; layout single for one lane's thing)",
 	"keep-in": "something kept is cut off: a wider frame or more room on that side, keep fewer things, or follow",
-	speed: "the camera moves too fast: a longer move_seconds, a slower rate, a slower travel pace, or a cut instead of the move",
+	speed: "the camera moves too fast: a longer move_seconds, a slower rate, a slower travel pace, or a cut instead of the move. A follow too fast for a size that keeps the mover big: cut ahead to where it is going and let it cross a still picture at its own scale (wait for it), rather than widening the follow until it is a speck",
 	"zoom-rate": "the zoom is too fast: a longer move_seconds, a smaller change of scale, or a cut (over 2.5x is a cut)",
 	"turn-rate": "the camera turns too fast: a longer move_seconds or a smaller turn",
 	"no-jump": "the picture jumps at a join: a cut (in: cut) or a longer ease",
@@ -473,7 +477,7 @@ export function sumUsage(...us) {
 const FALLBACK_CODES = new Set(["invalid_output", "budget", "timeout"])
 /** The checks a plan may still fail and be filmed: the picture smaller or emptier than the net asks (a scene's layout can make that
  *  framing-infeasible). Every other failure breaks the video (cut off, too fast, a jump, a repeat, a name the run lacks). */
-export const SOFT_CHECKS = new Set(["subject-size", "must-see", "fill", "face", "beam-visible"])
+export const SOFT_CHECKS = new Set(["subject-size", "must-see", "fill", "face", "beam-visible", "stop-fill", "path-fill"])
 const hardOf = (report) => (report?.checks ?? []).filter((c) => c && c.ok === false && !SOFT_CHECKS.has(c.check))
 const softOf = (report) => (report?.checks ?? []).filter((c) => c && c.ok === false && SOFT_CHECKS.has(c.check))
 /** The better of two measured plans: fewer hard failures, then the director's story over an automatic plan, then fewer soft failures. */
