@@ -20,6 +20,7 @@ import { catalog as simCatalog } from "../sim/index.js"
 import { KEYS as EVERYDAY_KEYS } from "../sim/catalog-everyday.js"
 import { knobsFor, knobOf, knobApplies, goalKind as moduleGoalKind, checkModuleGoal, properName } from "../sim/plugins.js"
 import { TYPES as SIM_TYPES } from "../sim/items.js"
+import { unrealStep, unrealIn, builtValue } from "./realism.js"
 
 export const FIX_MS = 12000 // the search's time budget
 export const FIX_RUNS = 320 // and its most engine runs (the page runs about 30 a second on four workers)
@@ -1144,6 +1145,16 @@ function knobCandidates({ scene, order, containers, touched, swapped, inAir, rid
 		}
 		return Math.abs(e) < 1e-9 || Math.sign(d) === Math.sign(e) || Math.abs(d) <= 0.25 * Math.abs(e)
 	}
+	// (a switch, a pick-from-list or a link the edit set, put back as it was before the edit: the whole way back, which a request that only states
+	// an outcome never goes (no more than a quarter of the way back, as `forward` says for a number), so the flips and choices knobs offer never
+	// undo it: "make the water come out by putting the cap on" is never answered "take the cap off")
+	const undoes = (id, key, to) => {
+		if (!flex) return false
+		const s = setBy(id)
+		if (!s || !(s === "all" || !!s.has?.(key))) return false
+		const a = was(id)
+		return !!a && JSON.stringify(propValue(a, key) ?? null) === JSON.stringify(to ?? null)
+	}
 	const mult = (id) => (setBy(id) ? 2 : 1)
 	// (a fair test: when the goals compare two things (a goal with a and b) or keep a control (expect: false), a setting the two things of one kind
 	// in those goals share is what the test holds equal: never changed on just one of them (A8, 20 Oct: "boil the can in hot water shorter"
@@ -1227,7 +1238,7 @@ function knobCandidates({ scene, order, containers, touched, swapped, inAir, rid
 				}
 		}
 		// a physics module's knobs (web/sim/plugins.js: a lamp's distance, a battery's voltage, a sail's size, which pad a cube is linked to)
-		for (const kb of knobsFor(it.type)) moduleKnob(kb, it, id, m, { propSet, forward, push, lock, softOn })
+		for (const kb of knobsFor(it.type)) moduleKnob(kb, it, id, m, { propSet, forward, push, lock, softOn, undoes })
 		// the weight of a thing whose kind the edit swapped (a tennis ball is 9× the plastic ball it replaced): it stays that kind
 		if (swapped?.has?.(id) && propSpec(it.type, "mass") && !it.props?.mass) {
 			// (a weight that follows the size has no number in the scene: the engine's own figure for it)
@@ -1248,7 +1259,7 @@ function knobCandidates({ scene, order, containers, touched, swapped, inAir, rid
 /** One module knob's candidates (knobCandidates): a number by relative steps (5 %…40 %), metres, degrees or the knob's own `steps` (abs: in the
  *  prop's unit), another item for a link (of the link's types), another choice, a flip; key "x" or "y": a move by its `steps` (m); each costs
  *  as a setting or a move does (× the knob's cost). */
-function moduleKnob(kb, it, id, m, { propSet, forward, push, lock, softOn = null }) {
+function moduleKnob(kb, it, id, m, { propSet, forward, push, lock, softOn = null, undoes = null }) {
 	// (a knob offered only in some scenes: its `when`, web/sim/plugins.js knobApplies)
 	if (!knobApplies(kb, it, kbScene)) return
 	if (kb.key === "x" || kb.key === "y") {
@@ -1273,25 +1284,31 @@ function moduleKnob(kb, it, id, m, { propSet, forward, push, lock, softOn = null
 	if (how === "link") {
 		const spec = (SIM_TYPES[it.type]?.links ?? []).find((l) => l.key === kb.key)
 		const cur = typeof it.props?.[kb.key] === "string" ? it.props[kb.key] : null
+		// (a link the edit made, put back to the thing it named before: kept aside, as a flip back is)
 		return void kbScene.items
 			?.filter((o) => o.id !== id && o.id !== cur && o.type !== "table" && (!spec?.types?.length || spec.types.includes(o.type)))
-			.forEach((o) => push([{ kind: "prop", id, key: kb.key, from: cur, to: o.id }], 10 * k * m, kb.key))
+			.forEach((o) => {
+				const c = { changes: [{ kind: "prop", id, key: kb.key, from: cur, to: o.id }], cost: 10 * k * m, why: kb.key, knob: kb }
+				if (undoes?.(id, kb.key, o.id)) kbBlocked.push(c)
+				else push(c.changes, c.cost, c.why)
+			})
 	}
 	const sp = propSpec(it.type, kb.key)
 	if (!sp) return
 	const v0 = propValue(it, kb.key)
 	// (an on/off or a pick-from-list setting the person named without an amount, "put the cap on", "fill it with fine sand", is their choice
-	// as much as a number they typed: never flipped back, never swapped (kept aside, so the card can say honestly when only that would do))
+	// as much as a number they typed: never flipped back, never swapped (kept aside, so the card can say honestly when only that would do);
+	// and one the edit set for a request that only states its outcome is never put back as it was before the edit (`undoes`))
 	const theirs = !!softOn?.(id, kb.key)
 	if (how === "bool" || sp.kind === "bool") {
 		const c = { changes: [{ kind: "prop", id, key: kb.key, from: !!v0, to: !v0 }], cost: 10 * k * m, why: kb.key, knob: kb }
-		return void (theirs ? kbBlocked.push(c) : push(c.changes, c.cost, c.why))
+		return void (theirs || undoes?.(id, kb.key, !v0) ? kbBlocked.push(c) : push(c.changes, c.cost, c.why))
 	}
 	if (how === "choice" || sp.kind === "choice") {
 		for (const v of sp.choices ?? []) {
 			if (v === v0) continue
 			const c = { changes: [{ kind: "prop", id, key: kb.key, from: v0, to: v }], cost: 10 * k * m, why: kb.key, knob: kb }
-			if (theirs) kbBlocked.push(c)
+			if (theirs || undoes?.(id, kb.key, v)) kbBlocked.push(c)
 			else push(c.changes, c.cost, c.why)
 		}
 		return
@@ -2205,7 +2222,11 @@ export async function findFix(ctx, opts = {}) {
 			const ch = Array.isArray(c?.changes) ? c.changes : []
 			const set = (x) => {
 				const s = locks?.get?.(x.id)
-				return !ctx.flex && (s === "all" || !!s?.has?.(x.key))
+				if (!ctx.flex) return s === "all" || !!s?.has?.(x.key)
+				// (a switch, a choice or a link an outcome request set, put all the way back as it was before the edit: never (knobCandidates' `undoes`))
+				const e = ctx.touched?.get?.(x.id)
+				const a = ctx.before?.scene?.items?.find?.((i) => i.id === x.id)
+				return typeof x.to !== "number" && !!a && (e === "all" || !!e?.has?.(x.key)) && JSON.stringify(propValue(a, x.key) ?? null) === JSON.stringify(x.to ?? null)
 			}
 			// (a move: a pitcher or a tap re-aimed at the container the person moved; never a thing they placed themselves, that way)
 			const moved = (x) => {
@@ -2325,6 +2346,21 @@ export async function findFix(ctx, opts = {}) {
 			return memo.get(k)
 		}
 		for (let i = queue.length - 1; i >= 0; i--) if (queue[i].changes.some(sizes) && breaks(queue[i])) queue.splice(i, 1)
+	}
+	// (and nothing made of what no real one of it is: a soda can's friction 0.3 → 1.6, a carpet's rolling resistance ×10, a bounce of 0.99
+	// (./realism.js): never a fix, whatever it makes happen)
+	{
+		const byId = new Map(scene.items.map((i) => [i.id, i]))
+		const unreal = (x) => {
+			if (x.kind === "prop" || x.kind === "props")
+				return (x.kind === "prop" ? [x.id] : x.ids ?? []).some((id) => {
+					const it = byId.get(id)
+					return !!it && !!unrealStep(it.type, x.key, builtValue(it, x.key), x.to, it.props ?? {})
+				})
+			if (x.kind === "add" && x.item) return unrealIn({ items: [] }, { items: [x.item] }).length > 0
+			return false
+		}
+		for (let i = queue.length - 1; i >= 0; i--) if (queue[i].changes.some(unreal)) queue.splice(i, 1)
 	}
 	// (few candidates: two of the cheapest together, each on its own things, so a search is never done after a dozen runs when a pair would do:
 	// V8820 c08, 16 runs and nothing, where the AI's rework found two changes that work)

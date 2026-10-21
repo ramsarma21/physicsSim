@@ -4029,3 +4029,85 @@ bundle as they were); the 12 scenarios and 10 gallery scenes build and run byte 
   its "division by zero" wording), the summaries' 312 runs 0; fuzz-live --n 300 967 cases 0; fluids.mjs 1213 checks 0; staging all pass;
   machines/test_*.py all pass; the node:test files 765 of 766 (ai/test/server.test.mjs "per-step slots", a timing test the base fails alike under
   that load); the engine bundle rebuilds byte for byte.
+
+## AI follow-ups (2026-10-20, branch `e6-ai`): the run on the card, the person's own amounts and switches, real materials, the fix card's goals (web/ai)
+Only the AI layer changes (its words, and what its searches and tuners may try): no engine, builder, catalog or view file, so every document,
+resolved prop, warning, summary and track is as it was (the 12 scenarios and the 10 gallery scenes included).
+- **The run on the card** (`web/ai/run-story.js`, read by `describeRun` in web/ai/orchestrator.js). A run where no solid moves and no module event
+  happened no longer reads "In the run nothing moves" when a reading changed: `storyLines(sim, scene, {max = 3, per = 3, skip})` tells each item's
+  readings that changed (the keys its type lists in `readouts`, in that order, read from `track.state`), start → end in the readout's own unit and
+  digits: "Ice cube: temperature −17.9 → 0.0 °C, melted 0 → 93 %, puddle 0.0 → 52.4 g" (a state code with `words`, or a unit-less 0/1 flag, as its
+  word or no → yes: "boiling no → yes"; a unit-less share 0–1 shown with 2+ digits as a percent; a reading whose start and end print the same is
+  left out), else how much a resized solid ends at ("Block shrinks to 40 % of its size", from the placements' `scale`); the items in the order they
+  first changed. A time-lapse run says its span (`lessonSpan(sim)`): "In the run, over 80 s of lesson time: Hot plate: top 20 → 78 °C; Ice cube: …".
+  Beside a run's hits (or a thing's own parts striking each other) the modules' happenings are now said too, never dropped: "In the run: Ball hits
+  Box (0.47 s). Also: Tap turns on (60 mL/s) (0.50 s) → Tap turns off after 90 mL (2.00 s) → Mug fills to 90 mL (2.28 s)."; and after the rest, the
+  readings of things no happening names (at most 2 then): "In the run: Pan moves but hits nothing. Hot plate: top 21 → 50 °C; Pan: water 20.0 → 41.7
+  °C, pan 20 → 48 °C." A run without readings (every scene without modules) reads exactly as before.
+- **A module's words for an item's part of the run** (a new plug-in point, read from the registry as `digest` is): `words.story(item, run, {type,
+  scene, name}) -> text | [text] | null`, said "<name>: <text>" in place of that item's readings ("Pan: boils"); null (or no hook): the readings are
+  told. No module defines it yet; a module whose readings read badly as numbers can add it without touching describeRun.
+- **Amounts** (`web/ai/amounts.js`): `AMOUNT` (the orchestrator's `AMT`: every unit below, matched whole, so "200 mL" is never "200 m" and "5 small
+  balls" no "5 s") and `EXPLICIT` (`EXPLICIT_RE`: a number with any of those units but "in", a time or a count of turns: "land in the cup within 3
+  s" states an outcome, not a setting). Units by family (`unitFamily`): length (mm, cm, m, km, in, ft), angle (°, deg), volume (mL, cL, L, cc), flow
+  (mL/s, mL/min, L/s, L/min, "mL per second"), mass flow (g/s), mass (mg, g, kg, lb, oz), time (ms, s, min, h), rotation (rpm, rps, turns/min,
+  turns/s, revolutions per minute), turns, temperature (°C, °F, "degrees C", celsius), power (mW, W, kW), voltage (mV, V, kV), current (mA, amps;
+  never a bare "A"), resistance (Ω, ohms), frequency (Hz, kHz, hertz), force (N, kN), torque (N·m), stiffness (N/m), pressure (Pa, kPa, bar, psi,
+  atm), energy (J, kJ), light (lx, lm), sound (dB), irradiance (W/m²), speed (m/s, cm/s, km/h, mph), percent, ratio (×, x, times). `amountsIn(text)`
+  -> [{family, value, unit, at, text}]; `unitAmount(clause, spec, others)`; `bareAmount(clause, words, spec)`; `propWords(spec, key)`.
+- **What the person chose** (`choicesOf`, ai/DESIGN.md §16; hard: never changed by a fix or a rework, forward: further that way, never back): (1) a
+  clause that names nothing goes on about what the clause before it names: "use a thinner hose, only 6 mm wide inside" holds the hose's 6 mm; "make
+  the tap pour faster: 30 mL/s"; "make the ball heavier, then move it 10 cm left" holds its place. (2) An amount in a setting's own unit, said where
+  the thing is named, holds it where no other setting the edit set on that thing shares the unit's family: "fill the pitcher with 200 mL", "make the
+  tap pour 20 mL/s", "heat the water to 80 °C", "turn the hot plate up to 300 W", "make the buzzer 9 V", "make the tuning fork 440 Hz", "spin the
+  gear train at 300 rpm", "pump the jar down in 5 s", "blow 2 L into the balloon", "make the ball 200 g", "heat it to 80 degrees" (degrees with no C
+  or F are a temperature's where nothing in the clause turns or tilts) (lengths, angles and ratios still need the setting's own words beside them,
+  `keyAmount`: a move is said in them too; "move the box 10 cm left" never holds a width the edit also set). (3) A bare number for a setting without
+  a unit, after its words or before them: "set the friction to 0.5", "use 3 cells". (4) A setting no core word (`KEY_WORDS`) or module word
+  (`words.keys`) names is named by its own label, its key, its choices and an on/off's usual verbs either way (`propWords`, `BOOL_WORDS`: lit
+  (light, blow out, put out, snuff), closed (open, shut), on (switch/turn on, off), tare (zero), tied (tie, untie, knot), hollow (solid), hung
+  (hang), legs, glow); module words, when there are, are used with these. A switch so named, or a choice said by the value it now has, is hard:
+  "light the candle", "blow out the candle", "close the switch", "fold the paper plane as a dart", "put the cap on the deeper bottle" (with the edit
+  step's own `targets` naming the bottle). A material's own choices name it as the material words do ("a charged rod of PVC").
+- **The make-it-work search and an outcome request's switches** (web/ai/fixer.js): for a request that only states its outcome (`ctx.flex`), a
+  module's switch, pick-from-list setting or link that the edit set is never put back as it was before the edit: not by its knob (`knobCandidates`'
+  `undoes`, passed to `moduleKnob`) and not by a goal kind's `aim` (its prop change is refused as `set` refuses the person's own); a number may
+  still go back a quarter of the way (`forward`), a flip or a choice is the whole way. Each such undo is kept aside as the person's named switches
+  are (`kbBlocked`): when nothing else works the card says "Only undoing your change would make it work (take the bottle's cap off: with the cap on
+  no air gets in, so nothing comes out of the holes), so I left it as you asked". Another choice (wax → chocolate, never back to butter) or another
+  link may still be tried. A switch the AI set of its own accord in a plain edit (in `ctx.touched` but not in `ctx.hard` / `ctx.forward`) may still
+  be put back, as before.
+- **Real materials** (`web/ai/realism.js`): a thing's friction, rolling resistance, bounciness and side spring-back stay within what a real one of
+  its material has, about the material's own value (the item's chosen material in `catalog().materials`, else its type's default; an unset value
+  follows the chosen material, as web/sim/items.js `props_of` builds it): friction ×0.4–×2 and at most 1.2 (only soft rubber grips harder), rolling
+  resistance ×1/3–×3 ± 0.005, bounciness ×0.6–×1.2 and at most 0.98, side spring-back ×0.5–×1.5 ± 0.1 and at most 1 (`REAL_LIMITS`; the
+  physics-lesson-video skill's realism check, scripts/lib/realism.ts, uses the same limits). So a soda can grips 0.12–0.6 (never 1.6), a carpet
+  strip rolls 0.0117–0.155 (never 0.5), a floor of carpet the same, a varnished floor 0–0.005, a toy car's tyre 0.32–1.2. A change is refused only
+  when it goes further from real than the thing already was (`unrealStep(type, key, from, to, props)`; toward real is always allowed, and a value
+  the person chose, in `keep`, is theirs). Applied in: the make-it-work search (findFix drops every candidate that sets one, a module knob's or an
+  aim's, before it runs); the AI's reworks (`judgeRework`, the background's and "Ask the AI to rework it": "it gave Soda can 2 a friction of 1.6 (a
+  real one has 0.12–0.6)"); every edit answer (`adjustEdit` step (5): a value the edit step set that no real one has, when the person's words don't
+  ask for that setting (`materialSaid`: friction, grip, slippery, sticky, traction, smoother, icy …; resistance, drag; bouncier, more or less
+  bouncy, bounce higher …, elastic; side spring-back), goes back as it was, and the card says so: "Left as it was: Soda can 1’s friction (a real one
+  has 0.12–0.6, not 1.6) (you didn’t ask to change that)"; a rework's words are the app's, never the person's); the critic's patches (`guardPatches`
+  → `realPatches(plan, patches)`: the value taken out of its set_props / add / replace_type, the rest kept, and the round's `skipped` says "Soda can
+  1: its friction was not set to 1.6, which no real one has (0.12–0.6)"); a new scene's plan (right after the plan step, unless the words ask for
+  that setting: the value is left at its material's own, `report.assumptions` says "Soda can 1’s friction is a real one’s, not the 1.6 planned (a
+  real one has 0.12–0.6)", and `report.initialPlan` keeps the plan as written); and the build's tuners (`safeKnobs`, the joint tuner and the stage
+  tuner: `realKnob` cuts a tune knob on a material prop to the real range, widened only to take in the value it has now; one with no real value left
+  is left out, with a note). Also `materialBase`, `builtValue`, `realRange`, `unrealIn(a, b, {keep})`, `unrealWords(u, nameOf)`.
+- **The fix card's goals** (`web/ai/fix-card.js` `fixedGoals(goals, results, okAll)`, moved out of web/ai/panel.js `applyFix`, which imports it):
+  each goal as the fix's own checked run has it, its words only when they agree with its mark (never "✓ … · no"), a goal with no label of its own
+  matched to the run's "the goal" when it is the only one, `was`: its mark before the fix.
+- Checked (this branch; its own worktree and server :9851, :8790 never touched): the new node:test files `web/ai/test/run-story.test.mjs` (6),
+  `amounts.test.mjs` (6), `fixer-undo.test.mjs` (3, each failing on the code before), `realism.test.mjs` (9, its search, rework, edit, critic, plan
+  and tuner tests failing on the code before) and `fix-card.test.mjs` (4); every node:test file as CI runs it (.github/scripts/unit-tests.sh, 58
+  files): 788 of 788 at a load of about 10, and on the final code 786 of 789 at a load of about 100, the three misses load-bound (creative-fix c03's
+  search ran out of time with every file running at once, and passes alone: "make the 10 water bottles slimmer (6.5 → 5.2 cm across each)", 151
+  runs; two of ai/test/server.test.mjs's AI-slot timing tests, which fail as often on the base commit at that load);
+  web/ai/test/make-it-work.e2e.mjs in headless Chromium against :9851, 72 of 72 (with one more check: the applied fix card's goals all met, none
+  saying no); the egg-drop fix card (FR1 t2, restored and applied in headless Chromium): "The egg dropped on the thick foam survives · yes" (an
+  offer saved without words: the mark alone); an ice cube on a hot plate edited in the app: "In the run, over 80 s of lesson time: Hot plate: top 20
+  → 50 °C; Ice cube: temperature −17.9 → −0.7 °C." (before: "In the run nothing moves: everything stays where it was put."); `npm run
+  build:static:nogen` ships the four new files, the engine bundle byte-identical, and stops only at `vendor:media:check`, which fails the same on
+  the base commit with this machine's node_modules; the CI syntax check, 395 JavaScript files.

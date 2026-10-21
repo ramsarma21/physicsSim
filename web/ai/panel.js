@@ -28,6 +28,7 @@ import { kindNoun } from "./words.js"
 import { missingLine } from "./missing-words.js"
 import { createShot } from "./shot.js"
 import { createFixPool } from "./fix-pool.js"
+import { fixedGoals } from "./fix-card.js"
 import { aiAccess, atWhen } from "./access.js"
 import { conceptRoute } from "./imagine.js"
 import { conceptSetting } from "./new-project.js"
@@ -1890,19 +1891,7 @@ export function mountAiPanel(host) {
 		scrollToEnd()
 		return true
 	}
-	/** The goals on an applied fix's card, each as the fix's own checked run has it (data.results): its ✓ and what that run shows ("survives ·
-	 *  yes"), never the detail of the run before the fix (FR1 t2: "Goals · 2/2" over "survives · no (at 0.954 s)"). A goal that run has no
-	 *  words for shows its ✓ or ✗ alone; an "in" goal's mark says it all, as on every card. */
-	function fixedGoals(goals, results, okAll) {
-		return (goals ?? []).map((g) => {
-			const r = results.find((x) => x.label === g.label)
-			const { detail: _was, ...rest } = g
-			const ok = okAll ? true : r?.ok ?? g.ok
-			const kind = g.kind ?? r?.kind ?? "in"
-			const words = kind !== "in" && r && r.ok === ok && typeof r.detail === "string" && r.detail ? r.detail : null
-			return { ...rest, ok, ...(words ? { detail: words } : {}), was: g.ok }
-		})
-	}
+	// (the goals on an applied fix's card, each as the fix's own checked run has it: ./fix-card.js fixedGoals)
 	/** A change's lines from one scene to another, grouped, in a person's words (null when they can't be said). */
 	function changeLinesOf(a, b) {
 		try {
