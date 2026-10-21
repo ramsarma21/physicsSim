@@ -3689,3 +3689,17 @@ the bundle as it was). Physics options keep real numbers; the render-only ones s
 - **Starting gate** (render only; web/start-gate.js, one line in web/view3d.js): the arm, stop and bolt cast shadows only while the gate is shut, and
   the gate's post casts none: lifted high over the track (and the post behind it) they threw a detached grey shape on the room's back wall. (A
   ball's own shadow on the back wall is not the gate's.)
+- Checked (this branch against its base, origin/integrate/engine-waves 2cbfe0e, in separate copies with their own servers under Python 3.13; the
+  live :8790 never touched): the 12 scenarios and 10 gallery scenes in web/sim with the bundle (documents, resolved, warnings, summaries, tracks,
+  layouts) and in Python (documents, resolved, warnings, summaries on those tracks), 22 of 22 byte-identical; the catalog differs only in the 9
+  types above (their new props, descriptions, sources; every preview and every other entry identical), and all 326 entries Python == web/sim; the
+  new options' documents Python == web/sim (51 scenes: thin steel both ways and at the props' limits, corks and sails, the foams on three floors,
+  ride-on cars, turned fans); tools/parity/run.sh's 33 steps all pass under Python 3.13 (core 21995 cases, server, browser, everyday, the catalogs,
+  mechanisms, heat, softbody 969 checks, matter, flow, circuits, magnetism --n 150 with engine runs, fluids 1213 checks, waves, granular, fracture,
+  mechanics 300 scenes, air, space, staging, the module checks, fuzz-live --n 300: 967 cases, 0 mismatches; under 3.14 its prims step differs
+  on Unicode 16, not on anything here); research/rw-validate-fluids, -magnetism, -softbody and -mechanics pointed at this tree: 71/71, 79/79,
+  109/109, 104/104; the 761 node:test cases (760 in a 4-way run at load 110, the one timing case, ai/test/server.test.mjs's per-step slots,
+  11 of 11 alone); machines/test_*.py (test_catalog 350/350, test_everyday 38/38, test_measure 382/382, test_mechanisms, test_rg, test_space
+  220/220); CI's syntax check (388 JavaScript, 100 TypeScript files) and py_compile; build:static:nogen (the engine bundle byte-identical to a
+  fresh build, every import resolved) but for vendor:media:check, which fails the same way on the base in this checkout's node_modules.
+  Pictures: before and after of every item at the lessons' own cameras.
