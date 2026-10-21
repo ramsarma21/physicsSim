@@ -139,10 +139,14 @@ def _looks():
     add_look("stream tray", fill="#4f8fd8", shade="#2f6bb0", roughness=0.4, metalness=0.0, clearcoat=0.2)
 
 
-def _grain_props(default="sand", wet="dry"):
-    return [Prop("grain", "Grains", default, kind="choice", choices=GRAIN_NAMES,
+# grains that running water dissolves (2026-10-20): not offered where water runs over the bed (a stream table)
+SOLUBLE = ("sugar", "salt")
+
+
+def _grain_props(default="sand", wet="dry", water=False):
+    return [Prop("grain", "Grains", default, kind="choice", choices=[g for g in GRAIN_NAMES if not (water and g in SOLUBLE)],
                  help="sand 0.4 mm; fine sand 0.18 mm; coarse sand 1 mm; gravel 6 mm; pebbles 2 cm; soil (silt loam); flour (a powder); "
-                      "sugar 0.5 mm; salt 0.4 mm; rice (long grains)"),
+                      + ("rice (long grains); not sugar or salt: running water dissolves them" if water else "sugar 0.5 mm; salt 0.4 mm; rice (long grains)")),
             Prop("wetness", "Wetness", wet, kind="choice", choices=WETNESS,
                  help="dry: flows and heaps at its angle of repose; damp: sticks (a sandcastle stands); soaked: slumps flat (its pores full of water)")]
 
@@ -369,7 +373,7 @@ def _types():
                              Prop("lake_cm", "Pool depth", 2.0, 0.0, 6.0, 0.5, "cm", "Standing water at the low end (the outlet's lip)"),
                              Prop("plants", "Plants", "none", kind="choice", choices=list(PLANTS), help="Grass on part of the sand slope: its roots hold the sand"),
                              Prop("length", "Length", 0.9, 0.4, 2.5, 0.05, "m"), Prop("width", "Front to back", 0.4, 0.15, 1.0, 0.01, "m"),
-                             *_grain_props("sand", "damp")],
+                             *_grain_props("sand", "damp", water=True)],
                       tags=["stream table", "erosion", "deposition", "river", "delta", "weathering", "landform", "water", "sand", "canyon", "flood",
                             "runoff", "plants hold soil"],
                       description="A tipped tray of damp sand with a hose at its high end and a pool at its low end. The water carves a channel down "

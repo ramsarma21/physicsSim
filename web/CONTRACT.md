@@ -3156,6 +3156,93 @@ validator `research/rw-validate-granular.ts`. Category "Sand & soil".
   edges rather than as one block; running water is quasi-steady (no waves; flood routing, not shallow-water dynamics) and the bed's change is
   time-lapsed while the water runs in real time; a planted cell holds fully (15 Pa); the flow module's free water does not wet or erode these beds.
 
+## Lesson liquids and grains (engine6 `matter` group, 2026-10-20): milk and chocolate milk, white and brown colouring, sugar, salt and rice, grains kept inside jars, glasses, cups and boxes, a tipped cup that pours grains
+Files: `machines/mod_granular.py` and its port `web/sim/modules/granular.js` (the grains, the containers' and the cups' build hooks, the AI lines),
+`tooling/src/sim/granular.ts` (GRAINS; `Holder`, `holderOf`, `holderQ`, `holderFloor`, `holderRing`, `heapIn`; `TipCup`), `tooling/src/sim/modules/granular.ts`
+(`holders` on sand-region, the `sand-pour` kind, readings, keyframes), `machines/mod_flow.py` and `web/sim/modules/flow.js` (milk, chocolate milk, white
+and brown dye, a pitcher's `contents` and `grain`), `tooling/src/sim/flow.ts` (a dye's fourth number, `seenOf`), `tooling/src/sim/modules/flow.ts`,
+`machines/mod_fluids.py` and `web/sim/modules/fluids.js` (milk, chocolate milk), `tooling/src/sim/modules/fluids.ts` (the sunk rule); view only:
+`web/models/mod-granular.js`, `mod-flow.js`, `mod-fluids.js`. Validator `research/rw-validate-kitchen.ts` (a gate: exits 1 on any failure); parity
+`tools/parity/granular.mjs` and `flow.mjs` (new combination scenes; run by tools/parity/run.sh as before). A scene without these grains, liquids, dyes or
+a container near grains builds and runs exactly as before (the 12 scenarios and the 10 gallery scenes: the same tracks and Python documents, byte for byte).
+- **Grains** (`grain` of `sand-pile`, `sand-tray`, `sand-funnel`, `hourglass`; `stream-table` offers neither sugar nor salt: running water dissolves
+  them): `sugar` (granulated: 0.5 mm crystals of 1587 kg/m³, poured bulk 800 kg/m³, repose 35°), `salt` (table salt: 0.4 mm cubes of 2165 kg/m³, bulk
+  1200 kg/m³, 32°), `rice` (long grain: its kernel's equal-volume sphere 2.8 mm, 1450 kg/m³, bulk 770 kg/m³, 32°); each flows by Beverloo and jams under 5
+  grains (sugar 2.5 mm, salt 2 mm, rice 14 mm); damp they cake as damp sand does and soaked they slump as soaked sand (dissolving is not modelled);
+  sources in granular.ts's header ([SANTOS17], [ETB-BULK], [ETB-REPOSE], [SALT-SPEC], [SALT-PAT], [USDA], [SCIAM-REPOSE]; the repose angles provisional
+  within 30-45°). In keyframes the seven older grains keep their indices 0-6; sugar is 7, salt 8, rice 9. Drawn as white crystals that catch the
+  light (sugar, salt) and long white grains (rice).
+- **Containers keep grains** (record field `sand-region.holders?: [{item, floor, left: [ids], right: [ids], round, depth}]`, at most 32): a build hook
+  (Python == JS, after the goals) names, on every pile and landing region (a funnel's, a cup's), each container whose floor's middle is within 0.6 m
+  of the region in x and that is not `held`: `glass-jar`, `cup`, `plastic-cup`, `bucket`, `beaker`, `graduated-cylinder`, `measuring-jug`, `coffee-mug`,
+  `bowl` (round), `box`, `basket` (square); `floor` its floor's part, `left`/`right` its body's walls (a jar's, not its shoulder and neck), `depth` the
+  left wall's front-to-back size. The engine (granular.ts `holderOf`, at the start, from those solids' outlines) finds its inside: the floor's top (level
+  within 2°), the inner faces at two heights (a straight or tapered wall line, r(y) from rb at ylo to rt at yhi; r0 the floor's own radius), the wall's
+  thickness and the rim; a round one's plan is a circle (an ellipse, k = depth ÷ width, when they differ), a square one's a rectangle. Where a bed
+  reaches it, its inside is that bed's floor (a tapered cup's wall line rising from r0), and a ring of wall columns all round it, front and back too
+  (max(wall, 1.01 × the column × max(1, 1/k)) wide), stands to its rim; the bed grows to hold it whole with columns no wider than a tenth of the
+  narrowest inside (at most 24000 columns); its own solids are not scanned as floor. So 400 g of sand poured into a 6.5 cm glass stays in it
+  (before: most of it landed outside).
+- **Readings in a container**: a pile or landing region whose middle is over a container's inside is read inside it: `height_mm`/`heap_mm` (its top
+  over the container's floor), `angle_deg`/`heap_deg` (the upper quartile of the surface's slope over the inside's floor cells, so a heap that fills
+  the container to its wall reads its sides from the top down to the wall; with under 8 floor cells, the free cone's atan(height / radius)),
+  `mass_g`/`heap_g` (inside it), and what lies outside it: a pile's `spilled_g`, a funnel's or a cup's new `outside_g`.
+- **A cup of grains** (the flow module's `pitcher`: `contents` liquid | grains (default liquid), `grain` sugar (default) | salt | rice | sand | fine
+  sand | coarse sand | gravel | soil | flour, `fill_ml` ("Amount in it") the grains' packed volume: 200 mL of sugar is 160 g): its `flow-pour` record
+  carries `contents: "grains"`, `grain`, `grains` (m³), `grains_asked?` and `volume: 0` (the flow module only tips it, pours no liquid and reads only its
+  `tilt_deg`); the granular build hook adds `sand-pour {id: <item>/grains, item, solid, inside [4 {x, y}], depth, wall, grain, wet: "dry", volume (m³),
+  asked? (mL)}` and a landing `sand-region` (`<item>/landing`, role landing, centred 3 cm past the lip toward the pour, reaching max(12 cm, 1.4 × the
+  heap's spread + 4 cm) each way, its top 4 mm under the upright cup's bottom, the cup's own solids excluded), which the containers' hook names holders
+  on. `TipCup` (granular.ts; the cup's section in its own frame × its depth): the grains turn with the cup until their surface stands steeper than the
+  angle of repose φ, then slump to it; they hold what lies under the repose line through the lowest corner of the opening, and the excess leaves over
+  that corner as a surface avalanche, δ·√(g·δ) of section a second (δ = excess ÷ the surface's length; [LUBE04], provisional), from as soon as anything
+  lies over that line until the layer is under two grains. A cup w wide and h tall filled to a share f starts to pour at φ + atan(2h(1 − f)/w) (f ≥ ½)
+  or φ + atan(h/(2fw)) (f < ½); past 90° + φ it empties; what it held = what is in it + what it poured, exactly. The grains leave as falling parcels from
+  the lip's corner and land on the landing bed (in a jar under it, inside the jar). Readings on the pitcher: `left_g, poured_g, flow_gs, lands_x,
+  heap_mm, heap_deg, heap_g, outside_g`; events "<cup> starts pouring its sugar: tipped 86°, past what its grains stand at" (kind `pours`), "<cup> is
+  empty: all its sugar has poured out" (kind `emptied`), at the start "only N mL of sugar fits in <cup> (not M mL): it is filled to the brim" (kind
+  `brim`). Goals: flow's `empties {item}` reads `left_g` for a cup of grains; granular's `piles {item: the cup}` reads its heap.
+- **Keyframes** (drawing only): `cup` on the pitcher ([nx, ny, c, area, angle]: its grains' surface n·p = c in the cup's frame, their section in m²
+  to 7 decimals, the cup's angle; 30 a second while it changes); `holders:<bed>` once, under the bed's first item ([n, (round 1 | square 0, x, floor,
+  r0, rb, ylo, rt, yhi, wall, rim, k, ring) × n]).
+- **View** (`web/models/mod-granular.js`): a round container's grains are their own turned mesh over its inside (rings × segments that follow the round
+  wall, an ellipse when it is deeper or shallower than wide; smooth against the glass, their side down to the floor against a straight wall), which the
+  ground bed's heightfield leaves out; a tipped cup's grains a body cut by their surface (the `cup` keyframe).
+- **Milk and chocolate milk** (`liquid` of the flow module's `pitcher`, `tap`, `leaky-bottle` and the liquids module's `water-tank`, `beaker`,
+  `measuring-jug`, `graduated-cylinder`): whole milk 1030.5 kg/m³ and 2.1 mPa·s at 20 °C [MILK-RHO] [MILK-MU]; chocolate milk about 1065 kg/m³ (from its
+  make-up by Choi & Okos' component densities, provisional) and 8 mPa·s as it pours (13.2 at 10 1/s, 7.1 at 150 1/s [DRINKS-RHEO]); surface tensions 47
+  and 46 mN/m (approximate); both opaque (fluids looks "milk" #f6f4ee, "chocolate milk" #7a4e33; the flow module draws them as the colour they show,
+  glossy, never seen through, a tipped round cup's body cut by its level surface).
+- **White and brown colouring** (`dye` of `pitcher`, `tap`, `leaky-bottle`): `white` [0, 0, 0, 20] (titanium dioxide: no absorbance, 20 per cm of
+  scattering: water with it looks like milk), `brown` [0.22, 0.38, 0.6] (absorbances per cm). A record's `dye` is 3 absorbances per cm, or 4 numbers for
+  one that scatters (the fourth its scattering per cm; mixed by volume like the others; milk's and chocolate milk's own colour is one, 25 per cm
+  [MILK-SCAT], provisional). What one sees (flow.ts `seenOf`): e^(−(a + s)·path) straight through plus ρ = 1 − e^(−s·path) scattered back as a deep
+  layer's Kubelka-Munk reflectance R∞ = 1 + K/S − √((K/S)² + 2K/S), K = 2a [KUBELKA31]; a clear liquid (s = 0) is exactly the old e^(−a·path), bit for
+  bit. New container reading `tint_o` (how much of what one sees its liquid scatters back: 0 clear … 1 milk; set only once a scattering liquid is in
+  it); `mixes_to {container, color}` names "white" (tint_o ≥ 0.5 and every channel ≥ 0.7) and "brown" (COLOR_NAMES + "white"). Looks: a 12-bit look +
+  4096 marks a liquid one does not see through (its 12 bits then the colour it shows); a particle's touch number + 2 marks one.
+- **Sunk** (`tooling/src/sim/modules/fluids.ts`): a thing wholly under, resting on something and held up by less than its weight reads `sunk` 1 and
+  never `afloat` (before, 97.2 % support counted as afloat: a grape on the bottom of a jug of milk); everything else reads as before.
+- **AI**: the flow plug-in's how-to, keys and change words name milk, chocolate milk, white and brown colouring and a cup of grains (`contents`, `grain`;
+  its digest gives a grain cup's grams and heap); the granular plug-in's name sugar, salt and rice (keys, how-to, the angles and jam widths) and the
+  containers (a funnel over a jar heaps inside it; `outside_g` in the digest); a new worked example, "Pour sugar into a glass jar and see it pile up"
+  (solved and met in web/ai/test/granular-plugin.test.mjs); tags and the pile's and funnel's descriptions name the kitchen grains (Python == JS).
+- **Checked** (2026-10-20, `research/rw-validate-kitchen.ts`: 123 checks, 0 failed; CPU 0.2 s for a cup of sugar into a jar, 0.54 s for 400 g into the
+  glass, 0.07 s for a cup of milk): bulk densities 800.0, 1200.1, 770.0 kg/m³; heaps on the table 35.8°, 33.3°, 32.3° (± 3°); Beverloo's rates (19.7,
+  30.5, 90.2 g/s) and the jams (rice clogs a 12 mm spout and runs through 20 mm, sugar 2 mm and 4 mm, a salt timer 1.5 mm and 3 mm); 400 g of sand into
+  the 6.5 cm glass 0.000 g outside, 104.9 mm tall (theory 105.3: a level bed and a 34° cone), its cone 34.4°; a pint jar, a 22 cm dish, a box, a bowl, a
+  mug, an empty beaker, a bucket and a plastic cup 0.000 g outside, their heaps within 0.5° of repose; the tipped cup's onset within 0.02° of theory at
+  fills of 30-97 %, empty past 90° + φ, mass to 1e-12; cups of sugar, salt and rice into a jar (160, 240, 154 g) all inside, their onset within 0.2°;
+  milk and chocolate milk caught, levelled and named white and brown (as water with white or brown colouring); seenOf == tintOf for 200 clear dyes, bit
+  for bit; a grape sinks in milk and floats in chocolate milk, an egg sinks in it; determinism; 16 random container scenes finite with their grains
+  kept. Parity: tools/parity/granular.mjs and flow.mjs (with these scenes in their engine runs), fluids.mjs, 0 mismatches.
+- **Known limits**: a container keeps grains where it stood at the start (moved or tipped in the run, its walls for the grains stay where it began;
+  one `held` to be let go is not a holder); a jar filled past its shoulder heaps as if its body went straight up (its neck is not a wall for the grains); grains and liquids do not meet (milk on
+  sugar neither wets nor dissolves it; the matter module's dissolving is its own); milk and water do not mix (different liquids layer by density in the
+  flow module, so milk poured into water sinks under it as a layer; white colouring in water does mix); a cup of grains is its 2-D section × its depth
+  (a round cup's grains pour as a box's would); the flow module's goals `fills`/`delivers` count liquid only (grains: `piles`, `outside_g`); a kitchen
+  scale does not weigh grains (as before).
+
 ## Matter (module `matter`, 2026-10-19): the particle model, states and the heating curve, gas laws, diffusion, dissolving and saturation, conservation of mass on a scale, mixtures and separating, density
 Files: `machines/mod_matter.py` (catalog, goal kinds), `web/sim/modules/matter.js` (its exact port + the AI plug-in), `tooling/src/sim/modules/matter.ts`
 (the process kind "matter"), `tooling/src/sim/matter/` (`particles.ts` a 2-D DEM of discs, `substances.ts` real data, `box.ts` the particle box,
