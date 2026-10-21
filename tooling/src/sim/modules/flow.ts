@@ -893,7 +893,9 @@ export class Flow {
 			if (hub === undefined) continue
 			const c = hub.pose()
 			let R = 0
-			for (const h of this.handles) if (h.item === item) for (const q of pointsOf(h)) R = Math.max(R, Math.hypot(q.x - c.x, q.y - c.y))
+			// (its paddles' circle: the parts that turn with its hub; a load the energy module hangs from its axle is the wheel's too, but hangs below)
+			const turning = hub.dynamic ? hub.body().key : -1
+			for (const h of this.handles) if (h.item === item && (!hub.dynamic || h.body().key === turning)) for (const q of pointsOf(h)) R = Math.max(R, Math.hypot(q.x - c.x, q.y - c.y))
 			const inWay = new Set<string>()
 			for (const h of this.handles) {
 				if (h.item === item || inWay.has(h.item)) continue

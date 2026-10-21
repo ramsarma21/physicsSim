@@ -4201,3 +4201,115 @@ demo and fixture scenes (demos/*, tools/parity/fixtures/*-demos.json) only those
   type, moves the fuzz's draw onto them. machines/test_measure.py 434 of 434, test_catalog.py 351 of 351 (the string telephone among them); the
   node:test files as CI runs them 759 of 761, the other two (ai/test/server.test.mjs per-step slots, a timing; web/ai/test/creative-fix.test.mjs
   c03, a search against the clock) pass run alone, as on the engine before this batch.
+
+## Energy devices (module `energy`, 2026-10-20): paper windmills and model wind turbines, winches, generators that light LEDs, battery cars (4-PS3-4)
+Files: `machines/mod_energy.py` and its exact port `web/sim/modules/energy.js` (catalog, build hooks, goal kinds, the AI plug-in),
+`tooling/src/sim/energy.ts` (blade-element momentum, pure), `tooling/src/sim/modules/energy.ts` (the process kind "energy"),
+`web/models/mod-energy.js` (models, frame hooks `energy:rotor`, `energy:pulley`, the view plugin `energy:belts`); additions to the circuits module
+(`machines/mod_circuits.py` = `web/sim/modules/circuits.js`, `tooling/src/sim/circuits.ts`, `tooling/src/sim/modules/circuits.ts`), one block of
+`tooling/src/sim/modules/flow.ts`, one line of `web/models/mod-mechanics.js`. Unit tests `tooling/src/sim/energy.test.ts` (`node --test --no-warnings
+--import ./tools/engine-math-node.mjs tooling/src/sim/energy.test.ts`), AI plug-in tests `web/ai/test/energy-plugin.test.mjs`, parity
+`tools/energy/test.mjs` (in `tools/parity/run.sh`), validator `research/rw-validate-energy.ts` (a gate: exits 1 on any failure). Category "Energy
+devices". A scene with none of these items (no rotor, no generator, no waterwheel load, no motor driving wheels) builds and runs exactly as before.
+- **Items**: `pinwheel` "Paper windmill" (sails cut from one square: `diameter` 0.1-0.4 m (0.2), `blades` 2-8 (4), `pitch` 5-45° at the tips (18; they
+  twist 15° more toward the hub), `paper` copy paper 80 g/m² | card 200 | plastic sheet 140, on a 6 mm straw on a skewer through a wooden post, the
+  axle `height` 0.12-0.6 m (0.3) over its foot; `facing` left | right: the side the wind must come from; `yaw` 0-60°: turned toward the viewer;
+  `load_g` 0-500 g: a paper cup of pennies (3 g + 2.5 g a US cent) on a thread tied to the straw, 0: none; `axle_mm` 2-30 (6): where the thread winds;
+  anchor: the middle of its foot's bottom), `wind-turbine` "Model wind turbine" (the classroom KidWind kit: a round wooden base with brass + (right)
+  and − terminals, an aluminium tower, a nacelle; `blades` 2-12 (3) flat blades `blade_length` 0.05-0.3 m (0.15) × `blade_width` 0.02-0.12 m (0.06) of
+  `blade_material` corrugated plastic 650 g/m² | cardboard 300 | balsa 320 on 6 mm dowels in a crimping hub (3 cm), `pitch` 0-60° (20), hub `height`
+  0.2-1.2 m (0.45), `facing`, `yaw`, `generator` KidWind generator | hobby motor | none (its leads are the base's terminals), `load_g` 0-2000 g and
+  `axle_mm` 2-40 (6): a weightlifter spool on its shaft), `generator` "Small generator" (`kind` KidWind generator: k 0.02817 V·s/rad (5.9 V at 2000
+  rpm open), 38 Ω, friction 0.2 mN·m, rotor 5×10⁻⁷ kg·m² | hobby motor: the FA-130 as a generator, k 2.86 mV·s/rad, 1.36 Ω; link `shaft` to a
+  waterwheel, pinwheel, wind-turbine or wheel-and-axle; `ratio` 1-20: a belt step-up, 1 on the shaft itself; `leads` normal: + positive while the
+  shaft turns counter-clockwise as seen | swapped; on its own little base, a ghost that touches nothing, terminals ±2.6 cm; no shaft: it never turns).
+  Every `waterwheel` (flow) lists `load_g` 0-2000 g (0), `axle_mm` 2-40 (12) and `winds` auto | clockwise | counter-clockwise (auto: the way the
+  stream above it turns it, falling on its right clockwise); a build hook hangs a cup from a spool on its axle when load_g > 0, in front of its
+  paddles, 3 cm under their circle (a 140 mL/s tap lifts up to about 350 g on the 12 mm spool, 600 g on a 6 mm one; a heavier cup pulls the wheel
+  backward and falls). The circuits module's `motor` gains `drives: "wheels"` and the link `car` ("Drives the wheels of": toy-car, cart, truck,
+  dynamics-cart): a build hook mounts its gearbox (a ghost slab of the motor's mass, hobby 18 g, solar 22 g, geared 30 g, the geared one the yellow
+  "TT") on the car's chassis over its rear axle (where the motor item is placed does not matter); "wheels" with no car is "none". A wire may name a
+  wind-turbine or a generator (sources).
+- **A rotor's stand-in**: the blades turn about a shaft along the wind (the picture sees the rotor edge-on, or its face turned by `yaw`); the engine's
+  bodies turn about the picture's own axis, so the turning is carried by a hidden 2 cm ghost ball (`<item>/hub`, its mass 2J/r² so its inertia is the
+  rotor's J: blades ∫ sheet·c(r)·r² dr, dowels, hub, shaft, the generator's rotor) hinged at the spool's place by a pin joint with Coulomb friction
+  (straw on a skewer μ 0.3 at 1.5 mm, a turbine's bushing μ 0.15 at 1 mm, plus the generator's) and `limits` {lower −10000, upper: the winding angle}
+  that stop it 2 mm before the cup's handle reaches the spool (2.2 cm of thread left). The wind's torque twists it (the energy record), the thread
+  winds on it (a mechanics spool), the generator's current holds it back (circuits). `yaw` turns the whole head (rotor, shaft, spool) about the post:
+  the spool sits at x = s·down·cos ψ, z = −down·sin ψ (the spool record's `z`), the rotor at x = −s·up·cos ψ. A wound-up cup holds the rotor still (a
+  turbine meant to light an LED takes no load).
+- **Records** (`doc.processes`): `{kind: "energy", role: "rotor", solid, at {x, y}, axis, yaw, sense, rotor {blades, r0, R, chord [root, tip], pitch
+  [root, tip], ar, cd0, stations}}` (validated by energyProblem: 1-24 blades, 0 ≤ r0 < R, 1-40 stations) and `{kind: "energy", role: "pass", solid,
+  through: [ids]}` (a hung cup's contacts with its own machine left out, never counted as impacts); a cup is a mechanics `spool {drum, b, center,
+  radius, sense, anchorB, minLength, z?}` with meters `thread-pull` (reads rope → `pull_n`) and `lift` (reads rise → `lift_m`); a turbine's or a
+  generator's circuits part `{kind: "generator", a, b, k, r, rotor, stator?, ratio?, inertia?, sense?}` (no `speed`/`from`: those are a hand
+  generator's, unchanged); a battery car's motor part `{..., sense: -1, rotor: "<car>/rear", stator: "<car>/chassis", wheel: "<car>/axle-rear"}`. A
+  generator on another item's shaft adds a ghost rotor ball welded to that shaft part (`<gen>/rotor`, inertia J·ratio²) and a pin `<gen>/drag` of
+  friction fric·ratio.
+- **Physics** (`energy.ts`): blade-element momentum, 8 stations a blade: flat plates (Helmbold's lift slope for the blade's aspect ratio, a stall
+  fade, crossflow drag 1.2, skin friction cd0 0.02: C_n = c_N·cos β + cd0·sin φ, C_t = c_N·sin β − cd0·cos φ), Prandtl's tip and hub loss, Glauert's a
+  = k/(1 + k) to a = 0.4 and Buhl's branch above (Ning's form), swirl a' = k'/(1 − k') (capped at 4); the induction moves a quarter of the way to its
+  target each step (a dynamic inflow) and decays in still air or a backwind; each element meets the wind the engine blows WHERE IT IS (a fan's round
+  jet about its own axis: an element out of the picture's plane at its own distance from that axis, the jet's centre found each step as the centroid
+  of its push across the rotor; a breeze everywhere), the shaft taking the wind's component along it (cos ψ). Checked against Ning's bracketed root.
+  Generators (`circuits.ts`, `modules/circuits.ts`): EMF k·ratio·ω (ω the rotor's spin against its stator, in the part's sense); its torque is
+  implicit in the shaft's turning, τ = sense·k_s·(a − b·k_s·ω)/(1 + k_s²·b·h/J) with k_s = ratio·k, (a, b) its branch's line from the circuit's
+  solution and J the shaft's whole weld group's inertia plus `inertia` (a stiff load never rings). A battery car's motor drives its wheel through the
+  axle joint's own planck motor: target speed (η·k·a − F)/(η·k²·b) (where its torque less the gearbox's friction F is nothing), most torque |η·k·(a −
+  b·k·ω) − F·sign ω| (× lengthScale² for planck's units): the wheel rolls with the car's weight behind it while it grips. `modules/flow.ts`: a
+  waterwheel's paddle circle (its "in the way" check) counts only the parts that turn with its hub, so its hung cup is never "in the way".
+  `mod-mechanics.js`: a spool record's `z` places its cord.
+- **Readings** (track.state): pinwheel and wind-turbine `rpm, turns, angle` (rad, the view's), `wind_ms` (the axial wind over the disc), `tsr`,
+  `power_mw` (taken from the wind), `cp`, `thrust_n`; with a load `rope` (free thread, m), `pull_n`, `lift_m`; a wind-turbine with a generator
+  `generator_rpm, generator_voltage, generator_current, generator_angle`; generator `rpm, voltage, current` (out of +), `angle`; a car's motor `rpm,
+  current, voltage`.
+- **Goal kinds** (Python == JS): `generates {item, at_least_v?, at_least_mw?}` (|V| at least at_least_v, default 1 V, all through the run's last 0.5
+  s; with at_least_mw its V·I too), `generates_more {a, b}` (a's mean electrical power over the last 0.5 s ≥ 1.1 × b's and b's + 0.1 mW),
+  `lifts_higher {a, b}` (a's cup ends ≥ 2 cm and 10 % higher above where it started); every number they report is + 0 (never −0: a backward
+  generator's 0 mA × its negative volts). The circuits module's lights / spins, the mechanics module's rises and the core moves cover the rest.
+- **View** (`web/models/mod-energy.js`): a paper windmill (coloured twisted sails, a bead, a straw on a skewer through a wooden post on a foot), a
+  model turbine (base with brass terminals, tower, nacelle, crimping hub, blades on dowels), the cup of pennies, a spool on a waterwheel's axle, a
+  generator (can and pulley on a base), the battery car's yellow gear motor; the rotor's blades are drawn on its fixed post or nacelle and turned by
+  `energy:rotor` from the `angle` reading (a blur disc from 450 rpm), the head turned by `yaw`; `energy:belts` draws a belt from a pulley that turns
+  with the shaft (radius 6 mm × ratio) to the generator's pulley (none when it sits on the shaft).
+- **AI** (`plugin` in web/sim/modules/energy.js): how-to (rotors FACE THE WIND: `facing`; the shaft at the fan's middle height, 30-60 cm from its
+  face; yaw's cost; the KidWind generator's 2.1 V at 720 rpm and the LED's 650-700 rpm; the winch and its heaviest cup; a waterwheel's 5:1 step-up and
+  leads; the battery car), plan / edit / refine lines; goal kinds with aliases (makes_electricity, more_power, lifts_more...), labels, details and
+  samples; 19 knobs with honest whys (pinwheel pitch, diameter, blades, load_g, axle_mm, yaw, height; wind-turbine pitch, blade_length, blades, yaw,
+  height, load_g, generator; generator ratio, leads, kind; waterwheel load_g, axle_mm); edit-digest lines (the wind on a rotor and its speed, NO wind
+  reaching it, a cup too heavy or wound to the top, a generator NOT on a shaft or turning BACKWARD, a battery car's motor and its car); change words
+  in real units ("step-up 1:1 → 5:1 (a 140 → 700 rpm generator on a 140 rpm wheel: 0.413 → 2.07 V)"); request words (pennies, straw, swap leads...); a
+  generator is held up by its own base (`place.held`); six worked examples, each solved and met in the tests: a windmill lifting a cup in a fan's
+  wind, a turbine lighting an LED in front of a fan, a fair test of 20° against 45° blades (generates_more), a waterwheel lifting a cup, a waterwheel
+  lighting an LED through a 5:1 generator with its leads swapped, a battery car (moves). The circuits module's `aimLit` (make it work for lights,
+  buzzes, spins) now also offers, for a generator on a shaft, its leads swapped when its voltage is backward and a bigger step-up when it is under 2 V
+  (checked in the engine like any try).
+- Checked (2026-10-20): `research/rw-validate-energy.ts` 34 of 34: the relaxed induction equals Ning's steady root (|Δa| 1.05e-15 over 96 annuli), no
+  rotor beats Betz (best Cp 0.263 of 100 rotors), the default paper windmill peaks at Cp 0.172 at λ 1.95 (0.17 at 2 measured [JWEA]); the KidWind
+  generator open 2.124 V at 720 rpm (2.13 measured [VERNIER]) and 4.248 at 1440 (4.25), 7.227 at 2450 (6.54, within its 12 %: the real EMF per rpm
+  falls 9 % by 3600 rpm), loaded 1.784 V (200 Ω, 1.82), 1.539 (100 Ω, 1.59), 3.077 (100 Ω at 1440 rpm, 3.14); k·ω·I = V·I + I²R (310.9 mW both); a 5:1
+  belt 720 rpm 2.124 V, swapped −2.124 V; a red LED lights from 660 rpm (about 700 [VERNIER]); free turbines settle at 542.5 rpm against BEM's 543.5
+  (3 m/s) and 908 against 908.1 (5 m/s); a turbine in front of a fan lights an LED (1.864 V at 713.6 rpm, light 0.317) with its torque balanced (wind
+  0.4736 mN·m = friction 0.2906 + k·I 0.1787); nothing turns in a vacuum; a narrow jet on a big disc 0.7014 m/s against the profile's area mean
+  0.6971; yawed 30° it turns 0.828 × as fast (cos 30° 0.866, less for its cos² torque); a windmill winds 0.1212 m of thread against Δθ·r 0.1219 m and
+  stops with 2.24 cm left; held at the top the thread pulls 0.1984 N against √((mg)² + drag²) 0.1978 N; the heaviest cup a 20 cm windmill lifts in 4
+  m/s is 52.55 g (47 g rises, 58 g does not); a waterwheel winds its cup up 0.132 m (thread on the left: it turns clockwise), a 2 kg cup not at all;
+  the battery car rolls at 0.293 m/s against ω·r 0.296 m/s, its motor's V = k·ω + I·R (3.148 V both) and η·k·I 4.376 mN·m against its gearbox's 4, it
+  moves 1.095 m, wired the other way −0.503 m; its goals; the same scene twice byte for byte. `tooling/src/sim/energy.test.ts` 9 of 9;
+  `tools/energy/test.mjs` 0 mismatches (its catalog, 119 documents, 26 runs on both engines and 46 sampled goals; --n 40 --mix 240: 1315 checks, 363
+  documents, 72 runs; 25 lesson scenes, the AI's six examples among them, identical in Python and JS and on both engines, 15 of 15 of their goals
+  met); `web/ai/test/energy-plugin.test.mjs` 8 of 8 (make it work swaps a backward generator's leads to light its LED, and lightens or thins an
+  overloaded windmill's winch). Unchanged elsewhere: the 12 scenarios, the 10 gallery scenes, the circuits module's 19 demos, the fluids module's 17
+  demos and four waterwheel and motor scenes are identical to the branch point byte for byte (documents, resolved, warnings and summaries in Python
+  and JS, tracks from the bundle and the node engine); `research/rw-validate-circuits.ts` 83 of 83, `-flow.ts` 60 of 60, `-mechanics.ts` 104 of 104;
+  `tools/parity/circuits.mjs --n 150 --engine 16` all pass (every demo as expected), `tools/parity/module.mjs --module circuits` 1016 checks,
+  `tools/parity/flow.mjs --n 20 --engine` 404 checks, `tools/mechanics/test.mjs --n 300` 0 mismatches; `tools/circuits.test.ts` 27 of 27; the
+  circuits, flow and mechanics AI tests pass; `tools/parity/engine-fuzz.mjs --n 1500` (every catalog type, these among them) 0 exceptions and 0
+  non-finite placements in 1498 runs; `machines/test_catalog.py` on pinwheel, wind-turbine, generator, motor, waterwheel, battery, cart and led 8 of
+  8.
+- Known limits: blades are flat plates (no camber; a paper sail's bow is drawn, not modelled); the generator's EMF per rpm is constant (the real
+  KidWind's falls about 9 % by 3600 rpm); its friction and rotor inertia, the sheets' densities and the straw's and bushing's friction are
+  provisional; a wind from behind turns a rotor backward without induction; the rotor is a stand-in, so its blades never strike anything and the
+  nacelle's own drag is not modelled; a yawed turbine's nacelle is a solid where it stands unturned (only its drawn head, the rotor's wind and the
+  spool turn); a cup hung under a waterwheel can be struck by splash; the hobby and solar motors drive wheels without a gearbox (fast and weak, as
+  wired straight to an axle).
