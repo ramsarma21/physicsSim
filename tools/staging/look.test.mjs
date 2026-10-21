@@ -102,6 +102,69 @@ test("the top of a thing and its half-width", () => {
 	assert.ok(tilted.top > 0.06 && tilted.x > 0) // (its raised corner)
 })
 
+test("the lesson look's mount hangs a part by its top: each collar sits on the part's outline (within 3 mm), a tilted one's at its raised corner", async () => {
+	const THREE = await import("three")
+	// (the outline, worked out here on its own: a slab's corners at its pose, a ball's circle)
+	const inside = (s, q, x, y) => {
+		if (s.body.kind === "ball") return Math.hypot(x - q.x, y - q.y) <= s.body.radius + 1e-9
+		const c = Math.cos(q.angle)
+		const sn = Math.sin(q.angle)
+		const lx = (x - q.x) * c + (y - q.y) * sn
+		const ly = -(x - q.x) * sn + (y - q.y) * c
+		return Math.abs(lx) <= s.body.width / 2 + 1e-9 && Math.abs(ly) <= s.body.height / 2 + 1e-9
+	}
+	const boxOf = (s, q) => {
+		if (s.body.kind === "ball") return { x0: q.x - s.body.radius, x1: q.x + s.body.radius, y0: q.y - s.body.radius, y1: q.y + s.body.radius }
+		const c = Math.cos(q.angle)
+		const sn = Math.sin(q.angle)
+		const w = s.body.width / 2
+		const h = s.body.height / 2
+		const xs = [-1, 1].flatMap((a) => [-1, 1].map((b) => q.x + a * w * c - b * h * sn))
+		const ys = [-1, 1].flatMap((a) => [-1, 1].map((b) => q.y + a * w * sn + b * h * c))
+		return { x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) }
+	}
+	const slab = (w, h) => ({ id: "p/p", item: "p", body: { kind: "slab", width: w, height: h, depth: 0.05 } })
+	const cases = [
+		["the laser scene's mirror (6 mm × 20 cm, aimed 150°)", slab(0.006, 0.2), { x: 0.8, y: 0.25, angle: (150 * Math.PI) / 180 }],
+		["a block tilted 30°", slab(0.2, 0.04), { x: 0.3, y: 0.4, angle: Math.PI / 6 }],
+		["a level bar", slab(0.2, 0.04), { x: 0.3, y: 0.4, angle: 0 }],
+		["a plate tipped 80° the other way", slab(0.12, 0.01), { x: 0.3, y: 0.4, angle: (-80 * Math.PI) / 180 }],
+		["a ball", { id: "p/p", item: "p", body: { kind: "ball", radius: 0.03 } }, { x: 0.3, y: 0.4, angle: 0 }],
+		["a swing's wide bar tilted 8° (two rods)", slab(0.5, 0.03), { x: 1, y: 0.9, angle: (8 * Math.PI) / 180 }]
+	]
+	for (const [what, s, q] of cases) {
+		const inst = { members: [s], meshes: [] }
+		const meshes = []
+		const h = {
+			mountMesh: (_inst, geo, mat) => {
+				const m = new THREE.Mesh(geo, mat)
+				meshes.push(m)
+				return m
+			},
+			putAt: (m, x, y, z) => m.position.set(x, y, z),
+			boxOf: (o) => boxOf(o, q),
+			rodsOf: (o) => {
+				const { x0, x1 } = boxOf(o, q)
+				return x1 - x0 > 0.26 ? [x0 + 0.05, x1 - 0.05] : [(x0 + x1) / 2]
+			},
+			poseOf: () => q
+		}
+		R.mountHanger(inst, h)
+		inst.fit()
+		const collars = meshes.filter((m) => m.scale.y === 0.008)
+		assert.equal(collars.length, what.includes("two rods") ? 2 : 1, what)
+		for (const c of collars) {
+			const foot = c.position.y - 0.004 // (the collar's underside)
+			// (it touches: just under its underside is the part, and 3 mm over it is not)
+			assert.ok(inside(s, q, c.position.x, foot - 0.0005), `${what}: the part is right under the collar at x ${c.position.x.toFixed(4)}`)
+			assert.ok(!inside(s, q, c.position.x, foot + 0.003), `${what}: the collar rests on the part, not 3 mm or more over it`)
+		}
+	}
+	// (the mirror: held by its raised corner, 5 cm right of its middle, not over the middle 5 cm above the glass)
+	const m = R.topOf(cases[0][1], cases[0][2])
+	assert.ok(m.x > 0.84 && m.x < 0.86 && Math.abs(R.topAt(cases[0][1], cases[0][2], m.x) - m.top) < 1e-9)
+})
+
 test("the holder: closed and still until the release, opening, lifting, never below the thing, gone 2 m up", async () => {
 	const THREE = await import("three")
 	const add = (g, geo, mat) => {

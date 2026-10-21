@@ -4271,7 +4271,7 @@ ${GRADE}
 				}
 			},
 		}
-		mountBuilders.hanger = (inst) => mountHanger(inst, { mountMesh, putAt, rodsOf, boxOf: (s) => ({ ...boxOfStatic(s, mountBox) }) }) // (web/release-stand.js)
+		mountBuilders.hanger = (inst) => mountHanger(inst, { mountMesh, putAt, rodsOf, boxOf: (s) => ({ ...boxOfStatic(s, mountBox) }), poseOf: (s) => mountPose.get(s.id) }) // (web/release-stand.js)
 		const setInst = (inst, v) => {
 			for (const m of inst.meshes) m.visible = v
 		}

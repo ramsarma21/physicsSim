@@ -1966,6 +1966,9 @@ bytes as without, on the bundle and the server). For a lesson picture that reads
   - no machinery: a model part (any Object3D) marked `userData.machinery = true` is not drawn (now: the sand funnel's ring stand, web/models/mod-granular.js);
   - mounts (the view's supports of a static part in mid-air): a post or a wall bracket is a **hanger** instead, a slim grey rod from 3 m above down to
     a small collar on the part's top (`mountHanger`; two near the ends of a bar wider than 26 cm), not in the shot's framing, casting no shadow;
+    the collar sits on the part's outline where its rod comes down (`topAt`): a level part's middle, a tilted one's raised corner (`topOf`), each
+    of a wide bar's two rods on the bar there (2026-10-21: it stood at the bounding box's top over the box's middle, so the laser scene's mirror,
+    aimed 150°, hung 5 cm under its collar; tools/staging/look.test.mjs checks every collar touches its part within 3 mm);
   - the pull pin and its post slim and plain (a 10 mm grey rod, a 6 mm pin: `lessonPost`);
   - **outlines** (web/lesson-outline.js `OUTLINE`; on unless `setOptions({outline: false})`): lines 1/400 of the picture's height wide (2.7 px at 1080p,
     at least 1 px), drawn only by changing pixels already there, on the inside of a silhouette (no shape grows or moves): just inside every thing, its

@@ -52,6 +52,32 @@ export function topOf(s, q) {
 	return { top, hw: (x1 - x0) / 2, x: tx }
 }
 
+/** The top of solid s's outline at pose q on the upright line through x: the highest point where that line crosses it (a tilted slab's upper
+ *  face there, its raised corner at that corner's x); its top (topOf) where the line misses it. */
+export function topAt(s, q, x) {
+	const b = s.body
+	if (b.kind === "ball") {
+		const dx = x - q.x
+		return Math.abs(dx) < b.radius ? q.y + Math.sqrt(b.radius * b.radius - dx * dx) : q.y + b.radius
+	}
+	const a = q.angle ?? 0
+	const c = Math.cos(a)
+	const sn = Math.sin(a)
+	const local = b.kind === "polygon" ? b.points : [{ x: -b.width / 2, y: -b.height / 2 }, { x: b.width / 2, y: -b.height / 2 }, { x: b.width / 2, y: b.height / 2 }, { x: -b.width / 2, y: b.height / 2 }]
+	const pts = local.map((p) => ({ x: q.x + p.x * c - p.y * sn, y: q.y + p.x * sn + p.y * c }))
+	let best = -Infinity
+	for (let k = 0; k < pts.length; k++) {
+		const p = pts[k]
+		const r = pts[(k + 1) % pts.length]
+		const lo = Math.min(p.x, r.x)
+		const hi = Math.max(p.x, r.x)
+		if (x < lo - 1e-12 || x > hi + 1e-12) continue
+		const y = Math.abs(r.x - p.x) < 1e-12 ? Math.max(p.y, r.y) : p.y + ((clamp(x, lo, hi) - p.x) / (r.x - p.x)) * (r.y - p.y)
+		if (y > best) best = y
+	}
+	return Number.isFinite(best) ? best : topOf(s, q).top
+}
+
 /** Is the point (x, y) in a liquid's container or over it (within 15 cm above its rim)? doc.processes "liquid" (the liquids module's tanks
  *  and vessels: x0, x1, floor, rim) and the pouring module's catching vessels (flow-vessel / flow-basin records with the same box). */
 export function overLiquid(doc, x, y) {
@@ -310,8 +336,10 @@ export function makeHanger({ list, addMesh, doc = null }) {
 }
 
 /** The lesson look's mount for a static part in mid-air (instead of a retort stand or a wall bracket): a slim rod down from 3 m to a small collar
- *  on the part's top, one in the middle (two near the ends of a bar wider than 26 cm). h = the view's mount helpers: {mountMesh, putAt,
- *  boxOf(s) -> {x0, x1, y0, y1}, rodsOf(s) -> [x]}. Sets inst.fit. */
+ *  on the part's top: one at its top (a level part's middle, a tilted one's raised corner: topOf), or two near the ends of a bar wider than 26 cm,
+ *  each collar sitting on the part's outline where its rod comes down (topAt: a tilted mirror's collar once stood at its bounding box's top over
+ *  the box's middle, 5 cm over the glass). h = the view's mount helpers: {mountMesh, putAt, boxOf(s) -> {x0, x1, y0, y1}, rodsOf(s) -> [x],
+ *  poseOf(s) -> {x, y, angle} (its pose now)}. Sets inst.fit. */
 export function mountHanger(inst, h) {
 	const M = hangerMats()
 	const s = inst.members[0]
@@ -319,11 +347,11 @@ export function mountHanger(inst, h) {
 	const parts = xs.map(() => ({ rod: h.mountMesh(inst, unitRod, M.rod), collar: h.mountMesh(inst, unitBox, M.jaw) }))
 	for (const p of parts) p.rod.castShadow = false
 	inst.fit = () => {
-		const b = h.boxOf(s)
+		const q = h.poseOf(s)
 		const xr = h.rodsOf(s)
 		parts.forEach((p, k) => {
-			const x = xr[k] ?? xr[0]
-			const top = b.y1
+			const x = xr.length > 1 ? (xr[k] ?? xr[0]) : topOf(s, q).x
+			const top = topAt(s, q, x)
 			p.collar.scale.set(0.014, 0.008, 0.012)
 			h.putAt(p.collar, x, top + 0.004, 0)
 			p.rod.scale.set(HANGER.rod * 1.4, HANGER.length, HANGER.rod * 1.4)
