@@ -1884,7 +1884,10 @@ export function measure(film) {
 			return [...out]
 		}
 		if (fs.layout === "split" && S.lanes && fs.rate !== 0 && sh.move !== "travel" && nb > 1) {
-			const roles = namedRoles()
+			// (a shot that names no role at all, a cut ahead framed on a place or a mark, is about every lane's movers: each band waits for its own
+			// and keeps it while it is there)
+			const named = namedRoles()
+			const roles = named.length ? named : [...new Set(S.lanes.flatMap((l) => Object.keys(l.cast)))]
 			const rows = []
 			for (let bi = 0; bi < nb; bi++) {
 				const lane = fs.bands[bi].lane

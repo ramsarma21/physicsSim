@@ -146,7 +146,7 @@
 			"intent": "Cut ahead to the 5 m card and wait, still, both bands at one scale: the red car comes through first and the blue one after it, each big as it passes. Chasing them would lose one of the two.",
 			"run": {
 				"from": "t=1.75",
-				"to": "t=3.1"
+				"to": "t=3.0"
 			},
 			"move": "hold",
 			"subject": {

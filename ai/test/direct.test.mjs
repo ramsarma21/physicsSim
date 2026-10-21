@@ -204,7 +204,7 @@ test("an executor's moments take the place of the digest's own, so the ids the d
 
 // ------------------------------------------------------------------------------------------------ the shot-plan language
 test("the twelve design plans are valid and resolve against their own runs, at the design's lengths", async () => {
-	const lengths = { "01-laser-mirror": 17.9, "02-fairtest-ramps": 10.0, "03-salt-ice": 15.6, "04-fan-boats": 10.7, "05-mo37-race": 8.9, "06-chain-reaction": 13.7, "07-pendulum": 17.0, "08-switch-bulb": 18.3, "09-magnet-clip": 16.6, "10-egg-drop": 11.4, "11-siphon": 14.3, "12-earth-orbit": 15.5 }
+	const lengths = { "01-laser-mirror": 17.9, "02-fairtest-ramps": 10.0, "03-salt-ice": 15.6, "04-fan-boats": 10.7, "05-mo37-race": 8.8, "06-chain-reaction": 13.7, "07-pendulum": 17.0, "08-switch-bulb": 18.3, "09-magnet-clip": 16.6, "10-egg-drop": 11.4, "11-siphon": 14.3, "12-earth-orbit": 15.5 }
 	for (const name of Object.keys(PLANS)) {
 		assert.deepEqual(checkShotPlanSchema(plan(name)), [], name)
 		const r = validateShotPlan(plan(name), { digest: await digestOf(name) })
