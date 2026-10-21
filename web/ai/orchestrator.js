@@ -32,6 +32,7 @@ import { kindNoun, aKindOf, weightOf, imperative, solidMass, clipLabel, changesL
 import { statesNewOutcome, orderKey, overriddenBy } from "./outcome-goals.js"
 import { refreshPlanned } from "./planned-words.js"
 import { AMOUNT, EXPLICIT as EXPLICIT_AMOUNT, unitAmount, bareAmount, propWords } from "./amounts.js"
+import { unrealIn, unrealWords, realKnob, realPatches, materialSaid } from "./realism.js"
 import { holdTargets, targetLines, targetChanges, changeWords as targetChangeWords, heldOffer, heldWords, heldSentence, targetValue } from "./goal-targets.js"
 import { addedWords as moduleAddedWords, changeWords as moduleChangeWords, howWords as moduleHowWords, keyWords as moduleKeyWords, outcomeWords as moduleOutcomeWords, moduleRegoals, settingWords as moduleSettingWords, properName as moduleProperName, knobTunable, moduleMass, moduleMoves, ownHitsTold } from "../sim/plugins.js"
 export { isChainRequest, conceptPlan, conceptRoute, CONCEPT_NOTE, CONCEPT_LABEL, IMAGINE_MODES, imagineMode } from "./imagine.js"
@@ -727,7 +728,12 @@ export function safeKnobs(plan, scene = null) {
 			notes.push(`${name(it)}'s ${String(propSpec(it.type, p)?.label ?? p).toLowerCase()} was left as planned: it is what the lesson compares, not a dial to tune`)
 			continue
 		}
-		knobs.push(k)
+		// (a material's friction, rolling resistance, bounce or kick: tuned only within what a real one has, never into a soda can that grips like
+		// rubber (./realism.js realKnob))
+		const real = realKnob(k, it)
+		if (real.note) notes.push(`${name(it)}'s ${real.note}`)
+		if (!real.knob) continue
+		knobs.push(real.knob)
 	}
 	return { knobs, notes }
 }
@@ -4438,6 +4444,22 @@ export function createOrchestrator(deps) {
 					}
 				}
 			}
+			// (5) a thing made of what no real one of it is (./realism.js: a soda can's friction 0.3 → 1.6, ten times a carpet's rolling resistance),
+			// when the words don't ask for that setting: put back as it was, so the run shows what the asked change really does (the fix search and
+			// the AI's reworks keep to real materials too); what the person chose in earlier turns stays theirs
+			if (mode === "edit")
+				for (const u of unrealIn({ items: [...was.values()] }, plan, { keep: Array.isArray(request.hard) ? request.hard : null })) {
+					if (materialSaid(u.key, personText)) continue
+					const it = plan.items.find((x) => isObj(x) && x.id === u.id)
+					if (!it) continue
+					const a = was.get(u.id)
+					const props = { ...(isObj(it.props) ? it.props : {}) }
+					if (a && a.type === it.type && isObj(a.props) && a.props[u.key] !== undefined) props[u.key] = a.props[u.key]
+					else delete props[u.key]
+					plan = { ...plan, items: plan.items.map((x) => (x === it ? { ...clone(x), props } : x)) }
+					const nm = theName(request.scene.items.find((i) => i.id === u.id) ?? it)
+					leftAlone.push({ id: u.id, name: `${nm}${/s$/.test(nm) ? "’" : "’s"} ${u.label} (a real one has ${sig(u.lo)}–${sig(u.hi)}, not ${sig(u.to)})` })
+				}
 			return { plan, leftAlone, madeRoom, seated }
 		}
 		// ---- the n7 edit turns (ai/DESIGN.md §14.2 (4), (6); ./edit-turns.js, ./aim.js): every version is placed exactly (adjustEdit), solved and
@@ -5696,8 +5718,14 @@ export function createOrchestrator(deps) {
 		})
 		/** Refine patches that would leave something floating which was held up before (a ramp's legs switched off in the air, a cup lowered off
 		 *  its stand into the air) are not applied; the rest are. -> applyPatches' {plan, changes, skipped} */
-		const guardPatches = (v, patches) => {
+		const guardPatches = (v, patches0) => {
+			// (and a value no real thing of its kind has, the critic's "friction 1.6" for a soda can or ten times a carpet's rolling resistance, is
+			// never set: the other way to make it work is its to find (./realism.js realPatches))
+			const real = realPatches(v.plan, patches0)
+			const patches = real.patches
+			const unrealSkip = real.dropped.map((u) => `${nameOfItem(v.plan.items.find((i) => i.id === u.id)) ?? u.id}: its ${u.label} was not set to ${sig(u.to)}, which no real one has (${sig(u.lo)}–${sig(u.hi)})`)
 			const r = applyPatches(v.plan, patches, v.scene)
+			r.skipped.push(...unrealSkip)
 			if (!r.changes.length) return r
 			let s
 			// (judged as planned, without the stands the solver would add: a patch that takes away what held something up is refused)
@@ -5713,6 +5741,7 @@ export function createOrchestrator(deps) {
 			if (!bad.size) return r
 			const target = (p) => (isObj(p) ? p.id ?? p.item?.id : undefined)
 			const r2 = applyPatches(v.plan, patches.filter((p) => !bad.has(target(p))), v.scene)
+			r2.skipped.push(...unrealSkip)
 			for (const id of bad) {
 				const it = r.plan.items.find((i) => i.id === id)
 				r2.skipped.push(`${nameOfItem(it) ?? id}: not changed, the change would have left it floating with nothing under it`)
@@ -7046,6 +7075,12 @@ export function createOrchestrator(deps) {
 		{
 			const ch = characterBreak(ctx.scene, sc, ctx.before?.scene ?? null, ctx.hard instanceof Map ? ctx.hard : hard) ?? helperSizeBreak(ctx.scene, sc)
 			if (ch) return { ok: false, why: ch }
+		}
+		// (nothing made of what no real one of it is: a soda can given a friction of 1.6, a carpet ten times as draggy as carpet (./realism.js);
+		// what the person chose is theirs)
+		{
+			const u = unrealIn(ctx.scene, sc, { keep: ctx.hard instanceof Map ? ctx.hard : hard })
+			if (u.length) return { ok: false, why: `it gave ${unrealWords(u[0], (id) => theName(sc.items.find((i) => i.id === id) ?? { id }))}` }
 		}
 		// (what the person added stays where they put it, give or take 10 cm: c02's books parked 1.46 m away past the bucket were no fix; a row of
 		// them may be spaced anew within its own stretch, in its order, as the search's own stand-in does: V8817 s3, "it moved Soda can 5 14 cm")

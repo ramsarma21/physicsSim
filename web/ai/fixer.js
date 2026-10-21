@@ -20,6 +20,7 @@ import { catalog as simCatalog } from "../sim/index.js"
 import { KEYS as EVERYDAY_KEYS } from "../sim/catalog-everyday.js"
 import { knobsFor, knobOf, knobApplies, goalKind as moduleGoalKind, checkModuleGoal, properName } from "../sim/plugins.js"
 import { TYPES as SIM_TYPES } from "../sim/items.js"
+import { unrealStep, unrealIn, builtValue } from "./realism.js"
 
 export const FIX_MS = 12000 // the search's time budget
 export const FIX_RUNS = 320 // and its most engine runs (the page runs about 30 a second on four workers)
@@ -2345,6 +2346,21 @@ export async function findFix(ctx, opts = {}) {
 			return memo.get(k)
 		}
 		for (let i = queue.length - 1; i >= 0; i--) if (queue[i].changes.some(sizes) && breaks(queue[i])) queue.splice(i, 1)
+	}
+	// (and nothing made of what no real one of it is: a soda can's friction 0.3 → 1.6, a carpet's rolling resistance ×10, a bounce of 0.99
+	// (./realism.js): never a fix, whatever it makes happen)
+	{
+		const byId = new Map(scene.items.map((i) => [i.id, i]))
+		const unreal = (x) => {
+			if (x.kind === "prop" || x.kind === "props")
+				return (x.kind === "prop" ? [x.id] : x.ids ?? []).some((id) => {
+					const it = byId.get(id)
+					return !!it && !!unrealStep(it.type, x.key, builtValue(it, x.key), x.to, it.props ?? {})
+				})
+			if (x.kind === "add" && x.item) return unrealIn({ items: [] }, { items: [x.item] }).length > 0
+			return false
+		}
+		for (let i = queue.length - 1; i >= 0; i--) if (queue[i].changes.some(unreal)) queue.splice(i, 1)
 	}
 	// (few candidates: two of the cheapest together, each on its own things, so a search is never done after a dozen runs when a pair would do:
 	// V8820 c08, 16 runs and nothing, where the AI's rework found two changes that work)
