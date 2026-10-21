@@ -717,14 +717,16 @@ function offsetOf(rig, local, X, Y) {
 	rig.root.updateMatrixWorld(true)
 	return local.clone().applyMatrix4(rig.root.matrixWorld)
 }
-const sideFrom = (move) => (move && Math.abs(move.x) > 0.3 ? (move.x > 0 ? "left" : "right") : "left")
+/** The side an arm comes from: away from where the thing goes, else from the picture's nearer edge (a short arm; a row of held things are held from
+ *  both sides, their arms never crossing one another). */
+const sideFrom = (move, near = "left") => (move && Math.abs(move.x) > 0.3 ? (move.x > 0 ? "left" : "right") : near)
 /** Where the arm comes from for a grip: hand_from when it is one the grip can take, else the grip's own way. */
-export function fromFor(grip, from, { move, inWater, room }) {
+export function fromFor(grip, from, { move, inWater, room, near = "left" }) {
 	if (grip === "press") return "above"
-	if (grip === "palm") return from === "left" || from === "right" ? from : sideFrom(move)
+	if (grip === "palm") return from === "left" || from === "right" ? from : sideFrom(move, near)
 	if (from === "left" || from === "right" || from === "above") return from
 	if (grip === "grip") return "above"
-	return (inWater || room.below < PINCH_ROOM) && room.above === Infinity ? "above" : sideFrom(move) // (pinch: from a side only with room under the hand)
+	return (inWater || room.below < PINCH_ROOM) && room.above === Infinity ? "above" : sideFrom(move, near) // (pinch: from a side only with room under the hand)
 }
 
 /** The hold of one thing: {rig, wrist, X, Y, armDir, exit: [{dir, len}] (the way out once it is let go: straight lines, the last one open-ended),
@@ -1027,7 +1029,9 @@ function holdRig(p, pf, C) {
 	const room = roomAround(E, others, pf)
 	// (a palm asked for where no hand fits under the thing is a grip from above: a hand never goes through what it stands on)
 	const grip = p.grip === "auto" ? autoGrip({ E, move, inWater, room, depth: 2 * halfZ(d) }) : p.grip === "palm" && room.below < PALM_ROOM ? "grip" : p.grip
-	const from = fromFor(grip, p.from ?? "auto", { move, inWater, room })
+	const P0 = V(E.cx, E.cy, 0)
+	const near = C.exit(P0, V(-1, 0.25, -0.15).normalize()) <= C.exit(P0, V(1, 0.25, -0.15).normalize()) + 1e-6 ? "left" : "right"
+	const from = fromFor(grip, p.from ?? "auto", { move, inWater, room, near })
 	if (p.kind === "fixed" && grip === "grip") {
 		// a fist round a fixed bar: at its end away from what moves (a magnet held by its far end)
 		const movers = C.doc.solids.filter((s) => s.kind === "dynamic" && !s.hidden_3d)

@@ -3628,7 +3628,8 @@ above (and a starting gate: the hand wins when an item sets both).
     `grip` (the whole hand round it). It acts while the item is held (`held: true`, until the scene's release) or fixed (`fixed: true`: held for
     the whole run, in place of its stand: a magnet in a fist).
   - `hand_from` on the same types: `auto` (default) | `left` | `right` | `above`: where the arm comes from (a press is always from above; a palm from
-    a side).
+    a side). `auto`: from above for a press or a grip; from a side away from where the thing goes, else from the picture's nearer edge (a
+    short arm; things held in a row are held from both sides).
   - `hand` on the pusher, label "Pushed by": `none` (default: the machine) | `finger` | `hand` | `two hands` | `fist`.
   - `hand` on the pitcher: `none` (default) | `hand`.
   Refused alike in Python and JS when not a choice (`x: Hand must be one of none, auto, pinch, palm, press, grip, not 'claw'`).
