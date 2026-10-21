@@ -31,6 +31,7 @@ import { aimContainer } from "./aim.js"
 import { kindNoun, aKindOf, weightOf, imperative, solidMass, clipLabel, changesLabel, tidyBrackets } from "./words.js"
 import { statesNewOutcome, orderKey, overriddenBy } from "./outcome-goals.js"
 import { refreshPlanned } from "./planned-words.js"
+import { AMOUNT, EXPLICIT as EXPLICIT_AMOUNT, unitAmount, bareAmount, propWords } from "./amounts.js"
 import { holdTargets, targetLines, targetChanges, changeWords as targetChangeWords, heldOffer, heldWords, heldSentence, targetValue } from "./goal-targets.js"
 import { addedWords as moduleAddedWords, changeWords as moduleChangeWords, howWords as moduleHowWords, keyWords as moduleKeyWords, outcomeWords as moduleOutcomeWords, moduleRegoals, settingWords as moduleSettingWords, properName as moduleProperName, knobTunable, moduleMass, moduleMoves, ownHitsTold } from "../sim/plugins.js"
 export { isChainRequest, conceptPlan, conceptRoute, CONCEPT_NOTE, CONCEPT_LABEL, IMAGINE_MODES, imagineMode } from "./imagine.js"
@@ -3016,10 +3017,11 @@ export function anchorsOf(text, a, b) {
 }
 /** Words of a change of its own in a "make it work" request (it is then not the container alone that answers it). */
 const OWN_CHANGE_RE = /\b(add|adds|remove|delete|replace|swap|change|instead|heavier|lighter|bigger|smaller|larger|taller|shorter|wider|narrower|longer|thicker|thinner|steeper|flatter)\b/i
-/** A request that gives a number with a unit ("10 cm", "5°", "200 g"): what it set is exactly what was asked. */
-const EXPLICIT_RE = /\d+(\.\d+)?\s*(mm|cm|m|meters?|metres?|°|deg(rees?)?|g|grams?|kg|%|percent|times|x)\b/i
-/** An amount said in words or numbers: "5 cm", "30°", "twice", "five times", "double". */
-const AMT = String.raw`(?:\d+(?:\.\d+)?\s*(?:mm|cm|m|meters?|metres?|°|deg(?:rees?)?|g|grams?|kg|%|percent|x|times|inch(?:es)?|in|ft|feet)|twice|double|triple|half|(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+times)`
+/** A request that gives a number with a unit ("10 cm", "5°", "200 g", "200 mL", "80 °C", "9 V"): what it set is exactly what was asked. */
+const EXPLICIT_RE = EXPLICIT_AMOUNT
+/** An amount said in words or numbers: "5 cm", "30°", "200 mL", "20 mL/s", "80 °C", "9 V", "440 Hz", "300 rpm", "5 s", "twice", "five times",
+ *  "double" (./amounts.js: a unit matched whole). */
+const AMT = AMOUNT
 /** An amount said for a place: "10 cm left", "5 cm higher", "20 cm further along". */
 const PLACE_AMOUNT_RE = new RegExp(`${AMT}\\s+(?:(?:further|farther|more)\\s+)?(?:to\\s+the\\s+)?(?:left|right|up|down|higher|lower|along|back|forward|closer|nearer|further|farther|away|over|across)\\b|\\b(?:to|at)\\s+(?:x\\s*=?\\s*)?\\d`, "i")
 /** A setting's key -> the words a person uses for it ("wide" for a width, "heavier" for a weight). */
@@ -3064,6 +3066,9 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 	}
 	const mineAll = new Set([...(named ?? []), ...said.flatMap((x) => x.ids)])
 	const per = clauses.map((c) => ({ c, ids: namesOf(c) }))
+	// (a clause that names nothing goes on about what the clause before it names: "use a thinner hose, only 6 mm wide inside", "make the tap pour
+	// faster: 30 mL/s", "make the ball heavier, then move it 10 cm left")
+	for (let i = 1; i < per.length; i++) if (!per[i].ids.size) per[i].ids = per[i - 1].ids
 	const clausesOf = (id) => per.filter((x) => x.ids.has(id)).map((x) => x.c)
 	for (const [id, keys0] of protect ?? []) {
 		const it = scene?.items?.find((i) => i.id === id)
@@ -3080,20 +3085,32 @@ export function choicesOf(text, protect, scene, named, earlier = null, targets =
 			const label = `${k} ${propSpec(it.type, k)?.label ?? ""}`
 			if (/\bcount\b|how many/i.test(label)) add(hard, id, k)
 			else if (k === "full") mine && anyC(/\b(full|empty|emptied|filled|fill)\b/i) && add(hard, id, k)
-			else if (k === "material") mine && anyC(/\b(wood\w*|metal|steel|glass|plastic|rubber|material|made of|paper|cardboard|foam|alumin\w*|ceramic|china|melamine|copper|brass|iron|stone)\b/i) && add(hard, id, k)
-			else {
-				// (a physics module's setting: the words its module says name it, web/sim/plugins.js keyWords)
+			else if (k === "material") {
+				// (its own choices too: a charged rod of PVC, a barrier sheet of felt)
+				const pw = propWords(propSpec(it.type, k), k)
+				if (mine && (anyC(/\b(wood\w*|metal|steel|glass|plastic|rubber|material|made of|paper|cardboard|foam|alumin\w*|ceramic|china|melamine|copper|brass|iron|stone)\b/i) || (pw && anyC(new RegExp(`\\b(?:${pw})\\b`, "i"))))) add(hard, id, k)
+			} else {
+				// (a physics module's setting: the words its module says name it, web/sim/plugins.js keyWords; a setting no word of the core's or a
+				// module's names, by its own label, its choices and an on/off's usual verbs (./amounts.js propWords): "light the candle", "close the
+				// switch", "fold the plane as a dart", "set the friction to 0.5")
+				const spec = propSpec(it.type, k)
 				const core = KEY_WORDS.find(([kr]) => kr.test(k))
-				const kw = core ?? (moduleKeyWords(it.type, k) ? [null, moduleKeyWords(it.type, k)] : null)
-				if (!kw || !mine) continue
-				const said = cs.filter((c) => new RegExp(`\\b(?:${kw[1]})\\b`, "i").test(c))
+				const words = core ? null : [moduleKeyWords(it.type, k), propWords(spec, k)].filter(Boolean).join("|")
+				const kw = core ?? (words ? [null, words] : null)
+				if (!mine) continue
+				// (an amount in the setting's own unit, said where the thing is named, that no other setting the edit set shares: "fill the pitcher
+				// with 200 mL", "make the tap pour 20 mL/s", "heat the water to 80 °C", "make the buzzer 9 V" (./amounts.js unitAmount))
+				const others = keys.filter((x) => x !== k && !/^place/.test(x)).map((x) => propSpec(it.type, x))
+				const byUnit = !!spec && cs.some((c) => unitAmount(c, spec, others))
+				if (!kw && !byUnit) continue
+				const said = kw ? cs.filter((c) => new RegExp(`\\b(?:${kw[1]})\\b`, "i").test(c)) : []
 				// (a module's switch the words name, "flip the held magnet", "put the cap on", or its choice said by the very value it now has, "pour
 				// honey instead", is the whole choice: there is no further that way, only back, so it is held (a fix offered "Turn the held magnet
 				// around…" back: verify-fga X2, 20 Oct))
-				const sp = core ? null : propSpec(it.type, k)
+				const sp = core ? null : spec
 				const v = typeof it.props?.[k] === "string" ? it.props[k].trim().replace(/[_\s]+/g, " ").replace(/[.*+?^${}()|[\]\\]/g, "\\$&") : ""
 				const sw = sp?.kind === "bool" || (sp?.kind === "choice" && v.length > 1 && said.some((c) => new RegExp(`\\b${v.replace(/ /g, "\\s+")}\\b`, "i").test(c)))
-				if (said.length) add(sw || said.some((c) => keyAmount(c, kw[1])) ? hard : forward, id, k)
+				if (said.length || byUnit) add(sw || byUnit || said.some((c) => keyAmount(c, kw[1]) || bareAmount(c, kw[1], spec)) ? hard : forward, id, k)
 			}
 		}
 	}
