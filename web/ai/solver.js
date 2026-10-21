@@ -24,6 +24,8 @@
 //   against its lip, the plank against its lip), worked out in the part's own tilted frame (seatOf / placeOnSeat).
 // - air: y_m (the anchor) or bottom_m (the lowest point) above the table top, x as given, EXACTLY (only a hair's overlap, up to 1.5 cm, is
 //   lifted clear; more is a warning); held items wait for the release.
+// - hanging machines (HUNG: an Atwood machine, a pulley lift) put on a support hang over it by their rope's drop, at most 1 m (hangClear):
+//   set down on it their weights would rest there.
 // - Overlaps with anything already placed are cleared by the smallest sideways move along the support (straight up for things in the air with
 //   no height given); a plank's legs count where they would show through, and a leg is never "cleared" by raising (it stands on the floor).
 //   Items are placed in dependency order (supports first); a cycle is an error.
