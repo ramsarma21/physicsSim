@@ -73,7 +73,9 @@ const liquidProblem = (l: unknown): string | undefined => {
 	return undefined
 }
 const dyeProblem = (d: unknown): string | undefined =>
-	Array.isArray(d) && d.length === 3 && d.every((v) => finite(v) && v >= 0 && v <= 100) ? undefined : "dye must be three absorbances per cm, 0 to 100"
+	Array.isArray(d) && (d.length === 3 || d.length === 4) && d.every((v) => finite(v) && v >= 0 && v <= 100)
+		? undefined
+		: "dye must be three absorbances per cm, 0 to 100 (and, for one that scatters light, its scattering per cm)"
 const insideProblem = (p: unknown): string | undefined => {
 	if (!Array.isArray(p) || p.length !== 4 || !p.every(isPoint)) return "inside must be 4 {x, y}: bottom-left, bottom-right, top-right, top-left"
 	const [bl, br, tr, tl] = p as Point[]

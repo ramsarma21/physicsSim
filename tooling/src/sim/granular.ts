@@ -2707,8 +2707,9 @@ export const levelFor = (poly: readonly Pt[], nx: number, ny: number, area: numb
  *    repose: then it slumps to that angle (an avalanche inside the cup), keeping its area.
  *  - They hold up to the line at that slope through the lowest corner of the opening (the lip, once the cup is tipped toward it); what lies above
  *    it slides out over that corner as a surface avalanche: its flowing layer, the excess spread along the surface (δ = excess ÷ the surface's
- *    length), leaves at the speed of a granular slump, √(g·δ) [LUBE04] (provisional), as δ·√(g·δ) of section a second; a layer thinner than
- *    two grains does not flow (an avalanche stops where its slope is back to repose, as a bed's face does). So a full cup starts to pour as its
+ *    length), leaves at the speed of a granular slump, √(g·δ) [LUBE04] (provisional), as δ·√(g·δ) of section a second; it starts as soon as
+ *    anything lies over that line, and stops once the layer is thinner than two grains (an avalanche stops where its slope is back to repose, as
+ *    a bed's face does: a static angle a little over the moving one, the hysteresis of a real heap). So a full cup starts to pour as its
  *    tilt passes the angle of repose, a cup filled to a share f of its height h and w wide at φ + atan(2h(1 − f)/w) (while that line leaves by
  *    the cup's back wall), and the grains go out as fast as the hand tips it, no faster than they can slide. Tipped past 90° + φ its spout
  *    wall is steeper than repose too and it empties; short of that, what rests on that wall stays (a cup of sugar tipped to 115° keeps a
@@ -2736,6 +2737,10 @@ export class TipCup {
 	uy = -1
 	/** the corner of the opening it pours over (0: the top left, 1: the top right), in the cup's frame */
 	corner = 1
+	/** whether its grains are sliding out (from when anything lies over the repose line through the lip until the layer is under two grains),
+	 *  and the excess (m²) left lying when they last stopped: they start again only once the hand tips them past it */
+	flowing = false
+	private rest = 0
 	private lastAngle = Number.NaN
 	constructor(inside: readonly Pt[], depth: number, volume: number, tanPhi: number, grain = 0.0005) {
 		this.inside = inside
@@ -2786,7 +2791,17 @@ export class TipCup {
 		const excess = this.area - hold
 		const len = Math.max(chordLength(this.inside, this.nx, this.ny, cMax), 0.005)
 		const delta = excess / len
-		if (excess > 1e-12 && (delta >= 2 * this.grain || hold <= 0)) {
+		if (!(excess > 1e-12)) {
+			this.flowing = false
+			this.rest = 0
+		} else if (!this.flowing) {
+			if (excess > this.rest + 1e-12 || hold <= 0) this.flowing = true
+			else this.rest = Math.min(this.rest, excess)
+		} else if (delta < 2 * this.grain && hold > 0) {
+			this.flowing = false
+			this.rest = excess
+		}
+		if (this.flowing) {
 			const v = Math.sqrt(gravity * Math.max(delta, 2 * this.grain))
 			const out = Math.min(excess, Math.max(delta, 2 * this.grain) * v * dt)
 			this.area -= out
