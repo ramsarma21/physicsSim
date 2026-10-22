@@ -7,7 +7,7 @@ import assert from "node:assert/strict"
 import { readdirSync, readFileSync } from "node:fs"
 import { after, before, beforeEach, test } from "node:test"
 import { AIError } from "../core.mjs"
-import { REPAIR_TURNS, SOFT_CHECKS, directSource, executorFrom, failedChecks, loadExecutor, pictureOf, repairTurn, safePlan, worldInput } from "../director.mjs"
+import { REPAIR_TURNS, SOFT_CHECKS, directSource, executorFrom, failedChecks, holdToSource, loadExecutor, pictureOf, repairTurn, safePlan, worldInput } from "../director.mjs"
 import { VALIDATORS } from "../schemas.mjs"
 import { checkShotPlanSchema, nearest, validateShotPlan } from "../shot-plan.mjs"
 import { runScene, runStep, STEPS } from "../steps.mjs"
@@ -305,6 +305,68 @@ test("a plan that passes the engine's checks is the answer: one model call, the 
 	assert.deepEqual(Object.keys(ex.seen[0].ctx.runs), [""])
 	assert.equal(out.usage.costInUSD, 0.16)
 	assert.equal(out.prompt.digest.executor, "stub")
+})
+
+// (bench2: one frame from a screen's setup through its pause, one camera across a lesson's screens, one look for the whole lesson)
+test("the lesson's frame and look: one_frame, camera and look are checked, held on every plan the director writes, and the lock's camera comes back", async () => {
+	const s = LASER()
+	const src0 = await directSource({ scene: s, lesson: LESSON }, { clean: async (v) => v })
+	assert.equal(src0.look, null)
+	assert.equal(src0.one_frame, null)
+	assert.equal(src0.camera, null)
+	const cam = [0.62, 0.21, 0, 1.1, 0, 0.12, 0.7]
+	const src = await directSource({ scene: s, lesson: LESSON, look: { backdrop: "studio", tone: "light", ground: "sweep", light: "subject" }, camera: cam }, { clean: async (v) => v })
+	assert.equal(src.one_frame, "pause", "a camera given locks through the pause")
+	assert.deepEqual(src.camera, cam)
+	assert.deepEqual(src.look, { backdrop: "studio", tone: "light", ground: "sweep", light: "subject" })
+	assert.equal((await directSource({ scene: s, lesson: LESSON, one_frame: true }, { clean: async (v) => v })).one_frame, "pause")
+	assert.equal((await directSource({ scene: s, lesson: LESSON, one_frame: "end" }, { clean: async (v) => v })).one_frame, "end")
+	assert.deepEqual((await directSource({ scene: s, lesson: LESSON, camera: { L: [0.62, 0.21, 0], d: 1.1, yaw: 0, pitch: 0.12, hfov: 0.7 } }, { clean: async (v) => v })).camera, cam)
+	await assert.rejects(directSource({ scene: s, lesson: LESSON, look: { tone: "purple" } }, { clean: async (v) => v }), badInput(/look\.tone must be dark, mid, light/))
+	await assert.rejects(directSource({ scene: s, lesson: LESSON, look: { floor: "wood" } }, { clean: async (v) => v }), badInput(/look\.floor is not a look field/))
+	await assert.rejects(directSource({ scene: s, lesson: LESSON, camera: [1, 2, 3] }, { clean: async (v) => v }), badInput(/camera must be a camera pose/))
+	await assert.rejects(directSource({ scene: s, lesson: LESSON, one_frame: "setup" }, { clean: async (v) => v }), badInput(/one_frame must be/))
+	// held: the plan's look the lesson's and none of the shots' own; its lock with the camera; the source a lesson's
+	const p = plan("01-laser-mirror")
+	p.shots[2].look = { tone: "mid" }
+	const held = holdToSource(p, { ...src, kind: "lesson" })
+	assert.deepEqual(held.look, src.look)
+	assert.ok(held.shots.every((x) => x.look === undefined))
+	assert.deepEqual(held.lock, { until: "pause", camera: cam })
+	assert.equal(held.source.kind, "lesson")
+	assert.equal(p.shots[2].look.tone, "mid", "a copy: the director's own plan untouched")
+	assert.equal(holdToSource(p, src0).lock, undefined, "nothing fixed: the plan as written")
+	// the step, screen by screen: a screen of two shots (the laser held, then the push onto the angles, its pause), one with a look of its own,
+	// locked through the pause: filmed from one frame, the one the pause ends on, in the lesson's look; the lock's camera comes back, and the
+	// next screen, given it, is filmed from that very camera
+	const screen = JSON.parse(JSON.stringify(p))
+	const whole = (sh) => {
+		const { end, keep, move_seconds, ...rest } = sh
+		return { ...rest, move: "hold", subject: { beam: "laser" }, frame: { fit: "snug" }, view: "side" }
+	}
+	screen.shots = [whole(screen.shots[0]), { ...whole(screen.shots[5]), in: "cut", look: { tone: "mid" } }]
+	gw.script("m1", [answer(screen), answer(screen), answer(screen), answer(screen), answer(screen), answer(screen), answer(screen), answer(screen)])
+	const first = (await runStep("direct", { scene: s, lesson: LESSON, look: src.look, one_frame: "pause" }, opts())).result
+	assert.equal(first.source, "director")
+	assert.deepEqual(first.plan.lock, { until: "pause" })
+	assert.deepEqual(first.plan.look, src.look)
+	assert.ok(first.plan.shots.every((x) => x.look === undefined))
+	const of = (r, name) => r.report.checks.find((c) => c.check === name)
+	assert.equal(of(first, "one-frame")?.ok, true, JSON.stringify(of(first, "one-frame")))
+	assert.equal(of(first, "one-look")?.ok, true)
+	assert.equal(first.lock.upto, "angles")
+	assert.equal(first.lock.camera.length, 7)
+	const next = (await runStep("direct", { scene: s, lesson: LESSON, look: src.look, camera: first.lock.camera }, opts())).result
+	assert.deepEqual(next.plan.lock, { until: "pause", camera: first.lock.camera })
+	assert.deepEqual(next.lock.camera, first.lock.camera, "the next screen is filmed from the screen before's camera, to the bit")
+	assert.equal(of(next, "one-frame")?.ok, true)
+	assert.match(of(next, "one-frame").why, /the lesson's own camera/)
+	// the user turns say so, the second with the camera's frame in words
+	const users = gw.requests.map((q) => q.body.messages[1].content)
+	assert.match(users[0], /ONE FRAME FROM THE SETUP THROUGH THE PAUSE/)
+	assert.match(users[0], /The lesson's one look, the same on every screen of the lesson .*\{"backdrop":"studio","tone":"light","ground":"sweep","light":"subject"\}/)
+	assert.doesNotMatch(users[0], /The lesson's camera/)
+	assert.match(users.at(-1), /The lesson's camera, the screen before's .* looks at \([-\d.]+, [-\d.]+, [-\d.]+\) m from [\d.]+ m, [\d.]+ m across the picture there, yaw [-\d.]+°, pitch [-\d.]+°, a \d+ mm lens/)
 })
 
 test("measured failures go back to the director as a repair turn; the repaired plan is measured again", async () => {

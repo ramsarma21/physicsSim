@@ -259,6 +259,9 @@ export const demagFactors = (w: number, h: number, d: number): [number, number, 
  * A charged face of a solid: its centre (x, y, z) in the solid's own frame (m; z across the machine plane, 0 by default), its outward
  * normal in the plane at `angle` (rad, the solid's frame), its extent `width` along the plane and `depth` across it (m), and its charge
  * density `sigma` (A/m: the magnetization's component along the normal; positive on a north face).
+ * `inner`: a sheet of the magnet's charge inside its body, not on its outline: where its magnetization falls off along it (an alnico bar's
+ * toward its ends: the charge −dM/dx between two of its cells, gathered on the sheet between them). It has no contact skin (SKIN: it is
+ * nobody's outline) and is never met from behind (nothing outside the body comes near its back).
  */
 export interface FaceSpec {
 	readonly x: number
@@ -268,6 +271,7 @@ export interface FaceSpec {
 	readonly width: number
 	readonly depth: number
 	readonly sigma: number
+	readonly inner?: boolean
 }
 
 /**
@@ -363,6 +367,8 @@ export interface Pose {
  * A force (N) at a world point (m) and a turning (N·m, counterclockwise) on a solid's body; `stiffness` (N·m/rad): how fast that turning
  * grows as the body turns away from where the field would hold it (|m|·|B| at it), so the engine can take it implicitly where a light,
  * strongly magnetized thing would turn faster than its step can follow (a steel washer at a neodymium pole: 0.3 N·m/rad on 4e-8 kg·m²).
+ * Only the field lining a body's moment up, m × B at its middle, is stiff: a turning given with stiffness 0 is the moment of the field's
+ * pulls about the point given (a pole's pull on the near end of a piece), taken as it is (see `pairWrench`).
  */
 export type Apply = (solid: string, fx: number, fy: number, px: number, py: number, torque: number, stiffness: number) => void
 
@@ -396,6 +402,8 @@ interface Face {
 	q: number
 	/** half its diagonal (m): how far its charge reaches from its centre */
 	reach: number
+	/** a sheet of charge inside its body (FaceSpec `inner`): never met from behind */
+	inner: boolean
 }
 
 /** A magnetic body this step: a permanent magnet or a piece of soft iron, its faces in the world, and how far they reach from its centre. */
@@ -422,7 +430,7 @@ interface MagBody {
 	mz: number
 }
 
-const newFace = (): Face => ({ cx: 0, cy: 0, cz: 0, nx: 1, ny: 0, a: 0, b: 0, zn: 0, sigma: 0, q: 0, reach: 0 })
+const newFace = (): Face => ({ cx: 0, cy: 0, cz: 0, nx: 1, ny: 0, a: 0, b: 0, zn: 0, sigma: 0, q: 0, reach: 0, inner: false })
 
 /** Gauss-Legendre rules on [−1, 1] (for a face's integral): 2, 3 and 5 points' nodes and weights. */
 const G2 = [-0.5773502691896257, 0.5773502691896257]
@@ -483,7 +491,7 @@ const addFaceField = (f: Face, px: number, py: number, pz: number, out: Float64A
 	let dx = px - f.cx
 	let dy = py - f.cy
 	const dz = pz - f.cz
-	{
+	if (!f.inner) {
 		// (a point a little behind the face, within its extent, is inside the body that carries it: never so in the world, only where the
 		// contact skins (SKIN) and the solver's slop let two bodies' faces pass; it is met just in front of the face, where it pulls as
 		// touching, never behind it, where the face's field turns round and would push where it should pull. A point well behind it, past
@@ -626,7 +634,7 @@ const addDipoleField = (mx: number, my: number, dx: number, dy: number, out: Flo
 }
 
 /** Places a face given in a solid's frame into the world (`zn`: a face across the plane, its width along `angle`, its depth across that). */
-const placeFace = (out: Face, spec: { x: number; y: number; z?: number; angle: number; width: number; depth: number; zn?: number }, pose: Pose, c: number, s: number, sigma: number) => {
+const placeFace = (out: Face, spec: { x: number; y: number; z?: number; angle: number; width: number; depth: number; zn?: number; inner?: boolean }, pose: Pose, c: number, s: number, sigma: number) => {
 	out.cx = pose.x + spec.x * c - spec.y * s
 	out.cy = pose.y + spec.x * s + spec.y * c
 	out.cz = spec.z ?? 0
@@ -640,6 +648,7 @@ const placeFace = (out: Face, spec: { x: number; y: number; z?: number; angle: n
 	out.sigma = sigma
 	out.q = sigma * spec.width * spec.depth
 	out.reach = Math.sqrt(out.a * out.a + out.b * out.b)
+	out.inner = spec.inner === true
 }
 
 /**
@@ -1130,14 +1139,16 @@ export const createFields = (spec: FieldsSpec): Fields => {
 	])
 
 	// permanent magnets' faces a skin out along their normals (none for a ball magnet), each charge scaled by its face's thickness across to the
-	// opposite face (t/(t + 2·SKIN): the moment kept); a face with no opposite one (a horseshoe's two tips face the same way) keeps its charge
+	// opposite face (t/(t + 2·SKIN): the moment kept); a face with no opposite one (a horseshoe's two tips face the same way) keeps its charge.
+	// A sheet inside the body (`inner`) is nobody's outline: it stays where it is, and is no face's opposite one
 	const magnetFaces = magnets.map((m) =>
 		m.faces.map((f) => {
-			if (m.round === true) return f
+			if (m.round === true || f.inner === true) return f
 			const nx = Math.cos(f.angle)
 			const ny = Math.sin(f.angle)
 			let t = 0
 			for (const o of m.faces) {
+				if (o.inner === true) continue
 				const ox = Math.cos(o.angle)
 				const oy = Math.sin(o.angle)
 				const along = (f.x - o.x) * nx + (f.y - o.y) * ny
@@ -1825,6 +1836,8 @@ export const createFields = (spec: FieldsSpec): Fields => {
 		let fx = 0
 		let fy = 0
 		let torque = 0
+		// the part of the turning that lines the target's moment up with the source's field at its middle, m × B: the stiff part (`Apply`)
+		let align = 0
 		if (r > far) {
 			// two dipoles: F = 3μ0/(4π r⁵)·[(m₁·r)m₂ + (m₂·r)m₁ + (m₁·m₂)r − 5(m₁·r)(m₂·r)r/r²], τ = m₂ × B₁
 			const m1 = Math.sqrt(source.mx * source.mx + source.my * source.my + source.mz * source.mz)
@@ -1840,6 +1853,7 @@ export const createFields = (spec: FieldsSpec): Fields => {
 			const bx = (k * ((3 * a * dx) / r2 - source.mx)) / r3
 			const by = (k * ((3 * a * dy) / r2 - source.my)) / r3
 			torque = target.mx * by - target.my * bx
+			align = torque
 			if (r < far + band) {
 				// (blended into the faces' own reckoning over a band as wide as the two reaches)
 				const u = (r - far) / band
@@ -1848,18 +1862,30 @@ export const createFields = (spec: FieldsSpec): Fields => {
 				fx = blend * fx + (1 - blend) * (pair[0] as number) * k
 				fy = blend * fy + (1 - blend) * (pair[1] as number) * k
 				torque = blend * torque + (1 - blend) * (pair[2] as number) * k
+				align = blend * align + (1 - blend) * alignIn(target, source) * k
 			}
 		} else {
 			facePair(target, source)
 			fx = (pair[0] as number) * k
 			fy = (pair[1] as number) * k
 			torque = (pair[2] as number) * k
+			align = alignIn(target, source) * k
 		}
-		if (target.round) torque = 0
+		if (target.round) {
+			torque = 0
+			align = 0
+		}
 		if (fx === 0 && fy === 0 && torque === 0) return
-		apply(target.solid, fx, fy, target.cx, target.cy, torque, stiffness(target))
+		// The turning about the target's middle is its moment lined up by the field there (m × B, stiff: taken implicitly where it is) and the
+		// moment of the pulls on it, strongest at its end nearest the source: that part is no stiffer than the pull itself, and is given with
+		// stiffness 0, to be taken as it is. (Taken implicitly with the rest, k·τ with k = 1/(1 + κh²/I), a nail a pole pulled up by its point
+		// with about 1 N turned as if that pull acted part way down it, under the point it pivots on: a couple of up to 2 mN·m, seven times its
+		// weight's, the field never made, spun it about its point, round the bar's end onto its top (bench2, FO-13's nail).)
+		apply(target.solid, fx, fy, target.cx, target.cy, torque - align, 0)
+		if (align !== 0) apply(target.solid, 0, 0, target.cx, target.cy, align, stiffness(target))
 		// the source: the opposite force at the same point and the opposite turning about it (no pair pushes or turns itself)
-		apply(source.solid, -fx, -fy, target.cx, target.cy, source.round ? 0 : -torque, stiffness(source))
+		apply(source.solid, -fx, -fy, target.cx, target.cy, source.round ? 0 : align - torque, 0)
+		if (align !== 0 && !source.round) apply(source.solid, 0, 0, target.cx, target.cy, -align, stiffness(source))
 	}
 
 	/**
@@ -1883,6 +1909,14 @@ export const createFields = (spec: FieldsSpec): Fields => {
 			const want = cross < 0 ? -most : most
 			apply(m.solid, 0, 0, body.cx, body.cy, want - cross, 0)
 		})
+	}
+
+	/** The target's moment turned by the source's field at its middle, m × B (per μ0/(4π)): the stiff part of a pair's turning. */
+	const alignIn = (target: MagBody, source: MagBody) => {
+		acc[0] = 0
+		acc[1] = 0
+		for (const sf of source.faces) addFaceField(sf, target.cx, target.cy, target.cz, acc, tmp)
+		return target.mx * (acc[1] as number) - target.my * (acc[0] as number)
 	}
 
 	const pair = new Float64Array(3)

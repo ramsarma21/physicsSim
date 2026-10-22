@@ -97,9 +97,11 @@ test("goal summaries: Python == JavaScript on real runs, and the AI's own check"
 	const g7 = demo("g7-compass")
 	g7.goals.push({ kind: "points", compass: "above", toward: "magnet", tol_deg: 90 }, { kind: "levitates", item: "above" })
 	const runs = [run(g3), run(g7), run(demo("g6-levitating-rings")), run(demo("em1-turns")), run(demo("g12-balloons-repel"))]
-	// (the clip on the table slides up against the neodymium bar's pole face, 1 cm high: it rises just under 5 mm, not a lift; every
-	// non-magnetic thing's own not_attracted goal is met)
-	assert.deepEqual(runs[0].summary.goals.map((g) => g.ok), [true, false, false, true, false, true, false, false, true, true, true, true, true, true, false, false, true])
+	// (the clip on the table slides up against the neodymium bar's pole face, 1 cm high, and is held there, its middle 7 mm over where it lay
+	// and its low end off the table: a lift by the goal's 5 mm. On release 2 it chattered against the face, given e of the pole's pull at every
+	// touch it made again (physics.ts `compensated`) and turned by that pull's moment taken implicitly (tooling/src/sim/magnetism.ts
+	// `pairWrench`), and came to rest 4.9 mm up, just under; every non-magnetic thing's own not_attracted goal is met)
+	assert.deepEqual(runs[0].summary.goals.map((g) => g.ok), [true, false, false, true, false, true, false, false, true, true, true, true, true, true, false, true, true])
 	for (const R of runs) {
 		const py = JSON.parse(execFileSync("python3", ["-c", `
 import json, sys

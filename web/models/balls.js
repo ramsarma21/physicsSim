@@ -1639,6 +1639,37 @@ float fzNoise( vec3 p ) {
 		return kit.group(vane, kit.mesh(kit.sphere(r, 96, 48), glass, { cast: false }), shellMesh, glassShadow(kit.sphere(r, 32, 16), 0.4))
 	})
 
+	// ================================================================ SWIRL MARBLE: milky white glass with two bold ribbons twisting round it (orange, or the colour
+	// it is given, and blue): the marble that reads in a picture where a clear one vanishes, as the drawn lessons' marbles do (bench2)
+	addModel("swirl-marble", "ball", ({ r, solid }) => {
+		const own = typeof solid?.color === "string" && /^#[0-9a-f]{6}$/i.test(solid.color) ? rgbOf(solid.color) : null
+		const one = own ?? [238, 118, 28]
+		const two = [44, 104, 204]
+		const base = [244, 241, 232]
+		const map = memo(`swirlmarble|${hexOf(one)}`, () => {
+			const W = 1024
+			const H = 512
+			const [o] = bake(W, H, 1, (p, outs) => {
+				// the ribbons: two bands about the marble's axis, twisted as they go round it (the azimuth turns 2.4 rad from pole to pole), each
+				// a little wider at the middle; their edges soft over a few hundredths of a radian
+				const a = Math.atan2(p.dz, p.dx) + 2.4 * p.dy
+				const off1 = Math.abs(Math.atan2(Math.sin(a), Math.cos(a)))
+				const off2 = Math.abs(Math.atan2(Math.sin(a - PI), Math.cos(a - PI)))
+				const w = 0.42 + 0.16 * p.st
+				let c = base
+				c = mix3(c, one, smooth(w + 0.05, w - 0.05, off1))
+				c = mix3(c, two, smooth(w - 0.02, w - 0.12, off2))
+				setRGB(outs[0], p.i, c)
+			})
+			return texOf(canvasOf(W, H, o))
+		})
+		const m = bm(`swirlmarble|${hexOf(one)}`, { color: "#ffffff", map, roughness: 0.05, clearcoat: 1, clearcoatRoughness: 0.03, envMap: studio(), envMapIntensity: 1 }, { tint: 0.9 })
+		// (turned so a ribbon of each colour faces the camera: as the drawn lessons show a swirl marble)
+		const g = kit.group(ball(r, m, [96, 48]))
+		g.children[0].rotation.set(0.35, 0.6, 0.25)
+		return g
+	})
+
 	// ================================================================ STEEL BALL: a mirror-polished chrome bearing
 	addModel("steel-ball", "ball", ({ r }) => {
 		const m = bm("steel", { color: "#e4e8ee", metalness: 1, roughness: 0.04, envMap: studio(), envMapIntensity: 1.5 }, { tint: 1, sat: false })

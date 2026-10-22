@@ -348,6 +348,7 @@ const LOOK_NOTES = {
 	"soccer-ball": "white with black patches",
 	"bowling-ball": "dark, nearly black",
 	"glass-marble": "blue glass",
+	"swirl-marble": "milky white glass with bold orange and blue swirls",
 	"steel-ball": "polished silver steel",
 	"beach-ball": "a striped inflatable beach ball",
 	"wooden-ball": "dark brown turned wood (not painted)",

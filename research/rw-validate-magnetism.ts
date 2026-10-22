@@ -24,6 +24,13 @@
 //             permeable sheet passes about 2/(µ_r·t·k) of a field of wavenumber k [JACKSON §5.12]), from a neodymium pole less (it saturates)
 //   lift      G1: the jump: a clip under a held bar magnet is lifted where its static pull passes its weight (0.45 g) and not where it does not;
 //             a neodymium bar lifts it from farther than a ceramic one
+//   alnico    an alnico bar's poles spread over its last few cm (its ends partly demagnetized: H_c 51 kA/m [ARN] against M/2 ≈ 500): the
+//             builder's solve against an independent, finer one (Aharoni's prism factors), each cell on the curve in the engine's own field,
+//             its magnetic length near the textbooks' 0.85, its end face's field well under a uniform bar's; ceramic and NdFeB unchanged
+//   turning   a nail on a pin near its point under a bar's end rests where the field's turning and its weight balance about the pin (the
+//             implicit turning takes the field's lining up only, never the moments of its pulls)
+//   rest      FO-13 screen 11 (bench2): a nail let go under an alnico bar's end, head up as the card draws it, hangs by its head under the end,
+//             straight down, still within 0.4 s; point up, still at the pole; sweeps of both, 33 and 51 mm
 //   rings     G6: floating ring magnets: each gap against the coaxial-dipole equilibrium 3µ0 m²/(2π z⁴) = the weight above [GRIFFITHS]
 //   compass   G7: Earth's 20 µT [WMM] turns the needle north (0°); over a bar magnet it points from its north pole to its south (180°); with
 //             north to the left alone it points left (180°); a bar flipped level with it on its axis turns it round (180°); a fixed compass turns
@@ -51,6 +58,8 @@
 //   [WMM]      NOAA/BGS World Magnetic Model 2020: horizontal intensity about 20 µT over the contiguous United States
 //   [AWG]      ASTM B258; NEC chapter 9 table 8: 24 AWG copper 0.511 mm, 84.2 mΩ/m at 20 °C
 //   [E91]      Energizer E91 (AA alkaline) data sheet: 1.5 V, internal resistance 0.15-0.3 Ω
+//   [ARN]      Arnold Magnetic Technologies, Cast Alnico Permanent Magnets (2003), p. 6.5: alnico 5 B_r 12 500 G, H_c 640 Oe (51 kA/m), (BH)max
+//              5.5 MGOe (43.8 kJ/m³) at B_d 10 000 G, recoil permeability 3.7
 import { readFileSync } from "node:fs"
 import { pathToFileURL } from "node:url"
 import { atan, createFields, demagFactors, ln, MU0, prismDemag, rectField, type FaceSpec } from "../tooling/src/sim/magnetism.ts"
@@ -961,6 +970,397 @@ const sections: Record<string, () => void> = {
 		check(jump("ceramic", rc - 0.002) && !jump("ceramic", rc + 0.006), "G1: the clip jumps where the static pull passes its weight, and stays down where it does not (ceramic)", `jumps from ${Math.round((rc - 0.002) * 1000)} mm, not from ${Math.round((rc + 0.006) * 1000)} mm`)
 		check(jump("neodymium", rn - 0.002), "G1: a neodymium bar lifts it from its own reach", `${Math.round((rn - 0.002) * 1000)} mm`)
 		check(rc >= 0.01 && rc <= 0.03 && jump("neodymium", 0.03), "G1: the reaches are a classroom's: a ceramic bar's 1-3 cm, a neodymium one lifts the clip from 3 cm [spec G1: 1-3 and 3-6 cm]", `ceramic ${Math.round(rc * 1000)} mm; neodymium jumps from 30 mm`)
+	},
+	alnico() {
+		// bench2 (2026-10-21): an alnico bar's poles spread over its last few cm (machines/mod_magnetism.py ALNICO_HC, _alnico_bar, _bar_faces).
+		// Alnico 5's coercivity (H_c 51 kA/m [ARN]) is a twentieth of the field a uniformly magnetized bar's own end faces put on its ends
+		// (M/2 ≈ 500 kA/m), so each part of a bar sits on the major demagnetization curve where its own field puts it. The builder (12 cells a
+		// half, the field at each cell the mean over its middle section of every cell boundary's charge) against an independent, finer solve
+		// (192 cells over the bar, the volume-averaged field of each cell on every other from Aharoni's prism factors [AHARONI] on composite
+		// prisms), the cells in the engine's own field of the faces, and what is known of real bars.
+		const L = 0.15
+		const W = 0.019
+		const D = 0.0095
+		const MR = 1.25 / MU0
+		const HC = 51000
+		const CHI = 2.7
+		const knee = MR - (1 + CHI) * HC
+		const mOf = (h: number) => MR - CHI * HC * h - knee * h ** 20
+		const dmOf = (h: number) => -CHI * HC - 20 * knee * h ** 19
+		const facesOf = (material: string, props: Record<string, unknown> = {}) => {
+			const p = web.prepare(scene([{ id: "magnet", type: "bar-magnet", x: 1.0, y: 0.3, fixed: true, props: { material, ...props } }], 0.1))
+			return ((p.doc.processes ?? []).find((r) => r.role === "magnet")?.faces ?? []) as (FaceSpec & { inner?: boolean })[]
+		}
+		// the north pole of a set of faces (x > 0): its charge (A·m) and the charge's distance from the middle
+		const pole = (faces: (FaceSpec & { inner?: boolean })[]) => {
+			let q = 0
+			let qx = 0
+			for (const f of faces) {
+				if (f.x <= 0) continue
+				const c = f.sigma * f.width * f.depth
+				q += c
+				qx += c * f.x
+			}
+			return { q, x: qx / q }
+		}
+		// the field (A/m, along the bar) at (px, py, pz) of the magnet's frame from its faces (exact rectangles: rectField)
+		const out = new Float64Array(3)
+		const hAt = (faces: FaceSpec[], px: number, py: number, pz: number) => {
+			let hx = 0
+			let hy = 0
+			for (const f of faces) {
+				const nx = Math.cos(f.angle)
+				const ny = Math.sin(f.angle)
+				const dx = px - f.x
+				const dy = py - f.y
+				rectField(f.width / 2, f.depth / 2, -dx * ny + dy * nx, pz - (f.z ?? 0), dx * nx + dy * ny, out)
+				hx += (f.sigma / (4 * Math.PI)) * ((out[2] as number) * nx - (out[0] as number) * ny)
+				hy += (f.sigma / (4 * Math.PI)) * ((out[2] as number) * ny + (out[0] as number) * nx)
+			}
+			return [hx, hy]
+		}
+		// the independent solve: n Chebyshev cells over the whole bar, Newton on h (the cells' field against the curve)
+		const solveBar = (Lb: number, Wb: number, Db: number, n: number) => {
+			const b: number[] = []
+			for (let k = 0; k <= n; k++) b.push((Lb / 2) * (1 - Math.cos((Math.PI * k) / n)))
+			const demagX = (l: number) => prismDemag(Wb / 2, Db / 2, l / 2)
+			const F = (i: number, j: number) => {
+				const l = (b[j] as number) - (b[i] as number)
+				return j <= i || l <= 1e-15 ? 0 : l * demagX(l)
+			}
+			const N: number[][] = []
+			for (let i = 0; i < n; i++) {
+				const li = (b[i + 1] as number) - (b[i] as number)
+				const row: number[] = []
+				for (let j = 0; j < n; j++) {
+					if (i === j) row.push(demagX(li))
+					else if (j > i) row.push((F(i, j + 1) - F(i, j) - F(i + 1, j + 1) + F(i + 1, j)) / (2 * li))
+					else row.push((F(j, i + 1) - F(j + 1, i + 1) - F(j, i) + F(j + 1, i)) / (2 * li))
+				}
+				N.push(row)
+			}
+			let h = new Array<number>(n).fill(0)
+			for (let it = 0; it < 60; it++) {
+				const m = h.map(mOf)
+				const res = h.map((hi, i) => {
+					let s = 0
+					for (let j = 0; j < n; j++) s += ((N[i] as number[])[j] as number) * (m[j] as number)
+					return s - HC * hi
+				})
+				const A = h.map((_, i) => h.map((hj, j) => ((N[i] as number[])[j] as number) * dmOf(hj) - (i === j ? HC : 0)))
+				const r = res.map((x) => -x)
+				for (let c = 0; c < n; c++) {
+					let p = c
+					for (let q = c + 1; q < n; q++) if (Math.abs((A[q] as number[])[c] as number) > Math.abs((A[p] as number[])[c] as number)) p = q
+					;[A[c], A[p]] = [A[p] as number[], A[c] as number[]]
+					;[r[c], r[p]] = [r[p] as number, r[c] as number]
+					for (let q = c + 1; q < n; q++) {
+						const f = ((A[q] as number[])[c] as number) / ((A[c] as number[])[c] as number)
+						for (let k = c; k < n; k++) (A[q] as number[])[k] = ((A[q] as number[])[k] as number) - f * ((A[c] as number[])[k] as number)
+						r[q] = (r[q] as number) - f * (r[c] as number)
+					}
+				}
+				const x = new Array<number>(n).fill(0)
+				for (let q = n - 1; q >= 0; q--) {
+					let v = r[q] as number
+					for (let k = q + 1; k < n; k++) v -= ((A[q] as number[])[k] as number) * (x[k] as number)
+					x[q] = v / ((A[q] as number[])[q] as number)
+				}
+				const nh = h.map((v, i) => Math.min(1, Math.max(0, v + (x[i] as number))))
+				const moved = Math.max(...nh.map((v, i) => Math.abs(v - (h[i] as number))))
+				h = nh
+				if (moved < 1e-12) break
+			}
+			const m = h.map(mOf)
+			// the north half's charges: the end face (the last cell's M) and each boundary between two of its cells (M falls toward the end)
+			const A = Wb * Db
+			let q = (m[n - 1] as number) * A
+			let qx = q * (Lb / 2)
+			for (let k = n / 2; k < n - 1; k++) {
+				const c = ((m[k] as number) - (m[k + 1] as number)) * A
+				q += c
+				qx += c * ((b[k + 1] as number) - Lb / 2)
+			}
+			return { b, m, h, end: m[n - 1] as number, mid: m[n / 2] as number, q, x: qx / q, endShare: ((m[n - 1] as number) * A) / q }
+		}
+		const f = facesOf("alnico")
+		const end = f.find((x) => !x.inner && x.angle === 0) as FaceSpec
+		const inner = f.filter((x) => x.inner)
+		const P = pole(f)
+		const ref = solveBar(L, W, D, 192)
+		const mid = P.q / (W * D)
+		check(f.length === 24 && inner.length === 22 && inner.every((x) => Math.abs(x.x) < L / 2 && x.width < W && x.depth < D), "the catalog's alnico bar (15 × 1.9 × 0.95 cm): its two end faces and 22 sheets of its charge inside it, inset from its sides", `${f.length} faces, ${inner.length} inner, widest ${Math.max(...inner.map((x) => x.width)) * 1000} × ${Math.max(...inner.map((x) => x.depth)) * 1000} mm`)
+		check(Math.abs(pole(f.map((x) => ({ ...x, x: -x.x, sigma: -x.sigma }))).q - P.q) < 1e-6 * P.q, "its poles balance: the south half's charge is the north's, mirrored")
+		check(rel(P.q, ref.q) < 0.005 && rel(mid, ref.mid) < 0.005, "its pole's whole charge (the magnetization in its middle) against the finer, independent solve, within 0.5 %", `${P.q.toFixed(2)} vs ${ref.q.toFixed(2)} A·m: ${(mid * MU0).toFixed(4)} vs ${(ref.mid * MU0).toFixed(4)} T (B_r 1.25)`)
+		check(Math.abs((2 * P.x) / L - (2 * ref.x) / L) < 0.01, "its magnetic length (twice its pole's distance from its middle) against the finer solve, within 0.01 of its length", `${((2 * P.x) / L).toFixed(4)} vs ${((2 * ref.x) / L).toFixed(4)}`)
+		check(Math.abs((end.sigma * W * D) / P.q - ref.endShare) < 0.04, "the share of its pole on its end face against the finer solve, within 0.04 (the builder's first cell, 0.64 mm thick, puts that cell's charge on the face)", `${((end.sigma * W * D) / P.q).toFixed(3)} vs ${ref.endShare.toFixed(3)}`)
+		// the field under the bar, where a thing it pulls comes to it: its faces (12 cells a half, the inner sheets inset min(W, D)/10 from its sides
+		// so no sheet's edge meets the outline a touching thing comes to) against the finer solve's charges, each over the whole section, 1 mm
+		// under its underside from 4 mm past its end to 4 cm in
+		const refFaces: FaceSpec[] = [{ x: L / 2, y: 0, angle: 0, width: W, depth: D, sigma: ref.end }]
+		for (let k = 96; k < 191; k++) refFaces.push({ x: (ref.b[k + 1] as number) - L / 2, y: 0, angle: 0, width: W, depth: D, sigma: (ref.m[k] as number) - (ref.m[k + 1] as number) })
+		const refAll = [...refFaces, ...refFaces.map((x) => ({ ...x, x: -x.x, angle: Math.PI, sigma: -x.sigma }))]
+		let worstB = 0
+		let worstA = 0
+		let whereB = ""
+		for (let s = -4; s <= 40; s++) {
+			const px = L / 2 - s / 1000
+			const [ax, ay] = hAt(f, px, -W / 2 - 0.001, 0) as [number, number]
+			const [rx, ry] = hAt(refAll, px, -W / 2 - 0.001, 0) as [number, number]
+			const dB = Math.abs(Math.hypot(ax, ay) / Math.hypot(rx, ry) - 1)
+			let dA = Math.abs(Math.atan2(ay, ax) - Math.atan2(ry, rx))
+			if (dA > Math.PI) dA = 2 * Math.PI - dA
+			if (dB > worstB) {
+				worstB = dB
+				whereB = `${s} mm in: ${(MU0 * Math.hypot(ax, ay) * 1e4).toFixed(0)} vs ${(MU0 * Math.hypot(rx, ry) * 1e4).toFixed(0)} G`
+			}
+			worstA = Math.max(worstA, (dA * 180) / Math.PI)
+		}
+		check(worstB < 0.1 && worstA < 5, "under the bar (1 mm below it, from 4 mm past its end to 4 cm in) its faces' field is the finer solve's within 10 % and 5°", `worst ${(worstB * 100).toFixed(1)} % (${whereB}), direction ${worstA.toFixed(1)}°`)
+		// what is known of real bars: textbooks put a bar magnet's poles a little inside its ends, its magnetic length about 0.84-0.86 of its length
+		// (a uniformly magnetized one's is 1); the 1-D solve gives a little more (the bar's corners demagnetize more than a 1-D solve sees)
+		check((2 * P.x) / L > 0.85 && (2 * P.x) / L < 0.93, "its magnetic length is between the textbooks' 0.85 and a uniform bar's 1, near the textbooks' (the poles a little inside the ends)", `${((2 * P.x) / L).toFixed(3)} of its length`)
+		// its end face's field against a uniformly magnetized bar's (the engine's model before bench2: both end faces at 0.86 B_r)
+		const uniform: FaceSpec[] = [{ x: L / 2, y: 0, angle: 0, width: W, depth: D, sigma: (0.86 * 1.25) / MU0 }, { x: -L / 2, y: 0, angle: Math.PI, width: W, depth: D, sigma: -(0.86 * 1.25) / MU0 }]
+		const b1 = MU0 * (hAt(f, L / 2 + 0.001, 0, 0)[0] as number)
+		const b1u = MU0 * (hAt(uniform, L / 2 + 0.001, 0, 0)[0] as number)
+		check(b1 / b1u < 0.7, "its field 1 mm off its end face is well under a uniformly magnetized bar's (its end partly demagnetized)", `${(b1 * 1e4).toFixed(0)} G vs ${(b1u * 1e4).toFixed(0)} G (${(b1 / b1u).toFixed(2)})`)
+		// a guitar pickup's alnico 5 rod (Ø 5 × 17 mm, as a square of the same area): pickup makers read several hundred to about a thousand gauss
+		// at its end with a Hall probe, its element about a millimetre or two inside the probe's tip
+		const rod = solveBar(0.017, 0.00443, 0.00443, 96)
+		const rodFaces: FaceSpec[] = [{ x: 0.0085, y: 0, angle: 0, width: 0.00443, depth: 0.00443, sigma: rod.end }]
+		for (let k = 48; k < 95; k++) rodFaces.push({ x: (rod.b[k + 1] as number) - 0.0085, y: 0, angle: 0, width: 0.00443, depth: 0.00443, sigma: (rod.m[k] as number) - (rod.m[k + 1] as number) })
+		const mirror = rodFaces.map((x) => ({ ...x, x: -x.x, angle: Math.PI, sigma: -x.sigma }))
+		const rf = [...rodFaces, ...mirror]
+		const g15 = MU0 * (hAt(rf, 0.0085 + 0.0015, 0, 0)[0] as number) * 1e4
+		const g15u = MU0 * (hAt([{ x: 0.0085, y: 0, angle: 0, width: 0.00443, depth: 0.00443, sigma: MR }, { x: -0.0085, y: 0, angle: Math.PI, width: 0.00443, depth: 0.00443, sigma: -MR }], 0.0085 + 0.0015, 0, 0)[0] as number) * 1e4
+		console.log(`info  an alnico 5 pickup rod (Ø 5 × 17 mm, fully charged): the solve gives ${g15.toFixed(0)} G on its axis 1.5 mm off its end (a uniformly magnetized one at B_r ${g15u.toFixed(0)} G); its magnetic length ${((2 * rod.x) / 0.017).toFixed(3)} of its length, its middle at ${(rod.mid * MU0).toFixed(2)} T. Pickup makers read several hundred to about a thousand gauss there.`)
+		// ceramic and neodymium keep their magnetization to their ends: their two end faces at B_r/µ0, as before
+		for (const [material, br] of [["ceramic", 0.39], ["neodymium", 1.3]] as const) {
+			const g = facesOf(material)
+			check(g.length === 2 && g.every((x) => !x.inner) && Math.abs(Math.abs(g[0]?.sigma as number) - br / MU0) < 0.1, `a ${material} bar's poles are its two end faces at B_r/µ0 (a coercivity over the field its ends put on them)`, `${g.length} faces, σ ${g[0]?.sigma}`)
+		}
+		const fl = facesOf("alnico", { flip: true })
+		check(fl.length === f.length && fl.every((x, i) => x.sigma === -(f[i] as FaceSpec).sigma && x.x === (f[i] as FaceSpec).x), "flipped, every charge of the alnico bar turns over (its north on the left)")
+		// the AI's words for it (web/sim/modules/magnetism.js `change`, the material knob): near its end an alnico bar pulls a clip 2 to 4 times as
+		// hard as a ceramic bar, about a third to a half as hard as a neodymium one (its B_r would say 7.5 and 0.7): the static pull on a clip 2-20 mm
+		// under each bar's end, the bar upright
+		const clipPull = (material: string, gap: number) => {
+			const p = web.prepare(scene([
+				{ id: "magnet", type: "bar-magnet", x: 1.0, y: 0.001 + gap + L / 2, angle: -90, fixed: true, props: { material } },
+				{ id: "clip", type: "paper-clip", x: 1.0, y: 0.0005, fixed: true, props: {} }
+			], 0.1))
+			const recs = (p.doc.processes ?? []).filter((r) => r.kind === "magnetism") as unknown as Record<string, unknown>[]
+			const fields = createFields({
+				magnets: recs.filter((r) => r.role === "magnet").map((r) => ({ solid: r.solid as string, faces: r.faces as FaceSpec[] })),
+				soft: recs.filter((r) => r.role === "soft") as unknown as Parameters<typeof createFields>[0]["soft"]
+			})
+			const poses = new Map(p.doc.solids.map((s) => [s.id, { x: s.at.x, y: s.at.y, angle: (s as unknown as { angle?: number }).angle ?? 0 }]))
+			fields.settle(0, (id) => poses.get(id))
+			let fy = 0
+			fields.step(0, (id) => poses.get(id), (sid, _fx, y) => {
+				if (sid.startsWith("clip")) fy += y
+			})
+			return fy
+		}
+		const ratios: string[] = []
+		let wordsHold = true
+		for (const gap of [0.002, 0.005, 0.01, 0.02]) {
+			const c = clipPull("ceramic", gap)
+			const a = clipPull("alnico", gap)
+			const n = clipPull("neodymium", gap)
+			if (!(a / c >= 1.8 && a / c <= 4.4 && a / n >= 0.28 && a / n <= 0.55)) wordsHold = false
+			ratios.push(`${gap * 1000} mm: ${(a / c).toFixed(1)}× ceramic, ${(a / n).toFixed(2)} of neodymium`)
+		}
+		check(wordsHold, "the AI's words for an alnico bar hold: near its end it pulls a clip 2 to 4 times as hard as a ceramic bar, about a third to a half as hard as a neodymium one", ratios.join("; "))
+		// and the magnet cart's bar (19 × 9.5 mm across, 3-15 cm long) is the same solve: a short one is weaker in its middle too
+		const cart = (len: number) => {
+			const p = web.prepare(scene([{ id: "cart", type: "magnet-cart", x: 1.0, y: 0.0, props: { material: "alnico", magnet_length: len } }], 0.1))
+			return pole(((p.doc.processes ?? []).find((r) => r.role === "magnet")?.faces ?? []) as FaceSpec[])
+		}
+		const c10 = cart(0.1)
+		const c3 = cart(0.03)
+		check(c10.q / (W * D) > c3.q / (W * D) * 2 && rel(c10.q, solveBar(0.1, W, D, 96).q) < 0.01, "the magnet cart's alnico bar is solved the same way: a 3 cm one is far weaker in its middle than a 10 cm one (a short alnico magnet demagnetizes itself)", `middle ${((c10.q / (W * D)) * MU0).toFixed(3)} T at 10 cm, ${((c3.q / (W * D)) * MU0).toFixed(3)} T at 3 cm`)
+	},
+	turning() {
+		// bench2 (2026-10-21): the field's turning on a light soft body is taken implicitly where it is stiff (modules/magnetism.ts: τ/(1 + κh²/I)),
+		// but only its lining up, m × B: the moments of the pulls on it are taken as they are (magnetism.ts `pairWrench`, `Apply`). Taken
+		// implicitly with the rest, a nail a pole pulled up by its near end with about 1 N was turned as if the pull acted part way down it: a
+		// couple the field never made spun it about where it was held. A nail on a pin 2 mm down from its point, hanging under a bar's end (not
+		// touching it), with a little damping on the pin: it comes to rest where the field's turning and its weight balance about the pin (that
+		// balance from createFields over its angle, with the doc's own records)
+		const MAG = { x: 1.365, y: 0.1575, L: 0.15, W: 0.019 }
+		const left = MAG.x - MAG.L / 2
+		const bottom = MAG.y - MAG.W / 2
+		const pinned = (material: string, inset: number, under: number) => {
+			const len = 0.033
+			const off = 0.002
+			const pin = { x: left + inset, y: bottom - under }
+			const p = web.prepare(scene([
+				{ id: "nail", type: "iron-nail", x: pin.x, y: pin.y - (len / 2 - off), angle: 90, props: { length: len }, held: true },
+				{ id: "magnet", type: "bar-magnet", x: MAG.x, y: MAG.y, angle: 0, fixed: true, props: { material } }
+			], 3, [], 0.5)) as unknown as { scene: unknown; doc: Doc & { joints?: unknown[]; materials: Record<string, { density: number }> }; resolved: unknown }
+			p.doc.joints = [...(p.doc.joints ?? []), { kind: "pin", id: "pin", a: null, b: "nail/shank", anchorA: pin, anchorB: { x: len / 2 - off, y: 0 }, damping: 2e-5 }]
+			const track = JSON.parse(JSON.stringify(run(p.doc, 120))) as Track
+			const fr = track.frames
+			const last = fr.at(-1)?.placements["nail/shank"] as { angle: number }
+			let lo = Number.POSITIVE_INFINITY
+			let hi = Number.NEGATIVE_INFINITY
+			for (const q of fr) if (q.t > (fr.at(-1)?.t ?? 0) - 0.5) {
+				const a = q.placements["nail/shank"]?.angle as number
+				lo = Math.min(lo, a)
+				hi = Math.max(hi, a)
+			}
+			// the static balance about the pin
+			const recs = (p.doc.processes ?? []).filter((r) => r.kind === "magnetism") as unknown as Record<string, unknown>[]
+			const magnets = recs.filter((r) => r.role === "magnet").map((r) => ({ solid: r.solid as string, faces: r.faces as FaceSpec[] }))
+			const soft = recs.filter((r) => r.role === "soft") as unknown as Parameters<typeof createFields>[0]["soft"]
+			const massOf = (sid: string) => {
+				const s = p.doc.solids.find((x) => x.id === sid) as unknown as { material: string; body: { kind: string; width?: number; height?: number; depth?: number; points?: { x: number; y: number }[] } }
+				const b = s.body
+				let area = (b.width ?? 0) * (b.height ?? 0)
+				if (b.kind === "polygon") {
+					area = 0
+					const pts = b.points as { x: number; y: number }[]
+					for (let i = 0; i < pts.length; i++) {
+						const a = pts[i] as { x: number; y: number }
+						const c = pts[(i + 1) % pts.length] as { x: number; y: number }
+						area += a.x * c.y - c.x * a.y
+					}
+					area = Math.abs(area) / 2
+				}
+				return (p.doc.materials[s.material]?.density ?? 0) * area * (b.depth ?? 0)
+			}
+			const mS = massOf("nail/shank")
+			const mH = massOf("nail/head")
+			const torqueAt = (deg: number) => {
+				const th = (deg * Math.PI) / 180
+				const c = Math.cos(th)
+				const s = Math.sin(th)
+				const ox = pin.x - (len / 2 - off) * c
+				const oy = pin.y - (len / 2 - off) * s
+				const fields = createFields({ magnets, soft })
+				const pose = (id: string) => (id === "nail/shank" ? { x: ox, y: oy, angle: th } : id === "magnet/magnet" ? { x: MAG.x, y: MAG.y, angle: 0 } : undefined)
+				fields.settle(0, pose)
+				let t = 0
+				fields.step(0, pose, (sid, fx, fy, px, py, tq) => {
+					if (sid === "nail/shank") t += tq + (px - pin.x) * fy - (py - pin.y) * fx
+				})
+				return t + (ox - pin.x) * -mS * G + (ox - (len / 2 + 0.0005) * c - pin.x) * -mH * G
+			}
+			let balance = Number.NaN
+			let prev = torqueAt(160)
+			for (let d = 159; d >= 20; d--) {
+				const t = torqueAt(d)
+				if (prev < 0 && t >= 0) balance = d + t / (t - prev)
+				prev = t
+			}
+			return { rest: (last.angle * 180) / Math.PI, still: ((hi - lo) * 180) / Math.PI, balance }
+		}
+		const rows: string[] = []
+		let bad = 0
+		for (const [material, inset, under] of [["alnico", 0.006, 0.004], ["alnico", 0.003, 0.003], ["alnico", 0.01, 0.005], ["neodymium", 0.006, 0.004], ["neodymium", 0.003, 0.003], ["neodymium", 0.01, 0.005], ["ceramic", 0.006, 0.004], ["ceramic", 0.003, 0.003]] as const) {
+			const r = pinned(material, inset, under)
+			const ok = Math.abs(r.rest - r.balance) < 7 && r.still < 1
+			if (!ok) bad++
+			rows.push(`${material} ${inset * 1000}/${under * 1000} mm: rests at ${r.rest.toFixed(1)}° (the balance ${r.balance.toFixed(1)}°)`)
+		}
+		check(bad === 0, "a nail on a pin near its point under a bar's end (alnico, neodymium, ceramic) rests where the field's turning and its weight balance about the pin, within 7° (release 2: as much as 136° off, turned right round)", rows.join("; "))
+	},
+	rest() {
+		// bench2 (2026-10-21, FO-13's screen 11, "the magnet moved just above the nail": the card's nail, head up, "jumps up and hangs by its head
+		// under the blue end"). A real nail held under a flat alnico bar's end jumps to the pole, its end's underside (where the bar's spread pole
+		// charge pulls hardest: `alnico`), clicks on and hangs there; head up, by its flat head, straight down. On release 2 the engine put the pole
+		// on the end face alone (its corner the strongest place), compensated a contact's rebound for gravity's push only (physics.ts
+		// `compensated`: a 1.8 g nail pulled with 50 times its weight was given e of that pull at every touch it made again: it rocked against the
+		// corner to the last), and turned it by the pull's moment taken implicitly (`turning`): head up it swung round the end onto the bar's top.
+		const MAG = { x: 1.365, y: 0.1575, L: 0.15, W: 0.019 }
+		const left = MAG.x - MAG.L / 2
+		const bottom = MAG.y - MAG.W / 2
+		const topY = MAG.y + MAG.W / 2
+		const settle = (head: "up" | "down", gap: number, inset: number, material: string, len: number, bench = false) => {
+			const nailTop = bottom - gap
+			const R = go(
+				bench
+					? {
+							// the bench's own scene (lesson-regen/bench/remake/FO-13/videos/V10-5): a hand pinching the nail from the left, one gripping
+							// the bar from above, the nail's middle 1 cm in from the bar's end and 3.1 cm under it, let go at 1 s
+							...scene([
+								{ id: "nail", type: "iron-nail", x: 1.3, y: 0.1165, angle: head === "up" ? -90 : 90, props: { length: len, hand: "pinch", hand_from: "left" }, held: true },
+								{ id: "magnet", type: "bar-magnet", x: MAG.x, y: MAG.y, angle: 0, fixed: true, props: { material, hand: "grip", hand_from: "above" } }
+							], 3.5, [{ kind: "lifts", source: "magnet", item: "nail", min_m: 0.01 }], 1),
+							stage: { x0: -0.55908203125, x1: 3.19091796875, y0: -0.15625, y1: 2.34375 }
+						}
+					: scene([
+							{ id: "nail", type: "iron-nail", x: left + inset, y: nailTop - len / 2 - (head === "up" ? 0.001 : 0), angle: head === "up" ? -90 : 90, props: { length: len }, held: true },
+							{ id: "magnet", type: "bar-magnet", x: MAG.x, y: MAG.y, angle: 0, fixed: true, props: { material } }
+						], 2.5, [{ kind: "lifts", source: "magnet", item: "nail", min_m: 0.005 }], 0.5)
+			)
+			const fr = R.track.frames
+			const rel0 = bench ? 1 : 0.5
+			const end = fr.at(-1)?.placements["nail/shank"] as { x: number; y: number; angle: number }
+			let restAt = -1
+			for (const f of fr) {
+				const q = f.placements["nail/shank"]
+				if (!q) continue
+				const still = Math.hypot(q.x - end.x, q.y - end.y) < 2e-5 && Math.abs(q.angle - end.angle) < 1e-3
+				if (restAt < 0 && f.t > rel0 && still) restAt = f.t
+				else if (restAt >= 0 && !still) restAt = -1
+			}
+			const c = Math.cos(end.angle)
+			const s = Math.sin(end.angle)
+			// its two ends (the shank's point is +x): the upper one, how far in from the bar's end and how far under its underside; its tilt from
+			// straight down (+: its lower end out past the bar's end)
+			const pt = { x: end.x + (len / 2) * c, y: end.y + (len / 2) * s }
+			const hd = { x: end.x - (len / 2) * c, y: end.y - (len / 2) * s }
+			const [hi, lo] = pt.y > hd.y ? [pt, hd] : [hd, pt]
+			const tilt = (Math.atan2(hi.x - lo.x, hi.y - lo.y) * 180) / Math.PI
+			// touching: a point along its axis within 6 mm of the bar's box (its head's radius and the skins), the nearest to an end face
+			const gapTo = (p: { x: number; y: number }) => Math.hypot(Math.max(left - p.x, 0, p.x - (MAG.x + MAG.L / 2)), Math.max(bottom - p.y, 0, p.y - topY))
+			let fromEnd = Number.POSITIVE_INFINITY
+			for (let k = 0; k <= 34; k++) {
+				const u = -len / 2 - 0.001 + ((len + 0.001) * k) / 34
+				const p = { x: end.x + u * c, y: end.y + u * s }
+				if (gapTo(p) < 0.006) fromEnd = Math.min(fromEnd, Math.abs(p.x - left), Math.abs(p.x - (MAG.x + MAG.L / 2)))
+			}
+			return {
+				lifted: R.summary.goals[0]?.ok === true,
+				restAfter: restAt > 0 ? restAt - rel0 : Number.POSITIVE_INFINITY,
+				byHead: hi === hd,
+				in: hi.x - left,
+				under: bottom - hi.y,
+				tilt,
+				onTop: end.y > topY,
+				fromEnd
+			}
+		}
+		const hangs = (r: ReturnType<typeof settle>) => r.lifted && r.byHead && r.in > 0 && r.in < 0.01 && r.under > 0 && r.under < 0.004 && Math.abs(r.tilt) <= 10 && r.restAfter <= 0.4
+		const say = (r: ReturnType<typeof settle>) => `${r.byHead ? "head" : "point"} up, its top end ${(r.in * 1000).toFixed(1)} mm in from the end and ${(r.under * 1000).toFixed(1)} mm under the bar, ${r.tilt.toFixed(1)}° from straight down${r.onTop ? ", ON THE BAR'S TOP" : ""}; at rest ${Number.isFinite(r.restAfter) ? `${r.restAfter.toFixed(2)} s after it is let go` : "never"}`
+		// the card: the bench's own scene with the nail head up, as the card draws it
+		const card = settle("up", 0.0145, 0.01, "alnico", 0.033, true)
+		check(hangs(card), "FO-13 screen 11 as the card draws it (the nail head up): it jumps up and hangs by its head under the alnico bar's end, straight down within 10°, still within 0.4 s (release 2: it swung round the end onto the bar's top)", say(card))
+		// the bench's own (point up): still, held at the pole
+		const bench = settle("down", 0.0145, 0.01, "alnico", 0.033, true)
+		check(bench.lifted && bench.restAfter <= 0.6 && bench.fromEnd < 0.025 && !bench.onTop, "FO-13 screen 11 as the bench built it (the nail point up): it jumps to the end and is still there, held at the pole, within 0.6 s (release 2: it rocked against the end corner to the last)", say(bench))
+		// sweeps: point up and head up, its top 1-2 cm under the bar, 0.5-1.5 cm in from the end, 33 mm (1.8 g) and 51 mm (2.8 g)
+		const sweep = (head: "up" | "down", len: number, material: string) => {
+			const out: ReturnType<typeof settle>[] = []
+			for (const gap of [0.01, 0.015, 0.02]) for (const inset of [0.005, 0.01, 0.015]) out.push(settle(head, gap, inset, material, len))
+			return out.filter((r) => r.lifted)
+		}
+		for (const len of [0.033, 0.051]) {
+			const up = sweep("up", len, "alnico")
+			const badUp = up.filter((r) => !hangs(r))
+			check(up.length >= 8 && badUp.length === 0, `a ${len * 1000} mm nail let go head up under an alnico bar's end (1-2 cm under, 0.5-1.5 cm in) hangs by its head under the end, straight down within 10°, still within 0.4 s, wherever the bar lifts it`, `${up.length} lifted, ${badUp.length} not${badUp.length ? `: ${badUp.map(say).join("; ")}` : ""}`)
+			const down = sweep("down", len, "alnico")
+			const badDown = down.filter((r) => !(r.restAfter <= 0.7 && r.fromEnd < 0.025 && !r.onTop))
+			const tilts = down.map((r) => Math.round(r.tilt))
+			check(down.length >= 8 && badDown.length === 0, `a ${len * 1000} mm nail let go point up there is still within 0.7 s, held at the pole (within 2.5 cm of the end face), never on the bar's top`, `${down.length} lifted, ${badDown.length} not${badDown.length ? `: ${badDown.map(say).join("; ")}` : ""}; their tilts ${tilts.join(", ")}°`)
+		}
+		// (a light nail held by its point at a strong pole lines up with the field there as much as its weight lets it: at the end's corner, where
+		// the field fans out of the pole, it hangs splayed out; a real one's sharp point can also catch a little in from the corner)
+		const nd = [...sweep("up", 0.033, "neodymium"), ...sweep("down", 0.033, "neodymium")]
+		console.log(`info  neodymium (a uniformly magnetized bar, its pole its end face): ${nd.length} lifted 33 mm nails, ${nd.filter((r) => Number.isFinite(r.restAfter) && r.restAfter <= 0.7).length} still within 0.7 s, ${nd.filter((r) => r.onTop).length} on the bar's top (swung round its end: its corner pulls hardest, and a rigid nail pivots round the 1 mm contact skins' rounded corner where a real one's point would catch)`)
 	},
 	rings() {
 		const R = go(demo("g6-levitating-rings"))

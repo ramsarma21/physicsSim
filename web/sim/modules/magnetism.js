@@ -14,10 +14,24 @@ const STEEL = 7850.0 // kg/m³: low-carbon steel
 // Permanent magnet grades (mod_magnetism.py GRADES)
 const GRADES = {
 	ceramic: { br: 0.39, density: 4900.0, eff: 1.0, look: "magnet paint", words: "ceramic (ferrite)", source: "Ceramic 8 (Y30) ferrite: B_r 0.385-0.40 T, 4.9 g/cm³ [ARN]." },
-	alnico: { br: 1.25, density: 7300.0, eff: 0.86, look: "magnet paint", words: "alnico", source: "Alnico 5: B_r 1.25 T, 7.3 g/cm³; a bar works at about 1.07 T (permeance coefficient 5) [ARN]." },
+	alnico: {
+		br: 1.25, density: 7300.0, eff: 0.86, look: "magnet paint", words: "alnico",
+		source: "Alnico 5: B_r 1.25 T, H_c 51 kA/m (640 Oe), recoil permeability 3.7, (BH)max 43.8 kJ/m³ at B_d 1.0 T, 7.3 g/cm³ " +
+			"[ARN]; a bar's magnetization is solved along it (its ends partly demagnetized: its poles spread over its last few cm); " +
+			"a horseshoe works at about 1.07 T."
+	},
 	neodymium: { br: 1.3, density: 7500.0, eff: 1.0, look: "nickel plate", words: "neodymium (NdFeB)", source: "NdFeB N42: B_r 1.28-1.32 T, 7.5 g/cm³, nickel plated [KJ]." }
 }
 const GRADE_KEYS = ["ceramic", "alnico", "neodymium"]
+
+// An alnico bar's poles (mod_magnetism.py ALNICO_HC: why, and the curve): its magnetization solved along it, its ends partly demagnetized
+const ALNICO_HC = 51000.0
+const ALNICO_CHI = 2.7
+// a bar's half in cells from its end to its middle, at the Chebyshev nodes 1 − cos(π·k/24), fractions of the half-length (mod_magnetism.py BAR_NODES)
+const BAR_NODES = [0.0, 0.008555138626189618, 0.03407417371093169, 0.07612046748871326, 0.1339745962155613, 0.20664665970876483,
+	0.2928932188134524, 0.39123857099127934, 0.5, 0.6173165676349102, 0.7411809548974793, 0.8694738077799483, 1.0]
+// 3-point Gauss-Legendre nodes and weights (mod_magnetism.py GAUSS3)
+const GAUSS3 = [[-0.7745966692414834, 0.2777777777777778], [0.0, 0.4444444444444444], [0.7745966692414834, 0.2777777777777778]]
 
 // Soft magnetic materials: saturation M_s (A/m) and initial susceptibility (mod_magnetism.py SOFT)
 const SOFT = {
@@ -148,6 +162,134 @@ function _sigma(grade, flip) {
 	return flip ? -s : s
 }
 
+/** The solid angle the rectangle |y| ≤ b, |z| ≤ c of the plane x = 0 subtends at (d, py, pz) (mod_magnetism.py _solid_angle). */
+function _solid_angle(d, py, pz, b, c) {
+	let t = 0.0
+	for (const [sy, yy] of [[1.0, b - py], [-1.0, -b - py]]) {
+		for (const [sz, zz] of [[1.0, c - pz], [-1.0, -c - pz]]) t += sy * sz * Math.atan((yy * zz) / (d * Math.sqrt(yy * yy + zz * zz + d * d)))
+	}
+	return t
+}
+
+/** A small dense system by Gaussian elimination with partial pivoting (mod_magnetism.py _solve_linear: the same steps). */
+function _solve_linear(A0, rhs0) {
+	const n = rhs0.length
+	const A = A0.map((row) => row.slice())
+	const rhs = rhs0.slice()
+	for (let col = 0; col < n; col++) {
+		let p = col
+		for (let r = col + 1; r < n; r++) if (Math.abs(A[r][col]) > Math.abs(A[p][col])) p = r
+		;[A[col], A[p]] = [A[p], A[col]]
+		;[rhs[col], rhs[p]] = [rhs[p], rhs[col]]
+		for (let r = col + 1; r < n; r++) {
+			const f = A[r][col] / A[col][col]
+			for (let k = col; k < n; k++) A[r][k] -= f * A[col][k]
+			rhs[r] -= f * rhs[col]
+		}
+	}
+	const x = new Array(n).fill(0.0)
+	for (let r = n - 1; r >= 0; r--) {
+		let v = rhs[r]
+		for (let k = r + 1; k < n; k++) v -= A[r][k] * x[k]
+		x[r] = v / A[r][r]
+	}
+	return x
+}
+
+const _ALNICO_BARS = new Map()
+/** An alnico bar's magnetization along its length: [s, M], the cell boundaries' distances from its end and the cells' magnetizations from
+ *  the end in (mod_magnetism.py _alnico_bar: the same cells, curve and Newton steps). */
+function _alnico_bar(L, W, D) {
+	const key = `${L},${W},${D}`
+	const seen = _ALNICO_BARS.get(key)
+	if (seen !== undefined) return seen
+	const n = BAR_NODES.length - 1
+	const half = L / 2
+	const s = BAR_NODES.map((f) => half * f)
+	const xs = []
+	for (let j = 0; j < n; j++) xs.push(half - s[j])
+	const xc = []
+	for (let i = 0; i < n; i++) xc.push(half - (s[i] + s[i + 1]) / 2)
+	const [b, c] = [W / 2, D / 2]
+	const mean_omega = (d) => {
+		let t = 0.0
+		for (const [gy, wy] of GAUSS3) for (const [gz, wz] of GAUSS3) t += wy * wz * _solid_angle(d, gy * b, gz * c, b, c)
+		return t
+	}
+	const kq = []
+	for (let i = 0; i < n; i++) {
+		const row = []
+		for (let j = 0; j < n; j++) row.push((mean_omega(xc[i] - xs[j]) - mean_omega(xc[i] + xs[j])) / (4 * Math.PI))
+		kq.push(row)
+	}
+	const K = []
+	for (let i = 0; i < n; i++) {
+		const row = []
+		for (let j = 0; j < n; j++) row.push(kq[i][j] - (j + 1 < n ? kq[i][j + 1] : 0.0))
+		K.push(row)
+	}
+	const mr = GRADES.alnico.br / MU0
+	const knee = mr - (1 + ALNICO_CHI) * ALNICO_HC
+	const m_of = (h) => {
+		const h2 = h * h
+		const h4 = h2 * h2
+		const h16 = h4 * h4 * h4 * h4
+		return mr - ALNICO_CHI * ALNICO_HC * h - knee * (h16 * h4)
+	}
+	const dm_of = (h) => {
+		const h2 = h * h
+		const h4 = h2 * h2
+		const h16 = h4 * h4 * h4 * h4
+		return -ALNICO_CHI * ALNICO_HC - 20 * knee * (h16 * h2 * h)
+	}
+	let h = new Array(n).fill(0.0)
+	for (let it = 0; it < 50; it++) {
+		const m = h.map(m_of)
+		const res = []
+		for (let i = 0; i < n; i++) {
+			let f = 0.0
+			for (let j = 0; j < n; j++) f += K[i][j] * m[j]
+			res.push(f + ALNICO_HC * h[i])
+		}
+		const jac = []
+		for (let i = 0; i < n; i++) {
+			const row = []
+			for (let j = 0; j < n; j++) row.push(K[i][j] * dm_of(h[j]) + (i === j ? ALNICO_HC : 0.0))
+			jac.push(row)
+		}
+		const step = _solve_linear(jac, res.map((x) => -x))
+		const next = h.map((x, i) => Math.min(1.0, Math.max(0.0, x + step[i])))
+		let moved = 0.0
+		for (let i = 0; i < n; i++) moved = Math.max(moved, Math.abs(next[i] - h[i]))
+		h = next
+		if (moved < 1e-13) break
+	}
+	const out = [s, h.map(m_of)]
+	_ALNICO_BARS.set(key, out)
+	return out
+}
+
+/** A straight bar magnet's charges along its length: its end faces, and an alnico bar's inner sheets (mod_magnetism.py _bar_faces). */
+function _bar_faces(L, W, D, grade, flip) {
+	if (grade !== "alnico") {
+		const s = _sigma(grade, flip)
+		return [_face(L / 2, 0.0, 0.0, W, D, s), _face(-L / 2, 0.0, Math.PI, W, D, -s)]
+	}
+	const [s, m] = _alnico_bar(L, W, D)
+	const sg = flip ? -1.0 : 1.0
+	const faces = [_face(L / 2, 0.0, 0.0, W, D, sg * m[0]), _face(-L / 2, 0.0, Math.PI, W, D, -sg * m[0])]
+	const inset = Math.min(W, D) / 10
+	const [w, d] = [W - 2 * inset, D - 2 * inset]
+	const k = (W * D) / (w * d)
+	for (let j = 1; j < m.length; j++) {
+		const q = sg * (m[j] - m[j - 1]) * k
+		if (pyRound(q, 1) === 0) continue
+		const x = L / 2 - s[j]
+		faces.push({ ..._face(x, 0.0, 0.0, w, d, q), inner: true }, { ..._face(-x, 0.0, Math.PI, w, d, -q), inner: true })
+	}
+	return faces
+}
+
 function _child_slab(c, part, parent, w, h, depth, lx, ly, material, words, look, kind = null) {
 	const s = {
 		kind: kind ?? c.kind, id: `${c.item.id}/${part}`, words, item: c.item.id, look,
@@ -179,8 +321,7 @@ function build_bar(c, P) {
 	const grade = P.material
 	const mat = c.mat({ base: `${grade} magnet`, overrides: {} })
 	const sid = c.slab("magnet", L, W, D, 0.0, 0.0, { material: mat, look: GRADES[grade].look, words: `a ${GRADES[grade].words} bar magnet`, ..._held(c) })
-	const s = _sigma(grade, P.flip)
-	c.process("magnetism", "field", { role: "magnet", solid: sid, faces: [_face(L / 2, 0.0, 0.0, W, D, s), _face(-L / 2, 0.0, Math.PI, W, D, -s)] })
+	c.process("magnetism", "field", { role: "magnet", solid: sid, faces: _bar_faces(L, W, D, grade, P.flip) })
 }
 
 const ARM_SEAM = 0.0003
@@ -279,8 +420,7 @@ function build_magnet_cart(c, P) {
 	const sx = P.magnet_end === "front" ? 1 : -1
 	const x = sx * (P.length / 2 - L / 2)
 	const sid = _child_slab(c, "magnet", chassis.id, L, W, D, x, top + W / 2, mat, `a ${GRADES[grade].words} bar magnet`, GRADES[grade].look)
-	const s = _sigma(grade, P.flip)
-	c.process("magnetism", "field", { role: "magnet", solid: sid, faces: [_face(L / 2, 0.0, 0.0, W, D, s), _face(-L / 2, 0.0, Math.PI, W, D, -s)] })
+	c.process("magnetism", "field", { role: "magnet", solid: sid, faces: _bar_faces(L, W, D, grade, P.flip) })
 }
 
 function _magnets() {
@@ -1264,7 +1404,7 @@ export const plugin = {
 	title: "Magnets and static electricity",
 	howto: [
 		"Magnets (bar-magnet, horseshoe-magnet, disc-magnet, ring-magnets on a dowel, magnet-cart, battery-electromagnet) pull iron and steel and push or pull each other; nothing else is magnetic. Pulled by any magnet: paper-clip (a row of `count` clips), iron-nail, steel-washer, steel-can, can-on-side with material steel, clip-on-thread, the catalog's steel balls and steel weights, and the other modules' iron and steel (the matter module's steel density cube and steel wool, cast iron, a cart's steel spring bumper). NOT pulled at all: plastic-clip, foil-ball, copper-wire, brass-key, wooden-bead, coins (a penny is copper-plated zinc), aluminium cans, stainless-steel spoons and pans (austenitic), the density set's aluminium, brass, copper and zinc cubes, glass, wood, plastic, rubber. (A cart's magnet bumpers are magnets of their own: not modelled as iron.)",
-		"Poles: a bar magnet's north (red, N) is on its right (+x) unless `flip`; turn it with its angle (angle_deg -90 points its north pole DOWN, 90 up). Like poles facing push apart, unlike pull together; iron is pulled by either pole. Strength: `material` ceramic (B_r 0.39 T) < alnico (1.07 T working) < neodymium (1.3 T): at the same size neodymium pulls about 11 times harder than ceramic at contact.",
+		"Poles: a bar magnet's north (red, N) is on its right (+x) unless `flip`; turn it with its angle (angle_deg -90 points its north pole DOWN, 90 up). Like poles facing push apart, unlike pull together; iron is pulled by either pole. Strength: `material` ceramic (B_r 0.39 T) < alnico (B_r 1.25 T, but a bar's ends partly demagnetized: its pull spread over its last few cm, so a nail hangs under its end) < neodymium (1.3 T): at the same size neodymium pulls about 11 times harder than ceramic at contact.",
 		"Distance matters a lot: the pull falls off steeply (two magnets far apart as 1/distance⁴; a magnet on a clip faster). A 15 cm ceramic bar held pole-down lifts a paper clip lying on the table from about 1.5 cm below it, a neodymium bar from about 3 cm; lying on the table end-on, a clip slides to a ceramic bar's pole from 3 cm, to a neodymium one from 5 cm. Hold (`fixed: true`) a magnet that should stay where it is (above clips, in front of a row of objects); leave carts and things to be pulled free. A barrier-sheet between a magnet and a clip: paper, cardboard, plastic, glass and aluminium change nothing; a steel one (0.5 mm) blocks most of a ceramic magnet's pull (a clip 8 mm behind it stays put) but a neodymium bar saturates it and still pulls about half.",
 		"magnet-cart: a wooden cart with a bar magnet on its deck (`magnet_end` front/back, `flip`). Two carts 5-10 cm apart with like poles facing (one flipped or its magnet at the back facing the other's front with flip) roll apart; unlike poles roll together. ring-magnets: `count` rings on an upright dowel; with `alternate` (like faces together) each ring floats where the push equals the weight above it (the bottom gap smaller); unlike faces snap together.",
 		"compass: stands face-on, its needle's red end points north (right, unless `north` left: it starts that way) by the Earth's field (`earth`), and near a magnet lines up with its field: red end toward the magnet's south pole and away from its north; a magnet flipped right in line with it swings it round. Its needle always turns on its pivot, a fixed (held) compass's too. Its reading heading_deg is the red end's direction, counter-clockwise from the right (0 right, 90 up, 180 left).",
@@ -1357,7 +1497,7 @@ export const plugin = {
 		}
 	],
 	knobs: [
-		...["bar-magnet", "horseshoe-magnet", "disc-magnet", "ring-magnets", "magnet-cart"].map((type) => ({ type, key: "material", how: "choice", cost: 2, more: "make {it} a stronger kind of magnet", less: "make {it} a weaker kind of magnet", why: "neodymium (1.3 T) pulls about 11 times harder than ceramic (0.39 T) of the same size at contact; alnico about 7 times" })),
+		...["bar-magnet", "horseshoe-magnet", "disc-magnet", "ring-magnets", "magnet-cart"].map((type) => ({ type, key: "material", how: "choice", cost: 2, more: "make {it} a stronger kind of magnet", less: "make {it} a weaker kind of magnet", why: "neodymium (1.3 T) pulls about 11 times harder than ceramic (0.39 T) of the same size at contact; alnico about 7 times, but an alnico bar only 2 to 4 times (its ends are partly demagnetized)" })),
 		...["bar-magnet", "horseshoe-magnet", "disc-magnet", "magnet-cart", "battery-electromagnet"].map((type) => ({ type, key: "flip", how: "bool", more: "turn {it} around, swapping its poles", less: "turn {it} around, swapping its poles", why: "like poles push apart and unlike poles pull together; iron and steel are pulled by either pole, so flipping changes nothing for a clip" })),
 		{ type: "bar-magnet", key: "length", how: "rel", more: "make {it} longer", less: "make {it} shorter", why: "it grows or shrinks about its middle: a longer bar's ends reach farther out (nearer what lies beyond them), and its far pole is farther away, so the near pole's pull is less cancelled" },
 		{ type: "bar-magnet", key: "width", how: "rel", more: "make {it} thicker", less: "make {it} thinner", why: "a bigger pole face carries more pole strength: it pulls harder and reaches farther" },
@@ -1452,6 +1592,10 @@ export const plugin = {
 		outcomes: "push\\w* (?:\\w+ ){0,3}(?:away|apart|back)|pull\\w* (?:\\w+ ){0,3}(?:toward|towards|closer|nearer|in|together)|drawn (?:toward|towards|to)|jump\\w* up|pick\\w* (?:\\w+ ){0,3}up|snap\\w* together|swing\\w* apart|pulled|attracted|repelled|stuck|sticks?|cling\\w*|(?:is|are|be|gets?) not (?:pulled|attracted|picked up|lifted)|(?:does|do)n['’]?t (?:move|budge|jump|get pulled)|stays? (?:put|down|still|where it is)|point\\w* (?:at|to|toward|towards|north|south|left|right|the other way)|turn\\w* (?:a?round|to point|back)|fac\\w* each other",
 		change(type, key, a, b, nameOf) {
 			if (key === "material" && GRADES[a] && GRADES[b]) {
+				// (an alnico bar's ends are partly demagnetized (mod_magnetism.py ALNICO_HC): near its end it pulls a clip 2 to 4 times as hard as a
+				// ceramic bar does, a third to a half as hard as a neodymium one, not what its B_r says: research/rw-validate-magnetism.ts alnico)
+				if ((type === "bar-magnet" || type === "magnet-cart") && a !== b && (a === "alnico" || b === "alnico"))
+					return `${a} → ${b} magnet (an alnico bar's ends are partly demagnetized: near its end it pulls 2 to 4× as hard as a ceramic bar, a third to a half as hard as a neodymium one)`
 				const ra = GRADES[a].br * GRADES[a].eff
 				const rb = GRADES[b].br * GRADES[b].eff
 				return `${a} → ${b} magnet (about ${fmt1((rb * rb) / (ra * ra))}× the pull at contact)`

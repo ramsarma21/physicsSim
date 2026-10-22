@@ -2,7 +2,8 @@
  * The magnetism module's engine side, process kind "magnetism": magnets, soft iron, coils, the Earth's field, charges and polarizable
  * things (the math is in tooling/src/sim/magnetism.ts). The catalog (machines/mod_magnetism.py, web/sim/modules/magnetism.js) writes one
  * record per part into doc.processes, {kind: "magnetism", id, item, role, ...}:
- *   {role: "magnet", solid, faces: [{x, y, z?, angle, width, depth, sigma}], round?, level?, center?, needle?}   a permanent magnet; `level`: held
+ *   {role: "magnet", solid, faces: [{x, y, z?, angle, width, depth, sigma, inner?}], round?, level?, center?, needle?}   a permanent magnet (`inner`:
+ *       a sheet of its charge inside its body, an alnico bar's ends: tooling/src/sim/magnetism.ts FaceSpec); `level`: held
  *       level by what it is threaded on (a ring on a dowel, which takes every turning the field gives it: two rings with like faces together
  *       would otherwise flip over and snap on, as free ones do), its pushes applied at `center` (its middle, in the solid's frame); `needle`:
  *       a compass needle on its pivot (never left balancing exactly against the field: tooling/src/sim/magnetism.ts MagnetSpec)
@@ -74,6 +75,7 @@ const faceProblem = (f: unknown, k: number): string | undefined => {
 	for (const key of ["x", "y", "angle", "sigma"]) if (!num(o[key])) return `face ${k}.${key} must be a number`
 	if (!pos(o.width) || !pos(o.depth)) return `face ${k} needs a width and a depth over 0`
 	if (o.z !== undefined && !num(o.z)) return `face ${k}.z must be a number`
+	if (o.inner !== undefined && typeof o.inner !== "boolean") return `face ${k}.inner must be true or false`
 	return undefined
 }
 
@@ -125,8 +127,9 @@ const leaderProcess = (run: Run): Process => ({
 			fields.setCurrent(r.solid as string, ctx.get(reading.item, reading.key) ?? 0)
 		}
 		run.pull.clear()
-		// every pair's push and turning on each solid, summed (about its own origin) before any is applied
-		const sums = new Map<string, { fx: number; fy: number; tq: number; k: number; x: number; y: number; angle: number }>()
+		// every pair's push and turning on each solid, summed (about its own origin) before any is applied: the moments of the pushes and the
+		// turnings given with no stiffness (`tq`), and apart from them the stiff turnings, the field lining up its moment (`stiff`)
+		const sums = new Map<string, { fx: number; fy: number; tq: number; stiff: number; k: number; x: number; y: number; angle: number }>()
 		fields.step(
 			ctx.time(),
 			(id) => ctx.solid(id)?.pose(),
@@ -135,12 +138,14 @@ const leaderProcess = (run: Run): Process => ({
 				if (s === undefined) {
 					const q = ctx.solid(id)?.pose()
 					if (q === undefined) return
-					s = { fx: 0, fy: 0, tq: 0, k: 0, x: q.x, y: q.y, angle: q.angle }
+					s = { fx: 0, fy: 0, tq: 0, stiff: 0, k: 0, x: q.x, y: q.y, angle: q.angle }
 					sums.set(id, s)
 				}
 				s.fx += fx
 				s.fy += fy
-				s.tq += torque + (px - s.x) * fy - (py - s.y) * fx
+				s.tq += (px - s.x) * fy - (py - s.y) * fx
+				if (stiffness > 0) s.stiff += torque
+				else s.tq += torque
 				s.k = Math.max(s.k, stiffness)
 			}
 		)
@@ -162,10 +167,11 @@ const leaderProcess = (run: Run): Process => ({
 				continue
 			}
 			hd.push(s.fx, s.fy, { x: s.x, y: s.y })
-			// the turning taken implicitly where it is stiff for the step (backward Euler on its torsion: τ/(1 + κh²/I))
+			// the field's lining up taken implicitly where it is stiff for the step (backward Euler on its torsion: τ/(1 + κh²/I)); the moments of
+			// its pushes as they are (taken implicitly too, a pull on a nail's point no longer balanced the push it is applied with about that point)
 			const I = inertiaOf(hd)
 			const k = I > 0 && s.k > 0 ? 1 / (1 + (s.k * h * h) / I) : 1
-			const turn = s.tq * k
+			const turn = s.tq + s.stiff * k
 			if (turn !== 0) hd.twist(turn)
 		}
 		readings(run, ctx)

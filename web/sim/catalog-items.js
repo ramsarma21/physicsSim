@@ -30,6 +30,7 @@ export function register_all(g) {
 	_containers()
 	_groups()
 	_air()
+	_readable()
 }
 
 /** A Python int (see the top). */
@@ -168,6 +169,7 @@ function _looks() {
 	add_look("baseball", { fill: "#f5f1e6", shade: "#c9c1a8", roughness: 0.7, metalness: 0.0, clearcoat: 0.0 })
 	add_look("bowling", { fill: "#1f2937", shade: "#111827", roughness: 0.1, metalness: 0.0, clearcoat: 1.0 })
 	add_look("marble", { fill: "#4ea6e6", shade: "#2f85b8", roughness: 0.03, metalness: 0.0, clearcoat: 1.0, transmission: 0.8, ior: 1.5, thickness: 0.016 })
+	add_look("swirl glass", { fill: "#f3f1ea", shade: "#c8c3b5", roughness: 0.05, metalness: 0.0, clearcoat: 1.0 })
 	add_look("pvc", { fill: "#ef4136", shade: "#bf2a22", roughness: 0.35, metalness: 0.0, clearcoat: 0.5 })
 	add_look("phenolic", { fill: "#2a5db0", shade: "#1b3f80", roughness: 0.08, metalness: 0.0, clearcoat: 1.0 })
 }
@@ -865,4 +867,17 @@ function _air() {
 		source: "A round free jet: speed holds for about 6 diameters, then fades (Rajaratnam, Turbulent Jets, 1976).",
 		anchor: "the middle of its front face", facts: "blows 5 m/s along its angle", edit: [{ kind: "rotate" }]
 	}))
+}
+
+function _readable() {
+	// bench2 (2026-10-21): variants a lesson picks for a picture that reads, at the real thing's size (registered last: the parity tools' random
+	// cases of every type before them keep their numbers)
+	ball_type("swirl-marble", "Swirl marble", 0.016, 0.0054, "glass marble", {
+		pattern: "swirl-marble", look: "swirl glass",
+		tags: ["marbles", "glass ball", "swirl", "opaque", "white", "orange", "blue", "toy", "small", "easy to see"],
+		description: "A glass marble of milky white glass with bold orange and blue swirls (its swirl takes a colour you give it): it shows up in a " +
+			"picture where a clear marble vanishes, in water too. Real size: 16 mm, or 25 mm for a big 'shooter'.",
+		source: "Standard 5/8 in marble of soda-lime glass, 5.4 g; an opaque swirl marble is the same glass, milky, with coloured ribbons.",
+		facts: "16 mm · 5.4 g · opaque swirl"
+	})
 }

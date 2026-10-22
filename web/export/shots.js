@@ -52,6 +52,9 @@ export const NET = Object.freeze({
 	stopBackdrop: 0.65, // a lesson's stop (a pause beat's last shot): at most this share of each band shows nothing of the scene, a table top counted as backdrop (a low setup under one floor line with a tall one leaves its band about half empty, as the drawn originals do)
 	cutScale: 2.5, // a cut out to a wider picture while things move widens it at most this much (the movers shrink to specks in a bigger jump)
 	pathFill: 0.7, // a still whose subject is a path (an orbit, a trip): its drawn path (the mover's centre) spans at least this share of the picture's longer side, the mover kept whole
+	smallM: 0.065, // a small thing (a grape, a marble, a clip, a nail, a cork, an egg: its larger side under this, metres) ...
+	smallS: 0.12, // ... at a lesson's stop is at least this share of its band (the five-lesson benchmark: a 3 cm grape at 0.05 of the picture did not read)
+	lockStill: 1e-6, // a lock (one frame from the setup through the pause): no band's camera moves more than this (picture widths, log-distance, radians)
 })
 /** The named views: yaw and pitch in degrees, and the lens a view takes when the shot names none (mm on a full-frame camera). */
 export const VIEWS = Object.freeze({
@@ -1088,12 +1091,67 @@ const lookOf = (plan, sh) => {
 	return { backdrop, tone: L.tone ?? DEFAULT_LOOK.tone, ground, light: L.light ?? (backdrop === "studio" ? "subject" : "room"), depth: L.depth ?? "none", vignette: Number(L.vignette ?? 0) || 0, labels: L.labels ?? "scene" }
 }
 
+// ------------------------------------------------------------------------------------------------ a lesson's pauses and its lock
+/**
+ * The shots a lesson's pauses are held in, in order (indexes into plan.shots): each pause beat's last shot (shots whose own beat is a pause);
+ * when no shot has a pause beat, each pause beat of the story in the shot held when it comes (the last shot of the last beat before it that has
+ * shots: the physics-lesson-video skill's own reading, lesson-direct.ts storyPauseShots).
+ */
+export function pauseShotIndexes(plan) {
+	const shots = Array.isArray(plan?.shots) ? plan.shots : []
+	const story = Array.isArray(plan?.story) ? plan.story : []
+	const kind = new Map(story.map((b) => [b?.id, b?.kind]))
+	const last = new Map()
+	shots.forEach((sh, k) => {
+		if (kind.get(sh?.beat) === "pause") last.set(sh.beat, k)
+	})
+	if (last.size) return [...new Set(last.values())].sort((a, b) => a - b)
+	const byBeat = new Map()
+	shots.forEach((sh, k) => byBeat.set(sh?.beat, k))
+	const out = []
+	let held = null
+	for (const b of story) {
+		if (byBeat.has(b?.id)) held = byBeat.get(b.id)
+		if (b?.kind === "pause" && held !== null) out.push(held)
+	}
+	return [...new Set(out)].sort((a, b) => a - b)
+}
+/** The last shot (its index) of a plan's lock: through the lesson's last pause (until "pause", the default; a plan with no pause: every shot),
+ *  or through the video's end (until "end"). -1 for a plan with no lock. */
+export function lockedThrough(plan) {
+	if (!plan?.lock) return -1
+	const n = plan.shots.length
+	if (plan.lock.until === "end") return n - 1
+	const p = pauseShotIndexes(plan)
+	return p.length ? p[p.length - 1] : n - 1
+}
+/** A lock's camera as a pose: [Lx, Ly, Lz, d, yaw, pitch, hfov] (a film frame's band pose: film.frames[i].b[k]; metres, radians). */
+function lockCamera(c) {
+	const ok = Array.isArray(c) && c.length === 7 && c.every((v) => typeof v === "number" && Number.isFinite(v)) && c[3] > 0 && c[6] > 0 && c[6] < Math.PI && Math.abs(c[5]) < Math.PI / 2
+	if (!ok) throw new PlanError("lock.camera must be a camera pose [Lx, Ly, Lz, d, yaw, pitch, hfov] (metres and radians, as a film's frames keep it)")
+	return arrPose(c)
+}
+
 // ------------------------------------------------------------------------------------------------ compile
 /** Compile a shot plan into a film (DIRECTOR.md section 4): the shots' clocks, one camera pose per frame per band, the look, and the marks.
  *  opts: {width = 1920, height = 1080, fps (the plan's output.fps, else 60), kind ("director-plan")}. Throws a PlanError for what the run
  *  does not have. The film is plain data (JSON.stringify keeps all of it); measure(film) reads what compile kept beside it. */
 export function compile(plan, world, opts = {}) {
 	if (!plan || typeof plan !== "object" || !Array.isArray(plan.shots) || !plan.shots.length) throw new PlanError("a plan needs shots")
+	// a lock (plan.lock: one frame from the setup through the lesson's pause): every frame of its shots filmed from one camera, the one it
+	// gives, or the one its last shot ends on (compiled once without the lock to find it)
+	if (plan.lock && opts._lock === undefined) {
+		const upto = lockedThrough(plan)
+		let pose
+		if (plan.lock.camera !== undefined) pose = lockCamera(plan.lock.camera)
+		else {
+			const free = compile(plan, world, { ...opts, _lock: null })
+			const sh = free.shots[upto]
+			pose = arrPose(free.frames[sh.i0 + sh.n - 1].b[0])
+		}
+		return compile(plan, world, { ...opts, _lock: { upto, pose } })
+	}
+	const lock = opts._lock ?? null
 	const W = Math.round(Number(opts.width ?? 1920))
 	const H = Math.round(Number(opts.height ?? 1080))
 	const fps = Number(opts.fps ?? plan.output?.fps ?? 60)
@@ -1293,6 +1351,11 @@ export function compile(plan, world, opts = {}) {
 		} else throw new PlanError(`${where}: move ${sh.move} is not one of hold, follow, travel, push, pull, arc`)
 		// the join (section 3.7): a cut at once; continue from exactly where the last shot ended (a 0.5 s glide when this shot's own start differs);
 		// {ease: s}: a glide of s seconds from the last shot's end into this shot's moving framing
+		// (a shot of the lock's stretch: filmed from the lock's one camera, every band shifted by its lane's offset as the shot's own layout has it)
+		if (lock && k <= lock.upto) {
+			poseAt = () => lock.pose
+			perLane = null
+		}
 		let inJ = sh.in ?? "cut"
 		if (inJ !== "cut" && prev && !sameFrame) {
 			shNotes.push(`${typeof inJ === "string" ? inJ : "a glide"} across a change of layout (${prev.layout}${prev.layout === "split" ? ` ${prev.arrange}` : ""} -> ${layout}${layout === "split" ? ` ${arrange}` : ""}): filmed as a cut`)
@@ -1301,7 +1364,7 @@ export function compile(plan, world, opts = {}) {
 		const join = inJ === "cut" || !prev ? null : inJ === "continue" ? 0.5 : Number(inJ.ease) || 0.5
 		const from = prev?.pose
 		const p0 = poseAt(0)
-		const glide = join && differs(p0, from)
+		const glide = join && !(lock && k <= lock.upto) && differs(p0, from)
 		if (glide && inJ === "continue" && sh.move !== "push" && sh.move !== "pull" && sh.move !== "arc") shNotes.push(`continue: the shot's own start differs from where the last one ended; it glides in over ${join} s`)
 		const final = glide ? (u) => lerpPose(from, poseAt(u), smoother(u / join)) : poseAt
 		// bands: each lane's camera is the shot's pose shifted by its lane's offset (one run), the very pose (one run per lane), or its own (per_lane)
@@ -1370,6 +1433,7 @@ export function compile(plan, world, opts = {}) {
 		frames,
 		marks: {},
 		notes,
+		lock: lock ? { until: plan.lock.until ?? "pause", upto: plan.shots[lock.upto].id, last: shots[lock.upto].i0 + shots[lock.upto].n - 1, camera: poseArr(lock.pose), given: plan.lock.camera !== undefined } : null,
 	}
 	Object.defineProperty(film, "_ctx", { value: { S, plan, world, meta }, enumerable: false })
 	film.marks = marksOf(film)
@@ -1565,6 +1629,8 @@ export function measure(film) {
 	let lastFrame = null
 	let prevPose = null
 	let prevLayout = null
+	// (a lesson's stops: the shots its pauses are held in)
+	const lessonStops = new Set(plan.source?.kind === "lesson" ? pauseShotIndexes(plan) : [])
 	for (let k = 0; k < film.shots.length; k++) {
 		const fs = film.shots[k]
 		const m = meta[k]
@@ -1718,7 +1784,8 @@ export function measure(film) {
 					if (!P.length) continue
 					const asp = aspOf(bi)
 					const s = boxStats(projBox(arrPose(KF.b[bi]), asp, P))
-					heroRows.push({ what: JSON.stringify(tg), ...(tg !== tg0 ? { for: JSON.stringify(tg0) } : {}), lane: fs.bands[bi].lane, s: r3(s.s), w: r3(s.w), h: r3(s.h), margin: r3(s.margin), flat: s.h < 0.3 * s.w * asp || s.w * asp < 0.3 * s.h })
+					const [lo, hi] = boundsOf(P)
+					heroRows.push({ what: JSON.stringify(tg), ...(tg !== tg0 ? { for: JSON.stringify(tg0) } : {}), lane: fs.bands[bi].lane, s: r3(s.s), w: r3(s.w), h: r3(s.h), margin: r3(s.margin), flat: s.h < 0.3 * s.w * asp || s.w * asp < 0.3 * s.h, m: r3(Math.max(hi[0] - lo[0], hi[1] - lo[1])) })
 				}
 			}
 		const must = []
@@ -1803,6 +1870,14 @@ export function measure(film) {
 		if (sh.move !== "travel") {
 			const bad = heroRows.filter((h) => h.s < heroFloor * 0.999 || (!wholeShot && !h.flat && h.h < NET.heroH * 0.999))
 			if (heroRows.length) (bad.length ? fail : pass)(sh.id, "subject-size", `${bad.length ? "too small: " : ""}${(bad.length ? bad : heroRows).map((h) => `${h.what}${h.lane ? "@" + h.lane : ""} s ${h.s} h ${h.h}`).join("; ")} (floor s ${heroFloor}${wholeShot ? ", a whole/setup shot" : `, h ${NET.heroH} unless flat or thin`}; group ${sizes.map((z) => z.s).join("/")})`)
+		}
+		// a small thing at a lesson's stop (a grape, a marble, a clip: under NET.smallM across) is framed close, NET.smallS of its band at least, the
+		// container cropped: at the five-lesson benchmark's 5 % a 3 cm grape and a clear 2.5 cm marble could not be read (soft: the scene's layout
+		// may not allow it; small_because says when the smallness is the point)
+		if (lessonStops.has(k) && sh.move !== "travel" && !(typeof sh.audit?.small_because === "string" && sh.audit.small_because.length >= 12)) {
+			const small = heroRows.filter((h) => h.m < NET.smallM)
+			const bad = small.filter((h) => h.s < NET.smallS * 0.999)
+			if (small.length) (bad.length ? fail : pass)(sh.id, "small-size", `${bad.length ? "too small at the lesson's stop: " : ""}${(bad.length ? bad : small).map((h) => `${h.what}${h.lane ? "@" + h.lane : ""} ${Math.round(h.m * 1000)} mm across, s ${h.s}`).join("; ")} (a small thing at a stop at least ${NET.smallS} of the picture: the macro view, frame.size on it, the container cropped)`)
 		}
 		const badMust = must.filter((x) => x.s < x.floor * 0.999 || x.margin < 0)
 		if (must.length) (badMust.length ? fail : pass)(sh.id, "must-see", badMust.length ? badMust.map((x) => `${x.what}${x.lane ? "@" + x.lane : ""}${x.detail ? " (a detail)" : ""} s ${x.s} (floor ${x.floor}) margin ${x.margin}`).join("; ") : `${must.length} things whole, each at least its floor${small ? ` (small, because: ${sh.audit.small_because})` : ""}`)
@@ -2182,6 +2257,50 @@ export function measure(film) {
 			if (fr.length) (low.length ? fail : pass)(sh.id, "path-fill", low.length ? `the path spans ${low.map((x) => `${x.lane ? x.lane + " " : ""}${x.span}`).join(", ")} of the picture's longer side (at least ${NET.pathFill}): frame the path itself, tight (fit tight on the trail, or a width just over its reach), the mover kept whole` : `the path fills the picture (${fr.map((x) => x.span).join(", ")})`)
 		}
 		if (fs.rate !== 0 && fs.rate !== 1 && !sh.label) fail(sh.id, "label", "slow motion or a speed-up without its label")
+	}
+	// one frame from the setup through the pause (plan.lock): every band's camera the very one of the first frame until the lock's last frame
+	// (no reframe between a screen's setup and its pause: a judge counts one as a second change), and the lock's own camera when it gives one
+	if (film.lock) {
+		const Lk = film.lock
+		const f0 = film.frames[0]
+		const s0 = film.shots[f0.s]
+		const off = (p, q) => {
+			const a = arrPose(p)
+			const c = arrPose(q)
+			const wd = 2 * a.d * Math.tan(a.hfov / 2)
+			return Math.max(len3(sub(c.L, a.L)) / wd, Math.abs(Math.log(c.d / a.d)), Math.abs(c.yaw - a.yaw), Math.abs(c.pitch - a.pitch), Math.abs(c.hfov - a.hfov))
+		}
+		let worst = 0
+		let worstAt = null
+		let layoutAt = null
+		for (let i = 1; i <= Lk.last && i < film.frames.length; i++) {
+			const fr = film.frames[i]
+			const sh = film.shots[fr.s]
+			if (fr.b.length !== f0.b.length || sh.bands.length !== s0.bands.length || sh.bands.some((b, q) => b.rect.join(",") !== s0.bands[q].rect.join(","))) {
+				layoutAt ??= sh.id
+				continue
+			}
+			for (let q = 0; q < fr.b.length; q++) {
+				const d = off(f0.b[q], fr.b[q])
+				if (d > worst) {
+					worst = d
+					worstAt = r3(i / fps)
+				}
+			}
+		}
+		const given = Lk.given ? off(Lk.camera, f0.b[0]) : 0
+		const ok = !layoutAt && worst <= NET.lockStill && given <= NET.lockStill
+		const span = `the video's first ${r3((Lk.last + 1) / fps)} s (through ${Lk.upto}${Lk.until === "end" ? ", the end" : ", the last pause"})`
+		;(ok ? pass : fail)(Lk.upto, "one-frame", ok ? `one frame for ${span}${Lk.given ? ", the lesson's own camera" : ""}` : layoutAt ? `the picture's layout changes at ${layoutAt} within ${span}: one frame means one layout too` : given > NET.lockStill ? `the first frame is not the lesson's camera (off by ${r4(given)})` : `the camera moves ${r4(worst)} at ${worstAt} s within ${span}: one frame from the setup through the pause`)
+		report.lock = { until: Lk.until, upto: Lk.upto, seconds: r3((Lk.last + 1) / fps), camera: Lk.camera.slice(), given: Lk.given }
+	}
+	// a lesson's video keeps one look (the backdrop, its tone, the ground, the light) from its first frame to its last: a look that changes between
+	// shots is a second change on a screen that may change one thing (the lesson's own look, the same on every screen: the direct step's look)
+	if (plan.source?.kind === "lesson" && film.shots.length > 1) {
+		const first = JSON.stringify(film.shots[0].look)
+		const other = film.shots.find((x) => JSON.stringify(x.look) !== first)
+		const what = (l) => `${l.backdrop}${l.backdrop === "studio" ? ` ${l.tone}` : ""}, ground ${l.ground}, light ${l.light}`
+		;(other ? fail : pass)(other ? other.id : film.shots[0].id, "one-look", other ? `the look changes at ${other.id} (${what(film.shots[0].look)} -> ${what(other.look)}): one look for the whole video` : `one look for every shot (${what(film.shots[0].look)})`)
 	}
 	report.ok = report.checks.every((c) => c.ok)
 	report.failed = report.checks.filter((c) => !c.ok).map((c) => `${c.shot} ${c.check}: ${c.why}`)
