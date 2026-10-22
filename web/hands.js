@@ -124,6 +124,17 @@ const digits = (rows) => {
 	for (const [d, js] of Object.entries(rows)) js.forEach((v, j) => (o[`${d}_${j + 1}`] = v))
 	return pose(o)
 }
+// the middle, ring and little fingers folded into the palm as a closed fist, each a little more than the one before it (at the knuckle 84, 90 and 95
+// degrees: no gap between them), and the thumb lying along the folded middle finger under the index, its side against the index's root and its pad
+// on the middle finger (each 0.6 to 1.2 mm off: nothing to see through between them; fitted on hand.glb's skin): a pointing hand's and a pressing
+// fingertip's other digits, and a pinch's tucked fingers
+const FOLD = {
+	middle: [[0, 0, -84], [0, 0, -108], [0, 0, -80]],
+	ring: [[0, 1, -90], [0, 0, -110], [0, 0, -82]],
+	pinky: [[0, 3, -95], [0, 0, -110], [0, 0, -84]],
+	thumb: [[58.4, 9.4, -25], [-4.8, -13, 1.9], [-1.9, -7.1, -36.2]]
+}
+const TAP_THUMB = [[64.3, 10.8, -26.8], [-4.8, -12.7, 5.4], [-1.9, -7.1, -36.4]] // (the same, fitted to the pressing index a little more bent)
 export const POSES = {
 	// the fingers straight (barely bent) and a little apart to their tips, the thumb out beside the index in the palm's plane, its nail to the side
 	flat: digits({
@@ -150,24 +161,18 @@ export const POSES = {
 		pinky: [[0, 3, -90], [0, 0, -110], [0, 0, -76]],
 		thumb: [[51.1, -27.6, -22.1], [-5.1, -15, -21.1], [-1.6, -6.4, -16.6]]
 	}),
-	// the index straight ahead with a slight natural bend, the others curled into the palm one after another, the thumb's pad on the middle finger's
-	// middle bone
+	// the index straight ahead with a slight natural bend, the others folded into the palm as a closed fist, the thumb along them under the index
+	// (FOLD)
 	point: digits({
 		index: [[0, 0, -3], [0, 0, -8], [0, 0, -5]],
-		middle: [[0, 0, -84], [0, 0, -110], [0, 0, -78]],
-		ring: [[0, 1, -88], [0, 0, -110], [0, 0, -78]],
-		pinky: [[0, 3, -90], [0, 0, -110], [0, 0, -76]],
-		thumb: [[28.3, -12.5, -33.5], [-4.8, -13.7, -6.8], [-1.6, -6.6, -22.4]]
+		...FOLD
 	}),
-	// pressing down with a fingertip: the index nearly straight along the press, a slight bend at each joint (never a hook), the others curled
-	// loosely, each a little more than the one before it, open curls (no closed loop to see through), the thumb's pad on the middle finger's
-	// middle bone
+	// pressing down with a fingertip: the index nearly straight along the press, a slight bend at each joint (never a hook), the others folded as
+	// the pointing hand's (FOLD)
 	tap: digits({
 		index: [[0, 0, -5], [0, 0, -9], [0, 0, -6]],
-		middle: [[0, 0, -60], [0, 0, -80], [0, 0, -40]],
-		ring: [[0, 1, -66], [0, 0, -84], [0, 0, -42]],
-		pinky: [[0, 3, -72], [0, 0, -88], [0, 0, -44]],
-		thumb: [[27, -14.4, -30.5], [-4.8, -13.7, -6.8], [-1.7, -6.7, -24.3]]
+		...FOLD,
+		thumb: TAP_THUMB
 	}),
 	// pressing with the palm: the fingers flat and a little apart, a slight bend at the knuckles, the thumb out beside them flat in the palm's plane
 	press: digits({
@@ -177,22 +182,22 @@ export const POSES = {
 		pinky: [[0, 3.5, -12], [0, 0, -9], [0, 0, -4]],
 		thumb: [[9.3, 0.5, -2.2], [-4.8, -12.5, 7.2], [-1.5, -5.9, 1.8]]
 	}),
-	// the thumb's and the index's pads meeting (their skins 0.6 mm apart, facing), an O between them; the other fingers curled loosely out of the
-	// way, each a little more than the one before it (fitted on hand.glb)
+	// the thumb's and the index's pads meeting (their skins 0.6 mm apart, facing), an O between them; the other fingers folded into the palm behind
+	// the index (FOLD's), out of the O and out of the way (fitted on hand.glb)
 	pinch: digits({
 		index: [[0, -6, -50], [0, 0, -51.4], [0, 0, -29.8]],
-		middle: [[0, 0, -55], [0, 0, -75], [0, 0, -40]],
-		ring: [[0, 2, -62], [0, 0, -82], [0, 0, -44]],
-		pinky: [[0, 5, -68], [0, 0, -86], [0, 0, -46]],
+		middle: FOLD.middle,
+		ring: FOLD.ring,
+		pinky: FOLD.pinky,
 		thumb: [[13.5, -6.8, -33.8], [-4.8, -12.2, 11.1], [-1.5, -5.8, 5.8]]
 	}),
 	// the pinch opened, its tips 4.5 cm apart, the pads still facing each other all the way between (fitted on hand.glb): a pinch round a thing w
 	// across is the pinch opened toward this until its tips are w apart (pinchFor)
 	pinchOpen: digits({
 		index: [[0, -6, -30], [0, 0, -38.4], [0, 0, -1.1]],
-		middle: [[0, 0, -55], [0, 0, -75], [0, 0, -40]],
-		ring: [[0, 2, -62], [0, 0, -82], [0, 0, -44]],
-		pinky: [[0, 5, -68], [0, 0, -86], [0, 0, -46]],
+		middle: FOLD.middle,
+		ring: FOLD.ring,
+		pinky: FOLD.pinky,
 		thumb: [[78.4, -24.1, -37.3], [-5.1, -11.3, 20.9], [-1.7, -5.3, 22.9]]
 	}),
 	// the fingers curved as round a cup or a handle, the thumb across from them
@@ -2250,6 +2255,13 @@ function closePinch(rig, d, k0, gap = 0.0004) {
 	}
 	return touched
 }
+/** The gap between the pinch's tips (m as drawn) when it is opened by k toward pinchOpen (refs' pinchTab, between its rows). */
+function pinchGap(k) {
+	const T = refs().pinchTab
+	const i = clamp(Math.floor(k / 0.05), 0, T.length - 2)
+	const u = clamp((k - T[i].k) / Math.max(1e-9, T[i + 1].k - T[i].k), 0, 1)
+	return T[i].gap + (T[i + 1].gap - T[i].gap) * u
+}
 /** The pinch whose tips are `w` m apart (a thing w across between them): {P (the pose), at (the tips' midpoint), axis (thumb to index), k}, in
  *  the hand's own frame (refs' pinchTab, between its rows). */
 function pinchFor(w) {
@@ -2382,7 +2394,7 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 			if (across <= Math.max(0.03, halfZ(d) * 2 + 0.002)) n = inPlane.clone()
 		}
 		// the pinch point: on the thing, near the hand's side (from the side, 7 mm in from its end; from above, its middle, or nearer its top where
-		// the curled fingers would meet its top)
+		// the folded fingers would meet its top)
 		const P0s = above ? [V(E.cx, E.cy, 0), V(E.cx, Math.max(E.cy, E.y1 - Math.min(0.01, E.h * 0.3)), 0)] : [V(side > 0 ? E.x0 + Math.min(0.008, E.w * 0.3) : E.x1 - Math.min(0.008, E.w * 0.3), E.cy, 0)]
 		const nn = n.z > 0.5 ? n.clone().negate() : n.clone() // (front to back: the thumb in front)
 		let a0 = approach0.clone().addScaledVector(nn, -approach0.dot(nn))
@@ -2421,9 +2433,9 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 							const W = P0.clone().sub(offsetOf(rr, PW.at, X, Y))
 							seatDir = null
 							pinchK = open.k
-							// (from above, the upper of its two points for a round thing, held at its upper half; the back of the hand toward the camera, so
-							// the thumb, the index and the thing between them show, the other fingers curled behind them)
-							const where = above && round ? (k === 0 ? 0.3 : 0) : k * 0.3
+							// (at its middle: the thumb's and the index's pads on either side of its widest line, the equator of a round thing; the back of the
+							// hand toward the camera, so the thumb, the index and the thing between them show, the other fingers folded behind them)
+							const where = k * 0.3
 							const pref = (psi / 45) ** 2 + (rs === rs0 ? 0 : 0.15) + where + (flip < 0 ? 0.5 : 0) + (1 - Y.dot(FRONT)) * 0.4 + (tilts.length > 1 ? ((tilt - 50) / 25) ** 2 : 0)
 							tryHold(rs, W, X, Y, tuck(rs, W, X, Y, copyPose(pre), all), pref, (l) => !closing.has(l), tilts.length > 1 ? { way: V(-lean, 0, 0), rise: 42, riseMin: ARM.reachIn } : {})
 						}
@@ -2587,7 +2599,7 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 		pace = { a: 40, v: 2.5 } // (a whip away: it falls at g, and a hand left under it would be seen to carry it)
 	}
 	const way = (exit ?? [{ dir: A, len: Infinity }]).map((e) => ({ dir: e.dir.clone().normalize(), len: e.len, calm: !!e.calm }))
-	return { rig, wrist: rig.root.position.clone(), X: best.X.clone(), Y: best.Y.clone(), armDir: A, exit: way, pace: pace ?? { a: WA, v: WV }, pose: copyPose(rig.pose), arm: best.arm, fault: best.fault, inThing: best.inThing, inOthers: best.inOthers, touched }
+	return { rig, wrist: rig.root.position.clone(), X: best.X.clone(), Y: best.Y.clone(), armDir: A, exit: way, pace: pace ?? { a: WA, v: WV }, pose: copyPose(rig.pose), arm: best.arm, fault: best.fault, inThing: best.inThing, inOthers: best.inOthers, touched, pinchK: grip === "pinch" ? (best.pinchK ?? null) : null }
 }
 /** The field's sphere when it is one ball (not a cylinder): {c, r}, else null. */
 function sphereOf(d) {
@@ -2601,18 +2613,31 @@ const halfZ = (d) => Math.max(0.001, ...(d.items ?? []).map((i) => i.zh))
 
 /** The pose a hand opens to at the release: each bend eased off toward the relaxed hand, never further bent than it held (a flat hand stays flat;
  *  the fingers' spread kept). A thrown thing's hand opens further, its fingers following through after it; a hand that gripped round a thing
- *  opens out of the curl it held (never a claw left hanging). */
-function openOf(P, grip = null, thrown = false) {
+ *  opens out of the curl it held (never a claw left hanging); a pinch opens its thumb and index along its own path (pinchOut) and a pressing
+ *  fingertip lifts off as it pressed, their folded fingers kept folded. */
+function openOf(P, grip = null, thrown = false, pinchOut = null) {
+	// (a pinch opens its thumb and index along the pinch's own path, about 1.5 cm wider than it held (pinchOut: the pose that far open), and a
+	// fingertip that pressed lifts off with its finger as it pressed; the folded fingers of both stay folded, eased only a little: never a claw
+	// hanging under the hand)
+	const tap = grip === "press" && P.middle_1[2] < -40
+	if (tap || (grip === "pinch" && pinchOut)) {
+		const o = copyPose(P)
+		for (const d of ["middle", "ring", "pinky"])
+			for (let j = 1; j <= 3; j++) {
+				const b = `${d}_${j}`
+				o[b][2] = P[b][2] + (Math.max(POSES.relaxed[b][2], P[b][2]) - P[b][2]) * 0.15
+			}
+		if (!tap) for (const b of ["index_1", "index_2", "index_3", "thumb_1", "thumb_2", "thumb_3"]) o[b] = [...pinchOut[b]]
+		return o
+	}
 	const o = thrown || grip === "grip" ? lerpPose(POSES.relaxed, POSES.flat, 0.6) : copyPose(POSES.relaxed)
 	for (const d of DIGITS) {
 		o[`${d}_1`][1] = P[`${d}_1`][1]
 		for (let j = 1; j <= 3; j++) o[`${d}_${j}`][2] = Math.max(o[`${d}_${j}`][2], P[`${d}_${j}`][2])
 	}
-	// (a palm that pressed it down keeps its thumb as it was: out in its plane, it never drops onto what it let go; a fingertip that pressed it
-	// lifts off with its finger as it pressed, the curled ones easing open: a pointing hand going, its thumb easing with them)
-	const tap = grip === "press" && P.middle_1[2] < -40
-	if (grip === "press" && !tap) for (const b of ["thumb_1", "thumb_2", "thumb_3"]) o[b] = [...P[b]]
-	return lerpPose(P, o, tap ? 0.7 : thrown ? 0.9 : 0.85)
+	// (a palm that pressed it down keeps its thumb as it was: out in its plane, it never drops onto what it let go)
+	if (grip === "press") for (const b of ["thumb_1", "thumb_2", "thumb_3"]) o[b] = [...P[b]]
+	return lerpPose(P, o, thrown ? 0.9 : 0.85)
 }
 
 /** The run's hands. opts: {doc, track, resolved, mode, holdPart(list) -> the part a pin would hold (or null), boxOf(id) -> drawn Box3 | null,
@@ -2812,7 +2837,9 @@ function holdRig(p, pf, C) {
 	// (a thing that leaves moving, start_speed: a throw)
 	const v = move?.v ? V(move.v.x, move.v.y, 0) : V(0, 0, 0)
 	const thrown = v.length() > 0.35
-	const open = openOf(hold, grip, thrown)
+	// (a pinch lets go by opening its thumb and index about 1.5 cm wider than they held it, along the pinch's path)
+	const pinchOut = grip === "pinch" && S.pinchK !== null ? pinchFor(pinchGap(S.pinchK) + 0.009).P : null
+	const open = openOf(hold, grip, thrown, pinchOut)
 	// the arm leaves the hand by the rules (ARM: from the picture's nearer edge or from above, short); a hand that lets go goes out along it
 	const armDir = S.armDir.clone()
 	// the way out: a polyline from the hold (pathAt(s): the wrist's offset s m along it)

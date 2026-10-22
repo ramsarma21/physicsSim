@@ -676,6 +676,54 @@ def smoothstep(e0, e1, x):
     return t * t * (3 - 2 * t)
 
 
+WEB_S = (0.28, 0.82)  # the thumb's share across the thumb-index web: from none at this fraction of the way from the index's chain to all at this
+KNUCKLE_FADE = (-0.013, -0.002)  # a finger's first bone's weight fades in from this far behind its knuckle (m along the finger) to this
+
+
+def web_blend(P, nb, W, D, where, fac, bi, rounds=40):
+    """The web between the thumb and the index, one broad even blend across it: the thumb's bones' share of each vertex rises smoothly from the
+    index's side to the thumb's (WEB_S of the way from the index's chain to the thumb's), carried by the thumb's metacarpal up to its knuckle and
+    by its first phalanx past it, the rest the palm's and the index's as the heat weights split it; faded into the heat weights round the web,
+    then evened out over the surface. So the web stretches evenly as the thumb swings across the palm and its free edge stays a smooth curve,
+    never a notch where the index's skin meets the thumb's."""
+    Dt, Di = D[:, 0], D[:, 1]
+    s = Di / np.maximum(Di + Dt, 1e-9)  # 0 on the index's chain .. 1 on the thumb's
+    wt = where[:, 0]  # along the thumb's chain: 0 its base (CMC), 1 its knuckle (MCP), 2 its end joint (IP)
+    wi = where[:, 1]  # along the index's: 0 its knuckle, 1 its middle joint
+    m = smoothstep(0.034, 0.022, np.maximum(Dt, Di)) * smoothstep(0.25, 0.55, wt) * smoothstep(1.85, 1.5, wt) * smoothstep(0.65, 0.4, wi)
+    m *= smoothstep(0.018, 0.03, P[:, 0])
+    zone = m > 1e-4
+    if not zone.any():
+        return W
+    th = [bi["thumb_1"], bi["thumb_2"], bi["thumb_3"]]
+    T = smoothstep(WEB_S[0], WEB_S[1], s)
+    T0 = W[:, th].sum(1)
+    rest = 1.0 - T0
+    target = W.copy()
+    k = (1.0 - T) / np.maximum(rest, 1e-9)
+    for j in range(W.shape[1]):
+        if j not in th:
+            target[:, j] = W[:, j] * np.where(rest > 1e-6, k, 0.0)
+    # (where the heat weights left nothing but the thumb, the index's side is the palm's)
+    target[:, bi["palm"]] += np.where(rest > 1e-6, 0.0, 1.0 - T)
+    f2 = smoothstep(0.85, 1.45, wt)
+    target[:, th[0]] = T * (1.0 - f2)
+    target[:, th[1]] = T * f2
+    target[:, th[2]] = 0.0
+    W = W * (1.0 - m[:, None]) + target * m[:, None]
+    W /= np.maximum(W.sum(1, keepdims=True), 1e-12)
+    # evened out over the surface where it was blended (and a ring round it), the other fingers' bones kept out
+    ring = m > 0.02
+    fw = fac.copy()
+    for j in th:
+        fw[:, j] = np.maximum(fw[:, j], ring.astype(float))  # (across the web the thumb's bones reach to the index's side, fading)
+    for _ in range(rounds):
+        mean = np.array([W[q].mean(0) if len(q) else W[i] for i, q in enumerate(nb)])
+        W[ring] = ((0.5 * W + 0.5 * mean) * fw)[ring]
+        W /= np.maximum(W.sum(1, keepdims=True), 1e-12)
+    return W
+
+
 def clean_weights(P, faces, W, rounds=10):
     """The automatic weights, checked. Each digit's bones fade out (smoothly, so nothing tears) where another digit is nearer: fully on its
     own digit, partly in a web, never on another finger (past the web of the finger a vertex is on, another digit's bones have no weight at
@@ -700,6 +748,11 @@ def clean_weights(P, faces, W, rounds=10):
         f = np.where(near == k, 1.0, f * (1.0 - past))
         for j in (1, 2, 3):
             fac[:, bi[f"{dg}_{j}"]] = f
+    # (a finger's first bone carries the skin from just behind its knuckle on: the palm's skin and the web further back stay with the palm, so a
+    # finger bending at its knuckle never drags the edge of the web after it into a fold)
+    for dg in FINGER_NAMES:
+        pts, d = finger_points(dg)
+        fac[:, bi[f"{dg}_1"]] *= smoothstep(KNUCKLE_FADE[0], KNUCKLE_FADE[1], (P - pts[0]) @ d)
     fac[:, bi["forearm"]] = 1.0 - smoothstep(0.015, 0.035, P[:, 0])
     # (and every other bone fades out up the forearm: the skin at the cuff moves with the forearm alone, as the sleeve does)
     up_arm = smoothstep(-0.024, -0.012, P[:, 0])
@@ -730,6 +783,7 @@ def clean_weights(P, faces, W, rounds=10):
         mean = np.array([W[q].mean(0) if len(q) else W[i] for i, q in enumerate(nb)])
         W[web] = ((0.5 * W + 0.5 * mean) * fac)[web]
         W /= np.maximum(W.sum(1, keepdims=True), 1e-12)
+    W = web_blend(P, nb, W, D, where, fac, bi)
     W[W < 0.01] = 0.0
     idx = np.argsort(-W, axis=1)
     for c in range(4, W.shape[1]):
