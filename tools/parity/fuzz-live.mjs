@@ -7,7 +7,8 @@
 // Cases:
 //   catalog    catalog() against GET /api/catalog (every type, previews, looks, materials, categories)
 //   scenarios  every scenario the server lists (web/scenarios), as it serves them
-//   fuzz       --n random mixed scenes (default 2000) of all 113 types: random props incl. min, max, slider_max, beyond the range (clamped), many decimals,
+//   fuzz       --n random mixed scenes (default 2000) of every type but the catalog's look variants (they run as their base types do, and a seed
+//              makes the scenes it made: tools/parity/look-variants.mjs): random props incl. min, max, slider_max, beyond the range (clamped), many decimals,
 //              all-min / all-max corners; random places (a quarter of them dense clusters), angles (round, huge, fractional), held/fixed, goals (containers
 //              and not), seconds, release, stage; 3 % carry garbage the server refuses or keeps (a prop of the wrong kind, a twice-used id, an id with "/")
 //   hung       a swing, a rope pendulum, a hanging chain, an Atwood machine and a pulley lift with "falls" goals: as above, and the server must count none
@@ -17,6 +18,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { fuzzKeys } from "./look-variants.mjs"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PG = path.resolve(HERE, "../..")
@@ -292,7 +294,7 @@ function randomItem(id, type, corner) {
 	return it
 }
 function randomScene(i) {
-	const keys = CAT.types.map((t) => t.key)
+	const keys = fuzzKeys(CAT.types)
 	const n = chance(0.1) ? ri(12, 30) : ri(1, 10)
 	const items = []
 	if (chance(0.35)) items.push({ id: "table", type: "table", x: 1.3, y: 0, angle: 0, props: {} })
@@ -466,7 +468,7 @@ if (GROUPS.includes("fuzz")) {
 		await check("fuzz", `fuzz-${i}`, scene)
 		if (++done % 100 === 0 && VERBOSE) console.log(`  ${done} scenes (${((Date.now() - t0) / 1000).toFixed(0)} s)`)
 	}
-	console.log(`  fuzz: ${done} random scenes of the ${CAT.types.length} types`)
+	console.log(`  fuzz: ${done} random scenes of ${fuzzKeys(CAT.types).length} of the ${CAT.types.length} types (not the look variants)`)
 }
 api?.engine.terminate()
 

@@ -3,7 +3,8 @@
 // Needs no server: the scenes are built with web/sim and run with the engine in node, sharded over child processes.
 //   node --no-warnings tools/parity/engine-fuzz.mjs [--n 5000] [--seed 20261015] [--jobs 8] [--engine tooling/src/sim] [--dump fails.jsonl] [--wild 60]
 //     [--only 12,345 [--doc out/prefix]]   (just those scenes, in this process; --doc writes each one's document to <prefix>-<i>.json)
-// Cases: per scene 1-30 items (a tenth of them 12-30), each type drawn so every type comes up about equally often, a third of the scenes with
+// Cases: per scene 1-30 items (a tenth of them 12-30), each type drawn so every type comes up about equally often (every type but the catalog's
+// look variants, which run as their base types do: tools/parity/look-variants.mjs, so a seed makes the scenes it made), a third of the scenes with
 // every number prop at one corner (min, max, the slider's top, below the range, above it: the builder clamps), the rest with each prop at a
 // random corner or value half the time; a quarter of the scenes packed into one cluster 3-50 cm across (items deep inside each other), held and
 // fixed items, any angle (huge, fractional), random seconds and release. Reported: scenes run, scenes the builder refused (400, as the server
@@ -17,6 +18,7 @@ import { fork } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { fuzzKeys } from "./look-variants.mjs"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const PG = path.resolve(HERE, "../..")
@@ -50,7 +52,7 @@ const sceneOf = (CAT, i) => {
 	const ri = (a, b) => a + Math.floor(rng() * (b - a + 1))
 	const pick = (arr) => arr[Math.floor(rng() * arr.length)]
 	const chance = (p) => rng() < p
-	const keys = CAT.types.map((t) => t.key)
+	const keys = fuzzKeys(CAT.types)
 	const corners = ["min", "max", "slider", "below", "above"]
 	const value = (p, mode) => {
 		if (p.kind === "bool") return chance(0.5)

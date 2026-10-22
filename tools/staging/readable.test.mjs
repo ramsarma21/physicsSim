@@ -2,7 +2,8 @@
 // marble; the clear glass marble in a tank of water was a few pixels across). A variant keeps the real thing's size: a bigger thing is never
 // the fix (the director frames small things close: web/export/shots.js small-size). The swirl marble is the clear glass marble in all but its
 // look: the same props (16 mm, 5.4 g, the marble's glass), the same runs byte for byte, in water too; its look milky and opaque where the clear
-// one's lets the light through; its own model (web/models/balls.js); Python == JavaScript. No browser: the pictures are checked by renders.
+// one's lets the light through; its own model (web/models/balls.js); Python == JavaScript; and the random scene makers draw the catalog without
+// it (tools/parity/look-variants.mjs), so their seeds make the scenes they made. No browser: the pictures are checked by renders.
 //   node --test tools/staging/readable.test.mjs
 import assert from "node:assert/strict"
 import { createHash } from "node:crypto"
@@ -11,6 +12,7 @@ import { dirname, join } from "node:path"
 import { test } from "node:test"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { execFileSync } from "../child-sync.mjs"
+import { fuzzKeys, LOOK_VARIANTS } from "../parity/look-variants.mjs"
 
 const PG = join(dirname(fileURLToPath(import.meta.url)), "..", "..")
 const sim = await import(pathToFileURL(join(PG, "web/sim/index.js")).href)
@@ -75,6 +77,21 @@ test("the same runs byte for byte: on the table at its 16 mm, and a 25 mm 'shoot
 			assert.ok(end.y < 0.05, `${JSON.stringify(opts)}: on the tank's floor (${end.y})`)
 		}
 	}
+})
+
+test("the random scene makers draw every type but the look variants (tools/parity/look-variants.mjs), so their seeds make the scenes they made", () => {
+	// each one listed is a look variant: its base's props, default for default and range for range (the swirl marble's runs: the test above)
+	for (const [variant, base] of Object.entries(LOOK_VARIANTS)) {
+		assert.ok(typeOf(variant) && typeOf(base), `${variant} and ${base} are in the catalog`)
+		assert.deepEqual(typeOf(variant).props, typeOf(base).props, variant)
+	}
+	// the draws: every other type, in the catalog's order
+	const keys = fuzzKeys(cat.types)
+	assert.equal(keys.length, cat.types.length - Object.keys(LOOK_VARIANTS).length)
+	assert.ok(!keys.includes("swirl-marble") && keys.includes("glass-marble"))
+	assert.deepEqual(keys, cat.types.map((t) => t.key).filter((k) => k !== "swirl-marble"))
+	// and both makers draw from them (engine-fuzz.mjs, p4's crash fuzz in CI; fuzz-live.mjs, the parity suite's)
+	for (const f of ["engine-fuzz.mjs", "fuzz-live.mjs"]) assert.match(readFileSync(join(PG, "tools/parity", f), "utf8"), /const keys = fuzzKeys\(CAT\.types\)/, f)
 })
 
 test("Python == JavaScript: its catalog entry and a scene's document", () => {
