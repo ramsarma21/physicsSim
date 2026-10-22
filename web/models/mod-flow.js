@@ -5,10 +5,12 @@
 //   particle of volume V spaced ℓ from the next is a piece of a round stream of radius √(V/(πℓ))), so a pour or a jet reads as one stream;
 //   a particle that has landed is a round drop;
 // - the liquid standing in each container (.b: each layer's top y and look; .i: the inside, in its frame) as a body that fills the inside up to
-//   its level (a lathe for a round container standing upright, an extrusion of the inside cut at the level when it is tipped), in its colour;
+//   its level (a column with a flat top for a round container standing upright, an extrusion of the inside cut at the level when it is tipped:
+//   web/models/liquid-geo.js), in its colour;
 // - puddles on the table (.d) as thin discs, hoses (.h: their path) as clear tubing with the liquid in it while it flows, and the colour of a
 //   fluids-module container that coloured water was poured into (a tint over its liquid).
 import { makeLib } from "./surfaces-lib.js"
+import { liquidColumn, liquidCut } from "./liquid-geo.js"
 
 const VESSELS = {
 	// inner width, inner height, wall, spout width (machines/mod_flow.py VESSELS)
@@ -599,86 +601,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 			 * yLo (or none) and yHi, as a closed body: over the stretch of its width where that slab is inside it, a grid that follows the round wall
 			 * front to back, its top and bottom the cut (or the floor, the rim). Null when nothing is left.
 			 */
-			const cutCylinder = (local, pl, yLo, yHi) => {
-				const ax = (local[0][0] + local[1][0]) / 2
-				const rad = Math.max(0.002, (local[1][0] - local[0][0]) / 2 - 0.0005)
-				const yb = local[0][1] + 0.0004
-				const yt = local[3][1]
-				const c = Math.cos(pl.angle)
-				const sn = Math.sin(pl.angle)
-				// (a level world height Y in the frame: the line sn·x + c·y = Y − pl.y)
-				const spanAt = (x) => {
-					let lo = yb
-					let hi = yt
-					const cut = (Y, keepBelow) => {
-						if (!Number.isFinite(Y)) return
-						const k = Y - pl.y - sn * x
-						if (Math.abs(c) < 1e-9) {
-							if (keepBelow ? 0 > k : 0 < k) lo = hi
-							return
-						}
-						const yy = k / c
-						if (keepBelow === c > 0) hi = Math.min(hi, yy)
-						else lo = Math.max(lo, yy)
-					}
-					cut(yHi, true)
-					if (yLo > -Infinity) cut(yLo, false)
-					return hi > lo ? [lo, hi] : null
-				}
-				const NX = 22
-				const NZ = 12
-				let xa = ax - rad
-				let xb = ax + rad
-				const ok = (x) => spanAt(x) !== null
-				let any = -1
-				for (let q = 0; q <= 24; q++) if (ok(xa + ((xb - xa) * q) / 24)) any = q
-				if (any < 0) return null
-				const inner = xa + ((xb - xa) * any) / 24
-				const fit = (out, inn) => {
-					let a = out
-					let b = inn
-					for (let it = 0; it < 30; it++) {
-						const mid = 0.5 * (a + b)
-						if (ok(mid)) b = mid
-						else a = mid
-					}
-					return b
-				}
-				if (!ok(xa)) xa = fit(xa, inner)
-				if (!ok(xb)) xb = fit(xb, inner)
-				const nvz = NZ + 1
-				const cnt = (NX + 1) * nvz
-				const pos = new Float32Array(cnt * 2 * 3)
-				const idx = []
-				const top = (i, j) => i * nvz + j
-				const bot = (i, j) => cnt + i * nvz + j
-				for (let i = 0; i <= NX; i++) {
-					const x = xa + ((xb - xa) * i) / NX
-					const sp = spanAt(Math.min(xb, Math.max(xa, x))) ?? [yb, yb]
-					const zmax = Math.sqrt(Math.max(0, rad * rad - (x - ax) * (x - ax)))
-					for (let j = 0; j <= NZ; j++) {
-						const z = -zmax + (2 * zmax * j) / NZ
-						for (const [v, y] of [[top(i, j), sp[1]], [bot(i, j), sp[0]]]) {
-							pos[v * 3] = pl.x + x * c - y * sn
-							pos[v * 3 + 1] = pl.y + x * sn + y * c
-							pos[v * 3 + 2] = z
-						}
-					}
-				}
-				for (let i = 0; i < NX; i++) {
-					for (let j = 0; j < NZ; j++) {
-						idx.push(top(i, j), top(i, j + 1), top(i + 1, j), top(i + 1, j), top(i, j + 1), top(i + 1, j + 1))
-						idx.push(bot(i, j), bot(i + 1, j), bot(i, j + 1), bot(i + 1, j), bot(i + 1, j + 1), bot(i, j + 1))
-					}
-					idx.push(bot(i, 0), bot(i + 1, 0), top(i, 0), bot(i + 1, 0), top(i + 1, 0), top(i, 0))
-					idx.push(bot(i, NZ), top(i, NZ), bot(i + 1, NZ), bot(i + 1, NZ), top(i, NZ), top(i + 1, NZ))
-				}
-				const geo = new T.BufferGeometry()
-				geo.setAttribute("position", new T.BufferAttribute(pos, 3))
-				geo.setIndex(idx)
-				geo.computeVertexNormals()
-				return geo
-			}
+			// (a round container tipped: its round inside cut by the level surfaces; the level, the floor and the sides each with their own
+			// normals, web/models/liquid-geo.js)
+			const cutCylinder = (local, pl, yLo, yHi) => liquidCut(T, local, pl, yLo, yHi)
 			const drawBasin = (B, t) => {
 				const w = around(B.rows, t)
 				const pl = ctx.placementAt(B.frame, t)
@@ -717,7 +642,9 @@ export default function register({ addModel, addViewPlugin, addFrameHook, ownMat
 								return (world[1][0] - world[0][0] + u * (world[2][0] - world[3][0] - (world[1][0] - world[0][0]))) / 2
 							}
 							const cx = (world[0][0] + world[1][0]) / 2
-							const geo = new T.LatheGeometry([new T.Vector2(0, 0), new T.Vector2(rAt(y0) - 0.0005, 0), new T.Vector2(rAt(y1) - 0.0005, y1 - y0), new T.Vector2(0, y1 - y0)], 48)
+							// (its level a flat disc lit as one: a lathe of the whole outline shared the rim's normals between the wall and the
+							// top, and a narrow glass's flat water was drawn as a dome; web/models/liquid-geo.js)
+							const geo = liquidColumn(T, rAt(y0) - 0.0005, rAt(y1) - 0.0005, y1 - y0, 48)
 							const m = new T.Mesh(geo, liquidMat(rgb, B.kind, opaqueLook(look)))
 							m.position.set(cx, y0, 0)
 							m.renderOrder = 2
