@@ -82,6 +82,32 @@ function clearOf(rig, d, links = () => true) {
 	return { m, link }
 }
 const armDir = (rig) => V(1, 0, 0).applyQuaternion(current(rig).arm.quaternion).normalize()
+/** hand.glb's sleeve as drawn on up the arm (sleeveOn, in the forearm bone's frame): its rings' middles, in order. */
+function sleeveRings(rig) {
+	const pos = rig.sleeveOn.geometry.attributes.position
+	// (a ring's vertices: the first ring is the open end's, all at its x)
+	let n = 0
+	while (n < pos.count && Math.abs(pos.getX(n) - pos.getX(0)) < 1e-9) n++
+	const out = []
+	for (let i = 0; i + n <= pos.count; i += n) {
+		const c = V(0, 0, 0)
+		for (let j = 0; j < n; j++) c.add(V(pos.getX(i + j), pos.getY(i + j), pos.getZ(i + j)))
+		out.push(c.multiplyScalar(1 / n))
+	}
+	return out
+}
+/** How far up the arm the drawn sleeve reaches (m from the wrist): the open end of hand.glb's own sleeve, and the length of its middle line on. */
+function sleeveRun(rig) {
+	const C = sleeveRings(rig)
+	let L = -C[0].x
+	for (let i = 1; i < C.length; i++) L += C[i].distanceTo(C[i - 1])
+	return L
+}
+/** The drawn sleeve's turn at the elbow (degrees): between its first stretch and its last. */
+function sleeveBend(rig) {
+	const C = sleeveRings(rig)
+	return (C[1].clone().sub(C[0]).angleTo(C.at(-1).clone().sub(C.at(-2))) * 180) / Math.PI
+}
 /** The arm's least clearance from field d (its line, less its tapered radius). */
 const armClear = (rig, d) => H.armClearance(d, rig.root.position, armDir(rig))
 /** A hand's frame as placeHand set it (X to the fingers, Y its back), from its root's turn. */
@@ -111,8 +137,9 @@ test("hand.glb: loaded, the rig contract's bones, the spheres fitted to its skin
 	assert.ok(r.sleeveOn && r.meshes.includes(r.sleeveOn) && r.sleeveOn.material === skinned.find((m) => m.material.name === "sleeve" || m.material === r.sleeveOn.material)?.material, "the sleeve carried on")
 	assert.equal(r.sleeveOn.parent, r.bones.forearm, "on the forearm bone")
 	H.setArm(r, 1.2)
-	r.sleeveOn.geometry.computeBoundingBox()
-	near(-r.sleeveOn.geometry.boundingBox.min.x, 1.2, 0.006, "the sleeve reaches as far as setArm says")
+	near(sleeveRun(r), 1.2, 0.006, "the sleeve reaches as far as setArm says")
+	// (and it is bent at the elbow, ARM.bend degrees: its last stretch turned that far from its first)
+	near(sleeveBend(r), H.ARM.bend, 0.5, "the sleeve's bend at the elbow")
 	// (the rest turns hands.js poses from are the file's own)
 	const glb = await (await import("../../web/hand-model.js")).handModel
 	glb.scene.traverse((o) => {
@@ -536,11 +563,10 @@ test("every role, every frame: the sleeve runs on out of the picture, so no hand
 				if (!rig.root.visible) continue
 				current(rig)
 				assert.ok(rig.length >= 0.45, `${c.name}: the sleeve is ${rig.length} m long`)
-				const far = rig.root.position.clone().addScaledVector(armDir(rig), rig.length)
+				const far = H.armAt(rig.root.position, armDir(rig), rig.length)
 				assert.ok(outOfPicture(cam, far), `${c.name} at ${(k / 60).toFixed(2)} s: the sleeve ends in the picture (${far.toArray().map((v) => v.toFixed(2))})`)
 				if (rig.mesh) {
-					rig.sleeveOn.geometry.computeBoundingBox()
-					assert.ok(-rig.sleeveOn.geometry.boundingBox.min.x >= rig.length - 0.006, `${c.name}: the sleeve is drawn as long as the arm`)
+					assert.ok(sleeveRun(rig) >= rig.length - 0.006, `${c.name}: the sleeve is drawn as long as the arm`)
 				}
 				seen++
 			}

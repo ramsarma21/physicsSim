@@ -47,6 +47,7 @@ const PALM_ROOM = 0.04 // m under a thing for a palm to go under it (the hand 2.
 const OVERLAP = 0.2
 const OVERLAP_LOW = 0.85
 const LOW_THING = 0.09 // m: a thing lower than this (a toy car) is pushed by a palm on its back with its fingers over its top
+const PALM_ROLL = 32 // degrees: a ball held on the open palm, the palm rolled toward the camera
 const PINCH_ROOM = 0.03 // ... for a pinch from the side (the curled fingers hang below it), else from above
 const WA = 30 // m/s²: a hand pulled away from what it let go (a quick flick of the forearm; a cork rises from rest at under 20 m/s² in water)
 const WV = 1.4 // m/s: ... and its speed out of the picture
@@ -205,12 +206,13 @@ export const POSES = {
 		pinky: FOLD.pinky,
 		thumb: [[78.4, -24.1, -37.3], [-5.1, -11.3, 20.9], [-1.7, -5.3, 22.9]]
 	}),
-	// the fingers curved as round a cup or a handle, the thumb across from them
+	// the fingers curved as round a cup or a handle, together side by side (each 0.2 to 1.2 mm from the next: no slots between them), the thumb
+	// across from them
 	cup: digits({
-		index: [[0, 1, -30], [0, 0, -40], [0, 0, -22]],
+		index: [[0, 4.5, -30], [0, 0, -40], [0, 0, -22]],
 		middle: [[0, 0, -32], [0, 0, -42], [0, 0, -23]],
-		ring: [[0, -1, -34], [0, 0, -44], [0, 0, -24]],
-		pinky: [[0, -2, -37], [0, 0, -46], [0, 0, -24]],
+		ring: [[0, -6.5, -34], [0, 0, -44], [0, 0, -24]],
+		pinky: [[0, -13, -37], [0, 0, -46], [0, 0, -24]],
 		thumb: [[32.2, -21.9, -31.3], [-4.8, -12.6, 6.2], [-1.5, -6, 0.8]]
 	}),
 	// a thing resting on the open palm: the fingers a little curved up, the thumb alongside the index (never across the palm)
@@ -913,7 +915,8 @@ function meshRig(side) {
 	const rig = { root, arm, mesh: true, inner, bones, f: DIGITS.map((d) => ({ mcp: B[`${d}_1`], pip: B[`${d}_2`], dip: B[`${d}_3`] })), t: { cmc: B.thumb_1, mcp: B.thumb_2, ip: B.thumb_3 }, spheres: [], meshes, side, pose: copyPose(POSES.relaxed), length: ARM.len, sleeveOn: null }
 	// the sleeve on up the arm from where the file's own ends (on the forearm bone, so it moves as that sleeve does; after the skinned meshes, whose
 	// order the skin's data keeps)
-	const tube = sleeveTube(ARM.len)
+	rig.bendAt = 90
+	const tube = sleeveTube(ARM.len, rig.bendAt)
 	if (tube) {
 		const on = new THREE.Mesh(tube, M.sleeve)
 		on.name = "sleeve-on"
@@ -1068,7 +1071,12 @@ function capsuleRig(side = "left") {
 	cuff.scale.set(1, 1, 1.12)
 	const sleeve = add(arm, mesh(geo("sleeve", () => new THREE.CylinderGeometry(1, 1, 1, 28, 1, false).rotateZ(-Math.PI / 2).translate(0.5, 0, 0)), M.sleeve))
 	sleeve.position.x = 0.044
-	const rig = { root, arm, f, t: { cmc, mcp: tm, ip: ti }, spheres, meshes, side, sleeve, cuff, pose: copyPose(POSES.relaxed), length: 0.6 }
+	// (the sleeve on from the elbow, turned there toward the upright by placeArm, and a ball of sleeve over the joint)
+	const upper = add(arm, mesh(sleeve.geometry, M.sleeve))
+	upper.position.x = ARM.elbow / SIZE
+	const joint = add(arm, mesh(geo("joint", () => new THREE.SphereGeometry(1, 24, 16)), M.sleeve))
+	joint.position.x = ARM.elbow / SIZE
+	const rig = { root, arm, f, t: { cmc, mcp: tm, ip: ti }, spheres, meshes, side, sleeve, upper, joint, cuff, pose: copyPose(POSES.relaxed), length: 0.6 }
 	setArm(rig, 0.6)
 	applyPose(rig, rig.pose)
 	return rig
@@ -1086,7 +1094,31 @@ function capsuleRig(side = "left") {
 // its line, from ARM.from m out of the wrist (the hand's own wrist sphere covers the rest) at ARM.r0 to the sleeve's cuff end at ARM.r1
 // (hand.glb's: the forearm 4.9 cm across 2 cm from the wrist, the sleeve 6.1 cm across 7.75 cm from the wrist; round, so a little more than the
 // arm's own height), the sleeve then widening by ARM.flare toward the elbow; ARM.r where an arm's first stretch meets another arm.
-export const ARM = { len: 0.6, reach: 0.45, from: 0.02, cuff: 0.0775, r0: 0.0245, r1: 0.0315, flare: 0.12, r: 0.0315, side: [15, 35], above: [55, 75], reachIn: 35, below: [-30, -5], level: 5 }
+export const ARM = { len: 0.6, reach: 0.45, from: 0.02, cuff: 0.0775, r0: 0.0245, r1: 0.0315, flare: 0.12, r: 0.0315, side: [15, 35], above: [55, 75], reachIn: 35, below: [-30, -5], level: 5, elbow: 0.21, bend: 12, arc: 0.03 }
+// The elbow (ARM.elbow m up the arm from the wrist, a nine-year-old's forearm) bends the sleeve ARM.bend degrees toward the upright, softly over
+// ARM.arc m of it, so the arm reads as an arm on its way to a shoulder above it, never a straight pole (the upper arm rises more steeply than the
+// forearm, as a child's does reaching down to a thing).
+const _bu = new THREE.Vector3()
+/** The upper arm's way for a forearm along unit A (from the wrist toward the elbow): A turned ARM.bend degrees toward the upright (toward -z,
+ *  away from the camera, when A is itself upright). */
+export function upperArm(A, out = new THREE.Vector3()) {
+	_bu.set(0, 1, 0).addScaledVector(A, -A.y)
+	if (_bu.lengthSq() < 1e-4) _bu.set(0, 0, -1).addScaledVector(A, -A.z)
+	_bu.normalize()
+	return out.copy(A).multiplyScalar(Math.cos(ARM.bend * D2R)).addScaledVector(_bu, Math.sin(ARM.bend * D2R)).normalize()
+}
+const _ua = new THREE.Vector3()
+/** The point s m up the arm of a hand at wrist W whose forearm leaves along unit A: along A to the elbow, then along the upper arm (upperArm). */
+export function armAt(W, A, s, out = new THREE.Vector3()) {
+	if (s <= ARM.elbow) return out.copy(W).addScaledVector(A, s)
+	return out.copy(W).addScaledVector(A, ARM.elbow).addScaledVector(upperArm(A, _ua), s - ARM.elbow)
+}
+/** How far up the arm (m) from wrist W along forearm A to be out of the picture (exit: frameExit's), the arm bent at its elbow. */
+export function armExit(exit, W, A) {
+	const s = exit(W, A)
+	if (s <= ARM.elbow) return s
+	return ARM.elbow + exit(armAt(W, A, ARM.elbow), upperArm(A))
+}
 /** The arm's radius s m up it from the wrist, as its clearance reads it: ARM.r0 at ARM.from, growing to ARM.r1 at the end of hand.glb's own
  *  sleeve, then the sleeve widening by ARM.flare over 25 cm toward the elbow (setArm draws it so). */
 export const armR = (s) => (s <= ARM.from ? ARM.r0 : s <= ARM.cuff ? ARM.r0 + ((ARM.r1 - ARM.r0) * (s - ARM.from)) / (ARM.cuff - ARM.from) : ARM.r1 * (1 + ARM.flare * smooth((s - ARM.cuff) / 0.25)))
@@ -1099,22 +1131,28 @@ export function setArm(rig, length = ARM.len) {
 	rig.length = Math.max(length, ARM.reach)
 	if (rig.mesh) {
 		if (rig.sleeveOn) {
-			rig.sleeveOn.geometry = sleeveTube(rig.length)
+			rig.sleeveOn.geometry = sleeveTube(rig.length, rig.bendAt ?? 90)
 			rig.sleeveOn.visible = true
 		}
 		return
 	}
-	const L = Math.max(0.06, rig.length / SIZE - 0.044) // (in the arm's own, scaled frame)
-	rig.sleeve.scale.set(L, ARM_R + 0.0015, (ARM_R + 0.0015) * 1.1)
+	// (the capsule arm: its sleeve to the elbow, and on from there, turned at the elbow as placeArm says, a ball of sleeve over the joint)
+	const E = ARM.elbow / SIZE
+	const r = ARM_R + 0.0015
+	rig.sleeve.scale.set(Math.max(0.01, E - 0.044), r, r * 1.1)
+	rig.upper.scale.set(Math.max(0.06, (rig.length - ARM.elbow) / SIZE), r, r * 1.1)
+	rig.joint.scale.set(r, r, r * 1.1)
 }
 /** hand.glb's sleeve carried on from its open end out to `length` m from the wrist, in the forearm bone's frame (its -x up the arm): its end's own
- *  section (the glTF's extras), widening by ARM.flare over 25 cm and then straight, rings closer where it bends. Shared by every arm of that length
- *  (to the centimetre). Null when the file's sleeve is closed (an older hand.glb). */
-function sleeveTube(length) {
+ *  section (the glTF's extras), widening by ARM.flare over 25 cm and then straight, bent at the elbow ARM.bend degrees toward `bendAt` (degrees
+ *  round the bone's -x from its +y toward its +z: the upright as placeArm finds it in the bone's frame), rings closer where it bends. Shared by
+ *  every arm of that length (to the centimetre) and bend (to 3 degrees). Null when the file's sleeve is closed (an older hand.glb). */
+function sleeveTube(length, bendAt = 90) {
 	const S = MESH?.measures?.sleeve
 	if (!S?.open || !Array.isArray(S.ring) || S.ring.length < 8) return null
 	const L = Math.round(Math.max(length, ARM.reach) * 100) / 100
-	return geo(`sleeveOn|${L}`, () => {
+	const th = (((Math.round(bendAt / 3) * 3) % 360) + 360) % 360
+	return geo(`sleeveOn|${L}|${th}`, () => {
 		const ring = S.ring
 		const n = ring.length
 		const x0 = S.end_x ?? -ARM.cuff
@@ -1125,13 +1163,53 @@ function sleeveTube(length) {
 			cz += z / n
 		}
 		const run = Math.max(0.05, L + x0) // (from the open end to the far end, m)
-		const steps = [0, 0.01, 0.025, 0.045, 0.07, 0.1, 0.14, 0.19, 0.25].filter((u) => u < run - 0.02)
-		for (let u = 0.35; u < run - 0.02; u += 0.1) steps.push(u)
+		// (the elbow's soft bend, along the arm from the open end: its arc's start and end)
+		const ue = ARM.elbow + x0
+		const a0 = ue - ARM.arc / 2
+		const a1 = ue + ARM.arc / 2
+		const steps = [0, 0.01, 0.025, 0.045, 0.07, 0.1].filter((u) => u < a0 - 0.004)
+		for (let k = 0; k <= 6; k++) steps.push(a0 + ((a1 - a0) * k) / 6)
+		for (const u of [0.14, 0.19, 0.25]) if (u > a1 + 0.01 && u < run - 0.02) steps.push(u)
+		for (let u = 0.35; u < run - 0.02; u += 0.1) if (u > a1 + 0.01) steps.push(u)
 		steps.push(run)
+		steps.sort((a, b) => a - b)
+		// (the centre line: straight up the arm (-x), turned in the plane of -x and the bend's way B by phi(u), 0 before the arc and ARM.bend after it)
+		const by = Math.cos(th * D2R)
+		const bz = Math.sin(th * D2R)
+		const beta = ARM.bend * D2R
+		const phi = (u) => (u <= a0 ? 0 : u >= a1 ? beta : (beta * (u - a0)) / (a1 - a0))
+		const centre = (u) => {
+			// (integrated along the arc: straight, an arc of radius arc/beta, straight)
+			const R = (a1 - a0) / beta
+			let x = 0
+			let b = 0
+			if (u <= a0) x = -u
+			else if (u <= a1) {
+				const p = phi(u)
+				x = -a0 - R * Math.sin(p)
+				b = R * (1 - Math.cos(p))
+			} else {
+				x = -a0 - R * Math.sin(beta) - (u - a1) * Math.cos(beta)
+				b = R * (1 - Math.cos(beta)) + (u - a1) * Math.sin(beta)
+			}
+			return { x: x0 + x, y: cy + b * by, z: cz + b * bz }
+		}
 		const pos = []
 		for (const u of steps) {
 			const f = 1 + ARM.flare * smooth(u / 0.25)
-			for (const [y, z] of ring) pos.push(x0 - u, cy + (y - cy) * f, cz + (z - cz) * f)
+			const p = phi(u)
+			const c = centre(u)
+			for (const [y, z] of ring) {
+				// (the ring's offset from the centre, its part along B turned with the centre line, its part across it as it is)
+				const oy = (y - cy) * f
+				const oz = (z - cz) * f
+				const ob = oy * by + oz * bz
+				const on = -oy * bz + oz * by
+				// B turned by p in the plane of -x and B: B -> B cos p + x sin p (the line bends from -x toward B, so B tips back toward +x)
+				const bx = Math.sin(p)
+				const bb = Math.cos(p)
+				pos.push(c.x + ob * bx, c.y + ob * bb * by - on * bz, c.z + ob * bb * bz + on * by)
+			}
 		}
 		const idx = []
 		for (let i = 0; i + 1 < steps.length; i++)
@@ -1150,7 +1228,8 @@ function sleeveTube(length) {
 		const nrm = g.attributes.normal
 		const p0 = new THREE.Vector3().fromBufferAttribute(g.attributes.position, n * 2)
 		const n0 = new THREE.Vector3().fromBufferAttribute(nrm, n * 2)
-		if (n0.dot(new THREE.Vector3(0, p0.y - cy, p0.z - cz)) < 0) {
+		const c2 = centre(steps[2])
+		if (n0.dot(new THREE.Vector3(0, p0.y - c2.y, p0.z - c2.z)) < 0) {
 			for (let k = 0; k < idx.length; k += 3) [idx[k + 1], idx[k + 2]] = [idx[k + 2], idx[k + 1]]
 			g.setIndex(idx)
 			g.computeVertexNormals()
@@ -1343,6 +1422,9 @@ export function placeArm(rig, A) {
 	_m.makeBasis(_xa, _ya, _za)
 	rig.arm.quaternion.setFromRotationMatrix(_m)
 	rig.arm.position.copy(rig.root.position)
+	// (the elbow's way: the upright square to the arm, as the arm's own frame or the forearm bone's sees it)
+	upperArm(_xa, _ub)
+	_ub.addScaledVector(_xa, -_ub.dot(_xa))
 	if (rig.mesh) {
 		// hand.glb's forearm bone: its -x along the arm, in the hand's own (left, model) frame, the least turn from the hand's (armTurns), the wrist
 		// bone turned back by as much so the hand stays as placed; the skin between bends as the wrist does
@@ -1352,8 +1434,33 @@ export function placeArm(rig, A) {
 		const t = armTurns(_x1, _y1, _al)
 		rig.bones.forearm.quaternion.copy(t.forearm)
 		rig.bones.wrist.quaternion.copy(t.wrist)
+		// (the sleeve bent at the elbow toward the upright: the way in the bone's own frame, the geometry for it to 3 degrees)
+		if (rig.sleeveOn) {
+			const bone = rig.bones.forearm
+			bone.updateMatrixWorld(true)
+			const e = bone.matrixWorld.elements
+			const yb = _yb.set(e[4], e[5], e[6]).normalize()
+			const zb = _zb.set(e[8], e[9], e[10]).normalize()
+			const at = Math.atan2(_ub.dot(zb), _ub.dot(yb)) / D2R
+			if (Math.abs((((at - (rig.bendAt ?? 90) + 540) % 360) - 180)) > 1.5) {
+				rig.bendAt = at
+				rig.sleeveOn.geometry = sleeveTube(rig.length, at)
+			}
+		}
+	} else if (rig.upper) {
+		// (the capsule arm: its sleeve on from the elbow turned toward the upright in the arm's own frame)
+		_ub.normalize()
+		const ly = _ub.dot(_ya)
+		const lz = _ub.dot(_za)
+		_bq.setFromUnitVectors(_x1, _bl.set(Math.cos(ARM.bend * D2R), Math.sin(ARM.bend * D2R) * ly, Math.sin(ARM.bend * D2R) * lz).normalize())
+		rig.upper.quaternion.copy(_bq)
 	}
 }
+const _ub = new THREE.Vector3()
+const _yb = new THREE.Vector3()
+const _zb = new THREE.Vector3()
+const _bl = new THREE.Vector3()
+const _bq = new THREE.Quaternion()
 const _im = new THREE.Matrix4()
 const _al = new THREE.Vector3()
 const _x1 = new THREE.Vector3(1, 0, 0)
@@ -1685,14 +1792,16 @@ const FRONT = new THREE.Vector3(0, 0, 1) // (toward the camera: every view looks
 export function handSpheres(rig) {
 	return rig.spheres.map((S) => ({ c: sphereAt(S, new THREE.Vector3()), r: S.r * SIZE, link: S.link, root: !!S.root, g: S.g }))
 }
-/** The arm's line out of wrist W along unit A (toward the elbow), from ARM.from to `reach` m (ARM.reach: as far as the rules look along it): {a, b,
- *  r: ARM.r, segs: [{a, b, r}]: the forearm to the end of hand.glb's own sleeve, ARM.r round it, then the sleeve on up the arm, as wide as it widens
- *  to (armR)}. */
+/** The arm's line out of wrist W along unit A (toward the elbow), from ARM.from to `reach` m (ARM.reach: as far as the rules look along it), bent
+ *  at the elbow (armAt): {a, b (its far end), r: ARM.r, segs: [{a, b, r}]: the forearm to the end of hand.glb's own sleeve, ARM.r round it, then
+ *  the sleeve on to the elbow and on up the arm, as wide as it widens to (armR)}. */
 export const armLine = (W, A, reach = ARM.reach) => {
 	const c = W.clone().addScaledVector(A, ARM.cuff)
-	const b = W.clone().addScaledVector(A, reach)
 	const a = W.clone().addScaledVector(A, ARM.from)
-	return { a, b, r: ARM.r, segs: [{ a, b: c, r: ARM.r }, { a: c, b, r: armR(reach) }] }
+	const b = armAt(W, A, reach)
+	if (reach <= ARM.elbow) return { a, b, r: ARM.r, segs: [{ a, b: c, r: ARM.r }, { a: c, b, r: armR(reach) }] }
+	const e = armAt(W, A, ARM.elbow)
+	return { a, b, r: ARM.r, segs: [{ a, b: c, r: ARM.r }, { a: c, b: e, r: armR(ARM.elbow) }, { a: e, b, r: armR(reach) }] }
 }
 /** An arm line's stretches ({a, b, r}): its segs, or the line itself. */
 const segsOf = (line) => line.segs ?? [line]
@@ -1759,12 +1868,12 @@ export function handsGap(A, B) {
 }
 const _ap = new THREE.Vector3()
 /** The arm's least clearance from field d (its line sampled every 1.2 cm to the cuff and 2.5 cm on, less its radius there, armR): out of wrist W
- *  along A, as far as `upTo` m up it. */
+ *  along A, bent at its elbow (armAt), as far as `upTo` m up it. */
 export function armClearance(d, W, A, upTo = ARM.reach) {
 	let m = Infinity
 	for (let s = ARM.from; ; s += s < ARM.cuff ? 0.012 : 0.025) {
 		const sv = Math.min(s, upTo)
-		_ap.copy(W).addScaledVector(A, sv)
+		armAt(W, A, sv, _ap)
 		m = Math.min(m, d(_ap) - armR(sv))
 		if (sv >= upTo) break
 	}
@@ -2467,8 +2576,9 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 		let Y = V(0, -1, 0)
 		const ball = sphereOf(d)
 		if (ball) {
-			// under a ball the palm rolls 32 degrees toward the camera, tangent to it there, so its cupped palm and each finger round it show
-			const n = V(0, -Math.cos(32 * D2R), Math.sin(32 * D2R))
+			// under a ball the palm rolls 32 degrees, its thumb's side toward the camera, tangent to it there, so the ball sits in the palm's bowl, the
+			// fingers round it and the thumb's tip rising by it show
+			const n = V(0, -Math.cos(PALM_ROLL * D2R), Math.sin(PALM_ROLL * D2R))
 			B = ball.c.clone().addScaledVector(n, ball.r)
 			Y = n.clone()
 		}
@@ -2478,8 +2588,12 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 		const pre = copyPose(POSES.hold)
 		const rs0 = side > 0 ? "right" : "left" // (the thumb toward the camera)
 		const under = Y.clone().negate() // (the palm's way to it)
+		// (a ball over the middle of the palm, 4.6 cm from the wrist, the thumb's side toward the camera; a thing that is not a ball on the palm's
+		// middle or nearer the fingers)
+		const xcs = ball ? [0.056, 0.046, 0.064] : [0.046, 0.056]
+		const xcPref = (xc) => (ball ? Math.abs(xc - 0.056) * 30 : (xc - 0.046) * 20)
 		for (const psi of [0, -15, 15, -30, 30, -45, 45])
-			for (const xc of [0.046, 0.056])
+			for (const xc of xcs)
 				for (const pitch of [0, 10]) {
 					// (the ball of it on the palm's middle or nearer the fingers, the fingers a little up: the wrist clear of it)
 					const X1 = X0.clone().applyAxisAngle(Y, psi * D2R)
@@ -2491,7 +2605,7 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 						const sl = slideTo(rs, W0, X, Yp, pre, d, under, 0.0004, 0.12, palmParts) ?? { W: W0.clone().addScaledVector(under, 0.04) }
 						seatDir = under
 						const palm = clearance(tryHand(rs, sl.W, X, Yp, pre), d, palmFace)
-						tryHold(rs, sl.W, X, Yp, pre, (psi / 40) ** 2 + (rs === rs0 ? 0 : 0.15) + (xc - 0.046) * 20 + pitch / 40 + (palm <= 0.003 ? 0 : 1 + (palm - 0.003) * 300), palmParts, { below: true, riseMin: ARM.level, rise: room.below < 0.4 ? 8 : -12, phi: 15 })
+						tryHold(rs, sl.W, X, Yp, pre, (psi / 40) ** 2 + (rs === rs0 ? 0 : ball ? 1.5 : 0.15) + xcPref(xc) + pitch / 40 + (palm <= 0.003 ? 0 : 1 + (palm - 0.003) * 300), palmParts, { below: true, riseMin: ARM.level, rise: room.below < 0.4 ? 8 : -12, phi: 15 })
 					}
 				}
 		close = [[0, { most: [28, 31, 22] }], [1, { most: [28, 31, 22] }], [2, { most: [28, 31, 22] }], [3, { most: [28, 31, 22] }], ["t", { most: [12, 14, 14] }]]
@@ -2550,9 +2664,10 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 				}
 			}
 		}
-		// (a thing that will drop: the fingers stop at its widest, each a little more curled than the one before it; one held down, or held fixed,
+		// (a thing that will drop: the index and the middle finger stop at its widest, each a little more curled than the one before it, and the
+		// ring and little fingers, further round it, close on until their pads are on it (they open as it is let go); one held down, or held fixed,
 		// is gripped round)
-		const most = (i) => (falls && from === "above" ? [50 + 4 * i, 38 + 4 * i, 20 + 3 * i] : null)
+		const most = (i) => (falls && from === "above" ? (i < 2 ? [50 + 4 * i, 38 + 4 * i, 20 + 3 * i] : [78 + 4 * i, 70 + 4 * i, 40]) : null)
 		close = [[0, { most: most(0) }], [1, { most: most(1) }], [2, { most: most(2) }], [3, { most: most(3) }], ...(thumbFit ? [] : [["t", {}]])]
 	}
 	const rig = newRig(best.side)
@@ -2841,12 +2956,12 @@ function holdRig(p, pf, C) {
 			if (g2 === grip) continue
 			const f2 = fromFor(g2, p.from ?? "auto", { move, inWater, room, near, E, depth: 2 * halfZ(d) })
 			const S2 = solveHold(g2, f2, d, E, move, room, near, others3)
+			// (every other grip is tried and the cleanest kept: which is tried first decides nothing)
 			if (rank(S2) < rank(S)) {
 				S = S2
 				grip = g2
 				from = f2
 			}
-			if (!faulty(S)) break
 		}
 	const rig = S.rig
 	const W0 = S.wrist
@@ -2876,7 +2991,7 @@ function holdRig(p, pf, C) {
 	const before = way.slice(0, -1).reduce((a, e) => a + e.len, 0)
 	const _o = new THREE.Vector3()
 	// (the sleeve out of the picture along the arm and 30 cm more: a hand that lets go goes out the same way, so its arm is never seen to end)
-	setArm(rig, clamp(C.exit(W0, armDir) + 0.3, 0.45, 3.2))
+	setArm(rig, clamp(armExit(C.exit, W0, armDir) + 0.3, 0.45, 3.2))
 	const gone = before + C.exit(_o.copy(W0).add(pathAt(before, new THREE.Vector3())), last.dir) + HL * SIZE + 0.08 // (how far it goes to be out of the picture)
 	const solidId = p.part?.id ?? list[0].id
 	const tEnd = C.track?.frames?.at(-1)?.t ?? 0
@@ -3110,9 +3225,9 @@ function pushCands(skin, K) {
 						if (!sl) continue
 						// (the heel on its back a little above its middle, the fingers up it, leaning with it so the wrist is not bent hard back; never a hand
 						// over its top; two hands side by side on its back, round it from each other)
-						// (two hands: the right one, nearer the camera, low on its back and turned toward the camera, the back of the hand seen; the left one
-						// a little higher and round the other way, so both are seen and their arms part)
-						const pair = rs === "right" ? ((gamma - 35) / 25) ** 2 + ((beta - 6) / 14) ** 2 : ((gamma + 20) / 25) ** 2 + ((beta - 20) / 14) ** 2
+						// (two hands: both palms on its rear half, about 30 degrees either side of the push line round it, the right one, nearer the camera,
+						// low on its back, the left one a little higher, so both are seen and their arms part)
+						const pair = rs === "right" ? ((gamma - 30) / 15) ** 2 + ((beta - 5) / 12) ** 2 : ((gamma + 30) / 15) ** 2 + ((beta - 20) / 12) ** 2
 						const pref = (K.two ? pair : ((beta - 4) / 10) ** 2) + ((alpha + 5) / 20) ** 2
 						how = { beta, gamma, alpha }
 						keep(rs, sl.W, X, Y, P, sl.link, at, pref, others3)
@@ -3324,7 +3439,8 @@ function closeHand(rig, d, round = false, low = false) {
 		} else if (i !== "t") met.push(i)
 	}
 	// (over a low thing's top the fingers, bent forward at the knuckles, close on until they rest on it)
-	for (const i of [0, 1, 2, 3]) keep(i, () => closeFinger(rig, d, i, { most: low ? [85, 60, 35] : round ? [40, 14, 6] : [32, 22, 10] }))
+	// (round a ball they follow its curve, each joint bent as far as it asks)
+	for (const i of [0, 1, 2, 3]) keep(i, () => closeFinger(rig, d, i, { most: low ? [85, 60, 35] : round ? [50, 28, 14] : [32, 22, 10] }))
 	if (low && met.length) {
 		// (a finger with nothing under it, past the thing's side, is held as the nearest one that rests on it is, a little more bent the further it is
 		// toward the little finger: the fingers together, never one standing off the others; opened out of anything it would be in)
@@ -3476,7 +3592,7 @@ function pushRig(p, pf, C) {
 	// (a palm upright on a low thing's back: its heel from near the foot of the back up to a little over half way up it, the lowest the arm allows
 	// over the floor wanted)
 	const hsLow = [0.12, 0.2, 0.28, 0.36, 0.44, 0.52].map((k) => lo + (hi - lo) * k)
-	const K = { u: u0, v: v0, c: c0, face: face0, td, ball, others, E, two, hs: hs.length ? hs : [0], hs2, hsLow, zs, gammas: two ? [-60, -40, -20, 0, 20, 40, 60] : [0, 15, 30, 45] }
+	const K = { u: u0, v: v0, c: c0, face: face0, td, ball, others, E, two, hs: hs.length ? hs : [0], hs2, hsLow, zs, gammas: two ? [-45, -30, -15, 0, 15, 30, 45] : [0, 15, 30, 45] }
 	const cands = pushCands(two ? "hand" : skin, K)
 	const behind = u0.clone().negate()
 	// (a pushing palm has its wrist bent back, as a hand pushing a wall has, the bend spread over a forearm rising a little, never a hard kink; a
@@ -3625,7 +3741,8 @@ function pushRig(p, pf, C) {
 		}
 		const E1 = entries(cands, all)
 		// (a centimetre apart at the least, every part of the one from every part of the other)
-		lay = pairUp(E1.left, E1.right, all, 0.01)
+		// (round a ball 1.5 cm, where the fingers follow its curve toward each other)
+		lay = pairUp(E1.left, E1.right, all, ball ? 0.015 : 0.01)
 		// (a fault in the best pair, a wrist past its easy bend or a hand in something: the fallback below is tried too, and the cheaper kept)
 		if ((!lay || lay.cost >= 100) && E1.left.length) {
 			const lay1 = lay
@@ -3675,7 +3792,7 @@ function pushRig(p, pf, C) {
 		L.hands = L.hands.map((h) => ({ ...h }))
 		for (const h of L.hands) {
 			const rig = (rigOf[h.side] ??= newRig(h.side))
-			setArm(rig, clamp(C.exit(h.W, h.A) + 0.3 + (P2.stroke ?? 0.15), 0.45, 3.2))
+			setArm(rig, clamp(armExit(C.exit, h.W, h.A) + 0.3 + (P2.stroke ?? 0.15), 0.45, 3.2))
 			rig.pose = copyPose(h.P)
 			placeHand(rig, h.W, h.X, h.Y)
 			applyPose(rig, rig.pose)
@@ -3742,7 +3859,7 @@ function pushRig(p, pf, C) {
 		lay = tries.find(good) ?? tries.find((L) => L.ov <= ovMost && L.gap >= 0) ?? tries.reduce((a, b) => (b.ov + Math.max(0, -b.gap) * 50 < a.ov + Math.max(0, -a.gap) * 50 ? b : a))
 		// (the rigs as the pair kept left them)
 		for (const h of lay.hands) {
-			setArm(h.rig, clamp(C.exit(h.W, h.A) + 0.3 + (P2.stroke ?? 0.15), 0.45, 3.2))
+			setArm(h.rig, clamp(armExit(C.exit, h.W, h.A) + 0.3 + (P2.stroke ?? 0.15), 0.45, 3.2))
 			h.rig.pose = copyPose(h.fit.pose)
 			placeHand(h.rig, h.fit.W, h.X, h.Y)
 			applyPose(h.rig, h.rig.pose)
@@ -3821,6 +3938,8 @@ function pushRig(p, pf, C) {
 	return { item: p.item, rig: rigs[0], rigs, solidId: paddle.id, skin, at, busy: () => false, info, lay, target, u0 }
 }
 // ---------------------------------------------------------------- pouring: a hand on the pitcher's handle (a cup's body), tipping with it
+// a cup's thumb, the starts fitThumb closes onto its far side from ([swing, lift, twist, knuckle, end], found on hand.glb round the cup)
+const CUP_THUMBS = [[-50, 10, 90, 10, 10], [-65, 15, 80, 15, 15], [-40, 5, 100, 10, 10], [-75, 10, 70, 20, 20], [-30, 0, 110, 10, 10], [-55, 20, 100, 10, 20], [-20, 10, 120, 5, 10]]
 const VESSELS = {
 	// inner width, inner height, wall (machines/mod_flow.py VESSELS); the model's handle loop (web/models/mod-flow.js): radius 0.3 h at (w + t, -0.45 h)
 	pitcher: [0.1, 0.17, 0.003],
@@ -3882,24 +4001,34 @@ function pourRig(p, pf, C) {
 	const arm = chooseArm(rs, W, X, Y, side > 0 ? "left" : "right", dAll, { phi: -30, rise: 34 })
 	const A0 = arm.A.clone()
 	// (the sleeve out of the picture along the arm and 35 cm more: the arm turns as the vessel tips)
-	setArm(rig, clamp(C.exit(W.clone().applyMatrix4(Mw0), A0.clone().applyAxisAngle(V(0, 0, 1), base0)) + 0.35, 0.45, 3.2))
+	setArm(rig, clamp(armExit(C.exit, W.clone().applyMatrix4(Mw0), A0.clone().applyAxisAngle(V(0, 0, 1), base0)) + 0.35, 0.45, 3.2))
 	placeArm(rig, A0) // (hand.glb: the wrist bent as it will be drawn, its skin with it)
 	rig.root.updateMatrixWorld(true)
 	for (const i of [0, 1, 2, 3]) closeFinger(rig, dBar, i)
-	if (cup) closeFinger(rig, dBar, "t")
-	else {
-		// the thumb closed over the handle opposite the fingers, as round a bar in a fist: on the curled index, never standing up off the grip
-		const tipOf = (link) => sphereAt(rig.spheres.find((S) => S.tip === link), new THREE.Vector3())
-		const knuckle = () => new THREE.Vector3().setFromMatrixPosition(rig.bones?.index_1?.matrixWorld ?? rig.f[0].mcp.matrixWorld)
-		fitThumb(rig, dBar, [[-38.7, -39.8, 110.7, 32.4, 19.6], [-30, -45, 110, 25, 25], [-45, -35, 100, 20, 15], [-20, -50, 120, 30, 30], [-35, -30, 95, 15, 10], [-50, -20, 90, 15, 15]], (r) => {
+	// (round a cup the palm is seated on it first, the ball of the thumb on its curve, so the thumb is fitted to the hand as it will hold it)
+	if (cup && rig.mesh) seatOnSkin(rig, dBar, Y.clone().negate(), { links: ["palm", "t.0", "f0.0", "f1.0", "f2.0", "f3.0"] })
+	const tipOf = (link) => sphereAt(rig.spheres.find((S) => S.tip === link), new THREE.Vector3())
+	const knuckle = () => new THREE.Vector3().setFromMatrixPosition(rig.bones?.index_1?.matrixWorld ?? rig.f[0].mcp.matrixWorld)
+	if (cup) {
+		// round a cup the thumb closes onto it across from the fingers, as far round its far side as it reaches, its pad on it (seen through the
+		// glass), never standing up off the grip nor over the rim, the end joint a little bent
+		fitThumb(rig, dBar, CUP_THUMBS, (r) => {
+			r.root.updateMatrixWorld(true)
+			const t = tipOf("t.2")
+			return Math.max(0, t.z + 0.005) * 150 + Math.max(0, t.y + 0.006) * 400 + Math.max(0, t.y - (knuckle().y + 0.01)) * 600
+		}, [55, 45, 30])
+	} else {
+		// the thumb closed over the handle opposite the fingers, as round a bar in a fist: on the curled index, never standing up off the grip; its pad
+		// on the handle, the end joint bent softly (about 20 degrees, never a hook)
+		fitThumb(rig, dBar, [[-38.7, -39.8, 110.7, 32.4, 19.6], [-30, -45, 110, 25, 20], [-45, -35, 100, 20, 15], [-20, -50, 120, 30, 20], [-35, -30, 95, 15, 10], [-50, -20, 90, 15, 15]], (r) => {
 			r.root.updateMatrixWorld(true)
 			return Math.max(0, tipOf("t.2").y - (knuckle().y + 0.008)) * 300
-		})
+		}, [50, 50, 24])
 	}
 	if (rig.mesh) {
 		// (hand.glb: the palm seated on the handle and each digit closed the last little way by its own drawn skin)
 		seatOnSkin(rig, dBar, Y.clone().negate(), { links: ["palm", "t.0", "f0.0", "f1.0", "f2.0", "f3.0"] })
-		for (const i of [0, 1, 2, 3, "t"]) closeOnSkin(rig, dBar, i)
+		for (const i of [0, 1, 2, 3, "t"]) closeOnSkin(rig, dBar, i, { most: i === "t" ? (cup ? [55, 45, 30] : [50, 50, 24]) : null })
 		W.copy(rig.root.position)
 	}
 	const hold = copyPose(rig.pose)
