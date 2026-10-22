@@ -417,11 +417,11 @@ for (const [label, box, h, paddleH] of [
 		// (a centimetre apart; on a thing too small for two the right hand may rest on the left, never in it)
 		const apart = small ? 0 : 0.01
 		assert.ok(gapNow() >= apart - 1e-6, `the hands are ${(gapNow() * 1000).toFixed(1)} mm apart`)
-		// (both seen: as the camera looks, neither covers more than a fifth of the other; on a thing lower than 6 cm and seen nearly level, where
-		// one hand lies on its top ahead of the other, nearly a third)
+		// (both seen: as the camera looks, neither covers more than a fifth of the other; on a thing lower than a hand is long the two stand side by
+		// side across its back, the far one the higher in the picture, and the near one may cover up to 85% of it)
 		if (!small) {
 			const ov = H.screenOverlap(handSpheres(current(L)), handSpheres(current(R)), { right: V(1, 0, 0), up: V(0, Math.cos((7 * Math.PI) / 180), -Math.sin((7 * Math.PI) / 180)) })
-			const most = box.body.height < 0.06 ? 0.3 : 0.2
+			const most = box.body.height < 0.09 ? 0.85 : 0.2
 			assert.ok(ov <= most + 1e-9, `one hand covers ${(ov * 100).toFixed(0)}% of the other in the picture`)
 		}
 		// (each arm its own way, never crossed: the left one out on the pusher's left (-z), the two at most 45 degrees apart)
@@ -452,6 +452,31 @@ for (const [label, box, h, paddleH] of [
 		Hs.at(1)
 		assert.ok(L.root.position.x > W0[0].x + 0.1, "the hands went with the push")
 	})
+
+test("a toy car's back (20 x 3.6 x 8 cm) pushed by two hands: both palms on its back within 1 mm, side by side across it, the fingers over its top, the far hand the higher", () => {
+	const box = BOX(0.2, 0.036, 0.08)
+	const { Hs } = pushRun(box, 0.02, "two hands", 0.04)
+	const [L, R] = Hs.rigs[0].rigs
+	const d = boxField(box)
+	for (const g of [L, R]) {
+		const palm = clearOf(g, d, palmFace).m
+		assert.ok(palm >= -0.00005 && palm <= 0.001, `${g.side}: the palm is ${(palm * 1000).toFixed(2)} mm from the car's back`)
+		// (upright on its back, leaning over it no more than 45 degrees: the fingers' way within 45 degrees of the upright)
+		const X = V(1, 0, 0).applyQuaternion(g.root.quaternion)
+		assert.ok(X.y >= Math.cos((46 * Math.PI) / 180), `${g.side}: the palm leans ${((Math.acos(X.y) * 180) / Math.PI).toFixed(0)} degrees over the car`)
+		// (the fingers reach over its top: a fingertip higher than the top and ahead of its back)
+		const tips = H.skinPoints(current(g)).filter((q) => /^f[0-3]\.2$/.test(q.link))
+		assert.ok(tips.some((q) => q.p.y > box.body.height && q.p.x > box.at.x - box.body.width / 2 + 0.005), `${g.side}: no finger reaches over the top`)
+	}
+	// (side by side: the left hand on the pusher's left, a hand's width from the right one across the back)
+	assert.ok(R.root.position.z - L.root.position.z >= 0.06, `the hands are ${((R.root.position.z - L.root.position.z) * 100).toFixed(1)} cm apart across the car`)
+	assert.ok(handsGap({ spheres: handSpheres(current(L)), line: armLine(L.root.position, armDir(L)) }, { spheres: handSpheres(current(R)), line: armLine(R.root.position, armDir(R)) }) >= 0.01 - 1e-6, "a centimetre apart")
+	// (the far hand the higher in the picture, so its fingers show over the near one's)
+	const up = V(0, Math.cos((7 * Math.PI) / 180), -Math.sin((7 * Math.PI) / 180))
+	assert.ok(L.root.position.clone().sub(R.root.position).dot(up) >= 0, "the far hand stands the higher in the picture")
+	// (the arms parallel, both from behind)
+	assert.ok(armDir(L).angleTo(armDir(R)) <= (25 * Math.PI) / 180, `the arms are ${((armDir(L).angleTo(armDir(R)) * 180) / Math.PI).toFixed(0)} degrees apart`)
+})
 
 // ---------------------------------------------------------------- the arm reaches in from the picture's edge
 /** The scene's fixed camera as the view films it (web/hands.js frameExit: doc.view.camera at 4:3). */
