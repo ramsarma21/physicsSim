@@ -340,6 +340,29 @@ for (const [name, c] of Object.entries(HOLDS))
 		armRules(rig, { box: d, floor }, name, c.band)
 	})
 
+test("an apple held from above as it will drop: the thumb and every finger's tip on it within 1 mm, never in it; the arm by the rules", () => {
+	// (a 7.6 cm ball held from above and let go to fall: no finger left hanging off its side, the longest one too, whose root lies on its top)
+	const R0 = 0.038
+	const apple = S("apple/body", { kind: "ball", radius: R0 }, 0, 0.3, { type: "apple" })
+	const frames = []
+	for (let k = 0; k <= 60; k++) {
+		const t = k / 60
+		frames.push({ t, placements: { "apple/body": { x: 0, y: t < 0.5 ? 0.3 : 0.3 - 0.5 * 9.8 * (t - 0.5) ** 2, angle: 0 }, "floor/f": { x: 0, y: -0.01, angle: 0 } } })
+	}
+	const Hs = hands([apple, FLOOR], { held: ["apple/body"], resolved: { apple: { hand: "grip", hand_from: "above" } }, frames })
+	const R = Hs.rigs[0]
+	assert.equal(R.grip, "grip")
+	const rig = R.rig
+	const d = (p) => p.distanceTo(V(0, 0.3, 0)) - R0
+	const all = clearOf(rig, d)
+	assert.ok(all.m >= -0.00005, `${all.link} is ${(-all.m * 1000).toFixed(2)} mm in the apple`)
+	for (const l of ["t.2", "f0.2", "f1.2", "f2.2", "f3.2"]) {
+		const t = clearOf(rig, d, (k) => k === l).m
+		assert.ok(t >= -0.00005 && t <= 0.001, `${l} is ${(t * 1000).toFixed(2)} mm from the apple`)
+	}
+	armRules(rig, { apple: d, floor: boxField(FLOOR) }, "the apple", ABOVE)
+})
+
 test("a box held then let go: the hand never in it on any frame as it falls away", () => {
 	const box = S("box/box", slab(0.03, 0.03, 0.03), 0, 0.3)
 	const frames = []
@@ -591,8 +614,53 @@ test("a hand on a pitcher's handle: the fingers round it within 1 mm, never in i
 		const m = clearOf(rig, d, (l) => l.startsWith(`f${i}.`)).m
 		assert.ok(m >= -0.00005 && (i === 3 || m <= 0.001), `finger ${i} is ${(m * 1000).toFixed(2)} mm from the handle`)
 	}
+	// (the thumb laid on the handle's curve over the top of the fist, its pad on it, its end joint bent softly: never a hook into the loop)
+	const t = clearOf(rig, d, (l) => l === "t.2").m
+	assert.ok(t >= -0.00005 && t <= 0.001, `the thumb is ${(t * 1000).toFixed(2)} mm from the handle`)
+	const tip = H.sphereAt(rig.spheres.find((q) => q.tip === "t.2"), V(0, 0, 0)).sub(V(0, 0.3, 0))
+	const up = (Math.atan2(tip.y + 0.45 * 0.17, -(tip.x + 0.103)) * 180) / Math.PI
+	assert.ok(up >= 40 && up <= 90, `the thumb's tip is ${up.toFixed(0)} degrees up the handle's loop, not on its curve over the fist`)
+	assert.ok(-rig.pose.thumb_3[2] <= 20.5, `the thumb's end joint is bent ${(-rig.pose.thumb_3[2]).toFixed(1)} degrees`)
 	armRules(rig, { floor: boxField(FLOOR) }, "the pitcher", SIDE)
 	assert.ok(SIZE > 0)
+})
+
+test("a hand round a cup: the palm on its side, every finger's pad round its front and the thumb's round its back, within 1 mm, never in it", () => {
+	const lip = S("v/lip", slab(0.01, 0.003, 0.035), 0, 0.3, { kind: "static", type: "pitcher" })
+	const Hs = hands([lip, FLOOR], { resolved: { v: { hand: "hand", vessel: "cup", pour_to: "right" } } })
+	const R = Hs.rigs[0]
+	const rig = R.rig
+	assert.ok(current(rig).root.scale.z < 0, "pouring to the right: a right hand")
+	const d = (p) => R.bar(p.clone().sub(V(0, 0.3, 0)))
+	const all = clearOf(rig, d)
+	assert.ok(all.m >= -0.00005, `${all.link} is ${(-all.m * 1000).toFixed(2)} mm in the cup`)
+	const palm = clearOf(rig, d, (l) => l === "palm" || l === "t.0").m
+	assert.ok(palm <= 0.002, `the palm is ${(palm * 1000).toFixed(2)} mm from the cup`)
+	// (the cup's middle is half its width, 3.5 cm, behind the lip: the fingers' tips round its front, toward the camera, the thumb's round its back)
+	for (const l of ["f0.2", "f1.2", "f2.2", "f3.2", "t.2"]) {
+		const m = clearOf(rig, d, (k) => k === l).m
+		assert.ok(m >= -0.00005 && m <= 0.001, `${l} is ${(m * 1000).toFixed(2)} mm from the cup`)
+		const c = H.sphereAt(rig.spheres.find((q) => q.tip === l), V(0, 0, 0)).sub(V(0, 0.3, 0))
+		if (l === "t.2") assert.ok(c.z < -0.01 && c.y < 0, `the thumb's tip is not round the cup's back under its rim (${c.toArray().map((v) => (v * 100).toFixed(1))} cm)`)
+		else assert.ok(c.z > 0.01, `${l}'s tip is not round the cup's front (${c.toArray().map((v) => (v * 100).toFixed(1))} cm)`)
+	}
+	// (the fingers together round it: neighbours' middle and end bones within 2 mm of each other's, never in each other)
+	const sp = handSpheres(current(rig))
+	for (let i = 0; i < 3; i++) {
+		let g = Infinity
+		for (const a of sp.filter((q) => q.link === `f${i}.1` || q.link === `f${i}.2`)) for (const b of sp.filter((q) => q.link === `f${i + 1}.1` || q.link === `f${i + 1}.2`)) g = Math.min(g, a.c.distanceTo(b.c) - a.r - b.r)
+		assert.ok(g <= 0.002, `fingers ${i} and ${i + 1} stand ${(g * 1000).toFixed(1)} mm apart round the cup`)
+	}
+	armRules(rig, { floor: boxField(FLOOR) }, "the cup", [ARM.side, ARM.below])
+})
+
+test("the first hand made may be a right one: it stays a right hand (its root mirrored), however the spheres' groups are measured", async () => {
+	// (in a fresh module, where no hand was made before it)
+	const { execFileSync } = await import("node:child_process")
+	const url = new URL("../../web/hands.js", import.meta.url).href
+	const out = execFileSync(process.execPath, ["--no-warnings", "--input-type=module", "-e", `console.warn = () => {}; const H = await import(${JSON.stringify(url)}); const r = H.newRig("right"); process.stdout.write(JSON.stringify([r.root.scale.x, r.root.scale.z]))`]).toString()
+	const [sx, sz] = JSON.parse(out)
+	assert.ok(sx > 0 && sz < 0, `the first right hand's root is scaled ${sx}, ${sz}: not mirrored`)
 })
 
 // ---------------------------------------------------------------- the capsule hand (drawn only when hand.glb does not load)

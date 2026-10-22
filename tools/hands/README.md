@@ -7,7 +7,9 @@
   a tapering forearm), meshed by surface nets, then QuadriFlow (fixed seed), with every vertex put back on the field. The nails and the
   knit cuff and the start of the sleeve are separate meshes; the sleeve piece is an open tube whose last 7.5 mm keep one section, so the
   view carries the sleeve on from its end ring up the arm, out of the picture, with no seam (`setArm`, `sleeveOn` in `web/hands.js`). The skin has Blender's automatic weights, checked so that no finger carries another finger's
-  bones. The same script always writes the same file (about 6.1k triangles, 186 KB).
+  bones, each finger's first bone fading in just behind its knuckle (`KNUCKLE_FADE`), and the web between the thumb and the index full
+  (`WEB_R`) and blended evenly from the index's side to the thumb's (`web_blend`), so it stays a rounded curve as the thumb crosses the palm and
+  never folds into a notch or a see-through pinhole. The same script always writes the same file (about 6.4k triangles, 193 KB).
 - The rig is one left hand in metres: palm toward -Y, fingers along +X, thumb toward +Z, wrist joint at the origin. The bones are
   `forearm > wrist > palm > thumb_1..3, index_1..3, middle_1..3, ring_1..3, pinky_1..3`. In each joint's rest frame X runs along the bone,
   Y is the back of the hand (the nail side for the thumb), and Z = X x Y. To pose a bone, set `bone.quaternion = rest x Euler(twist,

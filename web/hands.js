@@ -2774,16 +2774,22 @@ const halfZ = (d) => Math.max(0.001, ...(d.items ?? []).map((i) => i.zh))
 
 /** The pose a hand opens to at the release: each bend eased off toward the relaxed hand, never further bent than it held (a flat hand stays flat;
  *  the fingers' spread kept). A thrown thing's hand opens further, its fingers following through after it; a hand that gripped round a thing
- *  opens out of the curl it held (never a claw left hanging); a pinch opens its thumb and index along its own path (pinchOut) and a pressing
- *  fingertip lifts off as it pressed, their folded fingers kept folded. */
+ *  opens out of the curl it held (never a claw left hanging); a pinch opens its thumb and index along its own path (pinchOut), its folded fingers
+ *  easing a little; a pressing fingertip lifts off as it pressed, its folded fingers kept folded. */
 function openOf(P, grip = null, thrown = false, pinchOut = null) {
-	// (a pinch opens its thumb and index along the pinch's own path, about 1.5 cm wider than it held (pinchOut: the pose that far open), and a
-	// fingertip that pressed lifts off with its finger as it pressed; the folded fingers of both stay folded as they were, closed: never a claw
-	// hanging under the hand, nor a gap opening between them)
+	// (a pinch opens its thumb and index along the pinch's own path, 6 mm wider than it held (pinchOut: the pose that far open), and a fingertip
+	// that pressed lifts off with its finger as it pressed; the folded fingers stay curled in under the index: never a claw hanging under the
+	// hand, nor a gap opening between them)
 	const tap = grip === "press" && P.middle_1[2] < -40
 	if (tap || (grip === "pinch" && pinchOut)) {
 		const o = copyPose(P)
-		if (!tap) for (const b of ["index_1", "index_2", "index_3", "thumb_1", "thumb_2", "thumb_3"]) o[b] = [...pinchOut[b]]
+		if (!tap) {
+			for (const b of ["index_1", "index_2", "index_3", "thumb_1", "thumb_2", "thumb_3"]) o[b] = [...pinchOut[b]]
+			// (and a pinch's folded fingers ease off a little, as a hand's at rest, so the hand that let go is a hand, never two prongs; still curled
+			// in under the index, none hanging below it)
+			const eased = lerpPose(P, POSES.relaxed, 0.35)
+			for (const d of ["middle", "ring", "pinky"]) for (let j = 1; j <= 3; j++) o[`${d}_${j}`] = eased[`${d}_${j}`]
+		}
 		return o
 	}
 	const o = thrown || grip === "grip" ? lerpPose(POSES.relaxed, POSES.flat, grip === "grip" ? 0.85 : 0.6) : copyPose(POSES.relaxed)
@@ -2993,8 +2999,8 @@ function holdRig(p, pf, C) {
 	// (a thing that leaves moving, start_speed: a throw)
 	const v = move?.v ? V(move.v.x, move.v.y, 0) : V(0, 0, 0)
 	const thrown = v.length() > 0.35
-	// (a pinch lets go by opening its thumb and index about 1.5 cm wider than they held it, along the pinch's path)
-	const pinchOut = grip === "pinch" && S.pinchK !== null ? pinchFor(pinchGap(S.pinchK) + 0.009).P : null
+	// (a pinch lets go by opening its thumb and index 6 mm wider than they held it, along the pinch's path: just off it, never a wide V)
+	const pinchOut = grip === "pinch" && S.pinchK !== null ? pinchFor(pinchGap(S.pinchK) + 0.006).P : null
 	const open = openOf(hold, grip, thrown, pinchOut)
 	// the arm leaves the hand by the rules (ARM: from the picture's nearer edge or from above, short); a hand that lets go goes out along it
 	const armDir = S.armDir.clone()
@@ -3242,17 +3248,18 @@ function pushCands(skin, K) {
 			for (const gamma of K.gammas)
 				for (const alpha of K.two ? [-30, -15, 0] : [-30, -15, 0, 15])
 					for (const rs of sides) {
-						// (behind it, turned gamma toward the camera; beta up from its middle; the palm tangent there, its heel on it, the fingers up over it)
+						// (behind it, turned gamma toward the camera; beta up from its middle; the palm tangent there by its middle, the fingers up over it,
+						// so they follow its curve with a gentle bend at each joint rather than hooking down onto it from a heel set low on it)
 						const h = towardCamera(u.clone().negate(), gamma)
 						const n = h.multiplyScalar(Math.cos(beta * D2R)).addScaledVector(v, Math.sin(beta * D2R)).normalize()
 						const at = ctr.clone().addScaledVector(n, rad)
 						const Y = n.clone()
 						const X = v.clone().addScaledVector(Y, -v.dot(Y)).normalize().applyAxisAngle(Y, alpha * D2R)
-						// (set down onto it along its normal from 3 cm out: the heel, or the ball of the thumb beside it, 0.4 mm from it)
-						const W0 = at.clone().sub(offsetOf(scratchRig(rs), R.heel, X, Y)).addScaledVector(n, 0.03)
+						// (set down onto it along its normal from 3 cm out: the palm's pads, or the ball of the thumb, 0.4 mm from it)
+						const W0 = at.clone().sub(offsetOf(scratchRig(rs), R.palmC, X, Y)).addScaledVector(n, 0.03)
 						const sl = slideTo(rs, W0, X, Y, PB, td, n.clone().negate(), 0.0004, 0.08, (l, S) => PALM_LINKS.has(l) || l === "t.0" || !!S?.root)
 						if (!sl) continue
-						// (the heel on its back a little above its middle, the fingers up it, leaning with it so the wrist is not bent hard back; never a hand
+						// (the palm on its back a little above its middle, the fingers up it, leaning with it so the wrist is not bent hard back; never a hand
 						// over its top; two hands side by side on its back, round it from each other)
 						// (two hands: both palms on its rear half, either side of the push line round it, the right one, nearer the camera, low on its back
 						// and round toward the camera, the left one a little higher on its back and round the other way, so both are seen and their arms part)
@@ -3265,8 +3272,10 @@ function pushCands(skin, K) {
 	}
 	// a thing lower than a palm and its fingers can reach over (under 9 cm, a toy car): the palm stands on its back, leaning 12 to 44 degrees over it (about 24), its
 	// heel as low on the back as the arm leaves room for over the floor, the fingers together and bent forward at the knuckles over its top (hook)
-	// to close onto it there (closeHand): just over its top edge, never a hand lying over it or waving above it; one hand turned toward the camera
-	// so the back of the hand, its fingers and its thumb show; two hands side by side across its back, each on a back corner
+	// to close onto it there (closeHand): just over its top edge, never a hand lying over it or waving above it; one hand turned 15 degrees toward
+	// the camera so the back of the hand, its fingers and its thumb show, and set 2 cm toward the camera's side of the middle, where its fingers
+	// come down on the top beside a toy car's cabin rather than standing in the air above its sloping back; two hands side by side across its
+	// back, each on a back corner
 	if (K.E.h < LOW_THING) {
 		const PH = copyPose(POSES.hook)
 		for (const tau of [12, 18, 24, 30, 36, 44])
@@ -4012,7 +4021,11 @@ function pushRig(p, pf, C) {
 // ---------------------------------------------------------------- pouring: a hand on the pitcher's handle (a cup's body), tipping with it
 // a cup's thumb, the starts fitThumb closes onto its far side from ([swing, lift, twist, knuckle, end], found on hand.glb round the cup)
 const CUP_SHARE = [1.4, 0.8, 0.55] // (round a cup each finger's knuckle leads, as its joints share the cup's curve: a wrap, not a hook at the tip)
-const CUPFIT = { back: -10, tilt: 25, drop: 0.015, below: true } // (TEMP: back degrees round behind its widest line; tilt: the fingers raised toward the rim, degrees; drop: the palm lowered, m)
+// a cup held round its body: the palm's middle on its side `back` degrees round from its widest line toward its back (negative: toward its front,
+// so the fingers reach round the front and the wrist is bent less), the fingers raised toward the rim `tilt` degrees about the palm's normal (the
+// thumb's side turns back, so the thumb reaches round its back, under the rim), the palm `drop` m below the middle of the grip, and the forearm
+// free to slope down to the elbow (`below`), as an arm holding a cup up is (found on hand.glb round the 7.4 cm cup: the wrist bent 39 degrees)
+const CUPFIT = { back: -10, tilt: 25, drop: 0.015, below: true }
 const CUP_THUMBS = [[-110, -40, 90, 15, 10], [-110, -20, 60, 15, 10], [-90, 0, 30, 15, 10], [-90, -20, 90, 15, 10], [-100, -30, 75, 15, 10], [-50, 10, 90, 10, 10], [-75, 10, 70, 20, 20]]
 const VESSELS = {
 	// inner width, inner height, wall (machines/mod_flow.py VESSELS); the model's handle loop (web/models/mod-flow.js): radius 0.3 h at (w + t, -0.45 h)
@@ -4057,7 +4070,8 @@ function pourRig(p, pf, C) {
 	const X = V(0, 0, 1)
 	const Y = V(-side, 0, 0)
 	const ym = (bar.y0 + bar.y1) / 2 + (cup ? -CUPFIT.drop : 0.004)
-	// (round a cup the palm's middle on its side a little behind its widest line, so the fingers reach round its front and the thumb round its back)
+	// (round a cup the palm's middle on its side, turned round it and tilted as CUPFIT says, so the fingers reach round its front and the thumb round
+	// its back)
 	const CB = CUPFIT.back
 	const contact = cup ? V(bar.x - side * bar.r * Math.cos(CB * D2R), ym, -bar.r * Math.sin(CB * D2R)) : V(bar.x - side * bar.r, ym, 0)
 	if (cup) {
@@ -4070,7 +4084,7 @@ function pourRig(p, pf, C) {
 	placeHand(rig, W, X, Y)
 	// (round a cup the fingers start straight on along its side, together as they will lie round it, the thumb out of the way: the palm is seated on
 	// it first and they wrap it from there; round a handle they start curled round it and the thumb open, clear of it, closing over it after them)
-	rig.pose = cup ? lerpPose(POSES.flat, POSES.flat, 0) : copyPose(POSES.cup)
+	rig.pose = copyPose(cup ? POSES.flat : POSES.cup)
 	if (cup) for (const d of DIGITS) rig.pose[`${d}_1`][1] = POSES.cup[`${d}_1`][1]
 	Object.assign(rig.pose, thumbTurns([-50, 15, 90, 5, 5]))
 	applyPose(rig, rig.pose)
