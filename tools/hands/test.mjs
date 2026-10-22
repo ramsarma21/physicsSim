@@ -5,6 +5,7 @@
 //             the 12 scenarios and the 10 gallery scenes build the same documents, resolved props and warnings with the module and without it
 //   errors    a choice that is not one is refused with the same words in both
 //   engine    the same track with and without them (the browser bundle; the server too with --server <port>)
+//   mesh      with --server: web/server.py serves web/models/hand.glb as model/gltf-binary, byte for byte
 //   plugins   the AI's registry: the module's paragraph, prompt lines and change words; the catalog digest names props.hand
 //   node tools/hands/test.mjs [--server 9801]
 import { execFileSync } from "../child-sync.mjs" // (node's, with the input given to the child as a file: a macOS hang, tools/child-sync.mjs)
@@ -143,6 +144,14 @@ for (const f of scenes) {
 		ok(!sa.error && JSON.stringify(sa.track) === JSON.stringify(sb.track) && JSON.stringify(sa.track) === JSON.stringify(ra.track), `${f}: server :${serverPort}: the same track with and without them, and the bundle's`, sa.error ?? "")
 		ok(isDeepStrictEqual(sa.resolved, sim.layout(sim.clean(scene)).resolved), `${f}: server: the resolved props web/sim builds`)
 	}
+}
+
+// ---- the mesh web/hands.js draws, as the server serves it
+if (serverPort) {
+	const r = await fetch(`http://127.0.0.1:${serverPort}/models/hand.glb`)
+	const got = Buffer.from(await r.arrayBuffer())
+	ok(r.status === 200 && r.headers.get("content-type") === "model/gltf-binary" && got.equals(readFileSync(join(PG, "web/models/hand.glb"))),
+		`server :${serverPort}: web/models/hand.glb served as model/gltf-binary, byte for byte`, `${r.status} ${r.headers.get("content-type")}, ${got.length} bytes`)
 }
 
 // ---- plugins and the AI
