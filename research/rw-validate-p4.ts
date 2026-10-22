@@ -143,17 +143,22 @@ tests.crash = async () => {
 	// The second review's documents (engine-fuzz.mjs's logic, seed 99991, as the builder made them then: tools/parity/fixtures/fuzz99991-*.doc.json):
 	// 8970, a sneaker's heel wedged among fixed pegs, whose contacts' stored impulses grew step after step until the warm start alone flung it and its
 	// motion was NaN at 1.181 s ("the simulation broke down", HTTP 500 after 46 s); 4425, a handle wedged against a fixed ball and a wheel that set
-	// off 122,432 time-of-impact events in 1.5 s (51 to 329 s for 3 s, the server's 120 s limit). Now each runs to its end, in seconds.
+	// off 122,432 time-of-impact events in 1.5 s (51 to 329 s for 3 s, the server's 120 s limit). And the crash fuzz's own scene 29 (seed 20261015,
+	// tools/parity/fixtures/fuzz20261015-29.doc.json, bench2): a 10 g beam roped to a 10 kg weight in a cluster of pegs, magnets and a compass, its
+	// rope's stored impulse grown about 15 times every few steps (to 5e20 units on release 2's engine; on bench2's, whose magnets turn the scene
+	// another way, to 1e154) until its warm start alone threw the beam at 1e156 units, and its motion was NaN at 1.254 s: a joint's stored impulses
+	// are now bounded as a contact's are (tooling/src/sim/physics.ts `boundJoints`). Now each runs to its end, in seconds.
 	for (const [name, what] of [
 		["fuzz99991-8970", "a heel wedged among pegs (NaN at 1.181 s before)"],
-		["fuzz99991-4425", "a handle wedged against a ball and a wheel (51-329 s before)"]
+		["fuzz99991-4425", "a handle wedged against a ball and a wheel (51-329 s before)"],
+		["fuzz20261015-29", "a beam roped to a weight among pegs (NaN at 1.254 s on bench2 before)"]
 	] as const) {
 		const dd = JSON.parse(readFileSync(`${PG}/tools/parity/fixtures/${name}.doc.json`, "utf8"))
 		const t0 = performance.now()
 		try {
 			const F = runFrames(dd)
 			const s = (performance.now() - t0) / 1000
-			claim(`${name}, ${what}: runs its ${dd.seconds} s, every placement finite, in ${s.toFixed(1)} s (at most 30)`, finite(F) && s <= 30)
+			claim(`${name}, ${what}: runs its ${Number(dd.seconds.toFixed(2))} s, every placement finite, in ${s.toFixed(1)} s (at most 30)`, finite(F) && s <= 30)
 		} catch (e) {
 			claim(`${name}: ${String(e).slice(0, 160)}`, false)
 		}

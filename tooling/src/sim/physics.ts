@@ -1634,6 +1634,31 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			}
 		}
 	}
+	/** Each moving body's reach (planck units), as `keepSane` reads it. */
+	const reachOf = new Map(movers.map(({ body, reach }) => [body, reach]))
+	/**
+	 * A joint's stored impulses are bounded as a contact's are (the post-solve guard above): a joint that holds a wedged body can pile
+	 * impulse up step after step through warm starting, while the contacts it pulls against push back as hard. Release 2's crash fuzz
+	 * scene 29 (tools/parity/engine-fuzz.mjs, 2026-10-22): a 10 g beam roped to a 10 kg weight in a cluster of pegs, its rope's stored
+	 * impulse grew about 15 times every few steps (to 5e20 units by the end on release 2's engine; on bench2's, whose magnets turn the
+	 * scene another way, to 1e154 by 1.25 s), until its warm start alone threw the beam at 1e156 units, and then NaN. A stored impulse
+	 * that would change the heavier moving body's speed by more than SANE_SPEED (a turning one: at its rim; the larger of the two bounds
+	 * stands for every one, so only an impulse no step could give is caught) is no real pull: all of that joint's stored impulses are
+	 * dropped from the next step's warm start (the step's solve still had them). A run whose joints never store so much is solved
+	 * exactly as before.
+	 */
+	const boundJoints = () => {
+		for (let j = world.getJointList(); j !== null; j = j.getNext()) {
+			let bound = 0
+			for (const body of [j.getBodyA(), j.getBodyB()]) {
+				if (!body.isDynamic()) continue
+				const reach = reachOf.get(body) ?? 0
+				const invI = solving(body).m_invI
+				bound = Math.max(bound, body.getMass() * SANE_SPEED * LENGTH_SCALE, reach > 0 && invI > 0 ? (SANE_SPEED * LENGTH_SCALE) / (invI * reach) : 0)
+			}
+			if (bound > 0 && !storedWithin(j, bound)) dropStored(j)
+		}
+	}
 	/** Each spring group's rate this step (`SpringLink.prepare`, from where its bodies stand now): k/m summed over its springs, 1/s². */
 	const springRates = () =>
 		springGroups.map((group) => {
@@ -2296,6 +2321,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				springBack()
 				unsound("ending")
 				keepSane()
+				boundJoints()
 				runner?.after(h)
 			}
 		}
@@ -2477,6 +2503,34 @@ interface Solving {
 	readonly m_invI: number
 }
 const solving = (body: Body) => body as unknown as Solving
+
+/** The impulses planck's joints keep from one step to warm-start the next (a number, a Vec2 or a Vec3 each), by their fields' names. */
+const STORED_IMPULSES = ["m_impulse", "m_motorImpulse", "m_springImpulse", "m_linearImpulse", "m_angularImpulse"] as const
+type StoredImpulses = Record<string, number | { x: number; y: number; z?: number } | null | undefined>
+/** Whether every impulse a joint keeps for its next step's warm start is a number within `bound` (planck units). */
+const storedWithin = (joint: PlanckJoint, bound: number) => {
+	const stored = joint as unknown as StoredImpulses
+	for (const key of STORED_IMPULSES) {
+		const v = stored[key]
+		if (typeof v === "number") {
+			if (!(Math.abs(v) <= bound)) return false
+		} else if (typeof v === "object" && v !== null && !(Math.abs(v.x) <= bound && Math.abs(v.y) <= bound && Math.abs(v.z ?? 0) <= bound)) return false
+	}
+	return true
+}
+/** Drops every impulse a joint keeps for its next step's warm start. */
+const dropStored = (joint: PlanckJoint) => {
+	const stored = joint as unknown as StoredImpulses
+	for (const key of STORED_IMPULSES) {
+		const v = stored[key]
+		if (typeof v === "number") stored[key] = 0
+		else if (typeof v === "object" && v !== null) {
+			v.x = 0
+			v.y = 0
+			if (v.z !== undefined) v.z = 0
+		}
+	}
+}
 
 /** An impulse (planck units) along unit `u`, +j on B at arm rB and −j on A at arm rA, into their working velocities. */
 const impulseAlong = (A: Solving, B: Solving, rA: Vec2, rB: Vec2, u: Vec2, j: number) => {
