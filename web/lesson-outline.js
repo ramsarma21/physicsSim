@@ -249,7 +249,8 @@ void main() {
 	const numberOf = (o, run) => {
 		const sid = o.userData?.solidId
 		if (!sid || run.groundIds?.has(sid)) return 0
-		const name = (o.userData.stand ? "stand|" : o.userData.mount ? "mount|" : "") + (run.itemOf?.get(sid) ?? sid) // (a holder, a stand: a thing of its own)
+		// (a holder, a stand: a thing of its own; so is each hand of web/hands.js, with its arm: a line between two hands, and round the one in front)
+		const name = (o.userData.stand ? "stand|" : o.userData.mount ? "mount|" : "") + (run.itemOf?.get(sid) ?? sid) + (o.userData.handNo !== undefined ? `|hand${o.userData.handNo}` : "")
 		let n = thingNo.get(name)
 		if (n === undefined) {
 			n = thingNo.size + 1

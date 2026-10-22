@@ -806,6 +806,9 @@ def accepts_gzip(header):
 
 
 class Handler(SimpleHTTPRequestHandler):
+    # the hands' mesh (web/models/hand.glb): Python's mimetypes has no .glb, so it would go out as application/octet-stream
+    extensions_map = {**SimpleHTTPRequestHandler.extensions_map, ".glb": "model/gltf-binary"}
+
     def __init__(self, *a, **kw):
         super().__init__(*a, directory=HERE, **kw)
 
