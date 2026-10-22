@@ -7,14 +7,17 @@
 // replaced by an automatic plan (the executor's autoPlan or safePlan here), which tells no story. Design: the scratchpad's director/DIRECTOR.md
 // sections 2, 3, 5, 7 and 9.1; the language: web/export/shot-plan.schema.json.
 //
-//   directSource(payload, {clean}) -> the payload checked (400s) and normalised: {kind, text, lesson, concept, scenes: [{lane, scene}], lanes, hints, boxes, aspect, max_seconds}
+//   directSource(payload, {clean}) -> the payload checked (400s) and normalised: {kind, text, lesson, concept, scenes: [{lane, scene}], lanes, hints, boxes, aspect, max_seconds,
+//     look, one_frame, camera}
+//   holdToSource(plan, src) -> the plan held to what the caller fixed: the lesson's one look on every shot, its lock (one frame through the pause,
+//     its camera when given)
 //   directUserTurn(src, digest) -> the user turn (the source, the video's wishes, the digest's text)
 //   repairTurn(report, round) -> the repair turn for a measured failure
 //   loadExecutor(o) / executorFrom(Shots) -> the executor: {measure(plan, ctx) -> report, safePlan, world, momentsOf} (o.executor: one in its place)
 //   safePlan(digest, src) -> the automatic plan
 //   runDirector({...}) -> {result, model, servedModel, ms, usage, attempts, warnings, repaired}
 import { AIError, callModel, loadRouting, routeFor } from "./core.mjs"
-import { validateShotPlan } from "./shot-plan.mjs"
+import { SHOT_PLAN_SCHEMA, validateShotPlan } from "./shot-plan.mjs"
 import { digestText } from "../web/export/digest.js"
 import * as Shots from "../web/export/shots.js"
 import { recognize as recognizeSubjects } from "../web/export/subjects.js"
@@ -48,6 +51,13 @@ function str(p, field, max, { required = false } = {}) {
  *   lanes     a plan's lanes block the caller already knows ({arrange, list: [{id, label, cast}]}): the director must keep it
  *   hints     {roles, brief, cues, subjects} (the physics-lesson-video skill's binding; web/export/subjects.js reads them)
  *   aspect    "16:9" (default) | "4:3" | "3:2" | "1:1" | "3:1";  max_seconds 2..60
+ *   look      the lesson's one look ({backdrop, tone, ground, light, depth, vignette, labels}: the plan language's look): every shot of the plan
+ *             takes it, whatever the director writes, so every screen of a lesson filmed with the same one looks alike (the five-lesson benchmark:
+ *             one screen's table turned to wood, the next's set dark)
+ *   one_frame "pause" (or true) | "end": one frame from the video's first frame through the lesson's last pause (or the whole video, a card that
+ *             is a still picture): the plan's lock, which the engine pins and measures (no reframe between a screen's setup and its pause)
+ *   camera    the lock's camera, [Lx, Ly, Lz, d, yaw, pitch, hfov] (a film frame's band pose, the screen before's result.lock.camera): screens of
+ *             one lesson filmed from one camera (implies one_frame "pause" unless one_frame says otherwise)
  *   return_digest  true: the answer carries the digest's text too
  */
 export async function directSource(p, { clean }) {
@@ -96,7 +106,51 @@ export async function directSource(p, { clean }) {
 	const max = p.max_seconds === undefined ? null : p.max_seconds
 	if (max !== null && !(typeof max === "number" && max >= 2 && max <= 60)) throw bad("max_seconds must be a number of seconds from 2 to 60")
 	const boxes = boxesOf(p.boxes, scenes.map((s) => s.lane))
-	return { kind, text, lesson, concept, scenes, lanes, hints, boxes, aspect, max_seconds: max, return_digest: p.return_digest === true }
+	const look = lookOf(p.look)
+	const camera = cameraOf(p.camera)
+	const oneFrame = p.one_frame === undefined || p.one_frame === null || p.one_frame === false ? (camera ? "pause" : null) : p.one_frame === true ? "pause" : p.one_frame
+	if (oneFrame !== null && !["pause", "end"].includes(oneFrame)) throw bad('one_frame must be "pause" (or true), "end" or false')
+	return { kind, text, lesson, concept, scenes, lanes, hints, boxes, aspect, max_seconds: max, return_digest: p.return_digest === true, look, one_frame: oneFrame, camera }
+}
+
+const LOOK_DEF = SHOT_PLAN_SCHEMA.$defs.look
+/** The caller's look: an object of the plan language's look (web/export/shot-plan.schema.json $defs.look), or null. */
+function lookOf(v) {
+	if (v === undefined || v === null) return null
+	if (!isObj(v)) throw bad("look must be an object {backdrop, tone, ground, light, depth, vignette, labels}")
+	const out = {}
+	for (const [k, x] of Object.entries(v)) {
+		const def = LOOK_DEF.properties[k]
+		if (!def) throw bad(`look.${String(k).slice(0, 40)} is not a look field (${Object.keys(LOOK_DEF.properties).join(", ")})`)
+		if (def.enum ? !def.enum.includes(x) : !(typeof x === "number" && Number.isFinite(x) && x >= (def.minimum ?? -Infinity) && x <= (def.maximum ?? Infinity))) throw bad(`look.${k} must be ${def.enum ? def.enum.join(", ") : `a number from ${def.minimum} to ${def.maximum}`}`)
+		out[k] = x
+	}
+	return out
+}
+/** The caller's camera: a film frame's pose [Lx, Ly, Lz, d, yaw, pitch, hfov] (or {L: [x, y, z], d, yaw, pitch, hfov}), or null. */
+function cameraOf(v) {
+	if (v === undefined || v === null) return null
+	const a = Array.isArray(v) ? v : isObj(v) && Array.isArray(v.L) ? [...v.L, v.d, v.yaw, v.pitch, v.hfov] : null
+	const ok = Array.isArray(a) && a.length === 7 && a.every((x) => typeof x === "number" && Number.isFinite(x)) && a[3] > 0 && a[6] > 0 && a[6] < Math.PI && Math.abs(a[5]) < Math.PI / 2
+	if (!ok) throw bad("camera must be a camera pose [Lx, Ly, Lz, d, yaw, pitch, hfov] (metres and radians: the screen before's result.lock.camera)")
+	return a.slice()
+}
+
+/**
+ * A plan held to what the caller fixed (a copy): the lesson's one look on the plan and none of the shots' own (src.look), and its lock, one
+ * frame through the lesson's last pause or the whole video, from the caller's camera when given (src.one_frame, src.camera); the plan's source
+ * says the caller's kind. Applied to every plan the director writes and to the automatic ones, before the engine measures them.
+ */
+export function holdToSource(plan, src) {
+	if (!isObj(plan) || !Array.isArray(plan.shots)) return plan
+	const out = JSON.parse(JSON.stringify(plan))
+	if (src?.look) {
+		out.look = { ...src.look }
+		for (const sh of out.shots) if (isObj(sh) && sh.look !== undefined) delete sh.look
+	}
+	if (src?.one_frame) out.lock = { until: src.one_frame, ...(src.camera ? { camera: src.camera.slice() } : {}) }
+	if (src?.kind && (src.look || src.one_frame)) out.source = { ...(isObj(out.source) ? out.source : {}), kind: src.kind }
+	return out
 }
 
 const BOX_KEYS = ["x0", "x1", "y0", "y1", "z0", "z1", "round"]
@@ -155,6 +209,20 @@ export function directUserTurn(src, digest) {
 	if (h.roles) L.push(`Roles the brief binds to items: ${JSON.stringify(h.roles).slice(0, 2000)}`)
 	if (Array.isArray(h.cues) && h.cues.length) L.push(`Caption cues (cue:<step> moments): ${JSON.stringify(h.cues).slice(0, 2000)}`)
 	if (h.subjects) L.push(`What the caller says the video is about: ${JSON.stringify(h.subjects).slice(0, 1000)}`)
+	if (src.one_frame || src.look) L.push("", "# The lesson's frame and look")
+	if (src.one_frame) {
+		L.push(
+			src.one_frame === "end"
+				? "ONE FRAME FOR THE WHOLE VIDEO (the lesson's card is a still picture): the engine films every shot from one camera (the plan's lock). Plan one framing that shows everything the screen needs, a still camera; no move, no follow, no cut to another picture. One held picture is one shot (two shots of the same moment in the same frame are the same still twice)."
+				: "ONE FRAME FROM THE SETUP THROUGH THE PAUSE (a one-change screen of a lesson): the engine films every shot from the video's first frame through the lesson's last pause from one camera (the plan's lock), so nothing reframes between the setup and the pause (a reframe reads as a second change). Plan that one frame so the setup reads in it (what changed, the hand, the thing before it moves) and the pause's evidence reads in it; the run plays inside it; no push, pull, follow or cut before the pause. One held picture is one shot."
+		)
+		if (src.camera) {
+			const [lx, ly, lz, d, yaw, pitch, hfov] = src.camera
+			const width = 2 * d * Math.tan(hfov / 2)
+			L.push(`The lesson's camera, the screen before's (the engine films the locked shots from it, whatever their framing says): it looks at (${lx.toFixed(3)}, ${ly.toFixed(3)}, ${lz.toFixed(3)}) m from ${d.toFixed(3)} m, ${(width).toFixed(3)} m across the picture there, yaw ${((yaw * 180) / Math.PI).toFixed(1)}°, pitch ${((pitch * 180) / Math.PI).toFixed(1)}°, a ${(18 / Math.tan(hfov / 2)).toFixed(0)} mm lens. Frame your locked shots the same (subject and keep what that frame holds) and judge the sizes in it.`)
+		}
+	}
+	if (src.look) L.push(`The lesson's one look, the same on every screen of the lesson (the engine gives it to every shot; write no look of your own): ${JSON.stringify(src.look)}.`)
 	L.push("", "# The timeline digest", digestText(digest), "", "Write the shot plan as one JSON object.")
 	return L.join("\n")
 }
@@ -200,6 +268,9 @@ const REMEDY = {
 	parity: "the lanes at different scales: one camera for every band (no per_lane), align on the role",
 	face: "an instrument's face too small to read: frame closer on it (split columns side by side, align on it) or an inset",
 	"beam-visible": "the light too thin to see: a narrower window (under the width the digest gives for its core)",
+	"one-frame": "the camera moves, or the layout changes, between the setup and the pause: under the lesson's lock every shot through the pause is one frame. Make them holds of one framing (one held picture is one shot), the same layout; a move only after the last pause",
+	"one-look": "the look changes between shots: one look for the whole video (write the look once, on the plan, and none on the shots)",
+	"small-size": "a small thing (a grape, a marble, a clip: under 6.5 cm) at the lesson's stop is under 0.12 of the picture: frame the small thing itself, close (view macro, a 90 mm lens, frame.size 0.15 to 0.3 on it), the container cropped (a tank or a glass is context: keep only the part of it the question needs, the water line round a floater); small_because when its smallness is the point",
 	resolve: "a name the run does not have: use the digest's ids (the nearest are given)",
 	compile: "the engine could not film it: change the shot the message names"
 }
@@ -477,7 +548,7 @@ export function sumUsage(...us) {
 const FALLBACK_CODES = new Set(["invalid_output", "budget", "timeout"])
 /** The checks a plan may still fail and be filmed: the picture smaller or emptier than the net asks (a scene's layout can make that
  *  framing-infeasible). Every other failure breaks the video (cut off, too fast, a jump, a repeat, a name the run lacks). */
-export const SOFT_CHECKS = new Set(["subject-size", "must-see", "fill", "face", "beam-visible", "stop-fill", "path-fill"])
+export const SOFT_CHECKS = new Set(["subject-size", "must-see", "fill", "face", "beam-visible", "stop-fill", "path-fill", "small-size"])
 const hardOf = (report) => (report?.checks ?? []).filter((c) => c && c.ok === false && !SOFT_CHECKS.has(c.check))
 const softOf = (report) => (report?.checks ?? []).filter((c) => c && c.ok === false && SOFT_CHECKS.has(c.check))
 /** The better of two measured plans: fewer hard failures, then the director's story over an automatic plan, then fewer soft failures. */
@@ -542,7 +613,9 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 		const timing = v.timing
 		const secs = new Map((timing?.shots ?? []).map((s) => [s.id, s.seconds]))
 		const why = plan.shots.map((s) => ({ id: s.id, beat: s.beat, move: s.move, seconds: secs.get(s.id) ?? null, why: s.intent }))
-		const result = { plan, source, shots: why, report: report ?? null, measured: !!report, rounds: rounds.map((r) => (r.plan === plan ? { ...r, plan: "(the plan above)" } : r)), timing, digest_hash: digest.hash, ...more }
+		// (the lock's camera as filmed: the next screen of the lesson passes it on as its camera)
+		const lock = report?.lock ? { until: report.lock.until, upto: report.lock.upto, seconds: report.lock.seconds, camera: report.lock.camera } : null
+		const result = { plan, source, shots: why, report: report ?? null, measured: !!report, rounds: rounds.map((r) => (r.plan === plan ? { ...r, plan: "(the plan above)" } : r)), timing, digest_hash: digest.hash, ...(lock ? { lock } : {}), ...more }
 		if (src.return_digest) result.digest = { hash: digest.hash, text: digestText(digest) }
 		return { result, model, servedModel, ms: Date.now() - t0, usage, attempts, warnings, repaired }
 	}
@@ -551,9 +624,9 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 		// story wins a tie on hard failures)
 		const cands = []
 		const auto = await Promise.resolve().then(() => executor.safePlan?.(digest, src, ctx)).catch(() => null)
-		const va = auto ? validate(auto) : null
+		const va = auto ? validate(holdToSource(auto, src)) : null
 		if (va?.ok) cands.push({ plan: va.value, by: "executor" })
-		const vs = validate(safePlan(digest, src))
+		const vs = validate(holdToSource(safePlan(digest, src), src))
 		if (vs.ok) cands.push({ plan: vs.value, by: "director.mjs" })
 		else warnings.push(`the automatic plan has problems: ${vs.errors.slice(0, 3).join("; ")}`)
 		if (!cands.length) cands.push({ plan: vs.value, by: "director.mjs" })
@@ -581,11 +654,11 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 		}
 		throw e
 	}
-	let plan = out.result
+	let plan = holdToSource(out.result, src)
 	// (each round keeps the plan it measured and what its model turn took, so a caller can see what the director tried)
-	const roundOf = (turn, o2, rep) => ({ round: turn, ok: rep.ok, failed: failedChecks(rep), ms: o2.ms, usd: Number.isFinite(Number(o2.usage?.costInUSD)) ? Number(o2.usage.costInUSD) : null, plan: o2.result })
+	const roundOf = (turn, o2, rep, p) => ({ round: turn, ok: rep.ok, failed: failedChecks(rep), ms: o2.ms, usd: Number.isFinite(Number(o2.usage?.costInUSD)) ? Number(o2.usage.costInUSD) : null, plan: p })
 	let report = await measured(executor, plan, ctx)
-	rounds.push(roundOf(0, out, report))
+	rounds.push(roundOf(0, out, report, plan))
 	const tried = [{ plan, report, director: true }]
 	const convo = [{ role: "system", content: system }, { role: "user", content: user }]
 	for (let turn = 1; !report.ok && turn <= REPAIR_TURNS; turn++) {
@@ -605,9 +678,9 @@ export async function runDirector({ step = "direct", system, user, digest, src, 
 			}
 			throw e
 		}
-		plan = out.result
+		plan = holdToSource(out.result, src)
 		report = await measured(executor, plan, ctx)
-		rounds.push(roundOf(turn, out, report))
+		rounds.push(roundOf(turn, out, report, plan))
 		tried.push({ plan, report, director: true })
 	}
 	if (report.ok) return finish(plan, report, "director")

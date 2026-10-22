@@ -391,6 +391,101 @@ test("the safety net sees an empty picture, a subject gone from it and the same 
 	assert.equal(one(small, "must-see")[0].ok, true, one(small, "must-see")[0].why)
 })
 
+// ------------------------------------------------------------------------------------------------ a lesson's screen: one frame, one look, small things close
+// (bench2: the five-lesson benchmark's judges counted the director's reframe between a screen's setup and its pause, and a look that changed
+// between screens, as second changes on a one-change screen; and a 3 cm grape at 5 % of the picture could not be read)
+const lessonPlan = (shots, extra = {}) => ({
+	version: 1,
+	about: "a test of a lesson's screen",
+	source: { kind: "lesson", question: "Is the test finished?" },
+	story: [{ id: "s", kind: "setup", says: "test" }, { id: "b", kind: "action", says: "test" }, { id: "p", kind: "pause", says: "test" }, { id: "a", kind: "action", says: "after" }],
+	shots: shots.map((s, i) => ({ id: `s${i + 1}`, intent: "a test shot of a lesson's screen", audit: { question: "Can a child see it in this test?" }, ...s })),
+	...extra,
+})
+const SETUP = { beat: "s", run: { freeze: "start", seconds: 1.5 }, move: "hold", subject: { items: ["ball", "block"] }, frame: { fit: "snug" } }
+const PUSH = { beat: "p", run: { freeze: "start", seconds: 2.5 }, move: "push", in: "continue", subject: { items: ["ball", "block"] }, end: { subject: { item: "block" }, frame: { size: 0.5 } }, move_seconds: 1.5 }
+const samePose = (a, b, tol = 1e-12) => a.every((v, i) => Math.abs(v - b[i]) <= tol * Math.max(1, Math.abs(v)))
+
+test("pauseShotIndexes: each pause beat's last shot, or the story's pauses in the shot held when they come; lockedThrough", () => {
+	assert.deepEqual(X.pauseShotIndexes(lessonPlan([SETUP, PUSH, { ...PUSH, beat: "a" }])), [1])
+	assert.deepEqual(X.pauseShotIndexes(lessonPlan([SETUP, { ...PUSH, beat: "b" }, { ...PUSH, beat: "a" }])), [1], "the story's pause comes after beat b: held in its shot")
+	assert.deepEqual(X.pauseShotIndexes(lessonPlan([SETUP, { ...PUSH, beat: "b" }], { story: [{ id: "s", kind: "setup", says: "t" }, { id: "b", kind: "action", says: "t" }] })), [])
+	assert.equal(X.lockedThrough(lessonPlan([SETUP, PUSH, { ...PUSH, beat: "a" }], { lock: { until: "pause" } })), 1)
+	assert.equal(X.lockedThrough(lessonPlan([SETUP, PUSH, { ...PUSH, beat: "a" }], { lock: { until: "end" } })), 2)
+	assert.equal(X.lockedThrough(lessonPlan([SETUP, PUSH])), -1)
+})
+
+test("a lock films the setup through the pause from one frame: the one the pause ends on, or the lesson's own camera; the safety net measures it", () => {
+	const w = worldOf(roll())
+	// without a lock the push reframes between the setup and the pause (what the benchmark's judges counted as a second change)
+	const free = film(lessonPlan([SETUP, PUSH]), w)
+	assert.ok(!samePose(free.frames[0].b[0], free.frames.at(-1).b[0], 1e-3), "a push moves the camera")
+	assert.equal(free.lock, null)
+	assert.equal(X.measure(free).checks.filter((c) => c.check === "one-frame").length, 0, "no lock, no check")
+	// locked: every frame through the pause is the one the pause ends on
+	const f = film(lessonPlan([SETUP, PUSH, { beat: "a", run: { freeze: "start", seconds: 1.5 }, move: "hold", in: "cut", subject: { item: "ball" }, frame: { size: 0.4 } }], { lock: { until: "pause" } }), w)
+	const last = f.shots[1].i0 + f.shots[1].n - 1
+	assert.equal(f.lock.last, last)
+	assert.equal(f.lock.upto, "s2")
+	assert.ok(samePose(f.lock.camera, free.frames[free.shots[1].i0 + free.shots[1].n - 1].b[0]), "the lock's frame is the free pause's last frame")
+	for (let i = 0; i <= last; i++) assert.ok(samePose(f.frames[i].b[0], f.lock.camera), `frame ${i} is the lock's frame`)
+	assert.ok(!samePose(f.frames.at(-1).b[0], f.lock.camera, 1e-3), "after the pause the camera is the shot's own again")
+	const rep = X.measure(f)
+	const one = rep.checks.filter((c) => c.check === "one-frame")
+	assert.equal(one.length, 1)
+	assert.equal(one[0].ok, true, one[0].why)
+	assert.match(one[0].why, /^one frame for the video's first 4 s \(through s2, the last pause\)/)
+	assert.deepEqual(rep.lock.camera, f.lock.camera)
+	// the lesson's camera given (the screen before's): the first frame IS it, to the bit
+	const cam = [0.9, 0.12, 0, 1.4, 0.05, 0.2, 0.69]
+	const g = film(lessonPlan([SETUP, PUSH], { lock: { camera: cam } }), w)
+	for (let i = 0; i < g.frameCount; i++) assert.deepEqual(g.frames[i].b[0], cam)
+	const gr = X.measure(g)
+	assert.equal(gr.checks.find((c) => c.check === "one-frame").ok, true)
+	assert.match(gr.checks.find((c) => c.check === "one-frame").why, /the lesson's own camera/)
+	// a film whose camera moves inside the lock (made elsewhere, or tampered with): the net names it
+	const moved = film(lessonPlan([SETUP, PUSH], { lock: { camera: cam } }), w)
+	moved.frames[20].b[0] = [0.95, 0.12, 0, 1.4, 0.05, 0.2, 0.69]
+	const bad = X.measure(moved).checks.find((c) => c.check === "one-frame")
+	assert.equal(bad.ok, false)
+	assert.match(bad.why, /the camera moves [\d.]+ at 0\.667 s within the video's first 4 s/)
+	// until end: the whole video one frame
+	const h = film(lessonPlan([SETUP, PUSH, { beat: "a", run: { freeze: "start", seconds: 1.5 }, move: "hold", in: "cut", subject: { item: "ball" }, frame: { size: 0.4 } }], { lock: { until: "end" } }), w)
+	for (let i = 1; i < h.frameCount; i++) assert.ok(samePose(h.frames[i].b[0], h.frames[0].b[0]))
+	// a lock camera that is no pose is a plan error
+	assert.throws(() => film(lessonPlan([SETUP], { lock: { camera: [1, 2, 3] } }), w), /lock\.camera must be a camera pose/)
+})
+
+test("a lesson's video keeps one look; a small thing at a lesson's stop is framed close (soft: small-size)", () => {
+	const w = worldOf(roll())
+	const rep = (p) => X.measure(film(p, w))
+	const look = (r) => r.checks.filter((c) => c.check === "one-look")
+	// one look on the plan: every shot has it
+	assert.equal(look(rep(lessonPlan([SETUP, { ...PUSH, in: "cut" }], { look: { backdrop: "studio", tone: "light" } })))[0].ok, true)
+	// a shot that turns the set dark, or onto the wooden table: a second change
+	const dark = look(rep(lessonPlan([SETUP, { ...PUSH, in: "cut", look: { tone: "dark" } }])))[0]
+	assert.equal(dark.ok, false)
+	assert.match(dark.why, /^the look changes at s2 \(studio mid, ground sweep, light subject -> studio dark, ground sweep, light subject\)/)
+	assert.equal(look(rep(lessonPlan([SETUP, { ...PUSH, in: "cut", look: { ground: "table" } }])))[0].ok, false)
+	// (not a lesson: a director may change the look between shots)
+	assert.equal(look(rep(plan1([{ run: { freeze: "start", seconds: 1.5 }, move: "hold", subject: { item: "block" } }, { run: { freeze: "start", seconds: 1.5 }, move: "hold", subject: { item: "ball" }, frame: { size: 0.5 }, look: { tone: "dark" } }]))).length, 0)
+	// the 6 cm ball at the stop: framed with the whole 1.2 m scene it is a speck (small-size fails, soft); framed close it reads
+	const stop = (frame) => ({ beat: "p", run: { freeze: "start", seconds: 2.5 }, move: "hold", in: "cut", subject: { item: "ball" }, frame })
+	const small = (r) => r.checks.filter((c) => c.check === "small-size")
+	const far = small(rep(lessonPlan([SETUP, stop({ width: 1.6 })])))
+	assert.equal(far.length, 1)
+	assert.equal(far[0].ok, false)
+	assert.match(far[0].why, /^too small at the lesson's stop: \{"item":"ball"\} 60 mm across, s 0\.0\d+/)
+	const near = small(rep(lessonPlan([SETUP, stop({ size: 0.3 })])))
+	assert.equal(near[0].ok, true, near[0].why)
+	// a shot no pause is held in is no stop (a story with no pause); a setup question's pause is held in the setup's shot: its stop
+	assert.equal(small(rep(lessonPlan([{ ...SETUP, subject: { item: "ball" }, frame: { width: 1.6 } }], { story: [{ id: "s", kind: "setup", says: "test" }] }))).length, 0)
+	assert.equal(small(rep(lessonPlan([{ ...SETUP, subject: { item: "ball" }, frame: { width: 1.6 } }])))[0].ok, false)
+	// small_because says when the smallness is the point
+	assert.equal(small(rep(lessonPlan([SETUP, { ...stop({ width: 1.6 }), audit: { question: "Can a child see how small the ball is?", small_because: "how small the ball is next to the block is the point" } }]))).length, 0)
+	assert.ok(X.NET.smallS === 0.12 && X.NET.smallM === 0.065)
+})
+
 test("specOf: a square-on pose is the scene's fixed-camera spec (camera.py projects it exactly)", () => {
 	const pose = { L: [1.2, 0.3, 0], d: 2.5, yaw: 0, pitch: 0.12, hfov: 0.8 }
 	const s = X.specOf(pose)

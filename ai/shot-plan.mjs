@@ -459,6 +459,8 @@ export function resolveShotPlan(plan, digest, { lanes: given = null } = {}) {
 			if (sh.audit.min_size !== undefined && sh.audit.min_size < 0.045 && !sh.audit.small_because) warnings.push(`${P}.audit.min_size ${sh.audit.min_size} is under the floor: it is ignored without small_because`)
 		}
 	}
+	// a lock: one frame through the lesson's last pause (web/export/shots.js lockedThrough)
+	if (isObj(plan.lock) && plan.lock.until !== "end" && !(Array.isArray(plan.story) && plan.story.some((b) => isObj(b) && b.kind === "pause"))) warnings.push("lock: the story has no pause beat, so every shot is filmed from the lock's one frame")
 	const known = timing.every((x) => x.seconds !== null)
 	const total = known ? r3(timing.reduce((s, x) => s + x.seconds, 0)) : null
 	const max = plan.output?.max_seconds

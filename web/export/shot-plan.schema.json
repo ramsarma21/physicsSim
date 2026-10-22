@@ -54,6 +54,9 @@
 		"look": {
 			"$ref": "#/$defs/look"
 		},
+		"lock": {
+			"$ref": "#/$defs/lock"
+		},
 		"shots": {
 			"type": "array",
 			"minItems": 1,
@@ -311,6 +314,29 @@
 						"hidden"
 					],
 					"description": "The modules' own drawn words and boards (the space module's info board, the heat clock, lane names a module paints): scene keeps them; hidden leaves them out for this video, when they are clutter the lesson does not read."
+				}
+			}
+		},
+		"lock": {
+			"type": "object",
+			"additionalProperties": false,
+			"description": "One frame for a lesson's screen: every shot from the video's first frame through the lesson's last pause (a pause beat's last shot; until end: the whole video) is filmed from one camera, every band shifted by its lane's offset as the shot's layout has it, so nothing reframes between the setup and the pause (a reframe is a second change). The camera is the one given (camera: the screen before's, so the screens of one lesson share it), else the one the last locked shot ends on. The engine pins it and the safety net measures it (one-frame).",
+			"properties": {
+				"until": {
+					"enum": [
+						"pause",
+						"end"
+					],
+					"description": "pause (the default): through the lesson's last pause; end: the whole video (a card that is a still picture)."
+				},
+				"camera": {
+					"type": "array",
+					"minItems": 7,
+					"maxItems": 7,
+					"items": {
+						"type": "number"
+					},
+					"description": "The camera pose [Lx, Ly, Lz, d, yaw, pitch, hfov] of band 0 (metres and radians; a film frame's own, film.frames[i].b[0], as the direct step's result.lock.camera gives it): the camera stands at L + d (sin yaw cos pitch, sin pitch, cos yaw cos pitch) looking at L."
 				}
 			}
 		},

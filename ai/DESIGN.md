@@ -522,6 +522,13 @@ compile, measure, autoPlan).
   model boxes, `view.exportBoxes()`: one object for one run, `{lane: ...}` for one run per lane; the plan is then measured on the shapes the
   video shows, as the page films it, rather than on physics outlines: a sail, a fan guard or a lamp head is larger than its outline);
   `aspect` (16:9 default); `max_seconds`; `return_digest`. Bad input is a 400 before any run or model call.
+  A lesson's screens (bench2, 2026-10-21): `look` (the lesson's one look, the plan language's: given to every shot of every plan the step
+  measures, the director's own shot looks dropped, so no screen turns dark or onto a wooden table after the one before); `one_frame` ("pause"
+  or true: one frame from the first frame through the lesson's last pause; "end": the whole video, a card that is a still picture) and `camera`
+  (that frame's camera, the screen before's `result.lock.camera`: the screens of a part share it; a camera alone means one_frame "pause"):
+  the plan's `lock`, which the executor pins and measures (`one-frame`), so nothing reframes between a screen's setup and its pause (the
+  benchmark's judges counted a reframe as a second change). The answer then carries `result.lock {until, upto, seconds, camera}`.
+  `ai/director.mjs` holdToSource applies them to the director's every answer and to the automatic plans before they are measured.
 - **What the director reads**: the step runs the scene(s) itself (`runScene`, the same run as /api/simulate), ranks the cast with
   `web/export/subjects.js`, and gives the model the run's **timeline digest** (`web/export/digest.js` buildDigest /
   digestText): the cast with boxes, swept boxes, starts, rests, top speeds and parts; every moment by its id (start, release, result, end,
