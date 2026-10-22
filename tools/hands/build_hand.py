@@ -292,6 +292,12 @@ def thumb_field(P):
     return f
 
 
+# the thumb-index web's radii at the index's root and at the thumb's knuckle, and its height / width: full (the first dorsal interosseous under it),
+# so the web keeps a rounded curve when the thumb lies in against the fingers (a pointing hand's, a fist's) and never folds into a see-through
+# pinhole between the thumb and the index
+WEB_R = (0.0100, 0.0080, 0.90)
+
+
 def hand_sdf(P):
     """The skin's signed distance (m) at points P (N x 3, frame H)."""
     P = np.asarray(P, dtype=float)
@@ -322,7 +328,7 @@ def hand_sdf(P):
     wb = tp[1] + td[1] * 0.006
     we = unit(wb - wa)
     wn = unit(np.cross(we, np.cross(up, we)))
-    thumb_web = sd_round_cone(P, wa, wb + np.array([0.0, 0.0015, 0.0]), 0.0058, 0.0050, wn, 0.62, 0.62)
+    thumb_web = sd_round_cone(P, wa, wb + np.array([0.0, 0.0015, 0.0]), WEB_R[0], WEB_R[1], wn, WEB_R[2], WEB_R[2])
     # the knuckles on the back of the hand (soft: a child's, a gentle row, never lumps)
     for name in FINGER_NAMES:
         m = np.array(FINGERS[name]["mcp"])

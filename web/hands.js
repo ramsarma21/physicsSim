@@ -53,6 +53,7 @@ const APART = (low) => (low ? 0.005 : 0.01)
 const LOW_THING = 0.09 // m: a thing lower than this (a toy car) is pushed by a palm on its back with its fingers over its top
 const PALM_ROLL = 32 // degrees: a ball held on the open palm, the palm rolled toward the camera
 const PINCH_ROOM = 0.03 // ... for a pinch from the side (the curled fingers hang below it), else from above
+const PINCH_ROLL = 30 // degrees: a round thing pinched from above, the line between the pads turned this far out of the picture's plane
 const WA = 30 // m/s²: a hand pulled away from what it let go (a quick flick of the forearm; a cork rises from rest at under 20 m/s² in water)
 const WV = 1.4 // m/s: ... and its speed out of the picture
 const D2R = Math.PI / 180
@@ -136,15 +137,15 @@ const digits = (rows) => {
 }
 // the middle, ring and little fingers folded into the palm as a closed fist, each a little more than the one before it (at the knuckle 84, 90 and 95
 // degrees: no gap between them), and the thumb lying along the folded middle finger under the index, its side against the index's root and its pad
-// on the middle finger (each 0.6 to 1.2 mm off: nothing to see through between them; fitted on hand.glb's skin): a pointing hand's and a pressing
-// fingertip's other digits, and a pinch's tucked fingers
+// on the middle finger (fitted on hand.glb's skin, drawn black on white from the thumb's side: no see-through pinhole left in the web between the
+// thumb and the index): a pointing hand's and a pressing fingertip's other digits, and a pinch's tucked fingers
 const FOLD = {
 	middle: [[0, 0, -84], [0, 0, -108], [0, 0, -80]],
 	ring: [[0, 1, -90], [0, 0, -110], [0, 0, -82]],
 	pinky: [[0, 3, -95], [0, 0, -110], [0, 0, -84]],
-	thumb: [[58.4, 9.4, -25], [-4.8, -13, 1.9], [-1.9, -7.1, -36.2]]
+	thumb: [[84, 19.1, -32], [-5, -11.7, 17.2], [-1.6, -6.4, -13.8]]
 }
-const TAP_THUMB = [[64.3, 10.8, -26.8], [-4.8, -12.7, 5.4], [-1.9, -7.1, -36.4]] // (the same, fitted to the pressing index a little more bent)
+const TAP_THUMB = [[77, 17.2, -31.4], [-4.9, -12, 13.8], [-1.6, -6.6, -21.2]] // (the same, fitted to the pressing index a little more bent)
 export const POSES = {
 	// the fingers straight (barely bent) and a little apart to their tips, the thumb out beside the index in the palm's plane, its nail to the side
 	flat: digits({
@@ -169,7 +170,7 @@ export const POSES = {
 		middle: [[0, 0, -84], [0, 0, -110], [0, 0, -78]],
 		ring: [[0, 1, -88], [0, 0, -110], [0, 0, -78]],
 		pinky: [[0, 3, -90], [0, 0, -110], [0, 0, -76]],
-		thumb: [[51.1, -27.6, -22.1], [-5.1, -15, -21.1], [-1.6, -6.4, -16.6]]
+		thumb: [[39.6, -28.4, -27.5], [-5.1, -14.9, -19.9], [-1.7, -6.7, -23.7]]
 	}),
 	// the index straight ahead with a slight natural bend, the others folded into the palm as a closed fist, the thumb along them under the index
 	// (FOLD)
@@ -235,7 +236,7 @@ export const POSES = {
 		middle: [[0, 0, -36], [0, 0, -16], [0, 0, -8]],
 		ring: [[0, -1.5, -37], [0, 0, -17], [0, 0, -9]],
 		pinky: [[0, -3.5, -38], [0, 0, -18], [0, 0, -9]],
-		thumb: [[12.5, 11, -17.1], [-4.9, -14.2, -12.4], [-1.5, -6.2, -7.1]]
+		thumb: [[41.7, 8.6, -24.7], [-5, -14.6, -17], [-1.5, -6, -1.6]]
 	})
 }
 
@@ -2538,10 +2539,14 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 		// the camera)
 		const lean = near === "left" ? 1 : -1
 		const tilts = above && round && Math.abs(nn.z) < 0.5 ? [50, 35, 60, 20] : [0]
+		// (and a round thing from above is pinched across a line turned out of the picture's plane, the thumb's pad on its front and the index's on
+		// its back, so the picture shows the pads on it, not two tips each just touching its outline)
+		const rolls = tilts.length > 1 ? [PINCH_ROLL, -PINCH_ROLL, 0] : [0]
 		for (const tilt of tilts)
+			for (const roll of rolls)
 			P0s.forEach((P0, k) => {
-				const nt = nn.clone().applyAxisAngle(FRONT, lean * tilt * D2R)
 				const at = a0.clone().applyAxisAngle(FRONT, lean * tilt * D2R)
+				const nt = nn.clone().applyAxisAngle(FRONT, lean * tilt * D2R).applyAxisAngle(at, roll * D2R)
 				// (the pinch opened to the thing's width across its axis there, and its tips set either side of it, on its middle line: they then close
 				// the last millimetres onto it, pad to pad)
 				const ha = hitAlong(d, P0.clone().addScaledVector(nt, 0.15), nt.clone().negate(), 0.3)
@@ -2566,7 +2571,7 @@ function solveHold(grip, from, d, E, move, room = { above: Infinity, below: Infi
 							// (at its middle: the thumb's and the index's pads on either side of its widest line, the equator of a round thing; the back of the
 							// hand toward the camera, so the thumb, the index and the thing between them show, the other fingers folded behind them)
 							const where = k * 0.3
-							const pref = (psi / 45) ** 2 + (rs === rs0 ? 0 : 0.15) + where + (flip < 0 ? 0.5 : 0) + (1 - Y.dot(FRONT)) * 0.4 + (tilts.length > 1 ? ((tilt - 50) / 25) ** 2 : 0)
+							const pref = (psi / 45) ** 2 + (rs === rs0 ? 0 : 0.15) + where + (flip < 0 ? 0.5 : 0) + (1 - Y.dot(FRONT)) * 0.4 + (tilts.length > 1 ? ((tilt - 50) / 25) ** 2 + (roll ? 0 : 0.6) : 0)
 							tryHold(rs, W, X, Y, tuck(rs, W, X, Y, copyPose(pre), all), pref, (l) => !closing.has(l), tilts.length > 1 ? { way: V(-lean, 0, 0), rise: 42, riseMin: ARM.reachIn } : {})
 						}
 					}
