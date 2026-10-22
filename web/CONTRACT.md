@@ -4732,3 +4732,100 @@ never fed one column fast enough to show it.
   chord shrinks: about 70 g in one parcel); its grains now settle where they land, but its stream is drawn as a burst. Through its whole mouth a
   cup empties at about w·√(g·w) a second for each metre of its depth at most (a slot's Beverloo scaling): capping δ at the mouth's width is the
   fix, not made here.
+
+## bench2 (2026-10-21, branch `feat/bench2`): a lesson's screens in one frame and one look, small things close, flat liquid tops, a nail held under an alnico bar's end
+From the five-lesson benchmark (lesson-regen/bench/remake: MA-25, FO-13, MO-19, FO-36, MA-50 remade by the physics-lesson-video skill's lesson
+mode on release 2 and judged against the EduLLM pictures by GPT-6.1 and Claude): the physics was right but for FO-13's nail (below), yet the
+judges read the drawn pictures better because (1) small things were specks (a 3 cm grape at 5 % of the picture, a clear 2.5 cm marble), (2) the
+director reframed between a screen's setup and its pause (a second change on a one-change screen), (3) the look changed between screens (dark,
+then a wooden table), (4) the hands (done on their own branch), (5) a narrow glass's flat liquid was lit as a dome, and FO-13's nail (the card:
+"the nail jumps up and hangs by its head under the blue end") hung tilted at the bar's end corner, rocking, and read as leaning on the table.
+- **One frame from the setup through the pause** (web/export/shots.js, web/export/shot-plan.schema.json `lock`): a plan's `lock: {until: "pause"
+  | "end", camera?: [Lx, Ly, Lz, d, yaw, pitch, hfov]}` films every shot from the video's first frame through the lesson's last pause
+  (`pauseShotIndexes`: each pause beat's last shot, or the story's pauses in the shot held when they come, the skill's own reading; `until:
+  "end"`: the whole video, a still card) from one camera: the one it gives (a film frame's band-0 pose, so the screens of a part share it), else
+  the one the last locked shot ends on (`compile` films the plan once unlocked to find it, then again locked). Every band keeps its lane's offset
+  as the shot's layout has it; a locked shot's move, follow and glide are pinned, its names still resolved. The film says so (`film.lock {until,
+  upto, last, camera, given}`). The safety net's **one-frame** check (hard): every band's camera the very first frame's until the lock's last
+  frame (within `NET.lockStill`, 1e-6 of a picture width, log-distance and radian), the layout unchanged, and the first frame the lock's camera
+  when it gives one; `report.lock` carries the camera filmed.
+- **One look** (shots.js measure **one-look**, hard, lesson plans only): every shot's look the first's. The direct step's `look` gives a lesson's
+  one look to every plan (ai/director.mjs `holdToSource`: the plan's look, the shots' own dropped), so every screen filmed with it looks alike.
+- **Small things close** (shots.js measure **small-size**, soft; `NET.smallM` 0.065 m, `NET.smallS` 0.12): at a lesson's stop a hero smaller than
+  6.5 cm (a grape, a marble, a clip, a cork) is at least 0.12 of its band, unless `small_because`. The craft guide (ai/prompts/direct.md "A
+  lesson's screen", "Small things big", "One look for the whole lesson") says how: the macro view (90 mm) and `frame.size` on the small thing,
+  the container cropped; never a bigger thing than the real one.
+- **The direct step** (ai/director.mjs, ai/DESIGN.md §21): payload `look`, `one_frame` ("pause" | true | "end") and `camera` (a pose; with no
+  one_frame it means "pause"), checked (400s); the user turn says ONE FRAME and gives the camera's frame in words; every plan the step measures
+  (the director's, the automatic ones) is held to them; the answer's `result.lock` is the camera to pass on. Repair words for one-frame, one-look
+  and small-size; small-size is soft (`SOFT_CHECKS`).
+- **A round container's liquid** (web/models/liquid-geo.js `liquidColumn`, `liquidCut`; web/models/mod-flow.js): an upright round container's
+  liquid is a column whose level and floor are flat discs with their own vertices and normals (up, down) and a wall whose normals are square to
+  it; the lathe of its whole outline it replaces shared the rim's normals between the wall and the level (tipped about 50° at the rim), so a
+  narrow glass's flat water was lit as a dome (MA-50 screens 6, 8, 10), and the lesson outline's pass C (which tells a liquid's up-looking faces
+  by their normal) missed its rim. A tipped cup's opaque liquid (`liquidCut`) gives its level, its floor and its two sides their own vertices
+  too. Render only. tools/staging/liquid.test.mjs: the level's normals up to the rim, the floor's down, the wall's square, every face wound
+  outward, the volume the frustum's, and the old lathe's rim normals tipped 50°.
+- **What a bar magnet does with a nail held under its end, and the engine now.** A bar magnet's pull is strongest at its poles, its ends: the
+  nail jumps up to the end, clicks on and hangs there. Where on the end, and how it hangs, depends on where the pole's charge is. A ceramic or
+  NdFeB bar keeps its magnetization to its ends (its coercivity is over the field its own end faces put on them), so its pole is its end face,
+  strongest at the face's edges. An alnico bar's is not (below): its pole is spread over its last few cm, the field under its end comes down out
+  of it, and the nail hangs straight down from the underside a few mm in from the end, by its head as the card draws it. On release 2 the engine
+  put every bar's pole on its end face alone, and three faults made it worse: the nail at the alnico bar went to the corner, a couple the field
+  never made spun it about where it was held (head up it swung round the end onto the bar's top; point up it rocked against the corner), and a
+  contact's rebound under the pole's pull was given e of that pull at every touch it made again (it never came to rest). FO-13 screen 11 as the card
+  draws it (head up) now hangs by its head under the blue end 3.9 mm in, 0.7° from straight down, still 0.05 s after the hand lets go; as the
+  bench built it (point up, angle 90°: the card's build note says head up) it is still 0.5 s after, held by its point at the end's corner and
+  splayed out along the field there, never on the bar's top.
+- **An alnico bar's poles spread over its last few cm** (machines/mod_magnetism.py `ALNICO_HC`, `BAR_NODES`, `_alnico_bar`, `_bar_faces` and their
+  port in web/sim/modules/magnetism.js, the same faces number for number; the bar-magnet and the magnet cart's bar). Alnico 5's coercivity (H_c 51
+  kA/m, 640 Oe [ARN]) is a twentieth of the field a uniformly magnetized bar's own end faces put on its ends (M/2, about 500 kA/m), so a bar comes out
+  of its magnetizer with its ends partly demagnetized: each part of it goes down the major demagnetization curve to where its own field puts it.
+  The curve: M = M_r − χ·H_c·h − (M_r − (1 + χ)·H_c)·h²⁰ (h = |H|/H_c; χ 2.7, its recoil permeability 3.7; the knee's power from (BH)max 43.8 kJ/m³
+  at B_d 1.0 T; B = µ0(M − |H|) falls to 0 at H_c [ARN]). The bar's half in 12 cells (Chebyshev nodes, fine at its end), each cell's field the mean
+  over its middle section of the charge on every cell boundary of both halves (exact solid angles), Newton's method on h from the bar at B_r: the
+  catalog's 15 × 1.9 × 0.95 cm bar is 1.225 T in its middle and 0.41 T at its end, a third of each pole on its end face and the rest behind it.
+  Its faces: the two end faces and 22 sheets inside it (FaceSpec `inner`: no contact skin, never met from behind), one on each cell boundary, its
+  volume charge's, inset min(W, D)/10 from its sides so no sheet's edge meets the outline a touching thing comes to. research/rw-validate-magnetism.ts
+  `alnico`: against an independent, finer solve (192 cells over the bar, the volume-averaged field of every cell on every other from Aharoni's
+  prism factors on composite prisms: 1.2249 T, magnetic length 0.8953, end share 0.306) the pole's charge within 0.03 %, the magnetic length
+  within 0.004, the end face's share 0.338; the field 1 mm under it from 4 mm past its end to 4 cm in within 7.5 % and 3.2°; its magnetic length
+  0.899 of its length, near the textbooks' 0.84-0.86 for bar magnets (a uniform bar's is 1: the poles "a little inside the ends"; a 1-D solve
+  spreads them a little less than a real bar's corners do); 1 mm off its end face 0.69 of a uniform bar's field (3176 against 4574 G). A pickup's
+  alnico 5 rod (Ø 5 × 17 mm) by the same solve: 1219 G on its axis 1.5 mm off its end, against 2949 G uniformly magnetized at B_r; pickup makers
+  read several hundred to about a thousand gauss there with a Hall probe. Ceramic and NdFeB bars keep their two end faces at B_r/µ0. A short
+  alnico bar demagnetizes itself: the cart's 3 cm one is 0.47 T in its middle (1.19 T at 10 cm). Near its end an alnico bar now pulls a clip 2
+  to 4 times as hard as a ceramic bar of its size (2 mm to 2 cm under it; 3.7 to 7.6 times on release 2) and a third to a half as hard as a
+  neodymium one: the AI's words for it say so (web/sim/modules/magnetism.js `change`, the material knob; its B_r would say 7.6), held to the
+  engine's own static pulls (`alnico`). Known limit: the horseshoe, the disc and the rings in alnico keep 0.86 B_r (about 1.07 T), uniform,
+  provisional (a disc or a ring poled through its thickness would be far weaker).
+- **The field's turning taken implicitly only where it lines a body up** (tooling/src/sim/magnetism.ts `pairWrench`, `alignIn`, `Apply`;
+  tooling/src/sim/modules/magnetism.ts `force`). Where a light, strongly magnetized thing would turn faster than the step can follow, the module
+  takes its turning implicitly, τ/(1 + κh²/I) with κ = |m|·|B|; but the turning it took so was everything about the solid's origin, the moments of
+  the field's pulls with it. A nail a pole pulls up by its near end with about 1 N was turned by only that share of the pull's moment, while the
+  pull itself pushed in full: about the point it was held by, a couple the field never made (up to 2 mN·m, seven times its weight's) spun it.
+  Now only the lining up, the target's moment by the source's field at its middle (m × B, `alignIn`), is given with its stiffness; the rest of
+  a pair's turning and every pull's moment are taken as they are. research/rw-validate-magnetism.ts `turning`: a nail on a pin 2 mm down from its
+  point under a bar's end, 3-10 mm in and 3-5 mm under, rests where the field's turning and its weight balance about the pin (the static balance
+  from createFields over its angle) within 6.4° (alnico, NdFeB, ceramic; release 2: a neodymium one at -9° against 126°, turned right round).
+  The implicit share of the lining up still moves a balance it is part of by a few degrees (κ, I and h as they are).
+- **A module's push in a contact's restitution** (tooling/src/sim/physics.ts `compensated`, `pushed`, `pushApproach`): Box2D gives a rebound of e
+  times the approach after the step's forces, which the engine compensated for gravity only. A module's push (a magnet's pull, a liquid's lift, a
+  fan's wind: `SolidHandle.push`/`twist`, now recorded per body each sub-step) is compensated the same way, at the fastest-closing point, its
+  late share in the time-of-impact pass as a spring's; and a rebound slower than the push closes in one step is no rebound (a touch made again at
+  once, as resting contacts under gravity meet again under VELOCITY_THRESHOLD). Before, a 1.8 g nail a pole pulls with 50 times its weight (1 m/s
+  more closing each step) was given e of that at every touch it made again: at a neodymium pole it rocked for the whole run. A run with no module
+  pushes is solved exactly as before (the 22 identity scenes byte for byte).
+- **Checks of the nail** (research/rw-validate-magnetism.ts `rest`; web/ai/test/magnetism-poles.test.mjs): FO-13 screen 11 as the card draws it
+  and as the bench built it (above); a 33 mm (1.8 g) and a 51 mm (2.8 g) nail let go head up 1-2 cm under an alnico bar's end, 0.5-1.5 cm in: every
+  one the bar lifts hangs by its head under the end within 1 cm of it, straight down within 10° (all within 4°), still within 0.4 s (9 of 9 each);
+  point up: every one still within 0.7 s, held within 2.5 cm of the end face, never on the bar's top (release 2 fails 15 of the 19 checks of
+  `alnico`, `turning` and `rest`, and all 4 tests). web/ai/test/magnetism-plugin.test.mjs: the g3 demo's steel clip, pulled up against the
+  neodymium bar's pole face 1 cm high, now rests 7 mm up, a lift by the goal's 5 mm (4.9 mm before). Known limits: a nail held by its point
+  rests where the engine's contact skins let it (planck's 1 mm polygon radius rounds the nail's point and the bar's corner, so the point rolls to
+  the corner, where a real one's sharp point can catch a little in from it); at a neodymium bar (its pole its end face, 1.3 T) half the lifted 33
+  mm nails still swing round its end onto its top (its corner pulls hardest).
+- **Drawn over the contact skins** (web/models/mod-magnetism.js `SKIN_M`): the engine keeps two resting bodies about 1.5 mm apart, so a nail held
+  at its pole hung a visible 1.5 mm under the bar in a close shot ("not touching", the benchmark's judge). A bar magnet is drawn grown 0.75 mm on
+  each side in the plane (as the blocks are, web/models/blocks.js), a nail's head 0.75 mm thicker on its outer face and its point 0.75 mm longer:
+  a nail held at its pole meets it in the picture. Render only.

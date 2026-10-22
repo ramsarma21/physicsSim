@@ -51,7 +51,13 @@ export default function register({ addModel, addViewPlugin, kit, THREE }) {
 	}
 
 	// ============================================================== bar magnets
-	const barMagnet = (w, h, d, P) => {
+	// The engine's contact skins keep two resting bodies about 1.5 mm apart (web/CONTRACT.md "Polygons"): a bar is drawn grown by SKIN_M on
+	// each side in the plane, as the blocks are (web/models/blocks.js), and a nail's head and point by as much, so a nail held at its pole meets
+	// it in the picture (bench2: FO-13's nail hung a visible 1.5 mm under the bar, "not touching")
+	const SKIN_M = 0.00075
+	const barMagnet = (w0, h0, d, P) => {
+		const w = w0 + 2 * SKIN_M
+		const h = h0 + 2 * SKIN_M
 		const neo = P.material === "neodymium"
 		const flip = P.flip === true
 		const g = kit.group()
@@ -205,10 +211,11 @@ export default function register({ addModel, addViewPlugin, kit, THREE }) {
 	})
 
 	// ============================================================== nails and the electromagnet
-	const nailGeo = (L, r) =>
-		kit.geo(`mag|nail|${L.toFixed(5)}|${r.toFixed(5)}`, () => {
+	const nailGeo = (L, r, tip = 0) =>
+		kit.geo(`mag|nail|${L.toFixed(5)}|${r.toFixed(5)}|${tip}`, () => {
 			const p = Math.min(0.004, L / 6)
-			const prof = [[0, L / 2], [r * 0.12, L / 2 - 0.0002], [r, L / 2 - p], [r, -L / 2 + 0.0004], [r * 0.9, -L / 2], [0, -L / 2]]
+			// (its point drawn `tip` past the body's, the contact skin's share: SKIN_M)
+			const prof = [[0, L / 2 + tip], [r * 0.12, L / 2 + tip - 0.0002], [r, L / 2 - p], [r, -L / 2 + 0.0004], [r * 0.9, -L / 2], [0, -L / 2]]
 			// (a lathe about y, laid along x: its point at +x)
 			return new THREE.LatheGeometry(prof.map(([a, b]) => new THREE.Vector2(a, b)), 32).rotateZ(-Math.PI / 2)
 		})
@@ -217,9 +224,10 @@ export default function register({ addModel, addViewPlugin, kit, THREE }) {
 		const xs = pts.map((q) => q.x)
 		const L = xs.length ? Math.max(...xs) - Math.min(...xs) : 0.05
 		const r = (ctx.body?.depth ?? 0.003) / 2
-		return kit.mesh(nailGeo(L, r), kit.steel())
+		return kit.mesh(nailGeo(L, r, SKIN_M), kit.steel())
 	}
-	const headMesh = ({ w, h }) => kit.mesh(kit.geo(`mag|nailhead|${w}|${h}`, () => new THREE.CylinderGeometry(h / 2, h / 2, w, 32).rotateZ(Math.PI / 2)), kit.steel())
+	// (its head drawn SKIN_M thicker on its outer face, -x: the side away from the shank)
+	const headMesh = ({ w, h }) => kit.mesh(kit.geo(`mag|nailhead|${w}|${h}|${SKIN_M}`, () => new THREE.CylinderGeometry(h / 2, h / 2, w + SKIN_M, 32).rotateZ(Math.PI / 2).translate(-SKIN_M / 2, 0, 0)), kit.steel())
 	addModel("iron-nail", "shank", nailMesh)
 	addModel("iron-nail", "head", headMesh)
 	addModel("battery-electromagnet", "core", (ctx) => {

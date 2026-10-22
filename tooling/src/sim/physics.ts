@@ -1020,6 +1020,9 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 	 * velocity after this step's gravity, so every bounce off fixed ground would gain a step of gravity and a bouncy ball would never
 	 * come to rest: the restitution is rescaled so the rebound is e times the approach speed as the step begins (the Prism lab's
 	 * compensation). In the time-of-impact pass the struck bodies have moved through the step: its approach is as sampled there.
+	 * A module's push this step (a magnet's pull, a liquid's lift: `pushed`) is compensated as gravity is, at the point that closes
+	 * fastest: a steel nail a magnet pulls with 50 times its weight closes 1 m/s faster each step, so each touch it made again as it
+	 * rocked against the magnet was given e of that too, and it rocked against the magnet for ever (FO-13's nail, 2026-10-21).
 	 */
 	const compensated = (touch: Touch, e: number, old: Manifold) => {
 		const wm = touch.getWorldManifold(null)
@@ -1028,6 +1031,8 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 		const bodyA = touch.getFixtureA().getBody()
 		const bodyB = touch.getFixtureB().getBody()
 		let approach = 0
+		// (what the modules' pushes this step add to that point's closing: none in a run without modules)
+		let pushedIn = 0
 		for (let i = 0; i < wm.pointCount; i++) {
 			const point = wm.points[i]
 			const id = manifold.points[i]?.id.key
@@ -1039,7 +1044,11 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			if (!fresh) continue
 			const va = bodyA.getLinearVelocityFromWorldPoint(point)
 			const vb = bodyB.getLinearVelocityFromWorldPoint(point)
-			approach = Math.max(approach, -((vb.x - va.x) * wm.normal.x + (vb.y - va.y) * wm.normal.y))
+			const closing = -((vb.x - va.x) * wm.normal.x + (vb.y - va.y) * wm.normal.y)
+			if (closing > approach) {
+				approach = closing
+				pushedIn = pushed.size > 0 ? pushApproach(bodyA, bodyB, point, wm.normal) : 0
+			}
 		}
 		// A contact that is not closing (at rest, or parting) has nothing to rebound: Box2D would apply e to
 		// the approach left once this step's forces have acted, bouncing a body a spring pushes every step.
@@ -1049,15 +1058,22 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			// a spring pushes evenly through the step, and what it gave them after the moment they met (a share 1 − α of it, the pass
 			// having moved them back to that moment, α into the step) is no part of the strike. Struck with it, a light plate a stiff
 			// spring flung back up into the ball it had just thrown threw the ball again, higher than it fell from. The rebound is e
-			// times the approach less that.
-			const sprung = springApproach(touch, wm)
+			// times the approach less that. (A module's push is the same: what it gave after the moment they met is no part of it.)
+			const late = pushedIn > 0 ? pushedIn * (1 - Math.max(alphaOf(bodyA), alphaOf(bodyB))) : 0
+			const sprung = late > 0 ? springApproach(touch, wm) + late : springApproach(touch, wm)
 			if (approach - sprung < VELOCITY_THRESHOLD * LENGTH_SCALE) return 0
+			if (pushedIn > 0 && e * (approach - sprung) <= pushedIn) return 0
 			if (sprung > 0) return Math.max(0, Math.min(1, (e * (approach - sprung)) / approach))
 		}
 		if (approach < VELOCITY_THRESHOLD * LENGTH_SCALE) return 0
-		const injection = continuous
+		// A rebound slower than what the modules' push closes in one step is stopped within that step: no bounce the step can show,
+		// only a touch made again at once, at a step's push (as resting contacts under gravity alone meet again at 0.02 m/s, under
+		// VELOCITY_THRESHOLD). Given e, the nail a magnet pulls at 50 g bounced off it every other step and never came to rest.
+		if (!continuous && pushedIn > 0 && e * approach <= pushedIn) return 0
+		const fallen = continuous
 			? 0
 			: runGravity * LENGTH_SCALE * h * wm.normal.y * ((bodyB.isDynamic() ? 1 : 0) - (bodyA.isDynamic() ? 1 : 0))
+		const injection = !continuous && pushedIn !== 0 ? fallen + pushedIn : fallen
 		if (injection < 0 && approach < VELOCITY_THRESHOLD * LENGTH_SCALE - injection) return 0
 		if (approach + injection <= 0) return e
 		return Math.max(0, Math.min(1, (e * approach) / (approach + injection)))
@@ -1099,8 +1115,30 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 			const by = pb.y + pb.w * (point.x - cb.x)
 			most = Math.max(most, -((bx - ax) * wm.normal.x + (by - ay) * wm.normal.y))
 		}
-		const sweep = (body: Body) => (body as unknown as { m_sweep: { alpha0: number } }).m_sweep.alpha0
-		return most * (1 - Math.max(sweep(bodyA), sweep(bodyB)))
+		return most * (1 - Math.max(alphaOf(bodyA), alphaOf(bodyB)))
+	}
+	/** How far into the step a body's path now begins (the time-of-impact pass moves it back to the moment it struck: its sweep's α0). */
+	const alphaOf = (body: Body) => (body as unknown as { m_sweep: { alpha0: number } }).m_sweep.alpha0
+
+	/**
+	 * What the modules pushed each moving body with this (sub-)step (`runner.force`: a magnet's pull, a liquid's lift, a fan's wind), in
+	 * planck units: the force and its turning about the body's centre of mass, as planck takes them (SolidHandle push and twist add them up).
+	 * Empty in a run without modules, which then strikes exactly as before.
+	 */
+	const pushed = new Map<Body, { fx: number; fy: number; tq: number }>()
+	/** How much faster (planck units) this step's module pushes make a contact's two bodies close at a point along the normal n (A to B). */
+	const pushApproach = (bodyA: Body, bodyB: Body, point: Vec2, n: Vec2) => {
+		const dv = (body: Body): [number, number] => {
+			const p = pushed.get(body)
+			if (p === undefined || !body.isDynamic()) return [0, 0]
+			const s = solving(body)
+			const c = body.getWorldCenter()
+			const w = h * s.m_invI * p.tq
+			return [h * s.m_invMass * p.fx - w * (point.y - c.y), h * s.m_invMass * p.fy + w * (point.x - c.x)]
+		}
+		const a = dv(bodyA)
+		const b = dv(bodyB)
+		return -((b[0] - a[0]) * n.x + (b[1] - a[1]) * n.y)
 	}
 
 	/**
@@ -2054,10 +2092,26 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				push: (fx, fy, at) => {
 					if (!(m.part.kind === "dynamic" && m.body.isDynamic())) return
 					const p = at === undefined ? middle(m) : new Vec2(at.x * LENGTH_SCALE, at.y * LENGTH_SCALE)
-					m.body.applyForce(new Vec2(fx * LENGTH_SCALE, fy * LENGTH_SCALE), p, true)
+					const F = new Vec2(fx * LENGTH_SCALE, fy * LENGTH_SCALE)
+					m.body.applyForce(F, p, true)
+					// (kept for the restitution's compensation: `pushed`, as planck takes it, its turning about the centre of mass)
+					const c = m.body.getWorldCenter()
+					const q = pushed.get(m.body)
+					const tq = (p.x - c.x) * F.y - (p.y - c.y) * F.x
+					if (q === undefined) pushed.set(m.body, { fx: F.x, fy: F.y, tq })
+					else {
+						q.fx += F.x
+						q.fy += F.y
+						q.tq += tq
+					}
 				},
 				twist: (torque) => {
-					if (m.part.kind === "dynamic" && m.body.isDynamic()) m.body.applyTorque(torque * LENGTH_SCALE * LENGTH_SCALE, true)
+					if (!(m.part.kind === "dynamic" && m.body.isDynamic())) return
+					const T = torque * LENGTH_SCALE * LENGTH_SCALE
+					m.body.applyTorque(T, true)
+					const q = pushed.get(m.body)
+					if (q === undefined) pushed.set(m.body, { fx: 0, fy: 0, tq: T })
+					else q.tq += T
 				},
 				scale: () => scales.get(id) ?? 1,
 				resize: (k) => resize(m, k),
@@ -2231,6 +2285,7 @@ export const simulate = (scene: SimScene<string>, fps: number): Track => {
 				airLift()
 				if (springWeights.length > 0) springWeight()
 				airDrag()
+				if (pushed.size > 0) pushed.clear()
 				runner?.force(h)
 				Settings.maxTranslation = SANE_SPEED * LENGTH_SCALE * h
 				struck.clear()

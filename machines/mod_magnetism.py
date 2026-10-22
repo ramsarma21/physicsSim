@@ -52,17 +52,41 @@ CATEGORY = "Magnets & static"
 STEEL = 7850.0                  # kg/m³: low-carbon steel
 
 # Permanent magnet grades: B_r (T), density (kg/m³), the share of B_r the magnetization works at in a magnet of a classroom's shape, the look.
-# Ceramic and NdFeB recoil along a nearly straight line (µ_r ≈ 1.05-1.1), so they work at B_r; alnico 5, easily demagnetized, works at
-# ≈ 1.07 T in a bar of length/width ≈ 5 (its demagnetization curve at a permeance coefficient of 5 [ARN]): 0.86 B_r.
+# Ceramic and NdFeB recoil along a nearly straight line (µ_r ≈ 1.05-1.1), so they work at B_r. Alnico 5 is easily demagnetized: a bar's
+# magnetization is solved along it (ALNICO_HC below: its middle near B_r, its ends far under it); the horseshoe (magnetized round its U, its
+# poles 2.4 cm apart) and the disc and rings keep 0.86 B_r (≈ 1.07 T), an average working point, provisional (a disc or ring poled through
+# its thickness would be far weaker: its own field there is past the curve's knee).
 GRADES = {
     "ceramic": dict(br=0.39, density=4900.0, eff=1.0, look="magnet paint", words="ceramic (ferrite)",
                     source="Ceramic 8 (Y30) ferrite: B_r 0.385-0.40 T, 4.9 g/cm³ [ARN]."),
     "alnico": dict(br=1.25, density=7300.0, eff=0.86, look="magnet paint", words="alnico",
-                   source="Alnico 5: B_r 1.25 T, 7.3 g/cm³; a bar works at about 1.07 T (permeance coefficient 5) [ARN]."),
+                   source="Alnico 5: B_r 1.25 T, H_c 51 kA/m (640 Oe), recoil permeability 3.7, (BH)max 43.8 kJ/m³ at B_d 1.0 T, 7.3 g/cm³ "
+                          "[ARN]; a bar's magnetization is solved along it (its ends partly demagnetized: its poles spread over its last few cm); "
+                          "a horseshoe works at about 1.07 T."),
     "neodymium": dict(br=1.30, density=7500.0, eff=1.0, look="nickel plate", words="neodymium (NdFeB)",
                       source="NdFeB N42: B_r 1.28-1.32 T, 7.5 g/cm³, nickel plated [KJ]."),
 }
 GRADE_KEYS = ["ceramic", "alnico", "neodymium"]
+
+# An alnico bar's poles (bench2, 2026-10-21: FO-13's nail under an alnico bar's end went to its corner and swung round it, where a real one
+# hangs under the end). Alnico 5's coercivity (H_c 51 kA/m [ARN]) is a twentieth of the field a uniformly magnetized bar's own end faces put on
+# its ends (M/2, about 500 kA/m), so a bar comes out of its magnetizer with its ends partly demagnetized: each part of it goes down the major
+# demagnetization curve to where its own field puts it, the magnetization falls off over its last few centimetres, and the charge of each
+# pole lies partly on its end face (about a third) and partly in the volume behind it (−dM/dx), as the textbooks' "the poles lie a little
+# inside the ends" says (a bar's magnetic length about 0.85 of its length; the solve gives 0.90 for the catalog's 15 cm bar, a 1-D solve: the
+# real spread is a little wider still). Ceramic (H_ci ≈ 250 kA/m against its own M/2 ≈ 155 kA/m) and NdFeB (H_ci ≈ 1 MA/m against ≈ 500 kA/m)
+# keep their magnetization to their ends: their poles are their end faces (the uniform charge model [FUR]).
+# The intrinsic curve, the magnetization M against the field H set against it (h = |H|/H_c, 0 to 1): M = M_r − χ·H_c·h − (M_r − (1 + χ)·H_c)·h²⁰,
+# χ = 2.7 its recoil line from B_r (recoil permeability 3.7), the knee's power 20 from (BH)max at B_d (B 0.998 T at 43.8 kA/m), so
+# B = µ0·(M − |H|) falls to 0 at H_c [ARN].
+ALNICO_HC = 51000.0
+ALNICO_CHI = 2.7
+# A bar's half in cells from its end to its middle, at the Chebyshev nodes 1 − cos(π·k/24) (fine at the end, where M changes fastest),
+# as fractions of the half-length (literal numbers: the same bits in web/sim)
+BAR_NODES = (0.0, 0.008555138626189618, 0.03407417371093169, 0.07612046748871326, 0.1339745962155613, 0.20664665970876483,
+             0.2928932188134524, 0.39123857099127934, 0.5, 0.6173165676349102, 0.7411809548974793, 0.8694738077799483, 1.0)
+# 3-point Gauss-Legendre nodes and weights (a cell's field: its mean over its middle section, 3 × 3 points)
+GAUSS3 = ((-0.7745966692414834, 0.2777777777777778), (0.0, 0.4444444444444444), (0.7745966692414834, 0.2777777777777778))
 
 # Soft magnetic materials (by catalog material): saturation magnetization M_s (A/m) and initial relative susceptibility. Small parts' pull is
 # set by their shape (demagnetization) far more than by χ once χ is over ~100 [AHARONI]; saturation caps it [CHIKAZUMI].
@@ -225,6 +249,132 @@ def _sigma(grade, flip):
     return -s if flip else s
 
 
+def _solid_angle(d, py, pz, b, c):
+    """The solid angle (sr, the sign of d) the rectangle |y| ≤ b, |z| ≤ c of the plane x = 0 subtends at (d, py, pz): a uniformly charged
+    one's field along its normal there is σ·Ω/4π."""
+    t = 0.0
+    for sy, yy in ((1.0, b - py), (-1.0, -b - py)):
+        for sz, zz in ((1.0, c - pz), (-1.0, -c - pz)):
+            t += sy * sz * math.atan(yy * zz / (d * math.sqrt(yy * yy + zz * zz + d * d)))
+    return t
+
+
+def _solve_linear(A, rhs):
+    """A small dense system by Gaussian elimination with partial pivoting (the same steps as web/sim's port)."""
+    n = len(rhs)
+    A = [row[:] for row in A]
+    rhs = rhs[:]
+    for col in range(n):
+        p = col
+        for r in range(col + 1, n):
+            if abs(A[r][col]) > abs(A[p][col]):
+                p = r
+        A[col], A[p] = A[p], A[col]
+        rhs[col], rhs[p] = rhs[p], rhs[col]
+        for r in range(col + 1, n):
+            f = A[r][col] / A[col][col]
+            for k in range(col, n):
+                A[r][k] -= f * A[col][k]
+            rhs[r] -= f * rhs[col]
+    x = [0.0] * n
+    for r in range(n - 1, -1, -1):
+        v = rhs[r]
+        for k in range(r + 1, n):
+            v -= A[r][k] * x[k]
+        x[r] = v / A[r][r]
+    return x
+
+
+_ALNICO_BARS = {}
+
+
+def _alnico_bar(L, W, D):
+    """An alnico bar's magnetization along its length (see ALNICO_HC): its half in cells (BAR_NODES) from its end, each cell where the major
+    demagnetization curve meets its own field, the mean over its middle section (GAUSS3) of the charge on every cell boundary of both halves
+    (boundary j carries M_j − M_(j−1), the end face M_0; Ω/4π). Newton's method on h = |H|/H_c, from the whole bar at B_r. Returns (s, M):
+    the boundaries' distances from the end (m) and the cells' magnetizations from the end in (A/m)."""
+    key = (L, W, D)
+    if key in _ALNICO_BARS:
+        return _ALNICO_BARS[key]
+    n = len(BAR_NODES) - 1
+    half = L / 2
+    s = [half * f for f in BAR_NODES]
+    xs = [half - s[j] for j in range(n)]
+    xc = [half - (s[i] + s[i + 1]) / 2 for i in range(n)]
+    b, c = W / 2, D / 2
+
+    def mean_omega(d):
+        t = 0.0
+        for gy, wy in GAUSS3:
+            for gz, wz in GAUSS3:
+                t += wy * wz * _solid_angle(d, gy * b, gz * c, b, c)
+        return t
+
+    # Kq[i][j]: the field (along the bar) at cell i of a unit charge density on boundary j and its opposite on the other half's mirror
+    kq = [[(mean_omega(xc[i] - xs[j]) - mean_omega(xc[i] + xs[j])) / (4 * math.pi) for j in range(n)] for i in range(n)]
+    # in the cells' magnetizations: H_i = sum over j of K[i][j]·M_j
+    K = [[kq[i][j] - (kq[i][j + 1] if j + 1 < n else 0.0) for j in range(n)] for i in range(n)]
+    mr = GRADES["alnico"]["br"] / MU0
+    knee = mr - (1 + ALNICO_CHI) * ALNICO_HC
+
+    def m_of(h):
+        h2 = h * h
+        h4 = h2 * h2
+        h16 = h4 * h4 * h4 * h4
+        return mr - ALNICO_CHI * ALNICO_HC * h - knee * (h16 * h4)
+
+    def dm_of(h):
+        h2 = h * h
+        h4 = h2 * h2
+        h16 = h4 * h4 * h4 * h4
+        return -ALNICO_CHI * ALNICO_HC - 20 * knee * (h16 * h2 * h)
+
+    h = [0.0] * n
+    for _ in range(50):
+        m = [m_of(x) for x in h]
+        res = []
+        for i in range(n):
+            f = 0.0
+            for j in range(n):
+                f += K[i][j] * m[j]
+            res.append(f + ALNICO_HC * h[i])
+        jac = [[K[i][j] * dm_of(h[j]) + (ALNICO_HC if i == j else 0.0) for j in range(n)] for i in range(n)]
+        step = _solve_linear(jac, [-x for x in res])
+        new = [min(1.0, max(0.0, h[i] + step[i])) for i in range(n)]
+        moved = 0.0
+        for i in range(n):
+            moved = max(moved, abs(new[i] - h[i]))
+        h = new
+        if moved < 1e-13:
+            break
+    out = (s, [m_of(x) for x in h])
+    _ALNICO_BARS[key] = out
+    return out
+
+
+def _bar_faces(L, W, D, grade, flip):
+    """A straight bar magnet's charges, magnetized along its length L (W × D across): its two end faces; an alnico bar's also the sheets of
+    its volume charge inside it (`inner`), one on each cell boundary of each half, inset min(W, D)/10 from its sides (so no sheet's edge
+    meets its outline, where a thing touching it would feel an edge's singular field), its charge kept."""
+    if grade != "alnico":
+        s = _sigma(grade, flip)
+        return [_face(L / 2, 0.0, 0.0, W, D, s), _face(-L / 2, 0.0, math.pi, W, D, -s)]
+    s, m = _alnico_bar(L, W, D)
+    sg = -1.0 if flip else 1.0
+    faces = [_face(L / 2, 0.0, 0.0, W, D, sg * m[0]), _face(-L / 2, 0.0, math.pi, W, D, -sg * m[0])]
+    inset = min(W, D) / 10
+    w, d = W - 2 * inset, D - 2 * inset
+    k = (W * D) / (w * d)
+    for j in range(1, len(m)):
+        q = sg * (m[j] - m[j - 1]) * k
+        if round(q, 1) == 0:
+            continue
+        x = L / 2 - s[j]
+        faces.append(dict(_face(x, 0.0, 0.0, w, d, q), inner=True))
+        faces.append(dict(_face(-x, 0.0, math.pi, w, d, -q), inner=True))
+    return faces
+
+
 def _child_slab(c, part, parent, w, h, depth, lx, ly, material, words, look, kind=None):
     """A slab welded to another part of this item: lx, ly in the parent's frame."""
     s = {"kind": kind or c.kind, "id": f"{c.item['id']}/{part}", "words": words, "item": c.item["id"], "look": look,
@@ -256,9 +406,7 @@ def build_bar(c, P):
     grade = P["material"]
     mat = c.mat(base=f"{grade} magnet", overrides={})
     sid = c.slab("magnet", L, W, D, material=mat, look=GRADES[grade]["look"], words=f"a {GRADES[grade]['words']} bar magnet", **_held(c))
-    s = _sigma(grade, P["flip"])
-    c.process("magnetism", "field", role="magnet", solid=sid,
-              faces=[_face(L / 2, 0.0, 0.0, W, D, s), _face(-L / 2, 0.0, math.pi, W, D, -s)])
+    c.process("magnetism", "field", role="magnet", solid=sid, faces=_bar_faces(L, W, D, grade, P["flip"]))
 
 
 ARM_SEAM = 0.0003    # m
@@ -372,9 +520,7 @@ def build_magnet_cart(c, P):
     sx = 1 if P["magnet_end"] == "front" else -1
     x = sx * (P["length"] / 2 - L / 2)
     sid = _child_slab(c, "magnet", chassis["id"], L, W, D, x, top + W / 2, mat, f"a {GRADES[grade]['words']} bar magnet", GRADES[grade]["look"])
-    s = _sigma(grade, P["flip"])
-    c.process("magnetism", "field", role="magnet", solid=sid,
-              faces=[_face(L / 2, 0.0, 0.0, W, D, s), _face(-L / 2, 0.0, math.pi, W, D, -s)])
+    c.process("magnetism", "field", role="magnet", solid=sid, faces=_bar_faces(L, W, D, grade, P["flip"]))
 
 
 def _magnets():
