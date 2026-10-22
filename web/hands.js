@@ -1325,6 +1325,8 @@ export function fitProxies(rig) {
 function sphereGroups(rig) {
 	const S = rig.spheres
 	const dev = S.map(() => 0)
+	// (measured on the rig as a left hand at the origin, then put back as it was: the first rig made may be a right hand, mirrored by its root)
+	const was = { p: rig.root.position.clone(), q: rig.root.quaternion.clone(), s: rig.root.scale.clone(), pose: copyPose(rig.pose) }
 	rig.root.position.set(0, 0, 0)
 	rig.root.quaternion.identity()
 	rig.root.scale.set(SIZE, SIZE, SIZE)
@@ -1358,6 +1360,12 @@ function sphereGroups(rig) {
 		for (const i of idx) R = Math.max(R, S[i].p.distanceTo(c) + S[i].r * SIZE + 1.5 * dev[i] + 0.001)
 		out.push({ bone, c: c.toArray(), R, idx })
 	}
+	rig.root.position.copy(was.p)
+	rig.root.quaternion.copy(was.q)
+	rig.root.scale.copy(was.s)
+	rig.pose = was.pose
+	applyPose(rig, rig.pose)
+	rig.root.updateMatrixWorld(true)
 	return out
 }
 /** A rig for the rules: makeRig's hand with its collision spheres on its bones (fitProxies). */
@@ -1603,7 +1611,7 @@ function clearance(rig, d, links = null) {
 const _gs = []
 /** The bends that close one digit (i 0..3 a finger, "t" the thumb), each {get, set, max (most degrees), k (its share of a step), link (the part it
  *  carries)}: a finger's three joints about their z; the thumb's base toward the palm's side (about its y) and its two joints about their z. */
-function closers(P, i, most) {
+function closers(P, i, most, share = null) {
 	if (i === "t")
 		return [
 			// (the thumb's metacarpal is the ball of the thumb, part of the palm: a thing resting on the palm touches it, so it is not a part that stops
@@ -1613,15 +1621,15 @@ function closers(P, i, most) {
 			{ get: () => -P.thumb_3[2], set: (v) => (P.thumb_3[2] = -v), max: most?.[2] ?? 65, k: 1, link: "t.2" }
 		]
 	const d = DIGITS[i]
-	return [1, 2, 3].map((j) => ({ get: () => -P[`${d}_${j}`][2], set: (v) => (P[`${d}_${j}`][2] = -v), max: most?.[j - 1] ?? FLEX_MAX[j - 1], k: [1, 1.15, 0.75][j - 1], link: `f${i}.${j - 1}` }))
+	return [1, 2, 3].map((j) => ({ get: () => -P[`${d}_${j}`][2], set: (v) => (P[`${d}_${j}`][2] = -v), max: most?.[j - 1] ?? FLEX_MAX[j - 1], k: (share ?? [1, 1.15, 0.75])[j - 1], link: `f${i}.${j - 1}` }))
 }
 /** Close one finger (i 0..3, or "t" the thumb) from its pose in rig.pose toward its limits, all its joints together, each stopping where the part
  *  beyond it touches the field (`gap` m from it: the last step is halved until it is within a tenth of a millimetre of that); `most` caps the bends
  *  (degrees from the rest pose, per joint). Underactuated closing, as a gripper's fingers close. -> the parts that touch ([link]). */
-function closeFinger(rig, d, i, { gap = 0.0005, most = null, step = 1.5 } = {}) {
+function closeFinger(rig, d, i, { gap = 0.0005, most = null, step = 1.5, share = null } = {}) {
 	const P = rig.pose
 	const isT = i === "t"
-	const acc = closers(P, i, most)
+	const acc = closers(P, i, most, share)
 	const top = isT ? rig.t.cmc : rig.f[i].mcp
 	const links = isT ? ["t.1", "t.2"] : acc.map((a) => a.link)
 	const pose1 = () => {
@@ -3982,7 +3990,9 @@ function pushRig(p, pf, C) {
 }
 // ---------------------------------------------------------------- pouring: a hand on the pitcher's handle (a cup's body), tipping with it
 // a cup's thumb, the starts fitThumb closes onto its far side from ([swing, lift, twist, knuckle, end], found on hand.glb round the cup)
-const CUP_THUMBS = [[-50, 10, 90, 10, 10], [-65, 15, 80, 15, 15], [-40, 5, 100, 10, 10], [-75, 10, 70, 20, 20], [-30, 0, 110, 10, 10], [-55, 20, 100, 10, 20], [-20, 10, 120, 5, 10]]
+const CUP_SHARE = [1.4, 0.8, 0.55] // (round a cup each finger's knuckle leads, as its joints share the cup's curve: a wrap, not a hook at the tip)
+const CUPFIT = { back: -10, tilt: 25, drop: 0.015, below: true } // (TEMP: back degrees round behind its widest line; tilt: the fingers raised toward the rim, degrees; drop: the palm lowered, m)
+const CUP_THUMBS = [[-110, -40, 90, 15, 10], [-110, -20, 60, 15, 10], [-90, 0, 30, 15, 10], [-90, -20, 90, 15, 10], [-100, -30, 75, 15, 10], [-50, 10, 90, 10, 10], [-75, 10, 70, 20, 20]]
 const VESSELS = {
 	// inner width, inner height, wall (machines/mod_flow.py VESSELS); the model's handle loop (web/models/mod-flow.js): radius 0.3 h at (w + t, -0.45 h)
 	pitcher: [0.1, 0.17, 0.003],
@@ -4001,16 +4011,23 @@ function pourRig(p, pf, C) {
 	// in the vessel's own frame (origin at the lip, upright): a vertical bar to wrap, the palm against it from the outside, the fingers round its front
 	const R = w / 2 + t
 	const bar = cup ? { x: -side * w / 2, r: R, y0: -0.8 * h, y1: -0.2 * h } : { x: -side * (w + t + 0.3 * h), r: 0.0058, y0: -0.45 * h - 0.17 * h, y1: -0.45 * h + 0.17 * h }
-	const dBar = (pt) => {
-		// a vertical capsule (the handle's outer side) or a cylinder (the cup's body), in the vessel frame
-		const y = clamp(pt.y, bar.y0, bar.y1)
-		return Math.hypot(pt.x - bar.x, pt.y - y, pt.z) - bar.r
-	}
-	// (the vessel's body, for the arm: a cylinder half its width behind the lip, as the model draws it)
+	// (the vessel's body: a cylinder half its width behind the lip, as the model draws it, from its foot to its lip)
 	const dBody = (pt) => {
 		const r = Math.hypot(pt.x + side * (w / 2), pt.z) - R
 		const dy = Math.max(pt.y, -h - pt.y)
 		return Math.hypot(Math.max(r, 0), Math.max(dy, 0)) + Math.min(Math.max(r, dy), 0)
+	}
+	// (the handle as the model draws it: a half torus of radius 0.3 h round (w + t, -0.45 h), its tube 5.5 mm, bulging out behind the body)
+	const hr = 0.3 * h
+	const hc = V(-side * (w + t), -0.45 * h, 0)
+	const dBar = (pt) => {
+		// the cup's body itself (its wall straight up to the lip: a thumb by the rim lies on the wall), or the handle's loop (its outer side, where the
+		// fingers close round it, and its curve over the top, where the thumb rests)
+		if (cup) return dBody(pt)
+		const qx = (pt.x - hc.x) * -side
+		const qy = pt.y - hc.y
+		const phi = clamp(Math.atan2(qy, qx), -Math.PI / 2, Math.PI / 2)
+		return Math.hypot(qx - hr * Math.cos(phi), qy - hr * Math.sin(phi), pt.z) - bar.r
 	}
 	const rs = side > 0 ? "right" : "left"
 	const rig = newRig(rs)
@@ -4018,15 +4035,23 @@ function pourRig(p, pf, C) {
 	// the hand frame in the vessel's frame: the fingers toward the camera, the palm facing the vessel (+side x)
 	const X = V(0, 0, 1)
 	const Y = V(-side, 0, 0)
-	const ym = (bar.y0 + bar.y1) / 2 + (cup ? 0 : 0.004)
-	const contact = V(bar.x - side * bar.r, ym, 0)
-	const W = contact.clone().sub(offsetOf(rig, refs().palmAt(0.05), X, Y))
+	const ym = (bar.y0 + bar.y1) / 2 + (cup ? -CUPFIT.drop : 0.004)
+	// (round a cup the palm's middle on its side a little behind its widest line, so the fingers reach round its front and the thumb round its back)
+	const CB = CUPFIT.back
+	const contact = cup ? V(bar.x - side * bar.r * Math.cos(CB * D2R), ym, -bar.r * Math.sin(CB * D2R)) : V(bar.x - side * bar.r, ym, 0)
+	if (cup) {
+		X.applyAxisAngle(V(0, 1, 0), -side * CB * D2R)
+		Y.applyAxisAngle(V(0, 1, 0), -side * CB * D2R)
+		// (the fingers raised a little toward the rim about the palm's normal: the thumb's side turns back, so it reaches round the cup's back)
+		X.applyAxisAngle(Y, side * CUPFIT.tilt * D2R)
+	}
+	const W = contact.clone().sub(offsetOf(rig, refs().palmAt(0.045), X, Y))
 	placeHand(rig, W, X, Y)
-	rig.pose = copyPose(POSES.cup)
-	// (round a cup the thumb lies by its rim, not up in the air; round a handle it starts open, clear of the handle, and closes over it after the
-	// fingers, fitThumb)
-	if (cup) Object.assign(rig.pose, thumbTurns([0, -30, 120, 10, 10]))
-	else Object.assign(rig.pose, thumbTurns([-50, 15, 90, 5, 5]))
+	// (round a cup the fingers start straight on along its side, together as they will lie round it, the thumb out of the way: the palm is seated on
+	// it first and they wrap it from there; round a handle they start curled round it and the thumb open, clear of it, closing over it after them)
+	rig.pose = cup ? lerpPose(POSES.flat, POSES.flat, 0) : copyPose(POSES.cup)
+	if (cup) for (const d of DIGITS) rig.pose[`${d}_1`][1] = POSES.cup[`${d}_1`][1]
+	Object.assign(rig.pose, thumbTurns([-50, 15, 90, 5, 5]))
 	applyPose(rig, rig.pose)
 	const toWorld = (ang) => {
 		const m = new THREE.Matrix4().makeRotationZ(ang)
@@ -4041,15 +4066,16 @@ function pourRig(p, pf, C) {
 	const fw = others.length ? fieldOf(others, pf, C.boxOf) : null
 	const _x = new THREE.Vector3()
 	const dAll = (pt) => Math.min(dBody(pt), dBar(pt), fw ? fw(_x.copy(pt).applyMatrix4(Mw0)) : Infinity)
-	const arm = chooseArm(rs, W, X, Y, side > 0 ? "left" : "right", dAll, { phi: -30, rise: 34 })
+	const arm = chooseArm(rs, W, X, Y, side > 0 ? "left" : "right", dAll, cup ? { phi: -30, rise: 20, below: CUPFIT.below } : { phi: -30, rise: 34 })
 	const A0 = arm.A.clone()
 	// (the sleeve out of the picture along the arm and 35 cm more: the arm turns as the vessel tips)
 	setArm(rig, clamp(armExit(C.exit, W.clone().applyMatrix4(Mw0), A0.clone().applyAxisAngle(V(0, 0, 1), base0)) + 0.35, 0.45, 3.2))
 	placeArm(rig, A0) // (hand.glb: the wrist bent as it will be drawn, its skin with it)
 	rig.root.updateMatrixWorld(true)
-	for (const i of [0, 1, 2, 3]) closeFinger(rig, dBar, i)
-	// (round a cup the palm is seated on it first, the ball of the thumb on its curve, so the thumb is fitted to the hand as it will hold it)
-	if (cup && rig.mesh) seatOnSkin(rig, dBar, Y.clone().negate(), { links: ["palm", "t.0", "f0.0", "f1.0", "f2.0", "f3.0"] })
+	// (round a cup the palm is seated on its side first, the fingers straight on along it, so they wrap it from the palm, each knuckle, middle and end
+	// joint bending as far as its own part meets it: never hooked at the tips with the palm standing off it)
+	if (cup && rig.mesh) seatOnSkin(rig, dBar, Y.clone().negate(), { links: ["palm", "t.0"] })
+	for (const i of [0, 1, 2, 3]) closeFinger(rig, dBar, i, cup ? { share: CUP_SHARE } : {})
 	const tipOf = (link) => sphereAt(rig.spheres.find((S) => S.tip === link), new THREE.Vector3())
 	const knuckle = () => new THREE.Vector3().setFromMatrixPosition(rig.bones?.index_1?.matrixWorld ?? rig.f[0].mcp.matrixWorld)
 	if (cup) {
@@ -4061,11 +4087,13 @@ function pourRig(p, pf, C) {
 			return Math.max(0, t.z + 0.005) * 150 + Math.max(0, t.y + 0.006) * 400 + Math.max(0, t.y - (knuckle().y + 0.01)) * 600
 		}, [55, 45, 30])
 	} else {
-		// the thumb closed over the handle opposite the fingers, as round a bar in a fist: on the curled index, never standing up off the grip; its pad
-		// on the handle, the end joint bent softly (about 20 degrees, never a hook)
-		fitThumb(rig, dBar, [[-38.7, -39.8, 110.7, 32.4, 19.6], [-30, -45, 110, 25, 20], [-45, -35, 100, 20, 15], [-20, -50, 120, 30, 20], [-35, -30, 95, 15, 10], [-50, -20, 90, 15, 15]], (r) => {
+		// the thumb laid on the handle's curve over the top of the fist, its pad on it, both its joints bent softly (the end one 20 degrees at the
+		// most, never a hook over the handle into its loop): between 45 and 85 degrees up the loop from its outer side
+		fitThumb(rig, dBar, [[-70, -40, 90, 20, 10], [-90, -40, 60, 20, 10], [-90, -60, 90, 20, 10], [-70, -60, 120, 20, 10], [-38.7, -39.8, 110.7, 32.4, 19.6], [-50, -20, 90, 15, 15]], (r) => {
 			r.root.updateMatrixWorld(true)
-			return Math.max(0, tipOf("t.2").y - (knuckle().y + 0.008)) * 300
+			const t = tipOf("t.2")
+			const up = Math.atan2(t.y - hc.y, (t.x - hc.x) * -side) / D2R
+			return Math.max(0, 45 - up) / 10 + Math.max(0, up - 85) / 10 + Math.max(0, -r.pose.thumb_3[2] - 20) / 8 + Math.max(0, -r.pose.thumb_2[2] - 30) / 15
 		}, [50, 50, 24])
 	}
 	if (rig.mesh) {
