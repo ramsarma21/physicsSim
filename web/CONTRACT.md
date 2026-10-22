@@ -4819,8 +4819,8 @@ then a wooden table), (4) the hands (done on their own branch), (5) a narrow gla
 - **Checks of the nail** (research/rw-validate-magnetism.ts `rest`; web/ai/test/magnetism-poles.test.mjs): FO-13 screen 11 as the card draws it
   and as the bench built it (above); a 33 mm (1.8 g) and a 51 mm (2.8 g) nail let go head up 1-2 cm under an alnico bar's end, 0.5-1.5 cm in: every
   one the bar lifts hangs by its head under the end within 1 cm of it, straight down within 10° (all within 4°), still within 0.4 s (9 of 9 each);
-  point up: every one still within 0.7 s, held within 2.5 cm of the end face, never on the bar's top (release 2 fails 15 of the 19 checks of
-  `alnico`, `turning` and `rest`, and all 4 tests). web/ai/test/magnetism-plugin.test.mjs: the g3 demo's steel clip, pulled up against the
+  point up: every one still within 0.7 s, held within 2.5 cm of the end face, never on the bar's top (release 2 fails 16 of the 20 checks of
+  `alnico`, `turning` and `rest`, and all 5 tests). web/ai/test/magnetism-plugin.test.mjs: the g3 demo's steel clip, pulled up against the
   neodymium bar's pole face 1 cm high, now rests 7 mm up, a lift by the goal's 5 mm (4.9 mm before). Known limits: a nail held by its point
   rests where the engine's contact skins let it (planck's 1 mm polygon radius rounds the nail's point and the bar's corner, so the point rolls to
   the corner, where a real one's sharp point can catch a little in from it); at a neodymium bar (its pole its end face, 1.3 T) half the lifted 33
@@ -4834,4 +4834,24 @@ then a wooden table), (4) the hands (done on their own branch), (5) a narrow gla
   "shooter"), milky white with two bold ribbons twisting round it (orange, or the colour it is given, and blue), for a picture where the clear
   marble vanishes (MA-25 screen 11: the card draws a swirl marble; the clear one in the tank was a few pixels). Registered last, so the parity
   tools' random cases of every type before it keep their numbers. A bigger marble is not the fix: a lesson frames small things close
-  (`small-size` above).
+  (`small-size` above). tools/staging/readable.test.mjs: its props are the clear marble's (sizes, weight, glass), its runs the clear one's
+  byte for byte (on the table, and a 25 mm one let go into a tank of water, the fluids module's lift: only its name in the summary differs),
+  its look opaque where the clear one's lets the light through, its own model, Python == JavaScript.
+- **Checked** (2026-10-22, at a6e82c4, each from a clean worktree; the readable test at the commit after it): every tracked node:test file as CI
+  runs them (a fresh AI cache): 879 tests, 877 pass, 1 skipped (FOCUS_TESTSET, a local file), 1 failed only under a load average of 25 to 40
+  (web/ai/test/creative-fix.test.mjs c09, its make-it-work search out of time: the file alone 9 of 9, c09's search the same 225 runs and moves as on
+  release 2); tools/staging/readable.test.mjs 4 of 4; the 22 identity scenes byte for byte against origin/dev 3b0b2d7's own engine (and
+  identity-tracks.json); every research validator but p4 passes (25 gated, magnetism 101 of 101, of which release 2 fails 16, and rw-validate.ts's
+  smoke run); p4 55 of 56 (its crash fuzz, below); machines/test_*.py all pass (catalog 356 of 356); tools/parity/run.sh's 37 steps against this
+  tree's own server: 36 pass, fuzz-live 970 of 972 (below); the engine bundle rebuilt byte for byte; syntax, the generated files, trig.js,
+  vercel.json's functions; npm run build:static:nogen. The benchmark's screens filmed again on local servers, release 2 beside this branch (its
+  director asked six times), nothing published.
+- **Known: the fuzzers' scenes moved, not their physics.** A new catalog type changes every random type draw of tools/parity/engine-fuzz.mjs and
+  fuzz-live.mjs, so with the swirl marble their seeds make other scenes, and three of the new ones are scenes the engine was already weak on,
+  release 2's engine alike on the same documents: fuzz-live's scene 204 (29 items packed into 6 cm: two sand funnels, a sieve's 245 grains, an
+  alnico magnet cart and ten steel parts its field magnetizes) runs 263 s here and 247 s on release 2's builder and engine (each alone on this Mac),
+  over the 120 s web/server.py gives a run (RUN_TIMEOUT), so fuzz-live counts the server's 500 twice (CI's parity step would fail on it);
+  engine-fuzz's scene 3352 throws "i5/beam's motion stopped being a number" at 0.244 s on both engines (p4's 5000 scenes here; CI's 1500 stop short
+  of it); its scene 1407 runs 561 s (547 s on release 2's engine, the two side by side), inside CI's 1500. 70 % of scene 204's time is the magnetism
+  module's pairs among the soft-iron pieces (tooling/src/sim/magnetism.ts `facePair`, `rectField`). To clear before a release: the magnetism
+  module's speed with many soft-iron pieces (or fuzz-live's reading of a run over the server's own time limit) and the beam's NaN.
