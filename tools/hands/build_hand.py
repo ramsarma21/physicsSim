@@ -75,19 +75,23 @@ def dir_xz(phi_deg, tilt_deg=0.0):
 
 
 # The four fingers: knuckle (MCP joint) at (x, 0, z), spread (degrees toward the thumb), the three segments' lengths (the last to the fingertip's
-# end), half-widths at the knuckle, the middle joint (PIP), the end joint (DIP) and the tip; height / width of the section.
+# end), half-widths at the knuckle, the middle joint (PIP), the end joint (DIP) and the tip; height / width of the section. The fingertips are
+# staggered as a child's are: the middle finger longest (14.4 cm from the wrist), then the ring (13.7), the index (13.3) and the little finger
+# (12.0), each finger a little apart from the next all the way to its tip.
 FINGERS = {
-    "index": dict(mcp=(0.0665, 0.0, 0.0211), spread=3.5, L=(0.0335, 0.0205, 0.0151), w=(0.0081, 0.0075, 0.0069, 0.0062), ky=0.87),
+    "index": dict(mcp=(0.0665, 0.0, 0.0211), spread=3.5, L=(0.0322, 0.0196, 0.0146), w=(0.0081, 0.0075, 0.0069, 0.0062), ky=0.87),
     "middle": dict(mcp=(0.0695, 0.0, 0.0050), spread=0.0, L=(0.0365, 0.0230, 0.0153), w=(0.0084, 0.0078, 0.0071, 0.0064), ky=0.87),
-    "ring": dict(mcp=(0.0665, 0.0, -0.0118), spread=-3.0, L=(0.0345, 0.0222, 0.0146), w=(0.0079, 0.0073, 0.0067, 0.0060), ky=0.87),
+    "ring": dict(mcp=(0.0665, 0.0, -0.0118), spread=-3.0, L=(0.0342, 0.0216, 0.0146), w=(0.0079, 0.0073, 0.0067, 0.0060), ky=0.87),
     "pinky": dict(mcp=(0.0605, 0.0, -0.0264), spread=-7.0, L=(0.0285, 0.0172, 0.0138), w=(0.0070, 0.0064, 0.0059, 0.0053), ky=0.87),
 }
 FINGER_NAMES = ["index", "middle", "ring", "pinky"]
 # The thumb: its base joint (CMC, at the trapezium: near the wrist, on the palm's side), then each bone's direction (degrees from +x toward +z,
 # tilt toward the palm) and length; half-widths at the CMC, MCP, IP and tip; height / width; its nail's side (degrees from the back of the hand
-# toward the thumb's side: the thumb is turned so its nail faces mostly sideways).
-THUMB = dict(cmc=(0.0100, -0.0070, 0.0160), dirs=((40.0, -2.0), (24.0, 0.0), (16.0, 1.0)), L=(0.0300, 0.0215, 0.0200),
-             w=(0.0090, 0.0083, 0.0078, 0.0072), ky=0.82, nail_deg=60.0)
+# toward the thumb's side: the thumb is turned so its nail faces mostly sideways). A child's thumb: its two phalanges 4.55 cm, its tip at rest
+# level with the middle of the index's first bone, its metacarpal a little in front of the palm (the ball of the thumb under it), so it stands
+# across from the fingers rather than lying in the palm's plane.
+THUMB = dict(cmc=(0.0105, -0.0075, 0.0160), dirs=((40.0, -5.0), (24.0, -1.0), (16.0, 1.0)), L=(0.0320, 0.0245, 0.0210),
+             w=(0.0091, 0.0084, 0.0079, 0.0073), ky=0.82, nail_deg=60.0)
 
 
 def finger_points(name):
@@ -255,10 +259,10 @@ def finger_field(P, name):
             C = A + d * (0.58 * L) - up * (0.28 * wm * ky)
             pad = sd_ellipsoid(P, C, axes, (0.44 * L, 0.70 * wm * ky, 0.92 * wm))
             f = smin(f, pad, 0.0036)
-    # a slight knuckle bump on the back of the middle joint
-    C = pts[1] + up * (0.60 * w[1] * ky)
-    bump = sd_ellipsoid(P, C, axes, (0.0042, 0.0020, 0.55 * w[1]))
-    f = smin(f, bump, 0.0026)
+    # a slight knuckle bump on the back of the middle joint (soft: a child's, no lump that shades dark when the finger bends)
+    C = pts[1] + up * (0.56 * w[1] * ky)
+    bump = sd_ellipsoid(P, C, axes, (0.0040, 0.0015, 0.50 * w[1]))
+    f = smin(f, bump, 0.0030)
     return f
 
 
@@ -293,15 +297,16 @@ def hand_sdf(P):
     P = np.asarray(P, dtype=float)
     palm = palm_core(P)
     up = np.array([0.0, 1.0, 0.0])
-    # the thenar pad: the ball of the thumb, along its metacarpal on the palm's side
+    # the thenar pad: the ball of the thumb, along its metacarpal on the palm's side (full and rounded, so the thumb grows out of a clear base and
+    # stands across from the fingers)
     tp, td = thumb_points()
     d1 = td[0]
     a1 = unit([d1[0], 0.0, d1[2]])
     a3 = up
     a2 = np.cross(a3, a1)
-    C = tp[0] + d1 * 0.012 + np.array([0.0, -0.0050, -0.0035])
-    thenar = sd_ellipsoid(P, C, np.array([a1, a3, a2]), (0.0205, 0.0092, 0.0128))
-    palm = smin(palm, thenar, 0.0075)
+    C = tp[0] + d1 * 0.0135 + np.array([0.0, -0.0056, -0.0036])
+    thenar = sd_ellipsoid(P, C, np.array([a1, a3, a2]), (0.0222, 0.0100, 0.0134))
+    palm = smin(palm, thenar, 0.0080)
     # the hypothenar pad: the little finger's side of the palm
     hyp = sd_ellipsoid(P, (0.0290, -0.0068, -0.0225), np.eye(3), (0.0250, 0.0080, 0.0092))
     palm = smin(palm, hyp, 0.0065)
@@ -318,11 +323,11 @@ def hand_sdf(P):
     we = unit(wb - wa)
     wn = unit(np.cross(we, np.cross(up, we)))
     thumb_web = sd_round_cone(P, wa, wb + np.array([0.0, 0.0015, 0.0]), 0.0058, 0.0050, wn, 0.62, 0.62)
-    # the knuckles on the back of the hand (soft: a child's)
+    # the knuckles on the back of the hand (soft: a child's, a gentle row, never lumps)
     for name in FINGER_NAMES:
         m = np.array(FINGERS[name]["mcp"])
-        kn = sd_ellipsoid(P, m + np.array([-0.0010, 0.0045, 0.0]), np.eye(3), (0.0055, 0.0030, 0.0055))
-        palm = smin(palm, kn, 0.0040)
+        kn = sd_ellipsoid(P, m + np.array([-0.0010, 0.0040, 0.0]), np.eye(3), (0.0054, 0.0026, 0.0054))
+        palm = smin(palm, kn, 0.0045)
     # the wrist and the short forearm (tapering to the wrist), cut square just inside the sleeve
     arm = sd_round_cone(P, (-0.068, -0.0008, -0.0010), (0.006, -0.0010, -0.0005), 0.0262, 0.0228, up, 0.74, 0.62)
     arm = smax(arm, -(P[:, 0] + 0.0705), 0.002)
@@ -791,7 +796,7 @@ def build_nail(dg, n_grid=7):
 
 # ------------------------------------------------------------------------------------------------ the sleeve
 SLEEVE_OPEN = -0.0285  # the cuff's edge (m from the wrist joint, along -x)
-SLEEVE_END = -0.0775   # the sleeve's closed end (7.75 cm up the forearm)
+SLEEVE_END = -0.0775   # where this piece of the sleeve ends, open (7.75 cm up the forearm): the view carries the sleeve on from here
 SLEEVE_RING = 28
 
 
@@ -807,12 +812,12 @@ def skin_radius(C, E):
     return 0.5 * (lo + hi)
 
 
-SLEEVE_GAP_END = 0.0047  # the sleeve's clearance over the skin where its body ends (before the closing dome)
+SLEEVE_GAP_END = 0.0047  # the sleeve's clearance over the skin where its body runs on up the arm
 
 
 def sleeve_profile():
     """The sleeve's section along the arm, from its inner wall (inside the cuff) round the cuff's rolled edge and back along its outside to
-    where its body ends: [(x, clearance over the skin)]."""
+    where its body runs on up the arm: [(x, clearance over the skin)]."""
     prof = [(-0.0368, 0.0012), (-0.0335, 0.0012)]
     cx, cr = SLEEVE_OPEN - 0.0011, 0.0011
     for a in (-90, -45, 0, 45, 90):  # the rolled edge of the cuff
@@ -824,7 +829,9 @@ def sleeve_profile():
 
 
 def build_sleeve():
-    """A soft knit cuff and the start of a sleeve round the forearm, a little clear of the skin everywhere, closed at its far end."""
+    """A soft knit cuff and the start of the sleeve round the forearm, a little clear of the skin everywhere; from 7 cm up the forearm its
+    section stays the same to its open end (SLEEVE_END), so the view carries the sleeve on up the arm out of the picture (web/hands.js) with no
+    seam: -> (vertices, faces, the end ring [(y, z)], one a vertex round it, in order)."""
     R0, R1 = np.array([-0.068, -0.0008, -0.0010]), np.array([0.006, -0.0010, -0.0005])
 
     def axis_at(x):
@@ -839,27 +846,20 @@ def build_sleeve():
         C[:, 0] = x
         rho = skin_radius(C, E)
         rings.append(C + E * (rho + gap)[:, None])
-    # the end: a soft dome closing the sleeve (rings shrinking onto the axis)
-    xe, ge = -0.0700, SLEEVE_GAP_END
-    Ce = np.repeat(axis_at(xe)[None], SLEEVE_RING, axis=0)
-    Ce[:, 0] = xe
-    rho_e = skin_radius(Ce, E) + ge
-    dome = xe - SLEEVE_END
-    for a in (22, 44, 62, 78):
-        t = a * D2R
-        C = Ce.copy()
-        C[:, 0] = xe - dome * math.sin(t)
-        rings.append(C + E * (rho_e * math.cos(t))[:, None])
-    V = np.concatenate(rings + [np.array([[xe - dome, Ce[0, 1], Ce[0, 2]]])])
+    # the body: the section at 7 cm carried straight on to the open end (a tube along -x)
+    xe = -0.0700
+    end = rings[-1].copy()
+    for x in (-0.0735, SLEEVE_END):
+        R = end.copy()
+        R[:, 0] = x
+        rings.append(R)
+    V = np.concatenate(rings)
     faces = []
     nr = len(rings)
     for i in range(nr - 1):
         for j in range(SLEEVE_RING):
             j2 = (j + 1) % SLEEVE_RING
             faces.append([i * SLEEVE_RING + j, i * SLEEVE_RING + j2, (i + 1) * SLEEVE_RING + j2, (i + 1) * SLEEVE_RING + j])
-    c = len(V) - 1
-    last = (nr - 1) * SLEEVE_RING
-    tris = [[last + j, last + (j + 1) % SLEEVE_RING, c] for j in range(SLEEVE_RING)]
     # (outward: a quad on the cuff's outside faces away from the arm)
     probe = faces[(6) * SLEEVE_RING]
     nrm = np.cross(V[probe[1]] - V[probe[0]], V[probe[2]] - V[probe[0]])
@@ -867,8 +867,9 @@ def build_sleeve():
     ctr[0] = 0
     if np.dot(nrm, ctr) < 0:
         faces = [f[::-1] for f in faces]
-        tris = [t[::-1] for t in tris]
-    return V, faces + tris
+    ring = [(round(float(p[1]), 5), round(float(p[2]), 5)) for p in end]
+    assert abs(xe - rings[nr - 3][0, 0]) < 1e-9
+    return V, faces, ring
 
 
 # ------------------------------------------------------------------------------------------------ materials
@@ -993,10 +994,12 @@ def build_hand():
         Vn, Fn = build_nail(dg)
         parts.append(part_object(f"nail_{dg}", Vn, Fn, M["nail"], weights_like_skin(Vn, P, W)))
         normals.append(None)
-    Vs, Fs = build_sleeve()
+    Vs, Fs, end_ring = build_sleeve()
     ring = np.abs(Vs[:, 0] + 0.0700) < 1e-4
+    # (the open end's section, a vertex round it in order: the view carries the sleeve on from it up the arm, web/hands.js)
     extras["hand"]["sleeve"].update({"end_section_x": -0.0700, "half_width": round(float(np.abs(Vs[ring, 2] - Vs[ring, 2].mean()).max()), 4),
-                                     "back": round(float(Vs[ring, 1].max()), 4), "front": round(float(-Vs[ring, 1].min()), 4)})
+                                     "back": round(float(Vs[ring, 1].max()), 4), "front": round(float(-Vs[ring, 1].min()), 4),
+                                     "open": True, "ring": [list(p) for p in end_ring]})
     parts.append(part_object("sleeve", Vs, Fs, M["sleeve"], {"forearm": np.ones(len(Vs))}))
     normals.append(None)
     # one mesh, three materials (glTF: one primitive each), smooth; the skin's normals the field's own

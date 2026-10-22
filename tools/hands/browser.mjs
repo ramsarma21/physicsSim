@@ -74,7 +74,8 @@ try {
 				}
 				await S.view.whenSettled()
 				const run = S.view._debug.run
-				const rigs = (run.hands?.rigs ?? []).map((g) => ({ item: g.item, grip: g.grip, from: g.from, skin: g.skin, thrown: !!g.thrown, n: (g.rigs ?? [g.rig]).length, mesh: (g.rigs ?? [g.rig]).every((x) => x.mesh && x.meshes.every((m) => m.isSkinnedMesh)) }))
+				// (hand.glb's: its skinned meshes, and the sleeve carried on up the arm from where the file's own ends, out of the picture)
+				const rigs = (run.hands?.rigs ?? []).map((g) => ({ item: g.item, grip: g.grip, from: g.from, skin: g.skin, thrown: !!g.thrown, n: (g.rigs ?? [g.rig]).length, mesh: (g.rigs ?? [g.rig]).every((x) => x.mesh && x.meshes.every((m) => m.isSkinnedMesh || (m === x.sleeveOn && x.length >= 0.45))) }))
 				const solidsDrawn = new Set()
 				run.group.traverse((o) => o.userData?.solidId && o.isMesh && o.visible && !o.userData.hand && solidsDrawn.add(o.userData.solidId))
 				return { rigs, pins: run.pins.length, gates: run.gates.length, mounts: (run.mounts ?? []).length, drawn: [...solidsDrawn], held: run.doc.release?.parts ?? [], tRelease: run.tRelease, duration: S.view.exportInfo().duration, runId: S.view.exportInfo().runId, ...window.__h.holders() }
@@ -318,7 +319,9 @@ try {
 				const t0 = performance.now()
 				const H = makeHands({ doc: lay.doc, track, resolved: lay.resolved, mode: "scene" })
 				H.fit(pf, track)
-				out.ms.push(performance.now() - t0)
+				const took = performance.now() - t0
+				out.ms.push(took)
+				if (!(took <= (out.slowest?.ms ?? -1))) out.slowest = { label, ms: Math.round(took) }
 				out.types++
 				const n = H.rigs.reduce((a, r) => a + (r.rigs ?? [r.rig]).length, 0)
 				if (H.rigs.length < Math.min(1, wantRigs)) {
@@ -353,7 +356,7 @@ try {
 		return { ...out, median: out.ms[out.ms.length >> 1], max: out.ms.at(-1) }
 	})
 	ok(sweep.types > 400 && sweep.bad.length === 0, `every dynamic type held (auto) and fixed (grip), every pusher skin, every pitcher: hands made, finite through the release (${sweep.made} of ${sweep.types} scenes with a hand)`, sweep.bad.slice(0, 5).join(" | "))
-	ok(sweep.max < 400, `making a scene's hands takes ${sweep.median?.toFixed(1)} ms (median), ${sweep.max?.toFixed(0)} ms at most`, JSON.stringify(sweep.grips))
+	ok(sweep.max < 400, `making a scene's hands takes ${sweep.median?.toFixed(1)} ms (median), ${sweep.max?.toFixed(0)} ms at most (${sweep.slowest?.label})`, JSON.stringify(sweep.grips))
 	ok(errors.length === 0, "no page errors", errors.slice(0, 3).join(" | "))
 
 	// ---- hand.glb unreachable (an old deploy, a blocked file): the procedural capsule hand is drawn, and nothing else changes

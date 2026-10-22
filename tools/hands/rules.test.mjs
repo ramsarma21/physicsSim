@@ -8,8 +8,11 @@
 //              palm, a pressing fingertip, a pushing fingertip, palm or fist (and nothing else of a finger push or press within 3 mm of the box)
 //   clear      no part of a holding hand within 1 mm of anything else (the floor; a pushing one 3 mm), its arm 3 mm clear of everything, rising as
 //              ARM says, its wrist easy (a pushing palm's bent back up to WRIST.push)
-//   two hands  never one in the other nor their arms (3 mm) on any frame of a push, the arms never crossed (each its own way, at most 45
-//              degrees apart), the left hand on the left, both moving the same way; on a box too small for both, still never one in the other
+//   two hands  a centimetre apart (their arms 3 mm) on any frame of a push, neither covering more than a fifth of the other in the picture, the
+//              arms never crossed (each its own way, at most 45 degrees apart), the left hand on the left, both moving the same way; on a box too
+//              small for both, still never one in the other
+//   arm        the sleeve runs on out of the scene's fixed camera's picture on every frame of every role (holds, pushes, a pitcher): no hand at
+//              the end of a stub
 //   capsules   the procedural hand (drawn when hand.glb does not load): a hold and a push made, nothing in the box
 //   node --test tools/hands/rules.test.mjs
 import assert from "node:assert/strict"
@@ -35,11 +38,11 @@ const boxField = (s, at = s.at) => (p) => {
 	const q = V(Math.abs(p.x - at.x) - s.body.width / 2, Math.abs(p.y - at.y) - s.body.height / 2, Math.abs(p.z) - s.body.depth / 2)
 	return Math.hypot(Math.max(q.x, 0), Math.max(q.y, 0), Math.max(q.z, 0)) + Math.min(Math.max(q.x, q.y, q.z), 0)
 }
-/** Hands for a document of solids: one frame at rest, or the frames given ({t, placements}). */
-function hands(solids, { held = [], resolved = {}, frames = null, release = 0.5 } = {}) {
+/** Hands for a document of solids: one frame at rest, or the frames given ({t, placements}); `view`: the document's view (its fixed camera). */
+function hands(solids, { held = [], resolved = {}, frames = null, release = 0.5, view = undefined } = {}) {
 	const placements = {}
 	for (const s of solids) placements[s.id] = { x: s.at.x, y: s.at.y, angle: 0 }
-	const doc = { solids, release: { parts: held, at: release }, processes: [] }
+	const doc = { solids, release: { parts: held, at: release }, processes: [], ...(view ? { view } : {}) }
 	const track = { fps: 60, frames: frames ?? [{ t: 0, placements }] }
 	const Hs = makeHands({ doc, track, resolved, mode: "scene" })
 	Hs.fit((s) => ({ x: s.at.x, y: s.at.y, angle: 0 }), track)
@@ -95,13 +98,27 @@ function armRules(rig, fields, what, band, extMax = WRIST.ext) {
 const SIDE = [ARM.side]
 const ABOVE = [ARM.above]
 const PUSHING = [[ARM.level, ARM.side[1]]] // (a pushing palm's forearm may run nearly level)
+const PUSH_LOW = [[8, ARM.side[1]]] // (a pushing finger's or fist's arm low behind the push, as a child's along a lane)
 
 // ---------------------------------------------------------------- the mesh
-test("hand.glb: loaded, the rig contract's bones, the spheres fitted to its skin", () => {
+test("hand.glb: loaded, the rig contract's bones, the spheres fitted to its skin", async () => {
 	assert.ok(meshHand(), "the hands are drawn with hand.glb")
 	const r = newRig("left")
 	assert.ok(r.mesh && BONES.every((b) => r.bones[b]?.isBone), "every contract bone is a bone of the mesh")
-	assert.ok(r.meshes.length === 3 && r.meshes.every((m) => m.isSkinnedMesh) && new Set(r.meshes.map((m) => m.material)).size === 3, "the skin, the nails and the sleeve: three skinned meshes, three materials")
+	const skinned = r.meshes.filter((m) => m.isSkinnedMesh)
+	assert.ok(skinned.length === 3 && new Set(skinned.map((m) => m.material)).size === 3, "the skin, the nails and the sleeve: three skinned meshes, three materials")
+	// (and the sleeve carried on up the arm from the file's own open end: drawn on the forearm bone in the sleeve's material, out to setArm's length)
+	assert.ok(r.sleeveOn && r.meshes.includes(r.sleeveOn) && r.sleeveOn.material === skinned.find((m) => m.material.name === "sleeve" || m.material === r.sleeveOn.material)?.material, "the sleeve carried on")
+	assert.equal(r.sleeveOn.parent, r.bones.forearm, "on the forearm bone")
+	H.setArm(r, 1.2)
+	r.sleeveOn.geometry.computeBoundingBox()
+	near(-r.sleeveOn.geometry.boundingBox.min.x, 1.2, 0.006, "the sleeve reaches as far as setArm says")
+	// (the rest turns hands.js poses from are the file's own)
+	const glb = await (await import("../../web/hand-model.js")).handModel
+	glb.scene.traverse((o) => {
+		if (!o.isBone || !H.REST[o.name]) return
+		assert.ok(o.quaternion.angleTo(H.REST[o.name]) < 2e-3, `${o.name}: the rest turn is hand.glb's`)
+	})
 	r.root.position.set(0, 0, 0)
 	r.root.quaternion.identity()
 	r.root.scale.set(SIZE, SIZE, SIZE)
@@ -248,14 +265,16 @@ test("lerpPose: the poses between, in place too", () => {
 
 // ---------------------------------------------------------------- holding boxes
 const HOLDS = {
-	"pinch from above": { box: slab(0.03, 0.03, 0.03), y: 0.3, hand: "pinch", from: "above", band: ABOVE, touch: ["f0.2", "t.2"] },
+	"pinch from above": { box: slab(0.03, 0.03, 0.03), y: 0.3, hand: "pinch", from: "above", band: [[ARM.reachIn, ARM.above[1]]], touch: ["f0.2", "t.2"] },
 	"pinch from the left": { box: slab(0.03, 0.03, 0.03), y: 0.3, hand: "pinch", from: "left", band: SIDE, touch: ["f0.2", "t.2"] },
 	"pinch from the right": { box: slab(0.02, 0.04, 0.02), y: 0.25, hand: "pinch", from: "right", band: SIDE, touch: ["f0.2", "t.2"] },
 	"grip from above": { box: slab(0.07, 0.05, 0.05), y: 0.3, hand: "grip", from: "above", band: ABOVE },
 	"grip from the left": { box: slab(0.05, 0.07, 0.05), y: 0.3, hand: "grip", from: "left", band: SIDE },
 	"palm under it": { box: slab(0.06, 0.05, 0.06), y: 0.4, hand: "palm", from: "right", band: [ARM.side, ARM.below] },
-	"palm pressing it down": { box: slab(0.1, 0.04, 0.1), y: 0.02, hand: "press", band: ABOVE, palm: true },
-	"fingertip pressing it down": { box: slab(0.03, 0.04, 0.03), y: 0.02, hand: "press", band: ABOVE, touch: ["f0.2"], tipOnly: true }
+	"palm pressing it down": { box: slab(0.2, 0.04, 0.12), y: 0.02, hand: "press", band: ABOVE, palm: true },
+	"fingertip pressing it down": { box: slab(0.03, 0.04, 0.03), y: 0.02, hand: "press", band: ABOVE, touch: ["f0.2"], tipOnly: true },
+	// (a sponge: wider than a fingertip, too small for the whole hand flat on it, so pressed by the fingertip, never by a palm hanging past it)
+	"fingertip pressing a sponge down": { box: slab(0.1, 0.03, 0.07), y: 0.015, hand: "press", band: ABOVE, touch: ["f0.2"], tipOnly: true }
 }
 /** The palm's face: the palm, the ball of the thumb, the fingers' roots (a palm laid on a thing lies on its pads, its middle a hollow). */
 const palmFace = (l) => l === "palm" || l === "t.0" || /^f[0-3]\.0$/.test(l)
@@ -322,7 +341,7 @@ const pusherOf = (h, paddleH = 0.06) => [
 ]
 /** A pushed run: the paddle still until 0.3 s, then at 0.4 m/s; the box (its back 1 cm ahead of the paddle's face) still until the paddle reaches
  *  it, then just ahead of it. */
-function pushRun(box, h, skin, paddleH) {
+function pushRun(box, h, skin, paddleH, view = undefined) {
 	const solids = [...pusherOf(h, paddleH), box, FLOOR]
 	const face0 = -0.139 + 0.006
 	const back0 = box.at.x - box.body.width / 2
@@ -337,7 +356,7 @@ function pushRun(box, h, skin, paddleH) {
 		pl["box/box"].x += Math.max(0, face0 + adv - back0)
 		frames.push({ t, placements: pl })
 	}
-	return { Hs: hands(solids, { resolved: { p: { hand: skin } }, frames }), frames, solids }
+	return { Hs: hands(solids, { resolved: { p: { hand: skin } }, frames, view }), frames, solids }
 }
 const BOX = (w, h, d) => S("box/box", slab(w, h, d), -0.133 + 0.01 + w / 2, h / 2)
 for (const [skin, box, h, paddleH] of [
@@ -369,7 +388,7 @@ for (const [skin, box, h, paddleH] of [
 		assert.ok(f.m >= 0.003 - 1e-6, `${skin}: ${f.link} is ${(f.m * 1000).toFixed(1)} mm from the floor`)
 		const A = armDir(rig)
 		assert.ok(A.x < -0.3, "the arm comes from behind the push")
-		armRules(rig, { box: d, floor }, skin, skin === "hand" ? PUSHING : SIDE, skin === "hand" ? WRIST.push : WRIST.ext)
+		armRules(rig, { box: d, floor }, skin, skin === "hand" ? PUSHING : PUSH_LOW, skin === "hand" ? WRIST.push : WRIST.ext)
 		// (every frame of the push: never in the box)
 		frames.forEach((fr) => {
 			Hs.at(fr.t)
@@ -395,9 +414,16 @@ for (const [label, box, h, paddleH] of [
 			{ spheres: handSpheres(current(R)), line: armLine(R.root.position, armDir(R)) }
 		)
 		const small = box.body.width < 0.06
-		// (apart by 3 mm; on a thing too small for two the right hand may rest on the left, never in it)
-		const apart = small ? 0 : 0.003
+		// (a centimetre apart; on a thing too small for two the right hand may rest on the left, never in it)
+		const apart = small ? 0 : 0.01
 		assert.ok(gapNow() >= apart - 1e-6, `the hands are ${(gapNow() * 1000).toFixed(1)} mm apart`)
+		// (both seen: as the camera looks, neither covers more than a fifth of the other; on a thing lower than 6 cm and seen nearly level, where
+		// one hand lies on its top ahead of the other, nearly a third)
+		if (!small) {
+			const ov = H.screenOverlap(handSpheres(current(L)), handSpheres(current(R)), { right: V(1, 0, 0), up: V(0, Math.cos((7 * Math.PI) / 180), -Math.sin((7 * Math.PI) / 180)) })
+			const most = box.body.height < 0.06 ? 0.3 : 0.2
+			assert.ok(ov <= most + 1e-9, `one hand covers ${(ov * 100).toFixed(0)}% of the other in the picture`)
+		}
 		// (each arm its own way, never crossed: the left one out on the pusher's left (-z), the two at most 45 degrees apart)
 		assert.ok(armDir(L).angleTo(armDir(R)) <= (45 * Math.PI) / 180 + 1e-6, `the arms are ${((armDir(L).angleTo(armDir(R)) * 180) / Math.PI).toFixed(1)} degrees apart`)
 		const lineL = armLine(L.root.position, armDir(L))
@@ -426,6 +452,77 @@ for (const [label, box, h, paddleH] of [
 		Hs.at(1)
 		assert.ok(L.root.position.x > W0[0].x + 0.1, "the hands went with the push")
 	})
+
+// ---------------------------------------------------------------- the arm reaches in from the picture's edge
+/** The scene's fixed camera as the view films it (web/hands.js frameExit: doc.view.camera at 4:3). */
+function cameraOf(C) {
+	const hf = (C.hfov * Math.PI) / 180
+	const d = (C.x1 - C.x0) / 2 / Math.tan(hf / 2)
+	const cx = (C.x0 + C.x1) / 2
+	const cam = new THREE.PerspectiveCamera((2 * Math.atan(Math.tan(hf / 2) / (4 / 3)) * 180) / Math.PI, 4 / 3, 0.01, 100)
+	cam.position.set(cx, C.y + d * Math.tan((C.pitch * Math.PI) / 180), d)
+	cam.lookAt(cx, C.y, 0)
+	cam.updateMatrixWorld(true)
+	cam.updateProjectionMatrix()
+	return cam
+}
+const outOfPicture = (cam, p) => {
+	const v = p.clone().applyMatrix4(cam.matrixWorldInverse)
+	if (v.z > -0.02) return true
+	v.copy(p).project(cam)
+	return Math.abs(v.x) > 1 || Math.abs(v.y) > 1
+}
+test("every role, every frame: the sleeve runs on out of the picture, so no hand is seen at the end of a stub", () => {
+	const fall = (id, x, y, from = 0.5) => {
+		const frames = []
+		for (let k = 0; k <= 72; k++) {
+			const t = k / 60
+			frames.push({ t, placements: { [id]: { x, y: Math.max(0.02, t < from ? y : y - 0.5 * 9.8 * (t - from) ** 2), angle: 0 }, "floor/f": { x: 0, y: -0.01, angle: 0 } } })
+		}
+		return frames
+	}
+	const cases = []
+	for (const [name, body, y, hand, from] of [
+		["pinch", slab(0.025, 0.025, 0.025), 0.25, "pinch", "auto"],
+		["grip", slab(0.07, 0.07, 0.07), 0.25, "grip", "above"],
+		["palm", slab(0.08, 0.06, 0.08), 0.3, "palm", "right"],
+		["fingertip press", slab(0.03, 0.04, 0.03), 0.02, "press", "auto"],
+		["palm press", slab(0.2, 0.04, 0.12), 0.02, "press", "auto"]
+	]) {
+		const box = S("box/box", body, 0, y)
+		const view = { camera: { x0: -0.2, x1: 0.2, y: Math.max(0.08, y), pitch: 10, hfov: 30 } }
+		cases.push({ name, view, Hs: hands([box, FLOOR], { held: ["box/box"], resolved: { box: { hand, hand_from: from } }, frames: fall("box/box", 0, y), view }) })
+	}
+	for (const skin of ["finger", "hand", "fist", "two hands"]) {
+		const view = { camera: { x0: -0.25, x1: 0.25, y: 0.08, pitch: 10, hfov: 30 } }
+		cases.push({ name: `push ${skin}`, view, Hs: pushRun(BOX(0.12, 0.1, 0.12), 0.05, skin, skin === "finger" ? 0.02 : 0.08, view).Hs })
+	}
+	{
+		const lip = S("v/lip", slab(0.01, 0.003, 0.035), 0, 0.3, { kind: "static", type: "pitcher" })
+		const view = { camera: { x0: -0.3, x1: 0.2, y: 0.22, pitch: 12, hfov: 30 } }
+		cases.push({ name: "pitcher", view, Hs: hands([lip, FLOOR], { resolved: { v: { hand: "hand", vessel: "pitcher", pour_to: "right" } }, view }) })
+	}
+	for (const c of cases) {
+		const cam = cameraOf(c.view.camera)
+		let seen = 0
+		for (let k = 0; k <= 72; k += 3) {
+			c.Hs.at(k / 60)
+			for (const rig of rigsOf(c.Hs)) {
+				if (!rig.root.visible) continue
+				current(rig)
+				assert.ok(rig.length >= 0.45, `${c.name}: the sleeve is ${rig.length} m long`)
+				const far = rig.root.position.clone().addScaledVector(armDir(rig), rig.length)
+				assert.ok(outOfPicture(cam, far), `${c.name} at ${(k / 60).toFixed(2)} s: the sleeve ends in the picture (${far.toArray().map((v) => v.toFixed(2))})`)
+				if (rig.mesh) {
+					rig.sleeveOn.geometry.computeBoundingBox()
+					assert.ok(-rig.sleeveOn.geometry.boundingBox.min.x >= rig.length - 0.006, `${c.name}: the sleeve is drawn as long as the arm`)
+				}
+				seen++
+			}
+		}
+		assert.ok(seen > 0, `${c.name}: a hand was seen`)
+	}
+})
 
 // ---------------------------------------------------------------- a pitcher's handle
 test("a hand on a pitcher's handle: the fingers round it within 1 mm, never in it; the arm by the rules", () => {
