@@ -46,6 +46,10 @@ const PALM_ROOM = 0.04 // m under a thing for a palm to go under it (the hand 2.
 // its side, the near hand may cover the far one up to OVERLAP_LOW: the far one stands a little higher, its fingers and the top of its palm seen)
 const OVERLAP = 0.2
 const OVERLAP_LOW = 0.85
+const OVERLAP_BALL = 0.35 // (round a ball the far hand on its rear half beside the near one, a little higher: up to this much of it behind the near hand)
+// how far apart two pushing hands keep, every part of one from every part of the other: a centimetre; side by side across a low thing's narrow back,
+// where their fingers close onto its top toward each other, half that (each is outlined as its own in the lesson look)
+const APART = (low) => (low ? 0.005 : 0.01)
 const LOW_THING = 0.09 // m: a thing lower than this (a toy car) is pushed by a palm on its back with its fingers over its top
 const PALM_ROLL = 32 // degrees: a ball held on the open palm, the palm rolled toward the camera
 const PINCH_ROOM = 0.03 // ... for a pinch from the side (the curled fingers hang below it), else from above
@@ -224,14 +228,14 @@ export const POSES = {
 		thumb: [[15, 0.2, -5], [-4.8, -12.6, 6.2], [-1.5, -6, 0.8]]
 	}),
 	// a palm upright on a low thing's back, its fingers together and bent forward at the knuckles to reach over its top (they close onto it from
-	// here, closeHand), the thumb laid along the index, a little in front of the palm, so it stands out sideways no further than the palm does (two
-	// hands side by side never meet at their thumbs) (fitted on hand.glb)
+	// here, closeHand), the thumb laid along the index, against it from its root to its tip (0.5 mm: nothing to see through between them), so it
+	// stands out sideways no further than the palm does (two hands side by side never meet at their thumbs) (fitted on hand.glb)
 	hook: digits({
 		index: [[0, 1.5, -35], [0, 0, -15], [0, 0, -8]],
 		middle: [[0, 0, -36], [0, 0, -16], [0, 0, -8]],
 		ring: [[0, -1.5, -37], [0, 0, -17], [0, 0, -9]],
 		pinky: [[0, -3.5, -38], [0, 0, -18], [0, 0, -9]],
-		thumb: [[29.9, 5.3, -20.9], [-4.8, -13.8, -8.3], [-1.5, -6.1, -5.6]]
+		thumb: [[12.5, 11, -17.1], [-4.9, -14.2, -12.4], [-1.5, -6.2, -7.1]]
 	})
 }
 
@@ -2749,20 +2753,15 @@ const halfZ = (d) => Math.max(0.001, ...(d.items ?? []).map((i) => i.zh))
  *  fingertip lifts off as it pressed, their folded fingers kept folded. */
 function openOf(P, grip = null, thrown = false, pinchOut = null) {
 	// (a pinch opens its thumb and index along the pinch's own path, about 1.5 cm wider than it held (pinchOut: the pose that far open), and a
-	// fingertip that pressed lifts off with its finger as it pressed; the folded fingers of both stay folded, eased only a little: never a claw
-	// hanging under the hand)
+	// fingertip that pressed lifts off with its finger as it pressed; the folded fingers of both stay folded as they were, closed: never a claw
+	// hanging under the hand, nor a gap opening between them)
 	const tap = grip === "press" && P.middle_1[2] < -40
 	if (tap || (grip === "pinch" && pinchOut)) {
 		const o = copyPose(P)
-		for (const d of ["middle", "ring", "pinky"])
-			for (let j = 1; j <= 3; j++) {
-				const b = `${d}_${j}`
-				o[b][2] = P[b][2] + (Math.max(POSES.relaxed[b][2], P[b][2]) - P[b][2]) * 0.15
-			}
 		if (!tap) for (const b of ["index_1", "index_2", "index_3", "thumb_1", "thumb_2", "thumb_3"]) o[b] = [...pinchOut[b]]
 		return o
 	}
-	const o = thrown || grip === "grip" ? lerpPose(POSES.relaxed, POSES.flat, 0.6) : copyPose(POSES.relaxed)
+	const o = thrown || grip === "grip" ? lerpPose(POSES.relaxed, POSES.flat, grip === "grip" ? 0.85 : 0.6) : copyPose(POSES.relaxed)
 	for (const d of DIGITS) {
 		o[`${d}_1`][1] = P[`${d}_1`][1]
 		for (let j = 1; j <= 3; j++) o[`${d}_${j}`][2] = Math.max(o[`${d}_${j}`][2], P[`${d}_${j}`][2])
@@ -3209,7 +3208,12 @@ function pushCands(skin, K) {
 	}
 	if (K.ball) {
 		const { c: ctr, r: rad } = K.ball
-		for (const beta of K.two ? [0, 10, 20, 30, 42] : [0, 8, 16, 24, 32, 42])
+		// (round a ball the fingers are tried already a little curved, as they will follow its curve (closeHand): two hands are kept apart as
+		// they will lie)
+		const PB = lerpPose(P, POSES.relaxed, 0.8)
+		for (const d of DIGITS) PB[`${d}_1`][1] = P[`${d}_1`][1]
+		for (const b of ["thumb_1", "thumb_2", "thumb_3"]) PB[b] = [...P[b]]
+		for (const beta of K.two ? [0, 10, 20, 26, 32, 42] : [0, 8, 16, 24, 32, 42])
 			for (const gamma of K.gammas)
 				for (const alpha of K.two ? [-30, -15, 0] : [-30, -15, 0, 15])
 					for (const rs of sides) {
@@ -3221,28 +3225,28 @@ function pushCands(skin, K) {
 						const X = v.clone().addScaledVector(Y, -v.dot(Y)).normalize().applyAxisAngle(Y, alpha * D2R)
 						// (set down onto it along its normal from 3 cm out: the heel, or the ball of the thumb beside it, 0.4 mm from it)
 						const W0 = at.clone().sub(offsetOf(scratchRig(rs), R.heel, X, Y)).addScaledVector(n, 0.03)
-						const sl = slideTo(rs, W0, X, Y, P, td, n.clone().negate(), 0.0004, 0.08, (l, S) => PALM_LINKS.has(l) || l === "t.0" || !!S?.root)
+						const sl = slideTo(rs, W0, X, Y, PB, td, n.clone().negate(), 0.0004, 0.08, (l, S) => PALM_LINKS.has(l) || l === "t.0" || !!S?.root)
 						if (!sl) continue
 						// (the heel on its back a little above its middle, the fingers up it, leaning with it so the wrist is not bent hard back; never a hand
 						// over its top; two hands side by side on its back, round it from each other)
-						// (two hands: both palms on its rear half, about 30 degrees either side of the push line round it, the right one, nearer the camera,
-						// low on its back, the left one a little higher, so both are seen and their arms part)
-						const pair = rs === "right" ? ((gamma - 30) / 15) ** 2 + ((beta - 5) / 12) ** 2 : ((gamma + 30) / 15) ** 2 + ((beta - 20) / 12) ** 2
+						// (two hands: both palms on its rear half, either side of the push line round it, the right one, nearer the camera, low on its back
+						// and round toward the camera, the left one a little higher on its back and round the other way, so both are seen and their arms part)
+						const pair = rs === "right" ? ((gamma - 30) / 15) ** 2 + ((beta - 5) / 12) ** 2 : ((gamma + 20) / 15) ** 2 + ((beta - 24) / 5) ** 2
 						const pref = (K.two ? pair : ((beta - 4) / 10) ** 2) + ((alpha + 5) / 20) ** 2
 						how = { beta, gamma, alpha }
-						keep(rs, sl.W, X, Y, P, sl.link, at, pref, others3)
+						keep(rs, sl.W, X, Y, PB, sl.link, at, pref, others3)
 					}
 		return out
 	}
-	// a thing lower than a palm and its fingers can reach over (under 9 cm, a toy car): the palm stands on its back, leaning 12 to 44 degrees over it (about 30), its
+	// a thing lower than a palm and its fingers can reach over (under 9 cm, a toy car): the palm stands on its back, leaning 12 to 44 degrees over it (about 24), its
 	// heel as low on the back as the arm leaves room for over the floor, the fingers together and bent forward at the knuckles over its top (hook)
 	// to close onto it there (closeHand): just over its top edge, never a hand lying over it or waving above it; one hand turned toward the camera
 	// so the back of the hand, its fingers and its thumb show; two hands side by side across its back, each on a back corner
 	if (K.E.h < LOW_THING) {
 		const PH = copyPose(POSES.hook)
-		for (const tau of [12, 20, 28, 36, 44])
+		for (const tau of [12, 18, 24, 30, 36, 44])
 			for (const turn of K.two ? [0, 8, 16] : [15, 25, 35])
-				for (const alpha of [0, -10, 10])
+				for (const alpha of K.two ? [0, -8, 8, -16, 16] : [0, -10, 10])
 					for (const [k, h] of K.hsLow.entries())
 						for (const z of K.two ? K.zs : [0, 0.008, -0.008])
 							for (const rs of sides) {
@@ -3258,7 +3262,10 @@ function pushCands(skin, K) {
 								const sl = slideTo(rs, W0, X, Y, PH, td, u, 0.0004, 0.6, palmFace)
 								if (!sl) continue
 								// (the heel low on its back, nearly upright, the back of the hand toward the camera)
-								const pref = ((tau - 32) / 14) ** 2 + (K.two ? (turn / 16) ** 2 * 0.5 : ((turn - 25) / 12) ** 2) + (alpha / 20) ** 2 + k * 0.35 + (Math.abs(z) > 0 && !K.two ? 0.2 : 0)
+								// (two hands side by side: their fingers turned a little in toward each other over its top, the hands as near together as a
+								// centimetre between them allows, so the fingers lie on it rather than off its sides)
+								const inward = K.two ? (rs === "left" ? 10 : -10) : 0
+								const pref = ((tau - 24) / 10) ** 2 + (K.two ? (turn / 16) ** 2 * 0.5 + ((Math.abs(z) - 0.038) / 0.006) ** 2 * 0.3 : ((turn - 25) / 12) ** 2) + ((alpha - inward) / 12) ** 2 + k * 0.35 + (Math.abs(z) > 0 && !K.two ? 0.2 : 0)
 								how = { tau, turn, alpha, h, z, low: true }
 								const rule = (r) => {
 									// (it meets it with its palm: the palm within 4 mm of it, the wrist never first)
@@ -3440,7 +3447,7 @@ function closeHand(rig, d, round = false, low = false) {
 	}
 	// (over a low thing's top the fingers, bent forward at the knuckles, close on until they rest on it)
 	// (round a ball they follow its curve, each joint bent as far as it asks)
-	for (const i of [0, 1, 2, 3]) keep(i, () => closeFinger(rig, d, i, { most: low ? [85, 60, 35] : round ? [50, 28, 14] : [32, 22, 10] }))
+	for (const i of [0, 1, 2, 3]) keep(i, () => closeFinger(rig, d, i, { most: low ? [70, 45, 25] : round ? [50, 28, 14] : [32, 22, 10] }))
 	if (low && met.length) {
 		// (a finger with nothing under it, past the thing's side, is held as the nearest one that rests on it is, a little more bent the further it is
 		// toward the little finger: the fingers together, never one standing off the others; opened out of anything it would be in)
@@ -3585,13 +3592,13 @@ function pushRig(p, pf, C) {
 	const palmW = refs().palmW
 	// (two hands across it: their middles from touching (a palm's width apart, the thumbs in between kept clear by the pair's check) to where a
 	// third of each palm is still on its back)
-	const zs = two ? [0, ...[0.5, 0.58, 0.65, 0.8, 1, 1.25].flatMap((k) => [-(palmW * k + 0.004), palmW * k + 0.004])].filter((z) => Math.abs(z) <= Math.max(zh + palmW * 0.17, palmW * 0.58 + 0.004) + 1e-9) : [0]
+	const zs = two ? [0, ...[0.5, 0.54, 0.58, 0.65, 0.8, 1, 1.25].flatMap((k) => [-(palmW * k + 0.004), palmW * k + 0.004])].filter((z) => Math.abs(z) <= Math.max(zh + palmW * 0.17, palmW * 0.58 + 0.004) + 1e-9) : [0]
 	// (two hands' heels from near its foot to four fifths up its back: a heel on its top edge would be set down onto its top, under the other; on a
 	// low thing both heels on its back, the upper one just under its top edge, so the two lean over it alike, one above the other)
 	const hs2 = [0.15, 0.55, 0.95].map((k) => lo + (hi - lo) * k)
-	// (a palm upright on a low thing's back: its heel from near the foot of the back up to a little over half way up it, the lowest the arm allows
-	// over the floor wanted)
-	const hsLow = [0.12, 0.2, 0.28, 0.36, 0.44, 0.52].map((k) => lo + (hi - lo) * k)
+	// (a palm upright on a low thing's back: its heel from near the foot of the back up to three quarters of the way up it, the lowest the arm
+	// allows over the floor wanted)
+	const hsLow = [0.12, 0.2, 0.28, 0.36, 0.44, 0.52, 0.64, 0.76].map((k) => lo + (hi - lo) * k)
 	const K = { u: u0, v: v0, c: c0, face: face0, td, ball, others, E, two, hs: hs.length ? hs : [0], hs2, hsLow, zs, gammas: two ? [-45, -30, -15, 0, 15, 30, 45] : [0, 15, 30, 45] }
 	const cands = pushCands(two ? "hand" : skin, K)
 	const behind = u0.clone().negate()
@@ -3635,17 +3642,18 @@ function pushRig(p, pf, C) {
 		const axes = pictureAxes(C.doc)
 		// (and the left hand, the further from the camera, a little the higher in the picture, as its arm is: the two arms then part from each other
 		// in the picture as they leave the hands)
-		// (side by side across a low thing's back the far hand stands a little higher in the picture than the near one, 2 cm)
-		const upWant = low ? 0.02 : 0.04
+		// (side by side across a low thing's back the two alike, as a mirror of each other: the same lean, the same height on its back, turned in
+		// alike; the far one is seen the higher by its depth alone)
 		const layoutOf = (cl, cr) => {
 			const dW = cl.W.clone().sub(cr.W)
 			const up = dW.dot(axes.up)
-			return clamp((upWant - up) / upWant, 0, 2) * 1.2 + (dW.dot(right) > 0.01 ? 100 + dW.dot(right) * 1000 : 0) // (the left hand never on the right: crossed hands are a fault)
+			const alike = low && cl.how && cr.how ? ((cl.how.tau - cr.how.tau) / 6) ** 2 + ((cl.how.h - cr.how.h) / 0.006) ** 2 + ((cl.how.turn - cr.how.turn) / 8) ** 2 + ((cl.how.alpha + cr.how.alpha) / 8) ** 2 : 0
+			return (low ? alike : clamp((0.04 - up) / 0.04, 0, 2) * 1.2) + (dW.dot(right) > 0.01 ? 100 + dW.dot(right) * 1000 : 0) // (the left hand never on the right: crossed hands are a fault)
 		}
-		const ovMost = low ? OVERLAP_LOW : OVERLAP
+		const ovMost = low ? OVERLAP_LOW : ball ? OVERLAP_BALL : OVERLAP
 		const overlapOf = (cl, cr) => {
 			const ov = cellsOverlap((cl.cells ??= pictureCells(cl.spheres, axes)), (cr.cells ??= pictureCells(cr.spheres, axes)))
-			return ov > ovMost ? 15 + (ov - ovMost) * 50 : ov * 2
+			return ov > ovMost ? 15 + (ov - ovMost) * 50 : ov * (low ? 0.5 : 2)
 		}
 		const crossed = (cl, cr) => cl.W.clone().sub(cr.W).dot(right) > 0.01
 		/** The best pair of left entries Ls and right entries Rs whose hands are `apart` m apart at the least (their arms 3 mm), the left hand on the
@@ -3741,8 +3749,7 @@ function pushRig(p, pf, C) {
 		}
 		const E1 = entries(cands, all)
 		// (a centimetre apart at the least, every part of the one from every part of the other)
-		// (round a ball 1.5 cm, where the fingers follow its curve toward each other)
-		lay = pairUp(E1.left, E1.right, all, ball ? 0.015 : 0.01)
+		lay = pairUp(E1.left, E1.right, all, APART(low))
 		// (a fault in the best pair, a wrist past its easy bend or a hand in something: the fallback below is tried too, and the cheaper kept)
 		if ((!lay || lay.cost >= 100) && E1.left.length) {
 			const lay1 = lay
@@ -3814,10 +3821,24 @@ function pushRig(p, pf, C) {
 		const resting = L.hands.some((h) => h.how?.over)
 		if ((skin === "hand" || two) && !resting)
 			L.hands.forEach((h, k) => {
+				// (never into the other hand; a finger that closing brought nearer the other hand than the two keep apart (APART) is eased back
+				// toward where it was until it is that far off, or as it was)
 				const other = L.hands[1 - k]?.rig
-				const f = other ? fieldMin(td, sphereField(handSpheres(current(other)))) : td
+				const sf = other ? sphereField(handSpheres(current(other))) : null
+				const f = sf ? fieldMin(td, sf) : td
 				current(h.rig)
+				const was = copyPose(h.rig.pose)
 				closeHand(h.rig, f, !!ball, low)
+				if (!sf) return
+				const shut = copyPose(h.rig.pose)
+				for (const i of [0, 1, 2, 3]) {
+					const links = new Set([`f${i}.0`, `f${i}.1`, `f${i}.2`])
+					const bones = [1, 2, 3].map((j) => `${DIGITS[i]}_${j}`)
+					for (let n = 1; n <= 8 && clearance(current(h.rig), sf, (l) => links.has(l)) < APART(low) + 0.0005; n++) {
+						for (const b of bones) h.rig.pose[b] = lerpPose(shut, was, n / 8)[b]
+						applyPose(h.rig, h.rig.pose)
+					}
+				}
 			})
 		// (hand.glb: each hand seated on what it pushes by its own drawn skin, along the push: a fist's knuckles lie inside their spheres; a hand
 		// resting on the other is left as it lies, or goes with the one it rests on)
@@ -3850,8 +3871,8 @@ function pushRig(p, pf, C) {
 		// least)
 		const tries = []
 		// (a hand lying on the other one is meant to touch it)
-		const ovMost = low ? OVERLAP_LOW : OVERLAP
-		const good = (L) => L.ov <= ovMost && L.gap >= (L.hands.some((h) => h.how?.over) ? 0 : 0.01 - 1e-6)
+		const ovMost = low ? OVERLAP_LOW : ball ? OVERLAP_BALL : OVERLAP
+		const good = (L) => L.ov <= ovMost && L.gap >= (L.hands.some((h) => h.how?.over) ? 0 : APART(low) - 1e-6)
 		for (const L of lay.alts ?? [lay]) {
 			tries.push(fitted(L))
 			if (good(L)) break
@@ -3882,6 +3903,8 @@ function pushRig(p, pf, C) {
 		return out.sub(face0).addScaledVector(u, -Math.min(adv, gap)) // (the hands' shift from where they rest: none until the paddle reaches the thing)
 	}
 	const back = new Float32Array(N + 1)
+	// (how far each frame's hands are from the thing: a palm's fingers ease open once it has gone from them)
+	const away = new Float32Array(N + 1).fill(Infinity)
 	const shift = new THREE.Vector3()
 	if (target) {
 		const posesAt = (t) => target.parts.map((s) => poseAt(C.track, s.id, t) ?? pf(s))
@@ -3905,7 +3928,9 @@ function pushRig(p, pf, C) {
 			faceAt(t, shift)
 			// (the thing far from every hand: nothing to keep it out of)
 			if (handC.every((c) => dt(_w.copy(c).add(shift)) > 0.2)) continue
-			if (clearAt(dt, 0) >= thr) continue
+			const c0 = clearAt(dt, 0)
+			away[k] = c0
+			if (c0 >= thr) continue
 			let a = 0
 			let b = 0.002
 			while (clearAt(dt, b) < thr && b < 0.5) {
@@ -3918,24 +3943,37 @@ function pushRig(p, pf, C) {
 				else b = m
 			}
 			back[k] = b
+			away[k] = thr
 		}
 	}
+	// a palm that pushed (a hand, two hands) eases its fingers open once the thing has gone from it (more than 1.2 cm off from then on): it is not
+	// seen to clutch the air where the thing was
+	let tGone = Infinity
+	if (skin === "hand" || two) {
+		let k = N
+		while (k >= 0 && away[k] > 0.012) k--
+		if (k < N && k >= 0) tGone = (k + 1) / HZ
+	}
+	const RELAX = 0.25 // s
+	for (const h of lay.hands) h.open = lerpPose(h.pose, POSES.flat, 0.6)
+	const _rp = copyPose(lay.hands[0].pose)
 	const Wt = new THREE.Vector3()
 	const at = (t) => {
 		faceAt(t, shift)
 		const k = clamp(t * HZ, 0, N)
 		const i = Math.floor(k)
 		const s = i >= N ? back[N] : back[i] + (back[i + 1] - back[i]) * (k - i)
+		const e = t > tGone ? smooth((t - tGone) / RELAX) : 0
 		for (const h of lay.hands) {
 			Wt.copy(h.W).add(shift).addScaledVector(u0, -s)
 			placeHand(h.rig, Wt, h.X, h.Y)
-			applyPose(h.rig, h.pose)
+			applyPose(h.rig, e > 0 ? lerpPose(h.pose, h.open, e, _rp) : h.pose)
 			placeArm(h.rig, h.A)
 		}
 	}
 	at(0)
 	const info = { skin, hands: lay.hands.map((h) => ({ side: h.side, link: h.link, how: h.how, rise: h.arm.rise, phi: h.arm.phi, wrist: h.arm.wrist, clear: h.arm.clear, fault: h.fault })), gap: lay.gap ?? null, cost: lay.cost, overlap: lay.hands.length > 1 ? screenOverlap(handSpheres(current(lay.hands[0].rig)), handSpheres(current(lay.hands[1].rig)), pictureAxes(C.doc)) : null }
-	return { item: p.item, rig: rigs[0], rigs, solidId: paddle.id, skin, at, busy: () => false, info, lay, target, u0 }
+	return { item: p.item, rig: rigs[0], rigs, solidId: paddle.id, skin, at, busy: (t) => t > tGone - 0.02 && t < tGone + RELAX + 0.02, info, lay, target, u0 }
 }
 // ---------------------------------------------------------------- pouring: a hand on the pitcher's handle (a cup's body), tipping with it
 // a cup's thumb, the starts fitThumb closes onto its far side from ([swing, lift, twist, knuckle, end], found on hand.glb round the cup)

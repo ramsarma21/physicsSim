@@ -441,8 +441,9 @@ for (const [label, box, h, paddleH] of [
 			{ spheres: handSpheres(current(R)), line: armLine(R.root.position, armDir(R)) }
 		)
 		const small = box.body.width < 0.06
-		// (a centimetre apart; on a thing too small for two the right hand may rest on the left, never in it)
-		const apart = small ? 0 : 0.01
+		// (a centimetre apart, half that side by side across a low thing's back; on a thing too small for two the right hand may rest on the left,
+		// never in it)
+		const apart = small ? 0 : box.body.height < 0.09 ? 0.005 : 0.01
 		assert.ok(gapNow() >= apart - 1e-6, `the hands are ${(gapNow() * 1000).toFixed(1)} mm apart`)
 		// (both seen: as the camera looks, neither covers more than a fifth of the other; on a thing lower than a hand is long the two stand side by
 		// side across its back, the far one the higher in the picture, and the near one may cover up to 85% of it)
@@ -497,7 +498,7 @@ test("a toy car's back (20 x 3.6 x 8 cm) pushed by two hands: both palms on its 
 	}
 	// (side by side: the left hand on the pusher's left, a hand's width from the right one across the back)
 	assert.ok(R.root.position.z - L.root.position.z >= 0.06, `the hands are ${((R.root.position.z - L.root.position.z) * 100).toFixed(1)} cm apart across the car`)
-	assert.ok(handsGap({ spheres: handSpheres(current(L)), line: armLine(L.root.position, armDir(L)) }, { spheres: handSpheres(current(R)), line: armLine(R.root.position, armDir(R)) }) >= 0.01 - 1e-6, "a centimetre apart")
+	assert.ok(handsGap({ spheres: handSpheres(current(L)), line: armLine(L.root.position, armDir(L)) }, { spheres: handSpheres(current(R)), line: armLine(R.root.position, armDir(R)) }) >= 0.005 - 1e-6, "half a centimetre apart")
 	// (the far hand the higher in the picture, so its fingers show over the near one's)
 	const up = V(0, Math.cos((7 * Math.PI) / 180), -Math.sin((7 * Math.PI) / 180))
 	assert.ok(L.root.position.clone().sub(R.root.position).dot(up) >= 0, "the far hand stands the higher in the picture")
