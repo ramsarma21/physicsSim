@@ -4733,7 +4733,7 @@ never fed one column fast enough to show it.
   cup empties at about w·√(g·w) a second for each metre of its depth at most (a slot's Beverloo scaling): capping δ at the mouth's width is the
   fix, not made here.
 
-## bench2 (2026-10-21, branch `feat/bench2`): a lesson's screens in one frame and one look, small things close, flat liquid tops, a nail held under an alnico bar's end
+## bench2 (2026-10-21, branch `feat/bench2`): a lesson's screens in one frame and one look, small things close, flat liquid tops, a nail held under an alnico bar's end, a swirl marble
 From the five-lesson benchmark (lesson-regen/bench/remake: MA-25, FO-13, MO-19, FO-36, MA-50 remade by the physics-lesson-video skill's lesson
 mode on release 2 and judged against the EduLLM pictures by GPT-6.1 and Claude): the physics was right but for FO-13's nail (below), yet the
 judges read the drawn pictures better because (1) small things were specks (a 3 cm grape at 5 % of the picture, a clear 2.5 cm marble), (2) the
@@ -4829,3 +4829,9 @@ then a wooden table), (4) the hands (done on their own branch), (5) a narrow gla
   at its pole hung a visible 1.5 mm under the bar in a close shot ("not touching", the benchmark's judge). A bar magnet is drawn grown 0.75 mm on
   each side in the plane (as the blocks are, web/models/blocks.js), a nail's head 0.75 mm thicker on its outer face and its point 0.75 mm longer:
   a nail held at its pole meets it in the picture. Render only.
+- **A swirl marble** (catalog `swirl-marble`, Balls; machines/catalog_items.py `_readable` and its port web/sim/catalog-items.js, look "swirl
+  glass", web/models/balls.js): the glass marble's real size and glass (16 mm, 5.4 g, its bounce and friction; resized as any ball, 25 mm for a
+  "shooter"), milky white with two bold ribbons twisting round it (orange, or the colour it is given, and blue), for a picture where the clear
+  marble vanishes (MA-25 screen 11: the card draws a swirl marble; the clear one in the tank was a few pixels). Registered last, so the parity
+  tools' random cases of every type before it keep their numbers. A bigger marble is not the fix: a lesson frames small things close
+  (`small-size` above).
