@@ -524,7 +524,7 @@ function seatOnSkin(rig, d, dir, { gap = 0.0004, links = null, others = null, sq
 	return moved
 }
 /** A digit (0..3 a finger, "t" the thumb) closed or opened, all its joints together as it closes (closers), until its own drawn skin is `gap`
- *  from field d: a small last turn after the spheres' closing (closeFinger), at most 25 degrees each way. */
+ *  from field d: the last turn after the spheres' closing (closeFinger), at most 60 degrees closer or 25 more open. */
 function closeOnSkin(rig, d, i, { most = null, gap = 0.0004 } = {}) {
 	if (!rig.mesh) return
 	const P = rig.pose
@@ -552,10 +552,11 @@ function closeOnSkin(rig, d, i, { most = null, gap = 0.0004 } = {}) {
 	let lo
 	let hi
 	if (c0 > gap) {
-		// (closer: the furthest turn that keeps it `gap` off)
-		if (c(25) >= gap) return at(25)
+		// (closer: the furthest turn that keeps it `gap` off, up to 60 degrees: the spheres round a finger's root lie a few millimetres out of its
+		// skin where it leaves the palm, and may have stopped its knuckle early)
+		if (c(60) >= gap) return at(60)
 		lo = 0
-		hi = 25
+		hi = 60
 	} else {
 		// (in it or too near: the least opening that takes it `gap` off)
 		if (c(-25) < gap) return at(0)
@@ -1642,8 +1643,13 @@ function closeFinger(rig, d, i, { gap = 0.0005, most = null, step = 1.5, share =
 	}
 	rig.root.updateMatrixWorld(true)
 	const g0 = gapNow()
+	const linkOf = (j) => (l) => l === acc[j].link || (isT && j === 0 && l === "t.2")
+	const touched = []
+	let active = 0 // joints before this one are stopped
+	let rootOn = null // (on it at its root: the joints as they were, put back if nothing past the root meets it)
 	// (already in it: open it a little until it is not, at most 30 degrees a joint, and close it onto it again from there; failing that it stays as it
-	// was; already on it: it stays)
+	// was; already on it: a finger whose root bone lies on it keeps the joints up to the last part that touches, and those past it close on (a
+	// finger whose knuckle rests on an apple still wraps it); one on it at its tip, or the thumb, stays)
 	if (g0 < 0) {
 		const was = acc.map((a) => a.get())
 		for (let n = 0; n < 15 && gapNow() < 0; n++) for (const a of acc) a.set(a.get() - 2)
@@ -1653,10 +1659,16 @@ function closeFinger(rig, d, i, { gap = 0.0005, most = null, step = 1.5, share =
 			return []
 		}
 	} else if (g0 < gap) {
-		applyPose(rig, P)
-		return links.filter((l) => clearance(rig, d, (k) => k === l) < gap)
+		let last = -1
+		if (!isT) for (let j = 0; j < acc.length; j++) if (clearance(rig, d, linkOf(j)) < gap) last = j
+		if (isT || last < 0 || last >= acc.length - 1) {
+			applyPose(rig, P)
+			return links.filter((l) => clearance(rig, d, (k) => k === l) < gap)
+		}
+		touched.push(acc[last].link)
+		active = last + 1
+		rootOn = acc.map((a) => a.get())
 	}
-	const linkOf = (j) => (l) => l === acc[j].link || (isT && j === 0 && l === "t.2")
 	// (the parts the digit carries that are not its own: the ball of the thumb on the thumb's base; on hand.glb, the skin of the palm by a knuckle
 	// that moves a little with its finger. The closing never takes them into it, nor nearer than they were if they were in it already)
 	const own = new Set(isT ? [rig.t.cmc, rig.t.mcp, rig.t.ip] : [rig.f[i].mcp, rig.f[i].pip, rig.f[i].dip])
@@ -1666,8 +1678,6 @@ function closeFinger(rig, d, i, { gap = 0.0005, most = null, step = 1.5, share =
 		for (let k = active; k <= upTo; k++) if (clearance(rig, d, linkOf(k)) < gap) return true
 		return clearance(rig, d, carried) < t0
 	}
-	const touched = []
-	let active = 0 // joints before this one are stopped
 	for (let n = 0; n < 200 && active < acc.length; n++) {
 		const prev = acc.map((a) => a.get())
 		const next = acc.map((a, j) => (j < active ? a.get() : Math.max(a.get(), Math.min(a.max, a.get() + step * a.k))))
@@ -1717,6 +1727,8 @@ function closeFinger(rig, d, i, { gap = 0.0005, most = null, step = 1.5, share =
 		touched.push(tl)
 		active = hit + 1
 	}
+	// (on it at its root and nothing past it meeting it as it closed: the finger as it was, never curled shut in the air)
+	if (rootOn && touched.length === 1) acc.forEach((a, j) => a.set(rootOn[j]))
 	applyPose(rig, P)
 	return touched
 }
@@ -3258,10 +3270,10 @@ function pushCands(skin, K) {
 	if (K.E.h < LOW_THING) {
 		const PH = copyPose(POSES.hook)
 		for (const tau of [12, 18, 24, 30, 36, 44])
-			for (const turn of K.two ? [0, 8, 16] : [15, 25, 35])
+			for (const turn of K.two ? [0, 8, 16] : [5, 15, 25])
 				for (const alpha of K.two ? [0, -8, 8, -16, 16] : [0, -10, 10])
 					for (const [k, h] of K.hsLow.entries())
-						for (const z of K.two ? K.zs : [0, 0.008, -0.008])
+						for (const z of K.two ? K.zs : [0.02, 0.012, 0, -0.012, -0.02])
 							for (const rs of sides) {
 								// (of two hands, the left one on the pusher's left of the middle, the right one on its right)
 								if (K.two && (rs === "left" ? z > 0.012 : z < -0.012)) continue
@@ -3278,7 +3290,7 @@ function pushCands(skin, K) {
 								// (two hands side by side: their fingers turned a little in toward each other over its top, the hands as near together as a
 								// centimetre between them allows, so the fingers lie on it rather than off its sides)
 								const inward = K.two ? (rs === "left" ? 10 : -10) : 0
-								const pref = ((tau - 24) / 10) ** 2 + (K.two ? (turn / 16) ** 2 * 0.5 + ((Math.abs(z) - 0.038) / 0.006) ** 2 * 0.3 : ((turn - 25) / 12) ** 2) + ((alpha - inward) / 12) ** 2 + k * 0.35 + (Math.abs(z) > 0 && !K.two ? 0.2 : 0)
+								const pref = ((tau - 24) / 10) ** 2 + (K.two ? (turn / 16) ** 2 * 0.5 + ((Math.abs(z) - 0.038) / 0.006) ** 2 * 0.3 : ((turn - 15) / 12) ** 2) + ((alpha - inward) / 12) ** 2 + k * 0.35 + (K.two ? 0 : ((z - 0.02) / 0.02) ** 2 * 0.3)
 								how = { tau, turn, alpha, h, z, low: true }
 								const rule = (r) => {
 									// (it meets it with its palm: the palm within 4 mm of it, the wrist never first)
@@ -3478,8 +3490,17 @@ function closeHand(rig, d, round = false, low = false) {
 			}
 		}
 	}
-	// (the thumb laid along the index of a palm on a low thing's back stays as it is: closing it would lift the ball of the thumb off the thing)
-	if (!low) keep("t", () => closeFinger(rig, d, "t", { most: [12, 15, 15] }))
+	// (the thumb laid along the index of a palm on a low thing's back is not closed: closing it would lift the ball of the thumb off the thing; as
+	// the fingers curl over its top past the hook's own bend, the roots of the index and the middle finger swing down onto its tip, so its knuckle
+	// bends with them, its end tucked in under them rather than showing through their skin)
+	if (low) {
+		const over = Math.max(0, -rig.pose.index_1[2] + POSES.hook.index_1[2])
+		if (over > 0) {
+			rig.pose.thumb_2 = [...POSES.hook.thumb_2]
+			rig.pose.thumb_2[2] -= Math.min(20, 0.33 * over)
+			applyPose(rig, rig.pose)
+		}
+	} else keep("t", () => closeFinger(rig, d, "t", { most: [12, 15, 15] }))
 }
 /** World spheres ({c, r, g}) in bunches by their group (g; the capsule hand's in bunches of eight), each bunch with a sphere round it: [{c, r, list}]. */
 function boundsOf(sp) {
